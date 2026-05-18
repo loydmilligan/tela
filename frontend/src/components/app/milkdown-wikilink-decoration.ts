@@ -19,31 +19,24 @@ export const WIKILINK_ALIVE_IDS_META = 'tela-wikilink-alive-ids'
 
 interface WikilinkPluginState {
   decos: DecorationSet
-  aliveIds: Set<number> | null
 }
 
 // Decorates every link mark whose href starts with `tela://page/`. Adds
 // `tela-wikilink`; if the target id isn't in the alive set, also adds
-// `tela-wikilink--broken`. Rebuilds on every doc change OR when the alive
-// set reference changes (meta-flag dispatch). Per-tx scan is O(inline nodes),
-// cheap at v0 scale.
+// `tela-wikilink--broken`. Rebuilds on every doc change OR when the React
+// side dispatches the meta-flag after pushing a new alive-ids snapshot.
 export const wikilinkDecorationPlugin = $prose((ctx) => {
   return new Plugin<WikilinkPluginState>({
     state: {
       init: (_, { doc }) => {
         const aliveIds = ctx.get(wikilinkAliveIdsCtx.key)
-        return { decos: buildWikilinkDecorations(doc, aliveIds), aliveIds }
+        return { decos: buildWikilinkDecorations(doc, aliveIds) }
       },
       apply: (tr, old) => {
-        const aliveIds = ctx.get(wikilinkAliveIdsCtx.key)
-        const aliveChanged =
-          tr.getMeta(WIKILINK_ALIVE_IDS_META) === true ||
-          aliveIds !== old.aliveIds
+        const aliveChanged = tr.getMeta(WIKILINK_ALIVE_IDS_META) === true
         if (!tr.docChanged && !aliveChanged) return old
-        return {
-          decos: buildWikilinkDecorations(tr.doc, aliveIds),
-          aliveIds,
-        }
+        const aliveIds = ctx.get(wikilinkAliveIdsCtx.key)
+        return { decos: buildWikilinkDecorations(tr.doc, aliveIds) }
       },
     },
     props: {

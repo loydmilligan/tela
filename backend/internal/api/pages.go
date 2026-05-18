@@ -856,6 +856,9 @@ func syncPageLinks(ctx context.Context, tx *sql.Tx, sourceID int64, body string)
 	placeholders := make([]string, 0, len(targets))
 	args := make([]any, 0, len(targets)*3)
 	for _, tid := range targets {
+		if tid == sourceID {
+			continue
+		}
 		var title sql.NullString
 		err := tx.QueryRowContext(ctx, `SELECT title FROM pages WHERE id = ?`, tid).Scan(&title)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -863,6 +866,9 @@ func syncPageLinks(ctx context.Context, tx *sql.Tx, sourceID int64, body string)
 		}
 		placeholders = append(placeholders, "(?, ?, ?)")
 		args = append(args, sourceID, tid, title.String)
+	}
+	if len(placeholders) == 0 {
+		return nil
 	}
 	stmt := `INSERT INTO page_links(source_id, target_id, last_known_title) VALUES ` + strings.Join(placeholders, ", ")
 	if _, err := tx.ExecContext(ctx, stmt, args...); err != nil {
