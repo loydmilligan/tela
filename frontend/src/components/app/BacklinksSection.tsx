@@ -48,10 +48,12 @@ export function BacklinksSection({ pageId }: BacklinksSectionProps) {
   const rows = useMemo(() => buildRows(data ?? []), [data])
 
   // Loading / error / empty all render nothing — backlinks are non-essential
-  // UX, never block the page or add visual noise. Wording matches the brief
-  // verbatim ("N pages link here") even at N=1.
+  // UX, never block the page or add visual noise.
   if (isLoading || isError) return null
   if (rows.length === 0) return null
+
+  const headerCopy =
+    rows.length === 1 ? '1 page links here' : `${rows.length} pages link here`
 
   return (
     <section
@@ -62,7 +64,7 @@ export function BacklinksSection({ pageId }: BacklinksSectionProps) {
         id={`backlinks-${pageId}`}
         className="m-0 text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
       >
-        {rows.length} pages link here
+        {headerCopy}
       </h2>
       <ul className="m-0 p-0 list-none flex flex-col gap-[1px]">
         {rows.map((row) => (
