@@ -1,18 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  keepPreviousData,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
-import { Clock, FileText } from 'lucide-react'
+import { Clock } from 'lucide-react'
 import {
   CommandPalette,
   prefixForMode,
   usePaletteShortcuts,
   type CommandItem,
   type CommandItemGroup,
-  type CommandMode,
-  type CommandSubPicker,
   type PagesItems,
 } from '../ui/command'
 import { useSpaces } from '../../lib/queries/spaces'
@@ -34,17 +27,13 @@ import '../../lib/commands/starters'
 import { readLastPage } from '../../lib/lastPage'
 import { subscribeToOpenNewPage } from '../../lib/newPageEvent'
 import { NewPageDialog } from './NewPageDialog'
-import { searchPages, type SearchResult } from '../../lib/api'
-import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import { readRecentPages, type RecentPage } from '../../lib/recentPages'
-import { HighlightedSnippet } from '../../lib/highlightSnippet'
-import {
-  ensureIndexHydrated,
-  searchTitles,
-  subscribeToIndexUpdate,
-  type TitleHit,
-} from '../../lib/orama-index'
-import { subscribeToPageMutation } from '../../lib/pageMutationEvent'
+import { useTier1TitleHits } from '../../lib/useTier1TitleHits'
+import { useTier2SearchResults } from '../../lib/useTier2SearchResults'
+import { useCommandPaletteState } from '../../lib/useCommandPaletteState'
+import { pageHitToCommandItem, navigateToPage } from '../../lib/pageHitItem'
+
+const RECENTS_VISIBLE = 8
 
 // Reactive view of the active theme so commands that read currentTheme always
 // see the freshest value. Subscribes to setTheme() broadcasts.
@@ -74,61 +63,36 @@ function readRouteContext(): {
   return { spaceId, pageId }
 }
 
-// Search debounce target. 50ms is fast enough that the user can't perceive a
-// gap between stop-typing and result-arrival, but slow enough that rapid
-// typing collapses into a single in-flight request rather than one per key.
-const SEARCH_DEBOUNCE_MS = 50
-const RECENTS_VISIBLE = 8
-
-function navigateToPage(spaceId: number, pageId: number) {
-  void router.navigate({
-    to: '/spaces/$spaceId/pages/$pageId',
-    params: { spaceId, pageId },
-  })
-}
-
-// App-level palette mount. Owns:
-//  - palette open / sub-picker / external-search-request state
-//  - the global keyboard contract (Cmd-K, Cmd-Shift-P, Cmd-N)
-//  - the CommandContext that registered commands run against
-//  - the M4.2 new-page dialog (Cmd-N + sidebar "+ New page" button + command)
-//  - the M5.1 pages-mode server search (debounced /api/search) and the
-//    recently-viewed empty-state list
+// App-level palette mount. Orchestrates:
+//  - palette UI state + keyboard contract (via useCommandPaletteState +
+//    usePaletteShortcuts)
+//  - tier-1 client title hits (via useTier1TitleHits) and tier-2 server
+//    search (via useTier2SearchResults), then dedupes tier-2 against tier-1
+//  - recently-viewed snapshot for the empty-state list
+//  - CommandContext + command-registry materialization
+//  - M4.2 new-page dialog bridge (Cmd-N + sidebar "+ New page" + command)
 //
 // Sits outside RouterProvider in App.tsx (sibling to it), so navigation goes
 // through the imported `router` instance rather than useNavigate. Lives inside
 // QueryClientProvider so useSpaces() / useQuery resolve from the shared cache.
 export function AppCommandHost() {
-  const [open, setOpen] = useState(false)
-  const [initialMode, setInitialMode] = useState<CommandMode>('pages')
-  const [subPicker, setSubPicker] = useState<CommandSubPicker | null>(null)
-  const [searchRequest, setSearchRequest] =
-    useState<{ value: string; nonce: number } | null>(null)
+  const {
+    open,
+    initialMode,
+    subPicker,
+    searchRequest,
+    trimmedQuery,
+    debouncedQuery,
+    setPagesQuery,
+    handleOpenChange,
+    openWith,
+    setSubPicker,
+    pushSearchRequest,
+    close,
+  } = useCommandPaletteState()
 
-  // Pages-mode query: the palette pushes the current query here via
-  // onPagesQueryChange; the host debounces and turns it into /api/search.
-  const [pagesQuery, setPagesQuery] = useState('')
-  const debouncedQuery = useDebouncedValue(pagesQuery, SEARCH_DEBOUNCE_MS)
-  const trimmedQuery = debouncedQuery.trim()
-
-  // Tier-1 client-side Orama title index. Boot the hydration on first mount,
-  // then bump indexEpoch whenever the index rebuilds so the search effect
-  // re-runs against the fresh snapshot.
-  const [indexEpoch, setIndexEpoch] = useState(0)
-  useEffect(() => {
-    ensureIndexHydrated()
-    return subscribeToIndexUpdate(() => {
-      setIndexEpoch((e) => e + 1)
-    })
-  }, [])
-  const titleHits = useMemo<TitleHit[]>(
-    () => (trimmedQuery.length === 0 ? [] : searchTitles(trimmedQuery)),
-    // indexEpoch is intentionally part of the dep list: it forces recompute
-    // after the in-memory Orama instance changes even though searchTitles
-    // itself reads through a module-level singleton.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [trimmedQuery, indexEpoch],
-  )
+  const titleHits = useTier1TitleHits(trimmedQuery)
+  const searchResults = useTier2SearchResults(trimmedQuery)
 
   // Snapshot recently-viewed pages each time the palette opens so a navigation
   // away and back surfaces the freshly-visited page without remounting the
@@ -136,6 +100,9 @@ export function AppCommandHost() {
   // aren't a real scenario for single-user v0.
   const [recents, setRecents] = useState<RecentPage[]>([])
   useEffect(() => {
+    // Snapshot recents on open — correct-by-design effect-driven setState
+    // (memory.md "set-state-in-effect snapshot-on-open pattern").
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (open) setRecents(readRecentPages().slice(0, RECENTS_VISIBLE))
   }, [open])
 
@@ -150,52 +117,6 @@ export function AppCommandHost() {
   const currentTheme = useThemeName()
   const spacesQuery = useSpaces()
   const spaces = spacesQuery.data ?? []
-  const queryClient = useQueryClient()
-
-  // Page mutations bust the tier-2 React Query search cache so renamed /
-  // deleted pages stop appearing in palette results immediately. Tier-1 is
-  // handled separately through orama-index's own subscriber.
-  useEffect(
-    () =>
-      subscribeToPageMutation(() => {
-        void queryClient.invalidateQueries({ queryKey: ['search'] })
-      }),
-    [queryClient],
-  )
-
-  // Server-side title+body search. `enabled` gates the empty query so we don't
-  // burn a round-trip; `placeholderData: keepPreviousData` keeps stale results
-  // visible while a new query is in flight so the list doesn't flicker on
-  // every keystroke. TanStack Query auto-cancels the in-flight fetch when the
-  // queryKey changes — that's how rapid typing only renders the final result.
-  const searchQuery = useQuery<SearchResult[]>({
-    queryKey: ['search', trimmedQuery],
-    queryFn: ({ signal }) =>
-      searchPages(trimmedQuery, signal).then((r) => r.results),
-    enabled: trimmedQuery.length > 0,
-    staleTime: 30_000,
-    gcTime: 5 * 60_000,
-    placeholderData: keepPreviousData,
-  })
-
-  // Clear transient state whenever the palette closes so the next open starts
-  // fresh — no stale sub-picker, no leftover external search push, no zombie
-  // pages query feeding a search round-trip.
-  const handleOpenChange = useCallback((next: boolean) => {
-    setOpen(next)
-    if (!next) {
-      setSubPicker(null)
-      setSearchRequest(null)
-      setPagesQuery('')
-    }
-  }, [])
-
-  const openWith = useCallback((mode: CommandMode) => {
-    setSubPicker(null)
-    setSearchRequest(null)
-    setInitialMode(mode)
-    setOpen(true)
-  }, [])
 
   const openNewPage = useCallback(() => {
     const ctx = readRouteContext()
@@ -240,13 +161,9 @@ export function AppCommandHost() {
         })
       },
       openHelpMode: () => {
-        // Push the help prefix into the open palette via searchRequest. Nonce
-        // forces the effect to fire even when the same value is sent twice.
+        // Switch the open palette into help mode without closing it.
         setSubPicker(null)
-        setSearchRequest((prev) => ({
-          value: prefixForMode('help'),
-          nonce: (prev?.nonce ?? 0) + 1,
-        }))
+        pushSearchRequest(prefixForMode('help'))
       },
       openSubPicker: (spec: SubPickerSpec) => {
         setSubPicker({
@@ -256,9 +173,9 @@ export function AppCommandHost() {
           items: spec.items,
         })
       },
-      closePalette: () => setOpen(false),
+      closePalette: close,
     }),
-    [currentTheme, spaces],
+    [currentTheme, spaces, setSubPicker, pushSearchRequest, close],
   )
 
   // Recompute commandsItems whenever ctx changes so onSelect closures bind
@@ -280,37 +197,30 @@ export function AppCommandHost() {
   )
 
   const titleItems = useMemo<CommandItem[]>(
-    () =>
-      titleHits.map((h) => ({
-        id: `page-t1:${h.pageId}`,
-        title: h.title || 'Untitled',
-        breadcrumb:
-          h.breadcrumb.length > 0 ? h.breadcrumb.join(' / ') : undefined,
-        icon: <FileText aria-hidden width={14} height={14} />,
-        onSelect: () => navigateToPage(h.spaceId, h.pageId),
-      })),
+    () => titleHits.map((h) => pageHitToCommandItem(h, { idPrefix: 'page-t1' })),
     [titleHits],
   )
 
   const searchItems = useMemo<CommandItem[]>(() => {
-    const results: SearchResult[] | undefined = searchQuery.data
-    if (!results) return []
+    if (!searchResults) return []
     // Drop server hits whose page already appears in tier-1 — tier-1 wins,
     // since a title-match is a stronger signal than a body-snippet match for
     // the common "find me the page by name" flow.
     const tier1Ids = new Set(titleHits.map((h) => h.pageId))
-    return results
+    return searchResults
       .filter((r) => !tier1Ids.has(r.page_id))
-      .map((r) => ({
-        id: `page-t2:${r.page_id}`,
-        title: r.title || 'Untitled',
-        subtitle: <HighlightedSnippet snippet={r.snippet} />,
-        breadcrumb:
-          r.breadcrumb.length > 0 ? r.breadcrumb.join(' / ') : undefined,
-        icon: <FileText aria-hidden width={14} height={14} />,
-        onSelect: () => navigateToPage(r.space_id, r.page_id),
-      }))
-  }, [searchQuery.data, titleHits])
+      .map((r) =>
+        pageHitToCommandItem(
+          {
+            pageId: r.page_id,
+            spaceId: r.space_id,
+            title: r.title,
+            breadcrumb: r.breadcrumb,
+          },
+          { idPrefix: 'page-t2', snippet: r.snippet },
+        ),
+      )
+  }, [searchResults, titleHits])
 
   const pagesItems = useMemo<PagesItems>(() => {
     if (trimmedQuery.length === 0) return recentsItems
@@ -339,14 +249,13 @@ export function AppCommandHost() {
     if (titleItems.length > 0) return undefined
     // Loading state — only visible on the very first query for a key, since
     // keepPreviousData keeps stale data around through subsequent re-queries.
-    if (searchQuery.isFetching && !searchQuery.data) return 'Searching…'
+    if (searchResults == null) return 'Searching…'
     return `No pages match "${debouncedQuery}".`
   }, [
     trimmedQuery,
     debouncedQuery,
     recents.length,
-    searchQuery.isFetching,
-    searchQuery.data,
+    searchResults,
     titleItems.length,
   ])
 
