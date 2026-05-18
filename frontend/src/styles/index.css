@@ -132,4 +132,76 @@
   .tela-tooltip-arrow {
     fill: var(--surface-3);
   }
+
+  .tela-dropdown-content {
+    z-index: 50;
+    min-width: 10rem;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-1);
+    box-shadow: 0 10px 30px -8px
+      color-mix(in srgb, var(--text-primary) 25%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    outline: none;
+  }
+  .tela-dropdown-content[data-state='open'] {
+    animation: tela-fade-in var(--duration-fast) var(--ease-out);
+  }
+  .tela-dropdown-content[data-state='closed'] {
+    animation: tela-fade-out var(--duration-fast) var(--ease-out);
+  }
+
+  .tela-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      color var(--duration-fast) var(--ease-out);
+  }
+  .tela-dropdown-item[data-highlighted],
+  .tela-dropdown-item:hover {
+    background: var(--surface-2);
+  }
+  .tela-dropdown-item[data-disabled] {
+    color: var(--text-muted);
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .tela-dropdown-item-danger {
+    color: var(--danger);
+  }
+  .tela-dropdown-item-danger[data-highlighted],
+  .tela-dropdown-item-danger:hover {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+  }
+
+  .tela-dropdown-separator {
+    height: 1px;
+    background: var(--border-subtle);
+    margin: var(--space-1) 0;
+  }
+
+  .tela-dropdown-label {
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    color: var(--text-muted);
+    user-select: none;
+  }
 }
