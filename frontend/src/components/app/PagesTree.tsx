@@ -11,7 +11,6 @@ import { ApiError } from '../../lib/api'
 import {
   useCreatePage,
   useDeletePage,
-  useMovePage,
   usePages,
   useUpdatePage,
 } from '../../lib/queries/pages'
@@ -35,7 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { Input } from '../ui/input'
-import { Select } from '../ui/select'
+import { MovePageDialog } from './move-page-dialog'
 import { cn } from '../../lib/utils'
 
 const UNTITLED_TITLE = 'Untitled'
@@ -399,135 +398,6 @@ function RenamePageDialog({ node, open, onOpenChange }: RenamePageDialogProps) {
             </DialogClose>
             <Button type="submit" disabled={updatePage.isPending}>
               {updatePage.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-interface MovePageDialogProps {
-  node: PageTreeNode
-  spaceId: number
-  roots: PageTreeNode[]
-  open: boolean
-  onOpenChange: (next: boolean) => void
-}
-
-interface FlatOption {
-  id: number
-  title: string
-  depth: number
-}
-
-// Collect candidate parents for `movedId`: every page in the space EXCEPT the
-// moved page itself and any of its descendants. Server returns 400 cycle if we
-// don't filter, so we mirror that here.
-function flattenParentOptions(
-  roots: PageTreeNode[],
-  movedId: number,
-): FlatOption[] {
-  const out: FlatOption[] = []
-  function walk(nodes: PageTreeNode[], depth: number, underMoved: boolean) {
-    for (const n of nodes) {
-      const isMoved = n.id === movedId
-      if (!underMoved && !isMoved) {
-        out.push({ id: n.id, title: n.title || UNTITLED_TITLE, depth })
-      }
-      walk(n.children, depth + 1, underMoved || isMoved)
-    }
-  }
-  walk(roots, 0, false)
-  return out
-}
-
-function MovePageDialog({
-  node,
-  spaceId,
-  roots,
-  open,
-  onOpenChange,
-}: MovePageDialogProps) {
-  const initial = node.parent_id == null ? '' : String(node.parent_id)
-  const [selected, setSelected] = useState<string>(initial)
-  const [error, setError] = useState<string | null>(null)
-  const movePage = useMovePage()
-
-  function handleClose(next: boolean) {
-    if (!next) {
-      setSelected(initial)
-      setError(null)
-    }
-    onOpenChange(next)
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const nextParent: number | null = selected === '' ? null : Number(selected)
-    if (nextParent === node.parent_id) {
-      handleClose(false)
-      return
-    }
-    setError(null)
-    try {
-      await movePage.mutateAsync({
-        id: node.id,
-        fromSpaceId: spaceId,
-        parent_id: nextParent,
-      })
-      handleClose(false)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to move page.')
-    }
-  }
-
-  const options = flattenParentOptions(roots, node.id)
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Move "{node.title || UNTITLED_TITLE}"</DialogTitle>
-          <DialogDescription>
-            Pick a new parent. Choose "(top level)" to make this a root page.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-[var(--space-3)]">
-          <div className="flex flex-col gap-[var(--space-2)]">
-            <label
-              htmlFor={`move-page-${node.id}`}
-              className="text-[length:var(--text-sm)] text-[var(--text-muted)]"
-            >
-              Parent
-            </label>
-            <Select
-              id={`move-page-${node.id}`}
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-            >
-              <option value="">(top level)</option>
-              {options.map((opt) => (
-                <option key={opt.id} value={String(opt.id)}>
-                  {'— '.repeat(opt.depth)}
-                  {opt.title}
-                </option>
-              ))}
-            </Select>
-            {error ? (
-              <p className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
-                {error}
-              </p>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost">
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button type="submit" disabled={movePage.isPending}>
-              {movePage.isPending ? 'Moving…' : 'Move'}
             </Button>
           </DialogFooter>
         </form>
