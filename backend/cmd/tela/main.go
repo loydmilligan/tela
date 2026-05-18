@@ -54,6 +54,8 @@ func main() {
 	mux.HandleFunc("DELETE /api/pages/{id}", srv.DeletePage)
 	mux.HandleFunc("POST /api/pages/{id}/move", srv.MovePage)
 
+	mux.HandleFunc("GET /api/search", srv.Search)
+
 	log.Printf("tela backend listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("server failed: %v", err)
