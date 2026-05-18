@@ -373,6 +373,55 @@
     color: var(--text-muted);
   }
 
+  /* Rich-subtitle rows (search results with a <mark>-highlighted snippet).
+     Anchor the icon to the top of the row so it sits next to the title rather
+     than floating between the title and the snippet line. */
+  .tela-command-item--stacked {
+    align-items: flex-start;
+  }
+  .tela-command-item--stacked .tela-command-item-icon {
+    margin-top: var(--space-1);
+  }
+
+  .tela-command-item-stack {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .tela-command-item-stack-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .tela-command-item-stack-head .tela-command-item-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .tela-command-item-snippet {
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-normal);
+    color: var(--text-muted);
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* <mark> highlights inside FTS5 snippets. Scoped to .tela-snippet so the
+     element doesn't pick up any future editor styling that styles raw <mark>
+     differently. */
+  .tela-snippet mark {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--text-primary);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-xs);
+  }
+
   .tela-command-item-title {
     font-family: var(--font-sans);
     font-size: var(--text-sm);

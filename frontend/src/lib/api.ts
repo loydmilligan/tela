@@ -55,3 +55,25 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await res.json()) as T
 }
+
+// Mirrors backend/internal/api/search.go's searchHit. `snippet` contains
+// literal `<mark>…</mark>` delimiters around matched tokens; the body is NOT
+// HTML-escaped server-side, so it must be rendered via HighlightedSnippet
+// (split-and-emit) rather than dangerouslySetInnerHTML.
+export interface SearchResult {
+  page_id: number
+  space_id: number
+  title: string
+  snippet: string
+  breadcrumb: string[]
+}
+
+export function searchPages(
+  q: string,
+  signal?: AbortSignal,
+): Promise<{ results: SearchResult[] }> {
+  return api<{ results: SearchResult[] }>(
+    `/api/search?q=${encodeURIComponent(q)}`,
+    { signal },
+  )
+}

@@ -21,10 +21,14 @@ import { cn } from '../../lib/utils'
 import { IS_MAC, useGlobalShortcut } from '../../lib/useGlobalShortcut'
 
 // Exported item shape — referenced by every consumer of this primitive.
+// `subtitle` accepts a ReactNode so search hits can render a multi-token
+// snippet with native <mark> highlights; string subtitles render inline next
+// to the title (command rows), ReactNode subtitles trigger the stacked row
+// layout (title-row on top, snippet underneath).
 export interface CommandItem {
   id: string
   title: string
-  subtitle?: string
+  subtitle?: ReactNode
   breadcrumb?: string
   icon?: ReactNode
   keywords?: string[]
@@ -135,12 +139,32 @@ function ModeBadge({ mode }: { mode: CommandMode }) {
   return <span className="tela-command-mode-badge">{MODE_LABEL[mode]}</span>
 }
 
+function isStackedSubtitle(subtitle: CommandItem['subtitle']): boolean {
+  return subtitle != null && typeof subtitle !== 'string'
+}
+
 function CommandRowContent({
   icon,
   title,
   subtitle,
   breadcrumb,
 }: Pick<CommandItem, 'icon' | 'title' | 'subtitle' | 'breadcrumb'>) {
+  if (isStackedSubtitle(subtitle)) {
+    return (
+      <>
+        {icon ? <span className="tela-command-item-icon">{icon}</span> : null}
+        <span className="tela-command-item-stack">
+          <span className="tela-command-item-stack-head">
+            <span className="tela-command-item-title">{title}</span>
+            {breadcrumb ? (
+              <span className="tela-command-item-breadcrumb">{breadcrumb}</span>
+            ) : null}
+          </span>
+          <span className="tela-command-item-snippet">{subtitle}</span>
+        </span>
+      </>
+    )
+  }
   return (
     <>
       {icon ? <span className="tela-command-item-icon">{icon}</span> : null}
@@ -152,6 +176,13 @@ function CommandRowContent({
         <span className="tela-command-item-breadcrumb">{breadcrumb}</span>
       ) : null}
     </>
+  )
+}
+
+function commandItemClass(item: CommandItem): string {
+  return cn(
+    'tela-command-item',
+    isStackedSubtitle(item.subtitle) && 'tela-command-item--stacked',
   )
 }
 
@@ -183,6 +214,18 @@ interface CommandShellProps {
   tagsItems?: CommandItem[]
   pagesPlaceholder?: string
   emptyMessage?: string
+  // Pages-mode-only empty message. Falls back to `emptyMessage` when absent.
+  // Separate from `emptyMessage` because pages-mode messaging depends on host
+  // state (recently-viewed vs no-results vs in-flight search), and shouldn't
+  // leak into the other modes' "No results." default.
+  pagesEmptyMessage?: string
+  // When provided, the host owns hit ordering for pages mode — every query
+  // change is published here (debounced/queried server-side, etc.) and cmdk's
+  // own filter is bypassed so server-ranked results render in order. Fires
+  // with the empty string whenever the user has switched into a prefixed mode
+  // (`>`, `?`, `@`, `#`) so the host doesn't keep searching after the user
+  // moves on.
+  onPagesQueryChange?: (q: string) => void
 }
 
 function CommandShell({
@@ -194,6 +237,8 @@ function CommandShell({
   tagsItems,
   pagesPlaceholder,
   emptyMessage,
+  pagesEmptyMessage,
+  onPagesQueryChange,
 }: CommandShellProps) {
   const { mode, query, prefixActive } = detectMode(search)
 
@@ -212,15 +257,34 @@ function CommandShell({
     }
   }, [mode, pagesItems, commandsItems, mentionsItems, tagsItems])
 
+  // Publish the active pages-mode query to the host so it can drive a
+  // server-side search. Fire empty string in any non-pages mode so the host
+  // stops searching the moment the user switches prefixes.
+  useEffect(() => {
+    if (!onPagesQueryChange) return
+    onPagesQueryChange(mode === 'pages' ? query : '')
+  }, [mode, query, onPagesQueryChange])
+
   const placeholder =
     mode === 'pages' && pagesPlaceholder
       ? pagesPlaceholder
       : MODE_PLACEHOLDER[mode]
 
+  const effectiveEmpty =
+    mode === 'pages' && pagesEmptyMessage
+      ? pagesEmptyMessage
+      : (emptyMessage ?? 'No results.')
+
+  // cmdk's built-in fuzzy filter beats us in commands/mentions/tags/help, but
+  // for pages-mode-with-host the host has authoritative BM25 ranking and we
+  // must render in that order.
+  const filterEnabled =
+    mode !== 'help' && !(mode === 'pages' && onPagesQueryChange != null)
+
   return (
     <CmdkRoot
       label={`Command palette — ${MODE_LABEL[mode]}`}
-      shouldFilter={mode !== 'help'}
+      shouldFilter={filterEnabled}
       className="tela-command-root"
     >
       <div className="tela-command-input-row">
@@ -275,7 +339,7 @@ function CommandShell({
         ) : (
           <>
             <CmdkEmpty className="tela-command-empty">
-              {emptyMessage ?? 'No results.'}
+              {effectiveEmpty}
             </CmdkEmpty>
             {items.map((item) => (
               <CmdkItem
@@ -283,7 +347,7 @@ function CommandShell({
                 value={item.id}
                 keywords={[item.title, ...(item.keywords ?? [])]}
                 onSelect={item.onSelect}
-                className="tela-command-item"
+                className={commandItemClass(item)}
               >
                 <CommandRowContent
                   icon={item.icon}
@@ -310,6 +374,7 @@ export interface CommandPaletteProps {
   tagsItems?: CommandItem[]
   pagesPlaceholder?: string
   emptyMessage?: string
+  pagesEmptyMessage?: string
   // Programmatic search push from outside. When `value` changes, the palette
   // overwrites its internal search — lets a command (e.g., "Show keyboard
   // shortcuts") switch the open palette into help mode without re-opening.
@@ -317,6 +382,8 @@ export interface CommandPaletteProps {
   // When non-null, replaces CommandShell with an inline picker inside the
   // same modal. Selecting an item closes the palette.
   subPicker?: CommandSubPicker | null
+  // Threads through to CommandShell. See CommandShellProps for semantics.
+  onPagesQueryChange?: (q: string) => void
 }
 
 // Modal (overlay + portal) variant. Drives the global search/command palette.
@@ -330,8 +397,10 @@ export function CommandPalette({
   tagsItems,
   pagesPlaceholder,
   emptyMessage,
+  pagesEmptyMessage,
   searchRequest,
   subPicker,
+  onPagesQueryChange,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState('')
 
@@ -416,6 +485,8 @@ export function CommandPalette({
               tagsItems={closeAfter(tagsItems)}
               pagesPlaceholder={pagesPlaceholder}
               emptyMessage={emptyMessage}
+              pagesEmptyMessage={pagesEmptyMessage}
+              onPagesQueryChange={onPagesQueryChange}
             />
           )}
           <CommandPaletteFooter />
@@ -486,7 +557,7 @@ export const CommandInlinePicker = forwardRef<
             value={item.id}
             keywords={[item.title, ...(item.keywords ?? [])]}
             onSelect={item.onSelect}
-            className="tela-command-item"
+            className={commandItemClass(item)}
           >
             <CommandRowContent
               icon={item.icon}

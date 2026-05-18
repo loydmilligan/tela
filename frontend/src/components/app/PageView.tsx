@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, FileText, Plus, Trash2 } from 'lucide-react'
 import { ApiError } from '../../lib/api'
+import { pushRecentPage } from '../../lib/recentPages'
 import {
   useCreatePage,
   useDeletePage,
@@ -100,6 +101,22 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   const [title, setTitle] = useState(page.title)
   const [body, setBody] = useState(page.body)
   const [deleteOpen, setDeleteOpen] = useState(false)
+
+  // Record this visit in the recently-viewed list (consumed by the M5.1
+  // palette empty state). Re-fires only when the page id changes — renaming
+  // the open page shouldn't bump its position in the recents list, and the
+  // cached title goes stale until the user navigates to the page from
+  // elsewhere. Acceptable trade-off vs. either pushing on every keystroke or
+  // missing rename-after-visit updates.
+  useEffect(() => {
+    pushRecentPage({
+      pageId: page.id,
+      spaceId: page.space_id,
+      title: page.title,
+      viewedAt: Date.now(),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page.id])
 
   // Track last server-confirmed values so we can skip no-op saves and detect
   // dirtiness on blur.
