@@ -93,6 +93,31 @@ function detectMode(
 const MOD_LABEL = IS_MAC ? '⌘' : 'Ctrl'
 const SHIFT_LABEL = IS_MAC ? '⇧' : 'Shift'
 
+// Always-visible prefix reminder rendered in the modal palette footer. Order
+// mirrors PREFIX_TO_MODE; "type to search pages" follows as the default-mode
+// hint. Kept here (not in CommandShell) because the footer stays visible across
+// every mode, including sub-pickers — it's a chrome element of the palette.
+const FOOTER_PREFIXES: Array<{ key: string; label: string }> = [
+  { key: '>', label: 'Commands' },
+  { key: '?', label: 'Help' },
+  { key: '@', label: 'Mentions' },
+  { key: '#', label: 'Tags' },
+]
+
+function CommandPaletteFooter() {
+  return (
+    <div className="tela-command-footer">
+      {FOOTER_PREFIXES.map(({ key, label }) => (
+        <span key={key} className="tela-command-footer-chip">
+          <kbd className="tela-command-kbd">{key}</kbd>
+          <span>{label}</span>
+        </span>
+      ))}
+      <span className="tela-command-footer-hint">type to search pages</span>
+    </div>
+  )
+}
+
 const KEYBOARD_HELP: Array<{ keys: string[]; description: string }> = [
   { description: 'Open command palette', keys: [MOD_LABEL, 'K'] },
   { description: 'Open commands', keys: [MOD_LABEL, SHIFT_LABEL, 'P'] },
@@ -393,6 +418,7 @@ export function CommandPalette({
               emptyMessage={emptyMessage}
             />
           )}
+          <CommandPaletteFooter />
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
