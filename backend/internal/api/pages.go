@@ -35,6 +35,17 @@ type pageNode struct {
 	Children []*pageNode `json:"children"`
 }
 
+// pageListItem is the flat cross-space row returned by ListAllPages — no
+// body, no parent_id, no timestamps; just enough for the wikilink picker
+// (id, space hint, title, breadcrumb).
+type pageListItem struct {
+	ID         int64    `json:"id"`
+	SpaceID    int64    `json:"space_id"`
+	SpaceName  string   `json:"space_name"`
+	Title      string   `json:"title"`
+	Breadcrumb []string `json:"breadcrumb"`
+}
+
 func (s *Server) ListPages(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	spaceIDStr := q.Get("space_id")
@@ -108,6 +119,59 @@ func (s *Server) ListPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"pages": pages})
+}
+
+// ListAllPages returns every page in every space as a flat list, ordered by
+// space_name then title. Powers the cross-space `[[Page]]` picker. No
+// pagination — single-user, <100 pages assumed (same bound as the orama
+// tier-1 index).
+func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.DB.QueryContext(r.Context(), `
+		SELECT p.id, p.space_id, s.name, p.title
+		  FROM pages p
+		  JOIN spaces s ON s.id = p.space_id
+		 ORDER BY s.name ASC, p.title ASC`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "list pages failed")
+		return
+	}
+	defer rows.Close()
+
+	type rowItem struct {
+		ID, SpaceID      int64
+		SpaceName, Title string
+	}
+	items := []rowItem{}
+	for rows.Next() {
+		var it rowItem
+		if err := rows.Scan(&it.ID, &it.SpaceID, &it.SpaceName, &it.Title); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "scan page row failed")
+			return
+		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "iterate pages failed")
+		return
+	}
+
+	out := make([]pageListItem, 0, len(items))
+	for _, it := range items {
+		bc, err := pageBreadcrumb(r.Context(), s.DB, it.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "build breadcrumb failed")
+			return
+		}
+		out = append(out, pageListItem{
+			ID:         it.ID,
+			SpaceID:    it.SpaceID,
+			SpaceName:  it.SpaceName,
+			Title:      it.Title,
+			Breadcrumb: bc,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"pages": out})
 }
 
 func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {

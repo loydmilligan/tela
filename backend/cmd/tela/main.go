@@ -48,11 +48,13 @@ func main() {
 	mux.HandleFunc("DELETE /api/spaces/{id}", srv.DeleteSpace)
 
 	mux.HandleFunc("GET /api/pages", srv.ListPages)
+	mux.HandleFunc("GET /api/pages/all", srv.ListAllPages)
 	mux.HandleFunc("POST /api/pages", srv.CreatePage)
 	mux.HandleFunc("GET /api/pages/{id}", srv.GetPage)
 	mux.HandleFunc("PATCH /api/pages/{id}", srv.UpdatePage)
 	mux.HandleFunc("DELETE /api/pages/{id}", srv.DeletePage)
 	mux.HandleFunc("POST /api/pages/{id}/move", srv.MovePage)
+	mux.HandleFunc("GET /api/pages/{id}/backlinks", srv.Backlinks)
 
 	mux.HandleFunc("GET /api/search", srv.Search)
 
