@@ -12,6 +12,10 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { useAllPages } from '../../lib/queries/pages'
 import type { PageListItem } from '../../lib/types'
+import {
+  disambiguateBreadcrumbs,
+  type DisambiguatedRow,
+} from '../../lib/disambiguateBreadcrumbs'
 
 // Floating caret-anchored `[[Page]]` autocomplete. Mirrors the slash plugin's
 // shape (slashFactory + SlashProvider + capture-phase keydown for nav). Saved
@@ -53,39 +57,7 @@ function readWikilinkState(view: EditorView): WikilinkTrigger | null {
 
 // ---------- Filtering --------------------------------------------------------
 
-interface PickerRow {
-  page: PageListItem
-  breadcrumbLabel: string
-  showSpaceChip: boolean
-}
-
-function buildRows(pages: PageListItem[]): PickerRow[] {
-  // Render breadcrumb empty arrays as "(space root)" so collision detection
-  // groups all root pages under a single visible label per space.
-  const breadcrumbOf = (p: PageListItem) =>
-    p.breadcrumb.length === 0 ? '(space root)' : p.breadcrumb.join(' › ')
-  // Count visible breadcrumb labels — any label held by two rows from
-  // *different* spaces collides and gets the chip on those rows.
-  const seenBySpace = new Map<string, Set<number>>()
-  for (const p of pages) {
-    const label = breadcrumbOf(p)
-    let set = seenBySpace.get(label)
-    if (!set) {
-      set = new Set()
-      seenBySpace.set(label, set)
-    }
-    set.add(p.space_id)
-  }
-  return pages.map((p) => {
-    const label = breadcrumbOf(p)
-    const spaces = seenBySpace.get(label)
-    return {
-      page: p,
-      breadcrumbLabel: label,
-      showSpaceChip: !!spaces && spaces.size > 1,
-    }
-  })
-}
+type PickerRow = DisambiguatedRow<PageListItem>
 
 function filterRows(rows: PickerRow[], query: string): PickerRow[] {
   const q = query.trim().toLowerCase()
@@ -95,9 +67,9 @@ function filterRows(rows: PickerRow[], query: string): PickerRow[] {
   // comfortably under a millisecond and keeps the picker dependency-free.
   return rows.filter((r) => {
     const haystack = [
-      r.page.title,
-      r.page.space_name,
-      ...r.page.breadcrumb,
+      r.item.title,
+      r.item.space_name,
+      ...r.item.breadcrumb,
     ]
       .join(' ')
       .toLowerCase()
@@ -158,7 +130,10 @@ export function WikilinkView() {
   )
   const [activeIdx, setActiveIdx] = useState(0)
 
-  const rows = useMemo(() => buildRows(pages ?? []), [pages])
+  const rows = useMemo(
+    () => disambiguateBreadcrumbs(pages ?? []),
+    [pages],
+  )
   const items = useMemo(() => filterRows(rows, query), [rows, query])
 
   useEffect(() => {
@@ -247,7 +222,7 @@ export function WikilinkView() {
       const editor = getEditor()
       editor?.action((ctx) => {
         const v = ctx.get(editorViewCtx)
-        insertWikilink(v, openOffset, row.page.id, row.page.title)
+        insertWikilink(v, openOffset, row.item.id, row.item.title)
       })
     },
     [loading, getEditor, openOffset],
@@ -300,7 +275,7 @@ export function WikilinkView() {
       ) : (
         items.map((row, idx) => (
           <button
-            key={row.page.id}
+            key={row.item.id}
             type="button"
             role="option"
             aria-selected={idx === activeIdx}
@@ -314,11 +289,11 @@ export function WikilinkView() {
           >
             <span className="tela-wikilink-item-head">
               <span className="tela-wikilink-item-title">
-                {row.page.title || 'Untitled'}
+                {row.item.title || 'Untitled'}
               </span>
               {row.showSpaceChip ? (
                 <span className="tela-wikilink-item-chip">
-                  {row.page.space_name}
+                  {row.item.space_name}
                 </span>
               ) : null}
             </span>
