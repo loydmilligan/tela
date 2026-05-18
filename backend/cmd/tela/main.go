@@ -41,6 +41,12 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", srv.Health)
 
+	mux.HandleFunc("GET /api/spaces", srv.ListSpaces)
+	mux.HandleFunc("POST /api/spaces", srv.CreateSpace)
+	mux.HandleFunc("GET /api/spaces/{id}", srv.GetSpace)
+	mux.HandleFunc("PATCH /api/spaces/{id}", srv.UpdateSpace)
+	mux.HandleFunc("DELETE /api/spaces/{id}", srv.DeleteSpace)
+
 	log.Printf("tela backend listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("server failed: %v", err)
