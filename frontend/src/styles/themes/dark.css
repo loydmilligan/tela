@@ -1,0 +1,17 @@
+@layer tokens {
+  [data-theme='dark'] {
+    --surface-1: #0f0f12;
+    --surface-2: #16161b;
+    --surface-3: #1f1f27;
+    --text-primary: #ececef;
+    --text-muted: #9a9aa6;
+    --text-inverse: #0f0f12;
+    --border-subtle: #2a2a33;
+    --border-strong: #3d3d49;
+    --accent: #818cf8;
+    --accent-fg: #0f0f12;
+    --danger: #f87171;
+    --warning: #fbbf24;
+    --success: #4ade80;
+  }
+}

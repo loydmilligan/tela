@@ -1,3 +1,28 @@
 @layer tokens, base, components, utilities;
 
 @import 'tailwindcss';
+
+@import './tokens.css';
+@import './themes/light.css';
+@import './themes/dark.css';
+@import './themes/warm.css';
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    transition:
+      background-color var(--duration-base) var(--ease-out),
+      color var(--duration-base) var(--ease-out);
+  }
+}
