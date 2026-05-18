@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/zcag/tela/backend/internal/api"
+	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/db"
 )
 
@@ -35,6 +36,20 @@ func main() {
 		log.Fatalf("migrate db: %v", err)
 	}
 	log.Printf("db ready at %s", dbPath)
+
+	bs, err := auth.BootstrapFromEnv(context.Background(), d)
+	if err != nil {
+		log.Fatalf("bootstrap admin: %v", err)
+	}
+	if bs.Created {
+		if bs.GeneratedPassword != "" {
+			log.Println("==================================================================")
+			log.Printf(">>> Tela bootstrap admin: %s / %s — change it in Settings.", bs.Username, bs.GeneratedPassword)
+			log.Println("==================================================================")
+		} else {
+			log.Printf(">>> Tela bootstrap admin '%s' created from TELA_ADMIN_PASSWORD env.", bs.Username)
+		}
+	}
 
 	srv := api.New(d)
 
