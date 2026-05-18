@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-router'
 import { FilePlus, Plus } from 'lucide-react'
 import { NewSpaceDialog } from '../components/app/NewSpaceDialog'
+import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
 import { Button } from '../components/ui/button'
@@ -158,15 +159,9 @@ const pageRoute = createRoute({
   path: 'pages/$pageId',
   parseParams: (raw) => ({ pageId: Number(raw.pageId) }),
   stringifyParams: (params) => ({ pageId: String(params.pageId) }),
-  component: function PagePlaceholder() {
+  component: function PageRouteComponent() {
     const { spaceId, pageId } = useParams({ from: '/spaces/$spaceId/pages/$pageId' })
-    return (
-      <div className="flex-1 flex items-center justify-center p-[var(--space-7)]">
-        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          Space {spaceId} · Page {pageId} — view lands in task #12.
-        </p>
-      </div>
-    )
+    return <PageView spaceId={spaceId} pageId={pageId} />
   },
 })
 
