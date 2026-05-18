@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ChevronRight, Trash2 } from 'lucide-react'
+import { ChevronRight, FileText, Plus, Trash2 } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import {
+  useCreatePage,
   useDeletePage,
   usePage,
   usePages,
@@ -246,7 +247,13 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
           onBlur={handleBodyBlur}
           autoFocus={bodyAutoFocus}
           ariaLabel="Page body"
-          className="flex-1 min-h-[calc(var(--space-8)*8)]"
+          className="min-h-[calc(var(--space-8)*8)]"
+        />
+
+        <ChildPagesSection
+          spaceId={spaceId}
+          pageId={page.id}
+          bodyIsEmpty={body.trim().length === 0}
         />
       </div>
 
@@ -271,6 +278,135 @@ function findAncestorChain(
     if (sub) return [node, ...sub]
   }
   return null
+}
+
+const EXCERPT_MAX = 80
+
+function bodyExcerpt(body: string): string {
+  // Strip the most common markdown noise so the snippet reads as plain prose
+  // rather than syntax. Good enough for an at-a-glance preview; not a parser.
+  const stripped = body
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/`{1,3}[^`]*`{1,3}/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_~>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (stripped.length <= EXCERPT_MAX) return stripped
+  return stripped.slice(0, EXCERPT_MAX).trimEnd() + '…'
+}
+
+interface ChildPagesSectionProps {
+  spaceId: number
+  pageId: number
+  bodyIsEmpty: boolean
+}
+
+function ChildPagesSection({
+  spaceId,
+  pageId,
+  bodyIsEmpty,
+}: ChildPagesSectionProps) {
+  const navigate = useNavigate()
+  const tree = usePages({ spaceId, tree: true })
+  const createPage = useCreatePage()
+  const nodes = (tree.data as PageTreeNode[] | undefined) ?? []
+  const chain = findAncestorChain(nodes, pageId)
+  const current = chain ? chain[chain.length - 1] : null
+  const children = current?.children ?? []
+
+  async function handleAddChild() {
+    try {
+      const created = await createPage.mutateAsync({
+        space_id: spaceId,
+        parent_id: pageId,
+        title: 'Untitled',
+      })
+      void navigate({
+        to: '/spaces/$spaceId/pages/$pageId',
+        params: { spaceId, pageId: created.id },
+      })
+    } catch {
+      // Tree refetch surfaces failure; v0 has no toast layer.
+    }
+  }
+
+  if (children.length === 0) {
+    if (!bodyIsEmpty) return null
+    return (
+      <div className="pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => void handleAddChild()}
+          disabled={createPage.isPending}
+          className="text-[var(--text-muted)] hover:text-[var(--text-primary)] px-[var(--space-2)]"
+        >
+          <Plus width={14} height={14} /> Add child page
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <section
+      aria-labelledby={`child-pages-${pageId}`}
+      className="flex flex-col gap-[var(--space-2)] pt-[var(--space-4)] border-t border-[var(--border-subtle)]"
+    >
+      <h2
+        id={`child-pages-${pageId}`}
+        className="m-0 text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
+      >
+        Child pages
+      </h2>
+      <ul className="m-0 p-0 list-none flex flex-col gap-[1px]">
+        {children.map((child) => {
+          const excerpt = bodyExcerpt(child.body)
+          return (
+            <li key={child.id} className="m-0 p-0 list-none">
+              <button
+                type="button"
+                onClick={() =>
+                  void navigate({
+                    to: '/spaces/$spaceId/pages/$pageId',
+                    params: { spaceId, pageId: child.id },
+                  })
+                }
+                className={cn(
+                  'group w-full text-left',
+                  'flex items-start gap-[var(--space-3)]',
+                  'px-[var(--space-3)] py-[var(--space-2)]',
+                  'rounded-[var(--radius-sm)]',
+                  'bg-transparent border-0 cursor-pointer outline-none',
+                  'hover:bg-[var(--surface-2)]',
+                  'focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+                )}
+              >
+                <FileText
+                  aria-hidden
+                  width={14}
+                  height={14}
+                  className="mt-[2px] shrink-0 text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+                />
+                <span className="flex-1 min-w-0 flex flex-col gap-[2px]">
+                  <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-medium font-[family-name:var(--font-sans)]">
+                    {child.title || 'Untitled'}
+                  </span>
+                  {excerpt ? (
+                    <span className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+                      {excerpt}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
 }
 
 function Breadcrumb({ spaceId, pageId }: { spaceId: number; pageId: number }) {

@@ -9,6 +9,7 @@ import {
 } from '../../lib/queries/spaces'
 import type { Space } from '../../lib/types'
 import { Button } from '../ui/button'
+import { Card, CardBody, CardFooter } from '../ui/card'
 import {
   Dialog,
   DialogClose,
@@ -68,9 +69,26 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
       ) : null}
 
       {spaces.data && spaces.data.length === 0 ? (
-        <p className="m-0 px-[var(--space-2)] py-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          No spaces yet.
-        </p>
+        <Card className="bg-[var(--surface-1)]">
+          <CardBody className="px-[var(--space-4)] py-[var(--space-3)] gap-[var(--space-1)]">
+            <p className="m-0 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+              No spaces yet
+            </p>
+            <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+              Spaces hold trees of pages.
+            </p>
+          </CardBody>
+          <CardFooter className="px-[var(--space-4)] pt-0 pb-[var(--space-3)]">
+            <Button
+              variant="primary"
+              size="sm"
+              className="w-full"
+              onClick={() => setNewOpen(true)}
+            >
+              <Plus width={14} height={14} /> Create your first space
+            </Button>
+          </CardFooter>
+        </Card>
       ) : null}
 
       {spaces.data?.map((space) => (

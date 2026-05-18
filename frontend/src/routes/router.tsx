@@ -3,6 +3,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  isRedirect,
   Outlet,
   redirect,
   useNavigate,
@@ -14,11 +15,20 @@ import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
 import { Button } from '../components/ui/button'
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '../components/ui/card'
 import { queryClient } from '../lib/queryClient'
 import { spaceKeys } from '../lib/queries/spaces'
-import { api } from '../lib/api'
+import { pageKeys } from '../lib/queries/pages'
+import { api, ApiError } from '../lib/api'
+import { clearLastPage, readLastPage, writeLastPage } from '../lib/lastPage'
 import { useCreatePage, usePages } from '../lib/queries/pages'
-import type { PageTreeNode, Space } from '../lib/types'
+import type { Page, PageTreeNode, Space } from '../lib/types'
 
 // Two-pane app shell: fixed sidebar on the left, flexible main pane on the right.
 // The main pane has its own top bar (with the theme switcher and a slot for
@@ -59,26 +69,66 @@ const indexRoute = createRoute({
   path: '/',
   beforeLoad: async () => {
     const spaces = await ensureSpaces()
-    if (spaces.length > 0) {
-      throw redirect({ to: '/spaces/$spaceId', params: { spaceId: spaces[0].id } })
+    if (spaces.length === 0) return
+
+    // Prefer the last-viewed page, but only if it still exists and is in a
+    // space we know about. Falls back to the first space's landing when the
+    // saved id has been deleted or otherwise can't be resolved.
+    const last = readLastPage()
+    if (last && spaces.some((s) => s.id === last.spaceId)) {
+      try {
+        const page = await queryClient.ensureQueryData({
+          queryKey: pageKeys.detail(last.pageId),
+          queryFn: async () => {
+            const { page } = await api<{ page: Page }>(
+              `/api/pages/${last.pageId}`,
+            )
+            return page
+          },
+        })
+        if (page.space_id === last.spaceId) {
+          throw redirect({
+            to: '/spaces/$spaceId/pages/$pageId',
+            params: { spaceId: page.space_id, pageId: page.id },
+          })
+        }
+        // Page lives in a different space now — drop the stale pointer.
+        clearLastPage()
+      } catch (err) {
+        // Re-throw the redirect so TanStack Router can act on it; only treat
+        // genuine fetch failures as "saved id is dead".
+        if (isRedirect(err)) throw err
+        if (err instanceof ApiError) clearLastPage()
+        // Other errors fall through to the default first-space redirect.
+      }
     }
+
+    throw redirect({
+      to: '/spaces/$spaceId',
+      params: { spaceId: spaces[0].id },
+    })
   },
   component: function IndexEmpty() {
     const [open, setOpen] = useState(false)
     return (
       <div className="flex-1 flex items-center justify-center p-[var(--space-7)]">
-        <div className="flex flex-col items-center gap-[var(--space-4)] text-center max-w-[28rem]">
-          <h2 className="m-0 text-[length:var(--text-2xl)] leading-[var(--leading-tight)] font-[family-name:var(--font-sans)] text-[var(--text-primary)]">
-            Welcome to tela
-          </h2>
-          <p className="m-0 text-[length:var(--text-base)] leading-[var(--leading-relaxed)] text-[var(--text-muted)]">
-            Spaces hold trees of pages. Create your first space to start writing.
-          </p>
-          <Button variant="primary" size="lg" onClick={() => setOpen(true)}>
-            <Plus width={16} height={16} /> Create your first space
-          </Button>
+        <Card className="w-full max-w-[28rem] text-center">
+          <CardHeader className="items-center">
+            <CardTitle className="text-[length:var(--text-2xl)]">
+              Welcome to tela
+            </CardTitle>
+            <CardDescription>
+              Spaces hold trees of pages. Create your first space to start
+              writing.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="justify-center">
+            <Button variant="primary" size="lg" onClick={() => setOpen(true)}>
+              <Plus width={16} height={16} /> Create your first space
+            </Button>
+          </CardFooter>
           <NewSpaceDialog open={open} onOpenChange={setOpen} />
-        </div>
+        </Card>
       </div>
     )
   },
@@ -102,6 +152,8 @@ const spaceIndexRoute = createRoute({
     const navigate = useNavigate()
     const tree = usePages({ spaceId, tree: true })
     const createPage = useCreatePage()
+    const spaces = queryClient.getQueryData<Space[]>(spaceKeys.list()) ?? []
+    const spaceName = spaces.find((s) => s.id === spaceId)?.name ?? ''
     const nodes = (tree.data as PageTreeNode[] | undefined) ?? []
 
     async function handleCreate() {
@@ -123,23 +175,27 @@ const spaceIndexRoute = createRoute({
     if (tree.data && nodes.length === 0) {
       return (
         <div className="flex-1 flex items-center justify-center p-[var(--space-7)]">
-          <div className="flex flex-col items-center gap-[var(--space-4)] text-center max-w-[28rem]">
-            <h2 className="m-0 text-[length:var(--text-2xl)] leading-[var(--leading-tight)] font-[family-name:var(--font-sans)] text-[var(--text-primary)]">
-              No pages yet
-            </h2>
-            <p className="m-0 text-[length:var(--text-base)] leading-[var(--leading-relaxed)] text-[var(--text-muted)]">
-              Start with an Untitled page, then rename it once you know what
-              it'll be about.
-            </p>
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => void handleCreate()}
-              disabled={createPage.isPending}
-            >
-              <FilePlus width={16} height={16} /> Create your first page
-            </Button>
-          </div>
+          <Card className="w-full max-w-[28rem] text-center">
+            <CardHeader className="items-center">
+              <CardTitle className="text-[length:var(--text-2xl)]">
+                {spaceName ? `No pages in ${spaceName}` : 'No pages yet'}
+              </CardTitle>
+              <CardDescription>
+                Start with an Untitled page, then rename it once you know what
+                it'll be about.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter className="justify-center">
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={() => void handleCreate()}
+                disabled={createPage.isPending}
+              >
+                <FilePlus width={16} height={16} /> Create your first page
+              </Button>
+            </CardFooter>
+          </Card>
         </div>
       )
     }
@@ -159,6 +215,13 @@ const pageRoute = createRoute({
   path: 'pages/$pageId',
   parseParams: (raw) => ({ pageId: Number(raw.pageId) }),
   stringifyParams: (params) => ({ pageId: String(params.pageId) }),
+  beforeLoad: ({ params }) => {
+    // Remember the last-viewed page so a future cold mount can restore it. We
+    // write eagerly here (rather than only on a successful detail fetch) so
+    // even a quick visit gets recorded; the index route validates by fetching
+    // the detail and clears the key on 404.
+    writeLastPage({ spaceId: params.spaceId, pageId: params.pageId })
+  },
   component: function PageRouteComponent() {
     const { spaceId, pageId } = useParams({ from: '/spaces/$spaceId/pages/$pageId' })
     return <PageView spaceId={spaceId} pageId={pageId} />
