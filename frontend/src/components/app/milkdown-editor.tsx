@@ -18,6 +18,8 @@ import {
 import { prism } from '@milkdown/plugin-prism'
 import { cn } from '../../lib/utils'
 import { slashPlugin, SlashView } from './milkdown-slash'
+import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
+import { wikilinkDecorationPlugin } from './milkdown-wikilink-decoration'
 
 export interface MilkdownEditorProps {
   defaultValue: string
@@ -56,6 +58,9 @@ function MilkdownEditorInner({
         ctx.set(slashPlugin.key, {
           view: pluginViewFactory({ component: SlashView }),
         })
+        ctx.set(wikilinkPlugin.key, {
+          view: pluginViewFactory({ component: WikilinkView }),
+        })
         ctx.set(imageAttr.key, () => ({ loading: 'lazy' }))
       })
       .use(commonmark)
@@ -64,7 +69,9 @@ function MilkdownEditorInner({
       .use(clipboard)
       .use(listener)
       .use(prism)
-      .use(slashPlugin),
+      .use(slashPlugin)
+      .use(wikilinkPlugin)
+      .use(wikilinkDecorationPlugin),
   )
 
   useEffect(() => {

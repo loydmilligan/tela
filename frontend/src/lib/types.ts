@@ -26,6 +26,18 @@ export interface PageTreeNode extends Page {
   children: PageTreeNode[]
 }
 
+// Flat cross-space row returned by `/api/pages/all` (M5.2b). Powers the
+// `[[Page]]` autocomplete picker — breadcrumb is root → immediate parent
+// (page title excluded). `space_name` lets the picker disambiguate rows
+// whose visible breadcrumb collides across spaces.
+export interface PageListItem {
+  id: number
+  space_id: number
+  space_name: string
+  title: string
+  breadcrumb: string[]
+}
+
 export interface CreateSpaceInput {
   name: string
   slug?: string

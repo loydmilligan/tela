@@ -1,10 +1,12 @@
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import { emitPageMutation } from '../pageMutationEvent'
+import { emitPageMutation, subscribeToPageMutation } from '../pageMutationEvent'
 import type {
   CreatePageInput,
   MovePageInput,
   Page,
+  PageListItem,
   PageTreeNode,
   UpdatePageInput,
 } from '../types'
@@ -29,6 +31,10 @@ export const pageKeys = {
   tree: (spaceId: number) => [...pageKeys.lists(spaceId), 'tree'] as const,
   details: () => [...pageKeys.all, 'detail'] as const,
   detail: (id: number) => [...pageKeys.details(), id] as const,
+  // Flat cross-space listing for the wikilink picker. Sub-key under `all`
+  // so a future `qc.invalidateQueries({ queryKey: pageKeys.all })` still
+  // sweeps it.
+  allFlat: () => [...pageKeys.all, 'all-flat'] as const,
 }
 
 interface UsePagesArgs {
@@ -63,6 +69,28 @@ export function usePages(args: UsePagesArgs) {
     },
     enabled: spaceId != null,
   }) as ReturnType<typeof useQuery> & { data: Page[] | PageTreeNode[] | undefined }
+}
+
+// Cross-space flat page list for the M5.2c `[[Page]]` autocomplete picker.
+// Subscribes to the page-mutation bus to invalidate after any create / update
+// / move / delete, so newly created or renamed pages surface without a manual
+// reload. staleTime keeps tier-1-style snappiness while the picker is open
+// across short-interval pop-ups.
+export function useAllPages() {
+  const qc = useQueryClient()
+  useEffect(() => {
+    return subscribeToPageMutation(() => {
+      void qc.invalidateQueries({ queryKey: pageKeys.allFlat() })
+    })
+  }, [qc])
+  return useQuery({
+    queryKey: pageKeys.allFlat(),
+    queryFn: async () => {
+      const { pages } = await api<{ pages: PageListItem[] }>('/api/pages/all')
+      return pages
+    },
+    staleTime: 60_000,
+  })
 }
 
 export function usePage(id: number | null | undefined) {
