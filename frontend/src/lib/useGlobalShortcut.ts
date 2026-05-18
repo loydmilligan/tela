@@ -1,0 +1,60 @@
+import { useEffect, useRef } from 'react'
+
+// Modifier-prefixed combo string: 'mod+k', 'mod+shift+p', 'mod+n'. `mod` matches
+// either Cmd (macOS) or Ctrl (Windows/Linux). Keys are lowercased.
+type Combo = `mod+${string}` | string
+
+export interface ShortcutBindings {
+  [combo: string]: (e: KeyboardEvent) => void
+}
+
+// True when the keydown target is somewhere the user is plausibly typing —
+// any <input>/<textarea>, or any contenteditable surface (covers Milkdown's
+// ProseMirror editor, which renders contenteditable=true on its root).
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (target.closest('[contenteditable="true"], [contenteditable=""]')) return true
+  return false
+}
+
+function comboFromEvent(e: KeyboardEvent): Combo {
+  const parts: string[] = []
+  if (e.metaKey || e.ctrlKey) parts.push('mod')
+  if (e.shiftKey) parts.push('shift')
+  if (e.altKey) parts.push('alt')
+  parts.push(e.key.toLowerCase())
+  return parts.join('+')
+}
+
+/**
+ * Register window-level keyboard shortcuts. Bindings are skipped when focus is
+ * inside an input/textarea/contenteditable surface (so the editor and dialog
+ * inputs aren't hijacked). Matched handlers receive the event and the hook
+ * preventDefault()s before invoking, so callers don't need to.
+ */
+export function useGlobalShortcut(bindings: ShortcutBindings): void {
+  const ref = useRef(bindings)
+  // Keep the latest map in a ref so callers can pass freshly-constructed
+  // objects each render without re-registering the global listener.
+  useEffect(() => {
+    ref.current = bindings
+  })
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return
+      const combo = comboFromEvent(e)
+      const handler = ref.current[combo]
+      if (!handler) return
+      e.preventDefault()
+      handler(e)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+}
+
+export const IS_MAC =
+  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
