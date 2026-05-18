@@ -1,9 +1,18 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, FileText, Plus, Trash2 } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { pushRecentPage } from '../../lib/recentPages'
 import {
+  useAllPages,
   useCreatePage,
   useDeletePage,
   usePage,
@@ -101,6 +110,18 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   const [title, setTitle] = useState(page.title)
   const [body, setBody] = useState(page.body)
   const [deleteOpen, setDeleteOpen] = useState(false)
+
+  // Alive-page-ids snapshot powers M5.2d broken-wikilink rendering. `null` is
+  // the "don't know yet" state — the editor's decoration plugin keeps every
+  // wikilink in the alive style until the query lands, so first-paint never
+  // flashes everything as broken. Set reference is memoized so unchanged data
+  // doesn't keep retriggering the decoration plugin's rebuild path.
+  const allPagesQuery = useAllPages()
+  const allPagesData = allPagesQuery.data
+  const aliveWikilinkIds = useMemo<Set<number> | null>(() => {
+    if (!allPagesData) return null
+    return new Set(allPagesData.map((p) => p.id))
+  }, [allPagesData])
 
   // Record this visit in the recently-viewed list (consumed by the M5.1
   // palette empty state). Re-fires only when the page id changes — renaming
@@ -290,6 +311,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
             autoFocus={bodyAutoFocus}
             ariaLabel="Page body"
             className={EDITOR_MIN_H}
+            aliveWikilinkIds={aliveWikilinkIds}
           />
         </Suspense>
 

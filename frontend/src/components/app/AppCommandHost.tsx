@@ -112,41 +112,53 @@ export function AppCommandHost() {
   const [newPageDefaults, setNewPageDefaults] = useState<{
     spaceId: number | null
     parentId: number | null
-  }>({ spaceId: null, parentId: null })
+    title: string
+  }>({ spaceId: null, parentId: null, title: '' })
 
   const currentTheme = useThemeName()
   const spacesQuery = useSpaces()
   const spaces = spacesQuery.data ?? []
 
-  const openNewPage = useCallback(() => {
-    const ctx = readRouteContext()
-    let seedSpace = ctx.spaceId
-    if (seedSpace == null) {
-      // At app root — fall back to the last-viewed space, then the first
-      // available. Resolved against the loaded spaces list when applicable.
-      const last = readLastPage()
-      if (last && spaces.some((s) => s.id === last.spaceId)) {
-        seedSpace = last.spaceId
-      } else {
-        seedSpace = spaces[0]?.id ?? null
+  const openNewPage = useCallback(
+    (opts?: { prefillTitle?: string }) => {
+      const ctx = readRouteContext()
+      let seedSpace = ctx.spaceId
+      if (seedSpace == null) {
+        // At app root — fall back to the last-viewed space, then the first
+        // available. Resolved against the loaded spaces list when applicable.
+        const last = readLastPage()
+        if (last && spaces.some((s) => s.id === last.spaceId)) {
+          seedSpace = last.spaceId
+        } else {
+          seedSpace = spaces[0]?.id ?? null
+        }
       }
-    }
-    // Parent only pre-fills when we're standing on an actual page; never carry
-    // a parent into the dialog from somewhere other than a page view.
-    const seedParent = ctx.spaceId != null ? ctx.pageId : null
-    setNewPageDefaults({ spaceId: seedSpace, parentId: seedParent })
-    setNewPageOpen(true)
-  }, [spaces])
+      // Parent only pre-fills when we're standing on an actual page; never
+      // carry a parent into the dialog from somewhere other than a page view.
+      const seedParent = ctx.spaceId != null ? ctx.pageId : null
+      setNewPageDefaults({
+        spaceId: seedSpace,
+        parentId: seedParent,
+        title: opts?.prefillTitle ?? '',
+      })
+      setNewPageOpen(true)
+    },
+    [spaces],
+  )
 
-  // Sidebar "+ New page" button (and any future caller) dispatches this event
-  // to ask the host to open the dialog. Window event keeps the bridge simple
-  // across the RouterProvider boundary.
-  useEffect(() => subscribeToOpenNewPage(openNewPage), [openNewPage])
+  // Sidebar "+ New page" button and the broken-wikilink click handler both
+  // dispatch tela:open-new-page (with an optional `{ prefillTitle }`) to ask
+  // the host to open the dialog. Window event keeps the bridge simple across
+  // the RouterProvider boundary.
+  useEffect(
+    () => subscribeToOpenNewPage((opts) => openNewPage(opts)),
+    [openNewPage],
+  )
 
   usePaletteShortcuts({
     onOpenPages: () => openWith('pages'),
     onOpenCommands: () => openWith('commands'),
-    onNewPage: openNewPage,
+    onNewPage: () => openNewPage(),
   })
 
   const ctx = useMemo<CommandContext>(
@@ -274,9 +286,17 @@ export function AppCommandHost() {
       />
       <NewPageDialog
         open={newPageOpen}
-        onOpenChange={setNewPageOpen}
+        onOpenChange={(next) => {
+          setNewPageOpen(next)
+          if (!next) {
+            // Clear the pre-fill on close so the next open from a non-prefill
+            // path (sidebar button, Cmd-N) doesn't surface the stale title.
+            setNewPageDefaults((prev) => ({ ...prev, title: '' }))
+          }
+        }}
         defaultSpaceId={newPageDefaults.spaceId}
         defaultParentId={newPageDefaults.parentId}
+        defaultTitle={newPageDefaults.title}
       />
     </>
   )

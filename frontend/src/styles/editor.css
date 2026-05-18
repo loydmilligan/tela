@@ -441,6 +441,7 @@
     color: var(--danger);
     text-decoration: line-through;
     text-decoration-color: var(--danger);
+    cursor: pointer;
   }
 
   /* Wikilink autocomplete picker — same floating-popover language as the

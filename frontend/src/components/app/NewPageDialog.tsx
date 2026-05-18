@@ -66,6 +66,10 @@ export interface NewPageDialogProps {
   // actively update an already-open dialog.
   defaultSpaceId?: number | null
   defaultParentId?: number | null
+  // Pre-seed the title input. Used by the M5.2d broken-wikilink click flow to
+  // carry the dead link's text into the create dialog. Same one-shot
+  // semantics as the other defaults — re-opening re-seeds.
+  defaultTitle?: string
 }
 
 export function NewPageDialog({
@@ -73,6 +77,7 @@ export function NewPageDialog({
   onOpenChange,
   defaultSpaceId,
   defaultParentId,
+  defaultTitle,
 }: NewPageDialogProps) {
   const spacesQuery = useSpaces()
   const spaces = spacesQuery.data ?? []
@@ -103,7 +108,7 @@ export function NewPageDialog({
   useEffect(() => {
     if (open && !openRef.current) {
       openRef.current = true
-      setTitle('')
+      setTitle(defaultTitle ?? '')
       setError(null)
       // Defaults are honored only at the open transition (see prop doc).
       const seedSpace =
@@ -127,7 +132,7 @@ export function NewPageDialog({
     if (!open && openRef.current) {
       openRef.current = false
     }
-  }, [open, defaultSpaceId, defaultParentId, spaces])
+  }, [open, defaultSpaceId, defaultParentId, defaultTitle, spaces])
 
   // Pages for the currently selected space — drives the parent picker rows.
   const pagesQuery = usePages({ spaceId, tree: true })
