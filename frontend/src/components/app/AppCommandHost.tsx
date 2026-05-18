@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { Clock, FileText } from 'lucide-react'
 import {
   CommandPalette,
   prefixForMode,
   usePaletteShortcuts,
   type CommandItem,
+  type CommandItemGroup,
   type CommandMode,
   type CommandSubPicker,
+  type PagesItems,
 } from '../ui/command'
 import { useSpaces } from '../../lib/queries/spaces'
 import { router } from '../../routes/router'
@@ -32,6 +38,13 @@ import { searchPages, type SearchResult } from '../../lib/api'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import { readRecentPages, type RecentPage } from '../../lib/recentPages'
 import { HighlightedSnippet } from '../../lib/highlightSnippet'
+import {
+  ensureIndexHydrated,
+  searchTitles,
+  subscribeToIndexUpdate,
+  type TitleHit,
+} from '../../lib/orama-index'
+import { subscribeToPageMutation } from '../../lib/pageMutationEvent'
 
 // Reactive view of the active theme so commands that read currentTheme always
 // see the freshest value. Subscribes to setTheme() broadcasts.
@@ -98,6 +111,25 @@ export function AppCommandHost() {
   const debouncedQuery = useDebouncedValue(pagesQuery, SEARCH_DEBOUNCE_MS)
   const trimmedQuery = debouncedQuery.trim()
 
+  // Tier-1 client-side Orama title index. Boot the hydration on first mount,
+  // then bump indexEpoch whenever the index rebuilds so the search effect
+  // re-runs against the fresh snapshot.
+  const [indexEpoch, setIndexEpoch] = useState(0)
+  useEffect(() => {
+    ensureIndexHydrated()
+    return subscribeToIndexUpdate(() => {
+      setIndexEpoch((e) => e + 1)
+    })
+  }, [])
+  const titleHits = useMemo<TitleHit[]>(
+    () => (trimmedQuery.length === 0 ? [] : searchTitles(trimmedQuery)),
+    // indexEpoch is intentionally part of the dep list: it forces recompute
+    // after the in-memory Orama instance changes even though searchTitles
+    // itself reads through a module-level singleton.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trimmedQuery, indexEpoch],
+  )
+
   // Snapshot recently-viewed pages each time the palette opens so a navigation
   // away and back surfaces the freshly-visited page without remounting the
   // palette. Window 'storage' events would catch cross-tab writes but those
@@ -118,6 +150,18 @@ export function AppCommandHost() {
   const currentTheme = useThemeName()
   const spacesQuery = useSpaces()
   const spaces = spacesQuery.data ?? []
+  const queryClient = useQueryClient()
+
+  // Page mutations bust the tier-2 React Query search cache so renamed /
+  // deleted pages stop appearing in palette results immediately. Tier-1 is
+  // handled separately through orama-index's own subscriber.
+  useEffect(
+    () =>
+      subscribeToPageMutation(() => {
+        void queryClient.invalidateQueries({ queryKey: ['search'] })
+      }),
+    [queryClient],
+  )
 
   // Server-side title+body search. `enabled` gates the empty query so we don't
   // burn a round-trip; `placeholderData: keepPreviousData` keeps stale results
@@ -235,20 +279,54 @@ export function AppCommandHost() {
     [recents],
   )
 
+  const titleItems = useMemo<CommandItem[]>(
+    () =>
+      titleHits.map((h) => ({
+        id: `page-t1:${h.pageId}`,
+        title: h.title || 'Untitled',
+        breadcrumb:
+          h.breadcrumb.length > 0 ? h.breadcrumb.join(' / ') : undefined,
+        icon: <FileText aria-hidden width={14} height={14} />,
+        onSelect: () => navigateToPage(h.spaceId, h.pageId),
+      })),
+    [titleHits],
+  )
+
   const searchItems = useMemo<CommandItem[]>(() => {
     const results: SearchResult[] | undefined = searchQuery.data
     if (!results) return []
-    return results.map((r) => ({
-      id: `page:${r.page_id}`,
-      title: r.title || 'Untitled',
-      subtitle: <HighlightedSnippet snippet={r.snippet} />,
-      breadcrumb: r.breadcrumb.length > 0 ? r.breadcrumb.join(' / ') : undefined,
-      icon: <FileText aria-hidden width={14} height={14} />,
-      onSelect: () => navigateToPage(r.space_id, r.page_id),
-    }))
-  }, [searchQuery.data])
+    // Drop server hits whose page already appears in tier-1 — tier-1 wins,
+    // since a title-match is a stronger signal than a body-snippet match for
+    // the common "find me the page by name" flow.
+    const tier1Ids = new Set(titleHits.map((h) => h.pageId))
+    return results
+      .filter((r) => !tier1Ids.has(r.page_id))
+      .map((r) => ({
+        id: `page-t2:${r.page_id}`,
+        title: r.title || 'Untitled',
+        subtitle: <HighlightedSnippet snippet={r.snippet} />,
+        breadcrumb:
+          r.breadcrumb.length > 0 ? r.breadcrumb.join(' / ') : undefined,
+        icon: <FileText aria-hidden width={14} height={14} />,
+        onSelect: () => navigateToPage(r.space_id, r.page_id),
+      }))
+  }, [searchQuery.data, titleHits])
 
-  const pagesItems = trimmedQuery.length === 0 ? recentsItems : searchItems
+  const pagesItems = useMemo<PagesItems>(() => {
+    if (trimmedQuery.length === 0) return recentsItems
+    // Grouped form: tier-1 renders under "Titles" at the top, tier-2 under
+    // "All pages" below. Either group may be empty; we filter them out so the
+    // surviving group renders unlabelled-ish (the heading still draws unless
+    // the group is dropped entirely).
+    const groups: CommandItemGroup[] = []
+    if (titleItems.length > 0) {
+      groups.push({ label: 'Titles', items: titleItems })
+    }
+    if (searchItems.length > 0) {
+      groups.push({ label: 'All pages', items: searchItems })
+    }
+    return groups
+  }, [trimmedQuery, recentsItems, titleItems, searchItems])
 
   const pagesEmptyMessage = useMemo<string | undefined>(() => {
     if (trimmedQuery.length === 0) {
@@ -256,6 +334,9 @@ export function AppCommandHost() {
         ? undefined
         : 'Recently viewed pages will appear here. Type to search.'
     }
+    // If tier-1 has results we don't show empty messaging even while tier-2 is
+    // still in flight — the user sees something instantly.
+    if (titleItems.length > 0) return undefined
     // Loading state — only visible on the very first query for a key, since
     // keepPreviousData keeps stale data around through subsequent re-queries.
     if (searchQuery.isFetching && !searchQuery.data) return 'Searching…'
@@ -266,6 +347,7 @@ export function AppCommandHost() {
     recents.length,
     searchQuery.isFetching,
     searchQuery.data,
+    titleItems.length,
   ])
 
   return (

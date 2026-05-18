@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
+import { emitPageMutation } from '../pageMutationEvent'
 import type {
   CreatePageInput,
   MovePageInput,
@@ -135,6 +136,7 @@ export function useCreatePage() {
     },
     onSuccess: (created) => {
       qc.setQueryData(pageKeys.detail(created.id), created)
+      emitPageMutation()
     },
     onSettled: (_data, _err, input) => {
       void qc.invalidateQueries({ queryKey: pageKeys.space(input.space_id) })
@@ -155,6 +157,7 @@ export function useUpdatePage() {
     onSuccess: (updated) => {
       qc.setQueryData(pageKeys.detail(updated.id), updated)
       void qc.invalidateQueries({ queryKey: pageKeys.space(updated.space_id) })
+      emitPageMutation()
     },
   })
 }
@@ -169,6 +172,7 @@ export function useDeletePage() {
     onSuccess: (id, vars) => {
       qc.removeQueries({ queryKey: pageKeys.detail(id) })
       void qc.invalidateQueries({ queryKey: pageKeys.space(vars.spaceId) })
+      emitPageMutation()
     },
   })
 }
@@ -204,6 +208,7 @@ export function useMovePage() {
       if (vars.fromSpaceId !== moved.space_id) {
         void qc.invalidateQueries({ queryKey: pageKeys.space(vars.fromSpaceId) })
       }
+      emitPageMutation()
     },
   })
 }

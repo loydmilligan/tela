@@ -205,10 +205,23 @@ function HelpModeBody() {
   )
 }
 
+// Pages-mode items can be supplied flat (one unlabelled list) OR pre-grouped
+// when the host wants headers — e.g. tier-1 "Titles" vs tier-2 "All pages" in
+// M5.1. The grouped form preserves host-authored ordering inside each group.
+export interface CommandItemGroup {
+  label: string
+  items: CommandItem[]
+}
+export type PagesItems = CommandItem[] | CommandItemGroup[]
+
+function isGroupedPagesItems(p: PagesItems | undefined): p is CommandItemGroup[] {
+  return Array.isArray(p) && p.length > 0 && 'items' in (p[0] as object)
+}
+
 interface CommandShellProps {
   search: string
   onSearchChange: (next: string) => void
-  pagesItems?: CommandItem[]
+  pagesItems?: PagesItems
   commandsItems?: CommandItem[]
   mentionsItems?: CommandItem[]
   tagsItems?: CommandItem[]
@@ -242,20 +255,30 @@ function CommandShell({
 }: CommandShellProps) {
   const { mode, query, prefixActive } = detectMode(search)
 
-  const items = useMemo<CommandItem[]>(() => {
-    switch (mode) {
-      case 'pages':
-        return pagesItems ?? []
-      case 'commands':
-        return commandsItems ?? []
-      case 'mentions':
-        return mentionsItems ?? []
-      case 'tags':
-        return tagsItems ?? []
-      case 'help':
-        return []
+  // Pages mode supports grouped rendering (M5.1 tier-1 "Titles" / tier-2 "All
+  // pages"). Other modes render as a single flat list — fold their props into
+  // the same group shape so the renderer below has one path.
+  const groups = useMemo<CommandItemGroup[]>(() => {
+    if (mode === 'pages') {
+      if (!pagesItems) return []
+      if (isGroupedPagesItems(pagesItems)) {
+        return pagesItems.filter((g) => g.items.length > 0)
+      }
+      return pagesItems.length > 0 ? [{ label: '', items: pagesItems }] : []
     }
+    const flat =
+      mode === 'commands'
+        ? commandsItems
+        : mode === 'mentions'
+          ? mentionsItems
+          : mode === 'tags'
+            ? tagsItems
+            : undefined
+    if (!flat || flat.length === 0) return []
+    return [{ label: '', items: flat }]
   }, [mode, pagesItems, commandsItems, mentionsItems, tagsItems])
+
+  const itemCount = groups.reduce((n, g) => n + g.items.length, 0)
 
   // Publish the active pages-mode query to the host so it can drive a
   // server-side search. Fire empty string in any non-pages mode so the host
@@ -341,22 +364,43 @@ function CommandShell({
             <CmdkEmpty className="tela-command-empty">
               {effectiveEmpty}
             </CmdkEmpty>
-            {items.map((item) => (
-              <CmdkItem
-                key={item.id}
-                value={item.id}
-                keywords={[item.title, ...(item.keywords ?? [])]}
-                onSelect={item.onSelect}
-                className={commandItemClass(item)}
-              >
-                <CommandRowContent
-                  icon={item.icon}
-                  title={item.title}
-                  subtitle={item.subtitle}
-                  breadcrumb={item.breadcrumb}
-                />
-              </CmdkItem>
-            ))}
+            {itemCount > 0 &&
+              groups.map((group, gi) => {
+                const body = group.items.map((item) => (
+                  <CmdkItem
+                    key={item.id}
+                    value={item.id}
+                    keywords={[item.title, ...(item.keywords ?? [])]}
+                    onSelect={item.onSelect}
+                    className={commandItemClass(item)}
+                  >
+                    <CommandRowContent
+                      icon={item.icon}
+                      title={item.title}
+                      subtitle={item.subtitle}
+                      breadcrumb={item.breadcrumb}
+                    />
+                  </CmdkItem>
+                ))
+                if (group.label) {
+                  return (
+                    <CmdkGroup
+                      key={`g-${gi}-${group.label}`}
+                      heading={group.label}
+                      className="tela-command-group"
+                    >
+                      {body}
+                    </CmdkGroup>
+                  )
+                }
+                // Unlabelled group renders inline without a heading; wrap so
+                // arrow-key navigation still treats it as one logical block.
+                return (
+                  <CmdkGroup key={`g-${gi}`} className="tela-command-group">
+                    {body}
+                  </CmdkGroup>
+                )
+              })}
           </>
         )}
       </CmdkList>
@@ -368,7 +412,7 @@ export interface CommandPaletteProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialMode?: CommandMode
-  pagesItems?: CommandItem[]
+  pagesItems?: PagesItems
   commandsItems?: CommandItem[]
   mentionsItems?: CommandItem[]
   tagsItems?: CommandItem[]
@@ -421,20 +465,37 @@ export function CommandPalette({
     if (searchRequest) setSearch(searchRequest.value)
   }, [searchRequest])
 
-  const closeAfter = useCallback(
-    (items?: CommandItem[]): CommandItem[] | undefined =>
-      items?.map((item) =>
-        item.keepPaletteOpen
-          ? item
-          : {
-              ...item,
-              onSelect: () => {
-                item.onSelect()
-                onOpenChange(false)
-              },
+  const wrapItem = useCallback(
+    (item: CommandItem): CommandItem =>
+      item.keepPaletteOpen
+        ? item
+        : {
+            ...item,
+            onSelect: () => {
+              item.onSelect()
+              onOpenChange(false)
             },
-      ),
+          },
     [onOpenChange],
+  )
+
+  const closeAfter = useCallback(
+    (items?: CommandItem[]): CommandItem[] | undefined => items?.map(wrapItem),
+    [wrapItem],
+  )
+
+  // Pages-mode supports the grouped form (M5.1 tier-1/tier-2). Preserve the
+  // group shape while wrapping every item's onSelect with the close-on-select
+  // behaviour the modal expects.
+  const closeAfterPages = useCallback(
+    (items?: PagesItems): PagesItems | undefined => {
+      if (!items) return undefined
+      if (isGroupedPagesItems(items)) {
+        return items.map((g) => ({ label: g.label, items: g.items.map(wrapItem) }))
+      }
+      return items.map(wrapItem)
+    },
+    [wrapItem],
   )
 
   // Sub-picker items always close the palette after selection — distinct from
@@ -479,7 +540,7 @@ export function CommandPalette({
             <CommandShell
               search={search}
               onSearchChange={setSearch}
-              pagesItems={closeAfter(pagesItems)}
+              pagesItems={closeAfterPages(pagesItems)}
               commandsItems={closeAfter(commandsItems)}
               mentionsItems={closeAfter(mentionsItems)}
               tagsItems={closeAfter(tagsItems)}

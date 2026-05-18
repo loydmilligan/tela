@@ -340,6 +340,24 @@
     max-height: 18rem;
   }
 
+  /* cmdk wraps each <CommandGroup> in <div cmdk-group=""> with an optional
+     [cmdk-group-heading] child. We use groups for the M5.1 palette tiers
+     ("Titles" vs "All pages"). Unlabelled groups (single flat list) get no
+     extra chrome, while labelled groups get a low-contrast section header. */
+  [cmdk-group-heading] {
+    padding: var(--space-2) var(--space-3) var(--space-1);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    user-select: none;
+  }
+  [cmdk-group]:not(:first-child) > [cmdk-group-heading] {
+    margin-top: var(--space-2);
+  }
+
   .tela-command-item {
     display: flex;
     align-items: center;
