@@ -8,14 +8,14 @@ export interface ShortcutBindings {
   [combo: string]: (e: KeyboardEvent) => void
 }
 
-// True when the keydown target is somewhere the user is plausibly typing —
-// any <input>/<textarea>, or any contenteditable surface (covers Milkdown's
-// ProseMirror editor, which renders contenteditable=true on its root).
+// True when the keydown target is a form field (<input>/<textarea>/<select>),
+// so dialog inputs aren't hijacked by global shortcuts. Contenteditable
+// surfaces (Milkdown's ProseMirror editor) are intentionally NOT included —
+// global shortcuts fire from inside the editor to match Linear/Notion.
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
   const tag = target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
-  if (target.closest('[contenteditable="true"], [contenteditable=""]')) return true
   return false
 }
 
@@ -30,8 +30,9 @@ function comboFromEvent(e: KeyboardEvent): Combo {
 
 /**
  * Register window-level keyboard shortcuts. Bindings are skipped when focus is
- * inside an input/textarea/contenteditable surface (so the editor and dialog
- * inputs aren't hijacked). Matched handlers receive the event and the hook
+ * inside a form field (input/textarea/select) so dialog inputs aren't
+ * hijacked, but DO fire from inside contenteditable surfaces (Milkdown editor)
+ * to match Linear/Notion. Matched handlers receive the event and the hook
  * preventDefault()s before invoking, so callers don't need to.
  */
 export function useGlobalShortcut(bindings: ShortcutBindings): void {
