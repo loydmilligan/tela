@@ -1,7 +1,7 @@
 import { CheckCircle2, CircleAlert, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
-export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'retrying' | 'error'
 
 interface SaveIndicatorProps {
   status: SaveStatus
@@ -9,10 +9,11 @@ interface SaveIndicatorProps {
 }
 
 // Small status badge for the page-view header. Color tokens:
-//   saving → --text-muted  (in-flight, non-alarming)
-//   saved  → --accent      (positive confirmation; matches theme accent)
-//   error  → --danger      (failed)
-//   idle   → renders nothing
+//   saving   → --text-muted  (in-flight, non-alarming)
+//   saved    → --accent      (positive confirmation; matches theme accent)
+//   retrying → --text-muted  (transient recovery in progress; label carries the alarm)
+//   error    → --danger      (failed)
+//   idle     → renders nothing
 export function SaveIndicator({ status, className }: SaveIndicatorProps) {
   if (status === 'idle') return null
 
@@ -28,6 +29,12 @@ export function SaveIndicator({ status, className }: SaveIndicatorProps) {
       label: 'Saved',
       color: 'text-[var(--accent)]',
       spin: false,
+    },
+    retrying: {
+      Icon: Loader2,
+      label: 'Save failed — retrying',
+      color: 'text-[var(--text-muted)]',
+      spin: true,
     },
     error: {
       Icon: CircleAlert,

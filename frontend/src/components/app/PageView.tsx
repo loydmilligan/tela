@@ -27,6 +27,7 @@ import { cn } from '../../lib/utils'
 
 const SAVED_FLASH_MS = 1500
 const BODY_DEBOUNCE_MS = 500
+const RETRY_DELAY_MS = 1500
 
 interface PageViewProps {
   spaceId: number
@@ -89,14 +90,72 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
     return () => window.clearTimeout(t)
   }, [status])
 
+  // Debounce timer for body auto-save and retry timer for the one-shot 5xx
+  // retry. Both are cancelled together: any fresh save attempt (or any new
+  // keystroke that schedules one) supersedes a queued retry — last-write-wins.
+  const debounceRef = useRef<number | null>(null)
+  const retryTimerRef = useRef<number | null>(null)
+
+  const cancelPendingSave = useCallback(() => {
+    if (debounceRef.current != null) {
+      window.clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
+    if (retryTimerRef.current != null) {
+      window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+      // The displayed 'retrying' state is no longer accurate; reset so the
+      // user doesn't see a stale label until the next save call sets 'saving'.
+      setStatus((s) => (s === 'retrying' ? 'idle' : s))
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current != null) window.clearTimeout(debounceRef.current)
+      if (retryTimerRef.current != null)
+        window.clearTimeout(retryTimerRef.current)
+    },
+    [],
+  )
+
   const save = useCallback(
     async (patch: { title?: string; body?: string }) => {
+      // Any new save attempt supersedes a pending retry of an earlier payload.
+      if (retryTimerRef.current != null) {
+        window.clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
+      }
       setStatus('saving')
       try {
         const updated = await updatePage.mutateAsync({ id: page.id, ...patch })
         lastSavedRef.current = { title: updated.title, body: updated.body }
         setStatus('saved')
-      } catch {
+        return
+      } catch (err) {
+        // 5xx → one automatic retry after a short delay. 4xx and network
+        // errors (status === 0) go straight to 'error' — those won't
+        // self-heal within the retry window.
+        if (err instanceof ApiError && err.status >= 500) {
+          setStatus('retrying')
+          retryTimerRef.current = window.setTimeout(async () => {
+            retryTimerRef.current = null
+            try {
+              const updated = await updatePage.mutateAsync({
+                id: page.id,
+                ...patch,
+              })
+              lastSavedRef.current = {
+                title: updated.title,
+                body: updated.body,
+              }
+              setStatus('saved')
+            } catch {
+              setStatus('error')
+            }
+          }, RETRY_DELAY_MS)
+          return
+        }
         setStatus('error')
       }
     },
@@ -116,29 +175,17 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
 
   // Debounced body auto-save: schedule a save 500ms after the last keystroke;
   // blur cancels the timer and fires immediately if there's a pending change.
-  const debounceRef = useRef<number | null>(null)
-  useEffect(() => () => {
-    if (debounceRef.current != null) window.clearTimeout(debounceRef.current)
-  }, [])
-
-  const cancelDebounce = useCallback(() => {
-    if (debounceRef.current != null) {
-      window.clearTimeout(debounceRef.current)
-      debounceRef.current = null
-    }
-  }, [])
-
   const handleBodyChange = useCallback(
     (next: string) => {
       setBody(next)
-      cancelDebounce()
+      cancelPendingSave()
       debounceRef.current = window.setTimeout(() => {
         debounceRef.current = null
         if (next === lastSavedRef.current.body) return
         void save({ body: next })
       }, BODY_DEBOUNCE_MS)
     },
-    [save, cancelDebounce],
+    [save, cancelPendingSave],
   )
 
   // Read latest body via ref so onBlur, which is wired into Milkdown's
@@ -147,11 +194,11 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   bodyRef.current = body
 
   const handleBodyBlur = useCallback(() => {
-    cancelDebounce()
+    cancelPendingSave()
     const current = bodyRef.current
     if (current === lastSavedRef.current.body) return
     void save({ body: current })
-  }, [save, cancelDebounce])
+  }, [save, cancelPendingSave])
 
   // autoFocus rule: empty title → focus title; non-empty → focus body.
   const titleAutoFocus = page.title.length === 0
