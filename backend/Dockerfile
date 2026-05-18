@@ -1,16 +1,19 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /src
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/tela ./cmd/tela
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/tela ./cmd/tela \
+ && mkdir -p /out/data \
+ && chown -R 65532:65532 /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /out/tela /tela
+COPY --from=builder --chown=nonroot:nonroot /out/data /data
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/tela"]

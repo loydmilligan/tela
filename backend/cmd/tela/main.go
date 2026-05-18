@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/zcag/tela/backend/internal/api"
+	"github.com/zcag/tela/backend/internal/db"
 )
 
 func main() {
@@ -14,8 +17,29 @@ func main() {
 		addr = v
 	}
 
+	dbPath := "/data/tela.db"
+	if v := os.Getenv("TELA_DB_PATH"); v != "" {
+		dbPath = v
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		log.Fatalf("create db dir: %v", err)
+	}
+
+	d, err := db.Open(dbPath)
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	if err := db.Migrate(context.Background(), d); err != nil {
+		log.Fatalf("migrate db: %v", err)
+	}
+	log.Printf("db ready at %s", dbPath)
+
+	srv := api.New(d)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", api.Health)
+	mux.HandleFunc("GET /api/health", srv.Health)
 
 	log.Printf("tela backend listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
