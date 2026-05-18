@@ -34,6 +34,7 @@ import {
 import { Input } from '../ui/input'
 import { SaveIndicator, type SaveStatus } from '../ui/save-indicator'
 import { cn } from '../../lib/utils'
+import { BacklinksSection } from './BacklinksSection'
 
 // Milkdown is the largest dependency in the app (~700 KB raw). Lazy-load it so
 // non-editor routes (sidebar, spaces list, command palette) don't pay for it
@@ -320,6 +321,8 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
           pageId={page.id}
           bodyIsEmpty={body.trim().length === 0}
         />
+
+        <BacklinksSection pageId={page.id} />
       </div>
 
       <DeletePageConfirmDialog

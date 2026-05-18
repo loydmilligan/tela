@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { emitPageMutation, subscribeToPageMutation } from '../pageMutationEvent'
 import type {
+  Backlink,
   CreatePageInput,
   MovePageInput,
   Page,
@@ -35,6 +36,8 @@ export const pageKeys = {
   // so a future `qc.invalidateQueries({ queryKey: pageKeys.all })` still
   // sweeps it.
   allFlat: () => [...pageKeys.all, 'all-flat'] as const,
+  backlinks: (pageId: number) =>
+    [...pageKeys.detail(pageId), 'backlinks'] as const,
 }
 
 interface UsePagesArgs {
@@ -89,6 +92,32 @@ export function useAllPages() {
       const { pages } = await api<{ pages: PageListItem[] }>('/api/pages/all')
       return pages
     },
+    staleTime: 60_000,
+  })
+}
+
+// Incoming-link rows for the M5.2e backlinks panel. Subscribes to the
+// `tela:page-mutation` bus so a save elsewhere (which may have added or
+// removed an outgoing wikilink targeting this page) refreshes the panel
+// without manual reload. staleTime mirrors `useAllPages` — both back
+// link-graph UI and tolerate the same minute of staleness.
+export function useBacklinks(pageId: number | null | undefined) {
+  const qc = useQueryClient()
+  useEffect(() => {
+    if (pageId == null) return
+    return subscribeToPageMutation(() => {
+      void qc.invalidateQueries({ queryKey: pageKeys.backlinks(pageId) })
+    })
+  }, [qc, pageId])
+  return useQuery({
+    queryKey: pageId != null ? pageKeys.backlinks(pageId) : pageKeys.backlinks(-1),
+    queryFn: async () => {
+      const { backlinks } = await api<{ backlinks: Backlink[] }>(
+        `/api/pages/${pageId}/backlinks`,
+      )
+      return backlinks
+    },
+    enabled: pageId != null,
     staleTime: 60_000,
   })
 }

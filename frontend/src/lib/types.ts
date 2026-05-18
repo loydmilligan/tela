@@ -38,6 +38,21 @@ export interface PageListItem {
   breadcrumb: string[]
 }
 
+// Row in /api/pages/{id}/backlinks (M5.2b). `snippet` wraps a nearby word
+// in literal `<mark>…</mark>` from a ±60-byte window around the first
+// `tela://page/{id}` URL (URL stripped). Same raw-HTML contract as
+// `/api/search` — render via `HighlightedSnippet`, never
+// `dangerouslySetInnerHTML`. Empty snippet = bare-URL source body; the
+// renderer should hide the snippet line in that case.
+export interface Backlink {
+  page_id: number
+  space_id: number
+  space_name: string
+  title: string
+  breadcrumb: string[]
+  snippet: string
+}
+
 export interface CreateSpaceInput {
   name: string
   slug?: string
