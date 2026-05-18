@@ -1,0 +1,36 @@
+name: tela
+
+services:
+  backend:
+    build:
+      context: ../backend
+    expose:
+      - "8080"
+    volumes:
+      - tela-data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+    expose:
+      - "80"
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    ports:
+      - "8780:80"
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  tela-data:
+  caddy-data:
+  caddy-config:
