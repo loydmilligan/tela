@@ -91,7 +91,7 @@ export function AppCommandHost() {
     close,
   } = useCommandPaletteState()
 
-  const titleHits = useTier1TitleHits(trimmedQuery)
+  const titleHits = useTier1TitleHits(trimmedQuery, open)
   const searchResults = useTier2SearchResults(trimmedQuery)
 
   // Snapshot recently-viewed pages each time the palette opens so a navigation
