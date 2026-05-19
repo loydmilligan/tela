@@ -20,10 +20,16 @@ import {
 } from '@prosemirror-adapter/react'
 import { prism } from '@milkdown/plugin-prism'
 import * as Y from 'yjs'
-import { prosemirrorToYXmlFragment, ySyncPlugin, yUndoPlugin } from 'y-prosemirror'
+import {
+  prosemirrorToYXmlFragment,
+  yCursorPlugin,
+  ySyncPlugin,
+  yUndoPlugin,
+} from 'y-prosemirror'
 import { cn } from '../../lib/utils'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { TelaProvider, type TelaProviderStatus } from '../../lib/collab/tela-provider'
+import { cursorBuilder, selectionBuilder } from '../../lib/collab/cursor-builder'
 import { useLeaderElection } from '../../lib/collab/use-leader-election'
 import { slashPlugin, SlashView } from './milkdown-slash'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
@@ -208,9 +214,20 @@ function MilkdownEditorInner({
         const collab = collabRef.current
         if (collab) {
           const fragment = collab.doc.getXmlFragment('milkdown-doc')
+          // M7.5: yCursorPlugin renders one widget per remote peer's caret +
+          // an inline decoration over each remote selection range. Builders
+          // route hue via data-collab-color → --collab-cursor-N tokens so the
+          // peer's caret matches their PresenceAvatar pill across every
+          // theme. yCursorPlugin slots between ySync and yUndo so the
+          // cursor-position relative-position mapping rebuilds after a sync
+          // tx without polluting the undo stack.
           ctx.update(prosePluginsCtx, (existing) => [
             ...existing,
             ySyncPlugin(fragment),
+            yCursorPlugin(collab.provider.awareness, {
+              cursorBuilder,
+              selectionBuilder,
+            }),
             yUndoPlugin(),
           ])
         }

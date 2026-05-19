@@ -537,4 +537,110 @@
     line-height: var(--leading-tight);
     color: var(--text-muted);
   }
+
+  /* M7.5 — remote cursors + selection ranges from y-prosemirror's
+     yCursorPlugin. The caret element and the selection-range span both carry
+     `data-collab-color="1..8"` (set by lib/collab/cursor-builder.ts); the
+     attribute selectors below resolve a local --tela-yjs-c custom property
+     from the --collab-cursor-N token. Tokens are re-bound per [data-theme]
+     in styles/themes/*.css, so a theme switch re-themes every cursor and
+     selection on the next paint without any React work. */
+  .tela-yjs-cursor[data-collab-color='1'],
+  .tela-yjs-selection[data-collab-color='1'] {
+    --tela-yjs-c: var(--collab-cursor-1);
+  }
+  .tela-yjs-cursor[data-collab-color='2'],
+  .tela-yjs-selection[data-collab-color='2'] {
+    --tela-yjs-c: var(--collab-cursor-2);
+  }
+  .tela-yjs-cursor[data-collab-color='3'],
+  .tela-yjs-selection[data-collab-color='3'] {
+    --tela-yjs-c: var(--collab-cursor-3);
+  }
+  .tela-yjs-cursor[data-collab-color='4'],
+  .tela-yjs-selection[data-collab-color='4'] {
+    --tela-yjs-c: var(--collab-cursor-4);
+  }
+  .tela-yjs-cursor[data-collab-color='5'],
+  .tela-yjs-selection[data-collab-color='5'] {
+    --tela-yjs-c: var(--collab-cursor-5);
+  }
+  .tela-yjs-cursor[data-collab-color='6'],
+  .tela-yjs-selection[data-collab-color='6'] {
+    --tela-yjs-c: var(--collab-cursor-6);
+  }
+  .tela-yjs-cursor[data-collab-color='7'],
+  .tela-yjs-selection[data-collab-color='7'] {
+    --tela-yjs-c: var(--collab-cursor-7);
+  }
+  .tela-yjs-cursor[data-collab-color='8'],
+  .tela-yjs-selection[data-collab-color='8'] {
+    --tela-yjs-c: var(--collab-cursor-8);
+  }
+
+  /* Caret — a thin vertical bar rendered via ::before so the host span itself
+     can stay 0-width in inline flow (won't shift text). ::after extends a
+     transparent hit area sideways so the 2px caret is hover-targetable
+     without affecting layout. */
+  .tela-milkdown .ProseMirror .tela-yjs-cursor {
+    position: relative;
+    display: inline-block;
+    width: 0;
+    height: 1em;
+    margin-left: -1px;
+    margin-right: -1px;
+    vertical-align: text-bottom;
+    pointer-events: auto;
+  }
+  .tela-milkdown .ProseMirror .tela-yjs-cursor::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2px;
+    background: var(--tela-yjs-c, var(--collab-cursor-1));
+    pointer-events: none;
+  }
+  .tela-milkdown .ProseMirror .tela-yjs-cursor::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    width: 8px;
+    pointer-events: auto;
+  }
+
+  /* Label — username pill anchored above the caret, hover-revealed. No
+     transition: y-prosemirror re-renders the cursor decoration on every
+     awareness change, and a fade animation on the pill would lag behind the
+     caret's instant snap to its new position. */
+  .tela-milkdown .ProseMirror .tela-yjs-cursor-label {
+    position: absolute;
+    bottom: 100%;
+    left: -1px;
+    padding: 0 var(--space-1);
+    background: var(--tela-yjs-c, var(--collab-cursor-1));
+    color: var(--text-inverse);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 1;
+  }
+  .tela-milkdown .ProseMirror .tela-yjs-cursor:hover .tela-yjs-cursor-label {
+    opacity: 1;
+  }
+
+  /* Selection range overlay — same hue as the peer's caret, mixed with
+     transparency so the underlying text stays readable. */
+  .tela-milkdown .ProseMirror .tela-yjs-selection {
+    background-color: color-mix(
+      in srgb,
+      var(--tela-yjs-c, var(--collab-cursor-1)) var(--collab-selection-alpha),
+      transparent
+    );
+  }
 }

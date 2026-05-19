@@ -99,5 +99,11 @@
     --collab-cursor-6: #2563eb; /* blue   */
     --collab-cursor-7: #7c3aed; /* violet */
     --collab-cursor-8: #db2777; /* pink   */
+
+    /* M7.5 — alpha used when mixing a peer's --collab-cursor-N into a
+       transparent overlay for the remote selection-range highlight. 25%
+       keeps the underlying text legible across all 3 themes; tuned against
+       the brightest dark-theme hues (the worst case for over-saturation). */
+    --collab-selection-alpha: 25%;
   }
 }
