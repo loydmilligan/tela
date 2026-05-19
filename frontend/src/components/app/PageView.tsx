@@ -14,6 +14,7 @@ import {
   History,
   MessageSquare,
   Plus,
+  Share2,
   Trash2,
 } from 'lucide-react'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -28,6 +29,7 @@ import { useSpaceMembers } from '../../lib/queries/members'
 import { useRevision } from '../../lib/queries/page-revisions'
 import { CommentsPanel } from './CommentsPanel'
 import { PresenceAvatars } from './presence-avatars'
+import { ShareManagerSheet } from './ShareManagerSheet'
 import {
   useAllPages,
   useCreatePage,
@@ -235,6 +237,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
   // live selection at submit time without prop-drilling the view down.
   const editorViewRef = useRef<EditorView | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [selectionEmpty, setSelectionEmpty] = useState(true)
   const [selectionPreview, setSelectionPreview] = useState('')
   const handleViewReady = useCallback((view: EditorView | null) => {
@@ -616,6 +619,19 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                   )}
                 </Button>
               ) : null}
+              {roleResolved && !isViewer ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Share"
+                  onClick={() => setShareOpen(true)}
+                  className="h-[var(--space-8)] px-[var(--space-3)]"
+                >
+                  <Share2 width={16} height={16} />
+                  <span>Share</span>
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -761,6 +777,14 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
           orphanIds={orphanIds}
           showResolved={showResolvedComments}
           onShowResolvedChange={handleShowResolvedChange}
+        />
+      ) : null}
+
+      {roleResolved && !isViewer && !isDraftMode ? (
+        <ShareManagerSheet
+          pageId={page.id}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
         />
       ) : null}
     </div>

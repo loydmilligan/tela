@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api } from '../api'
 import type { ApiErrorBody } from '../types'
 
 // Public token-scoped queries for /share/{token} routes. Bypasses the `api()`
@@ -6,6 +7,10 @@ import type { ApiErrorBody } from '../types'
 // global handler bounces the user to /login. In share-mode a 401 means
 // "password required", not "logged out", so we mirror the {error, code}
 // envelope parsing manually and surface the distinct states to the UI.
+//
+// Management endpoints (POST/GET/PATCH/DELETE on /api/pages/{id}/shares and
+// /api/shares/{id}) ARE session-authed and SHOULD use the `api()` helper so a
+// 401 correctly bounces to /login. See the bottom half of this file.
 
 export const shareKeys = {
   all: ['share'] as const,
@@ -13,6 +18,25 @@ export const shareKeys = {
   page: (token: string, pageId: number) =>
     [...shareKeys.all, 'page', token, pageId] as const,
   tree: (token: string) => [...shareKeys.all, 'tree', token] as const,
+  // Management list of shares for a given page (editor+ session). Distinct
+  // from the public token-scoped keys above so the two caches don't collide.
+  list: (pageId: number) => [...shareKeys.all, 'list', pageId] as const,
+}
+
+// Management envelope — mirrors backend `shareLinkDTO` exactly. `url` is the
+// absolute share URL (already respects TELA_PUBLIC_BASE_URL); the FE never
+// reconstructs it.
+export interface ShareDTO {
+  id: number
+  token: string
+  page_id: number
+  include_descendants: boolean
+  has_password: boolean
+  created_by: number
+  created_at: string
+  expires_at: string | null
+  revoked_at: string | null
+  url: string
 }
 
 export interface SharePagePayload {
@@ -188,6 +212,96 @@ export function useShareTree(token: string, enabled: boolean) {
     retry: false,
     staleTime: 30_000,
     enabled,
+  })
+}
+
+// ── Management hooks (session-authed; use api()) ────────────────────────────
+
+export function useSharesForPage(pageId: number) {
+  return useQuery({
+    queryKey: shareKeys.list(pageId),
+    queryFn: async () => {
+      const { shares } = await api<{ shares: ShareDTO[] }>(
+        `/api/pages/${pageId}/shares`,
+      )
+      return shares
+    },
+    staleTime: 5_000,
+  })
+}
+
+export interface CreateShareInput {
+  include_descendants: boolean
+  password?: string
+  expires_at?: string
+}
+
+export function useCreateShare(pageId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: CreateShareInput) => {
+      const body: Record<string, unknown> = {
+        include_descendants: input.include_descendants,
+      }
+      if (input.password && input.password.length > 0) body.password = input.password
+      if (input.expires_at && input.expires_at.length > 0) body.expires_at = input.expires_at
+      const { share } = await api<{ share: ShareDTO }>(
+        `/api/pages/${pageId}/shares`,
+        { method: 'POST', body: JSON.stringify(body) },
+      )
+      return share
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: shareKeys.list(pageId) })
+    },
+  })
+}
+
+// PATCH accepts a subset of {include_descendants, password, expires_at}.
+// `password: null` clears the password; `expires_at: null` clears the expiry.
+// `password: ''` is also treated as clear by the backend.
+export type UpdateSharePatch = {
+  include_descendants?: boolean
+  password?: string | null
+  expires_at?: string | null
+}
+
+interface UpdateShareVars {
+  id: number
+  pageId: number
+  patch: UpdateSharePatch
+}
+
+export function useUpdateShare() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, patch }: UpdateShareVars) => {
+      const { share } = await api<{ share: ShareDTO }>(
+        `/api/shares/${id}`,
+        { method: 'PATCH', body: JSON.stringify(patch) },
+      )
+      return share
+    },
+    onSuccess: (_share, vars) => {
+      void qc.invalidateQueries({ queryKey: shareKeys.list(vars.pageId) })
+    },
+  })
+}
+
+interface RevokeShareVars {
+  id: number
+  pageId: number
+}
+
+export function useRevokeShare() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id }: RevokeShareVars) => {
+      await api<void>(`/api/shares/${id}`, { method: 'DELETE' })
+    },
+    onSuccess: (_void, vars) => {
+      void qc.invalidateQueries({ queryKey: shareKeys.list(vars.pageId) })
+    },
   })
 }
 
