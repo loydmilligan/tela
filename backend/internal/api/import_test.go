@@ -346,13 +346,13 @@ func TestImport_FullFlow(t *testing.T) {
 		}
 	})
 
-	// 9a. Viewer bob → 403 forbidden.
+	// 9a. Viewer bob → 403 viewer_no_write.
 	t.Run("viewer_forbidden", func(t *testing.T) {
 		resp, body := postImport(t, bobC, ts.URL, space, nil, false, []importFilePart{
 			{relPath: "x.md", body: "x"},
 		})
-		if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), `"code":"forbidden"`) {
-			t.Fatalf("viewer status=%d body=%s want 403 forbidden", resp.StatusCode, body)
+		if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), `"code":"viewer_no_write"`) {
+			t.Fatalf("viewer status=%d body=%s want 403 viewer_no_write", resp.StatusCode, body)
 		}
 	})
 

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -97,7 +98,7 @@ func (s *Server) ImportSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
+		writeError(w, http.StatusForbidden, "viewer_no_write", "viewers cannot import")
 		return
 	}
 
@@ -121,7 +122,8 @@ func (s *Server) ImportSpace(w http.ResponseWriter, r *http.Request) {
 
 	result, err := mdimport.Import(ctx, tx, spaceID, parentID, u.ID, files, dryRun)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "import_failed", err.Error())
+		log.Printf("import space %d: %v", spaceID, err)
+		writeError(w, http.StatusInternalServerError, "internal", "import failed")
 		return
 	}
 

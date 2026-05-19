@@ -112,6 +112,35 @@ func TestImport_SingleDir_WithReadme(t *testing.T) {
 	}
 }
 
+// 2b. README has frontmatter title AND H1; directory basename still wins
+// (locks Q39 #2 rule: index pages use dir name, not frontmatter / H1).
+func TestImport_SingleDir_WithReadme_FrontmatterIgnored(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	readme := "---\ntitle: Should Be Ignored\n---\n# H1 Also Ignored\nbody text\n"
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Foo/README.md", Content: []byte(readme)},
+	}, false)
+	if r.Summary.Created != 1 || len(r.Pages) != 1 {
+		t.Fatalf("summary=%+v pages=%d", r.Summary, len(r.Pages))
+	}
+	if r.Pages[0].Title != "Foo" {
+		t.Fatalf("title=%q want 'Foo' (dir basename overrides frontmatter title AND H1)", r.Pages[0].Title)
+	}
+	var body string
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+		t.Fatalf("query body: %v", err)
+	}
+	if strings.Contains(body, "title: Should Be Ignored") {
+		t.Fatalf("frontmatter leaked into body: %q", body)
+	}
+	if !strings.Contains(body, "# H1 Also Ignored") {
+		t.Fatalf("H1 missing from body after frontmatter strip: %q", body)
+	}
+	if !strings.Contains(body, "body text") {
+		t.Fatalf("body text missing: %q", body)
+	}
+}
+
 // 3. Single dir WITHOUT README, 2 .md → 1 synthesized empty index + 2 children.
 func TestImport_SingleDir_NoReadme_SynthesizesIndex(t *testing.T) {
 	d, sp, u := newImportTestDB(t)
