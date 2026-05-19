@@ -443,6 +443,23 @@
     text-decoration-color: var(--danger);
     cursor: pointer;
   }
+  /* M15.1 — out-of-share-scope wikilink in the public share reader. The
+     link mark stays in the doc (we don't rewrite markdown server-side) but
+     visually the user sees plain prose. The decoration span lives INSIDE
+     the <a>, so we target the parent <a> via :has() to override the base
+     link colour + underline. The click handler in ShareReader
+     preventDefault's clicks on this class so the dead tela:// href can't
+     fire. */
+  .tela-milkdown .ProseMirror a:has(> .tela-wikilink--share-out-of-scope) {
+    color: inherit;
+    text-decoration: none;
+    cursor: default;
+  }
+  .tela-milkdown .ProseMirror .tela-wikilink--share-out-of-scope {
+    color: inherit;
+    text-decoration: none;
+    cursor: default;
+  }
 
   /* Wikilink autocomplete picker — same floating-popover language as the
      slash menu, with breadcrumb subtext per row and an inline space-name

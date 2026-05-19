@@ -361,8 +361,40 @@ const pageHistoryRoute = createRoute({
   ),
 })
 
+// M15.1 — public share routes. Children of `rootRoute` (NOT appLayoutRoute)
+// because share-mode is unauthenticated; no ensureMe gate, no sidebar / app
+// shell. Both routes lazy-load the share view so the share bundle stays off
+// the main chunk for logged-in users.
+const shareRootRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/share/$token',
+  component: lazyRouteComponent(
+    () => import('./share'),
+    'ShareRootRoute',
+  ),
+})
+
+const shareDescendantRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/share/$token/p/$pageId',
+  parseParams: (raw) => ({
+    token: String(raw.token),
+    pageId: Number(raw.pageId),
+  }),
+  stringifyParams: (params) => ({
+    token: String(params.token),
+    pageId: String(params.pageId),
+  }),
+  component: lazyRouteComponent(
+    () => import('./share'),
+    'ShareDescendantRoute',
+  ),
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  shareRootRoute,
+  shareDescendantRoute,
   appLayoutRoute.addChildren([
     indexRoute,
     settingsRoute,

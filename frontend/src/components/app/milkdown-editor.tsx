@@ -40,6 +40,8 @@ import {
   WIKILINK_ALIVE_IDS_META,
   wikilinkAliveIdsCtx,
   wikilinkDecorationPlugin,
+  wikilinkModeCtx,
+  type WikilinkDecorationMode,
 } from './milkdown-wikilink-decoration'
 import {
   COMMENT_ANCHOR_META,
@@ -112,6 +114,10 @@ export interface MilkdownEditorProps {
   // underline disappears for resolved threads. Mirrors the panel's
   // "Show resolved" filter so the body and panel stay in sync.
   showResolvedAnchors?: boolean
+  // M15.1 — wikilink decoration mode. 'edit' (default) shows out-of-scope
+  // wikilinks as broken; 'share' shows them as plain text so we don't leak
+  // the existence of pages outside the share scope.
+  wikilinkMode?: WikilinkDecorationMode
 }
 
 // Reconnecting banner copy.
@@ -134,6 +140,7 @@ function MilkdownEditorInner({
   onAnchorClick,
   onAnchorsResolved,
   showResolvedAnchors = false,
+  wikilinkMode = 'edit',
 }: MilkdownEditorProps) {
   const pluginViewFactory = usePluginViewFactory()
 
@@ -274,12 +281,21 @@ function MilkdownEditorInner({
             if (collabRef.current != null && !isLeaderRef.current) return
             callbacks.current.onBlur?.()
           })
-        ctx.set(slashPlugin.key, {
-          view: pluginViewFactory({ component: SlashView }),
-        })
-        ctx.set(wikilinkPlugin.key, {
-          view: pluginViewFactory({ component: WikilinkView }),
-        })
+        // M15.1 — slash + wikilink-autocomplete views are editor-surface
+        // plugins (they listen for `/` and `[[` triggers and need the live
+        // `useAllPages` snapshot for the picker). Skip them in share-mode:
+        // the share viewer is read-only and unauthenticated, so mounting
+        // these would fire /api/pages/all which 401s for share viewers and
+        // trips the global auth-required redirect path.
+        if (wikilinkMode !== 'share') {
+          ctx.set(slashPlugin.key, {
+            view: pluginViewFactory({ component: SlashView }),
+          })
+          ctx.set(wikilinkPlugin.key, {
+            view: pluginViewFactory({ component: WikilinkView }),
+          })
+        }
+        ctx.set(wikilinkModeCtx.key, wikilinkMode)
         ctx.set(imageAttr.key, () => ({ loading: 'lazy' }))
         // M12.1 — register only the curated grammar set (24 langs) on the
         // shared refractor/core singleton. The plugin's static import of
@@ -376,6 +392,7 @@ function MilkdownEditorInner({
       .use(slashPlugin)
       .use(wikilinkPlugin)
       .use(wikilinkAliveIdsCtx)
+      .use(wikilinkModeCtx)
       .use(wikilinkDecorationPlugin)
       .use(commentThreadsCtx)
       .use(commentAnchorCallbacksCtx)

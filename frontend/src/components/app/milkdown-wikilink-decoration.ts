@@ -13,6 +13,18 @@ export const wikilinkAliveIdsCtx = $ctx<Set<number> | null, 'wikilinkAliveIds'>(
   'wikilinkAliveIds',
 )
 
+// M15.1 — decoration mode. 'edit' (default) is the standard editor surface:
+// in-scope wikilinks get the alive style, out-of-scope get tela-wikilink--broken.
+// 'share' is the public-share reader surface: in-scope wikilinks still get the
+// alive style, but out-of-scope wikilinks render as plain text via the
+// tela-wikilink--share-out-of-scope class so we don't leak that a page exists
+// outside the share's tree.
+export type WikilinkDecorationMode = 'edit' | 'share'
+export const wikilinkModeCtx = $ctx<WikilinkDecorationMode, 'wikilinkMode'>(
+  'edit',
+  'wikilinkMode',
+)
+
 // Transactions dispatched by the React side after swapping the slice carry
 // this meta so the plugin's `apply` knows to rebuild even without doc changes.
 export const WIKILINK_ALIVE_IDS_META = 'tela-wikilink-alive-ids'
@@ -23,20 +35,24 @@ interface WikilinkPluginState {
 
 // Decorates every link mark whose href starts with `tela://page/`. Adds
 // `tela-wikilink`; if the target id isn't in the alive set, also adds
-// `tela-wikilink--broken`. Rebuilds on every doc change OR when the React
-// side dispatches the meta-flag after pushing a new alive-ids snapshot.
+// `tela-wikilink--broken` (edit mode) or replaces with
+// `tela-wikilink--share-out-of-scope` (share mode). Rebuilds on every doc
+// change OR when the React side dispatches the meta-flag after pushing a
+// new alive-ids snapshot.
 export const wikilinkDecorationPlugin = $prose((ctx) => {
   return new Plugin<WikilinkPluginState>({
     state: {
       init: (_, { doc }) => {
         const aliveIds = ctx.get(wikilinkAliveIdsCtx.key)
-        return { decos: buildWikilinkDecorations(doc, aliveIds) }
+        const mode = ctx.get(wikilinkModeCtx.key)
+        return { decos: buildWikilinkDecorations(doc, aliveIds, mode) }
       },
       apply: (tr, old) => {
         const aliveChanged = tr.getMeta(WIKILINK_ALIVE_IDS_META) === true
         if (!tr.docChanged && !aliveChanged) return old
         const aliveIds = ctx.get(wikilinkAliveIdsCtx.key)
-        return { decos: buildWikilinkDecorations(tr.doc, aliveIds) }
+        const mode = ctx.get(wikilinkModeCtx.key)
+        return { decos: buildWikilinkDecorations(tr.doc, aliveIds, mode) }
       },
     },
     props: {
@@ -50,7 +66,7 @@ export const wikilinkDecorationPlugin = $prose((ctx) => {
 // Returns the numeric page id, or null for a non-numeric tail (treated as
 // broken at the call site). `parseWikiLinks` server-side only emits numeric
 // ids, but a hand-typed `tela://page/abc` could still land in the doc.
-function parseWikilinkPageId(href: string): number | null {
+export function parseWikilinkPageId(href: string): number | null {
   const prefix = 'tela://page/'
   if (!href.startsWith(prefix)) return null
   const tail = href.slice(prefix.length)
@@ -61,6 +77,7 @@ function parseWikilinkPageId(href: string): number | null {
 function buildWikilinkDecorations(
   doc: ProseNode,
   aliveIds: Set<number> | null,
+  mode: WikilinkDecorationMode,
 ): DecorationSet {
   const decos: Decoration[] = []
   doc.descendants((node, pos) => {
@@ -72,8 +89,12 @@ function buildWikilinkDecorations(
     let cls = 'tela-wikilink'
     if (aliveIds != null) {
       const id = parseWikilinkPageId(href)
-      if (id == null || !aliveIds.has(id)) {
-        cls = 'tela-wikilink tela-wikilink--broken'
+      const inScope = id != null && aliveIds.has(id)
+      if (!inScope) {
+        cls =
+          mode === 'share'
+            ? 'tela-wikilink tela-wikilink--share-out-of-scope'
+            : 'tela-wikilink tela-wikilink--broken'
       }
     }
     decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: cls }))
