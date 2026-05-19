@@ -65,5 +65,39 @@
     --syntax-operator: #16161a;
     --syntax-tag: #be185d;
     --syntax-attr: #2563eb;
+
+    /* M7.4 collab presence palette — 8 per-user hues for avatars + remote
+       cursors (#66). Per-theme values live in themes/*.css; the root values
+       here mirror the light palette so storybook stories on an unthemed root
+       render reasonably.
+
+       4Q derivation:
+       - WHO uses this: small teams (~2–15) editing the same page together.
+         Each peer's colour reads as their identity; users should recognise
+         "that's bob, that's carol" by hue, not by reading a label.
+       - WHAT distinguishes presence colour from semantic colour: presence
+         hues MUST NOT collide perceptually with --danger / --warning /
+         --success — a red cursor over an unrelated error message would
+         double-signal. We accept hue overlap on the wheel (red & pink coexist
+         with --danger; green sits near --success) because cursors render as
+         thin 2px carets in editor context, not on banners.
+       - WHY 8: avatar pill stack shows up to 5 + an overflow chip per #65,
+         and the cursor-by-userId modulo lookup needs a small power-of-two-ish
+         palette so colour churn under user turnover stays minimal.
+       - HOW chosen: 8 hues spaced ~45° apart on the hue wheel (red, orange,
+         amber, green, teal, blue, violet, pink) — maximum perceptual
+         separation. Per-theme L/C is tuned so each hue holds against the
+         theme's surface-1: mid-darkness for light/warm, lighter for dark.
+         Order is stable across themes (cursor-1 is always "the red one") so
+         a user's identity colour doesn't shift when they toggle themes.
+    */
+    --collab-cursor-1: #dc2626; /* red    */
+    --collab-cursor-2: #ea580c; /* orange */
+    --collab-cursor-3: #d97706; /* amber  */
+    --collab-cursor-4: #16a34a; /* green  */
+    --collab-cursor-5: #0d9488; /* teal   */
+    --collab-cursor-6: #2563eb; /* blue   */
+    --collab-cursor-7: #7c3aed; /* violet */
+    --collab-cursor-8: #db2777; /* pink   */
   }
 }

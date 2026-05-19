@@ -23,5 +23,16 @@
     --syntax-operator: #16161a;
     --syntax-tag: #be185d;
     --syntax-attr: #2563eb;
+
+    /* M7.4 presence — mid-darkness saturated hues read well as thin carets
+       against the #ffffff editor surface. */
+    --collab-cursor-1: #dc2626;
+    --collab-cursor-2: #ea580c;
+    --collab-cursor-3: #d97706;
+    --collab-cursor-4: #16a34a;
+    --collab-cursor-5: #0d9488;
+    --collab-cursor-6: #2563eb;
+    --collab-cursor-7: #7c3aed;
+    --collab-cursor-8: #db2777;
   }
 }

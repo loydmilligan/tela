@@ -23,5 +23,17 @@
     --syntax-operator: #3a2a1a;
     --syntax-tag: #a83269;
     --syntax-attr: #2c5f7a;
+
+    /* M7.4 presence — warm-palette-adjacent: slightly lower chroma so
+       cursors don't fight the cream surface. Hue order stable across
+       themes (cursor-1 is always "the red one"). */
+    --collab-cursor-1: #a83232;
+    --collab-cursor-2: #b4543a;
+    --collab-cursor-3: #b8761e;
+    --collab-cursor-4: #5d7a3a;
+    --collab-cursor-5: #2c7a72;
+    --collab-cursor-6: #2c5f7a;
+    --collab-cursor-7: #7a4b8c;
+    --collab-cursor-8: #a83269;
   }
 }

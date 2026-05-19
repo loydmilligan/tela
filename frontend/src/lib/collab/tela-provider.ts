@@ -1,5 +1,10 @@
 import * as Y from 'yjs'
-import { Awareness } from 'y-protocols/awareness'
+import {
+  Awareness,
+  applyAwarenessUpdate,
+  encodeAwarenessUpdate,
+  removeAwarenessStates,
+} from 'y-protocols/awareness'
 import {
   TAG_AWARENESS,
   TAG_SNAPSHOT_REQ,
@@ -54,15 +59,16 @@ export class TelaProvider {
   private reconnectTimer: number | null = null
   private destroyed = false
 
-  // Awareness wire-bridge is reserved for #65 (server tag 0x05). We
-  // instantiate the Awareness instance so #65 has a hook and presence-aware
-  // plugins (y-cursor) can be wired against it — but we DO NOT register the
-  // awareness 'update' listener on the ws yet, because the server currently
-  // has no broadcast path for awareness frames.
+  // Awareness wire-bridge (#65). The Awareness instance is constructed eagerly
+  // so consumers can register on('change') listeners before the ws is open
+  // (the local clientID is visible immediately). Inbound tag 0x05 frames are
+  // applied with origin=this so our own awareness.on('update') listener
+  // filters them and doesn't echo to the server.
   constructor(url: string, doc: Y.Doc) {
     this.url = url
     this.doc = doc
     this.awareness = new Awareness(doc)
+    this.awareness.on('update', this.onAwarenessUpdate)
     this.doc.on('update', this.onDocUpdate)
     this.connect()
   }
@@ -73,6 +79,30 @@ export class TelaProvider {
       window.clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    // Best-effort: tell peers we're leaving by removing our own awareness
+    // state. removeAwarenessStates fires the local 'update' listener (which
+    // we unsubscribe immediately after) so the outbound frame goes out once
+    // more before the ws closes.
+    try {
+      removeAwarenessStates(this.awareness, [this.awareness.clientID], this)
+      // The remove above set origin=this, so our outbound listener skipped
+      // it. Send the removal frame explicitly so peers drop our presence
+      // before the ws closes.
+      const ws = this.ws
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          const payload = encodeAwarenessUpdate(this.awareness, [
+            this.awareness.clientID,
+          ])
+          ws.send(encodeFrame(TAG_AWARENESS, payload))
+        } catch {
+          // best-effort
+        }
+      }
+    } catch {
+      // best-effort
+    }
+    this.awareness.off('update', this.onAwarenessUpdate)
     this.doc.off('update', this.onDocUpdate)
     this.awareness.destroy()
     if (this.ws) {
@@ -186,6 +216,26 @@ export class TelaProvider {
     }
   }
 
+  // Awareness → wire. Mirror of onDocUpdate: skip echoes (inbound 0x05
+  // frames apply with origin=this), batch the changed clientIDs into a
+  // single y-protocols/awareness blob, send as tag 0x05.
+  private onAwarenessUpdate = (
+    changes: { added: number[]; updated: number[]; removed: number[] },
+    origin: unknown,
+  ): void => {
+    if (origin === this) return
+    const ws = this.ws
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const clients = [...changes.added, ...changes.updated, ...changes.removed]
+    if (clients.length === 0) return
+    try {
+      const payload = encodeAwarenessUpdate(this.awareness, clients)
+      ws.send(encodeFrame(TAG_AWARENESS, payload))
+    } catch {
+      // Connection likely dying; onclose will handle reconnect.
+    }
+  }
+
   private onMessage(ev: MessageEvent): void {
     if (!(ev.data instanceof ArrayBuffer)) return
     const frame = new Uint8Array(ev.data)
@@ -234,9 +284,9 @@ export class TelaProvider {
         return
       }
       case TAG_AWARENESS:
-        // Reserved for #65. Until server broadcasts tag 0x05, this branch
-        // shouldn't fire — but we tolerate it for forward-compatibility so a
-        // future server roll-forward doesn't trip the unknown-tag log.
+        // Apply with origin=this so our awareness 'update' listener filters
+        // the change and doesn't bounce it back to the server.
+        applyAwarenessUpdate(this.awareness, payload, this)
         return
       default:
         // Unknown / future tag — ignore.

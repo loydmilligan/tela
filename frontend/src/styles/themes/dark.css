@@ -23,5 +23,16 @@
     --syntax-operator: #ececef;
     --syntax-tag: #f9a8d4;
     --syntax-attr: #93c5fd;
+
+    /* M7.4 presence — lighter, brighter hues so thin carets read against
+       the near-black editor surface. Hue order stable across themes. */
+    --collab-cursor-1: #f87171;
+    --collab-cursor-2: #fb923c;
+    --collab-cursor-3: #fbbf24;
+    --collab-cursor-4: #4ade80;
+    --collab-cursor-5: #2dd4bf;
+    --collab-cursor-6: #60a5fa;
+    --collab-cursor-7: #c4b5fd;
+    --collab-cursor-8: #f9a8d4;
   }
 }

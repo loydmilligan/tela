@@ -62,6 +62,10 @@ export interface MilkdownEditorProps {
   // When true, the editor is permanently read-only — used for viewer-role
   // fallback. Takes precedence over the collab connection state.
   readOnly?: boolean
+  // M7.4 — fires once with the TelaProvider instance after collab init so the
+  // PageView header (PresenceAvatars) and PageView's awareness local-state
+  // seeding can hook into the same provider. Not invoked in non-collab mode.
+  onCollabReady?: (provider: TelaProvider) => void
 }
 
 // Reconnecting banner copy.
@@ -77,6 +81,7 @@ function MilkdownEditorInner({
   aliveWikilinkIds,
   collabPageId,
   readOnly,
+  onCollabReady,
 }: MilkdownEditorProps) {
   const pluginViewFactory = usePluginViewFactory()
 
@@ -117,6 +122,18 @@ function MilkdownEditorInner({
     // connections where ws.onopen + sync-init can land before paint).
     setCollabStatus(collab.provider.getStatus())
     return collab.provider.onStatus(setCollabStatus)
+  }, [])
+
+  // M7.4 — hand the provider up to PageView so the header presence avatars and
+  // user-awareness seeding can share this exact instance. Fired once per
+  // editor mount; PageView remounts on page id change so the parent sees a
+  // fresh provider for each page.
+  useEffect(() => {
+    const collab = collabRef.current
+    if (!collab) return
+    if (!onCollabReady) return
+    onCollabReady(collab.provider)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // M7.3: leader-election state. Read once per render via the hook, then

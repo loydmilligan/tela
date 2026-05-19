@@ -522,6 +522,157 @@ func TestIntegration_WSPage_BroadcastsBetweenPeers(t *testing.T) {
 	}
 }
 
+// TestIntegration_WSPage_AwarenessRebroadcastsToOthersNotSender: tag 0x05
+// awareness from peer A reaches peer B verbatim. Peer A must NOT see its own
+// awareness echoed (otherwise applyAwarenessUpdate would treat its own state
+// as a remote peer).
+func TestIntegration_WSPage_AwarenessRebroadcastsToOthersNotSender(t *testing.T) {
+	ts, d := newWSWiredServer(t)
+	owner := seedUser(t, d, "owner", "ownerpw1", false)
+	editor := seedUser(t, d, "editor", "editorpw1", false)
+	space := seedSpace(t, d, "S", "s", owner)
+	seedMember(t, d, space, editor, roleEditor)
+	pageID := seedPage(t, d, space, "P")
+
+	ownerC := loginClient(t, ts, "owner", "ownerpw1")
+	editorC := loginClient(t, ts, "editor", "editorpw1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	a, _, err := websocket.Dial(ctx, wsURLFor(ts, pageID),
+		&websocket.DialOptions{HTTPClient: ownerC})
+	if err != nil {
+		t.Fatalf("dial a: %v", err)
+	}
+	defer a.CloseNow()
+	b, _, err := websocket.Dial(ctx, wsURLFor(ts, pageID),
+		&websocket.DialOptions{HTTPClient: editorC})
+	if err != nil {
+		t.Fatalf("dial b: %v", err)
+	}
+	defer b.CloseNow()
+
+	if _, _, err := a.Read(ctx); err != nil {
+		t.Fatalf("a sync-init: %v", err)
+	}
+	if _, _, err := b.Read(ctx); err != nil {
+		t.Fatalf("b sync-init: %v", err)
+	}
+
+	payload := []byte("opaque-awareness-state")
+	if err := a.Write(ctx, websocket.MessageBinary, encodeFrame(tagAwareness, payload)); err != nil {
+		t.Fatalf("a write awareness: %v", err)
+	}
+
+	typ, got, err := b.Read(ctx)
+	if err != nil {
+		t.Fatalf("b read: %v", err)
+	}
+	if typ != websocket.MessageBinary || len(got) < 1 || got[0] != tagAwareness {
+		t.Fatalf("b got tag=%x typ=%d, want awareness", got, typ)
+	}
+	if !bytes.Equal(got[1:], payload) {
+		t.Fatalf("b payload = %x, want %x", got[1:], payload)
+	}
+
+	// Awareness must NOT be persisted to page_yjs_updates / page_yjs_snapshots.
+	// Give the server a moment in case a misbehaving handler queued a write.
+	time.Sleep(50 * time.Millisecond)
+	var nUpd, nSnap int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ?`, pageID).Scan(&nUpd); err != nil {
+		t.Fatalf("count updates: %v", err)
+	}
+	if nUpd != 0 {
+		t.Fatalf("awareness frame leaked into page_yjs_updates (%d rows)", nUpd)
+	}
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_snapshots WHERE page_id = ?`, pageID).Scan(&nSnap); err != nil {
+		t.Fatalf("count snapshots: %v", err)
+	}
+	if nSnap != 0 {
+		t.Fatalf("awareness frame leaked into page_yjs_snapshots (%d rows)", nSnap)
+	}
+
+	// Sender (peer A) must NOT see its own awareness echoed. Send a regular
+	// update from B and expect A to receive THAT next, with no awareness
+	// frame in between.
+	if err := b.Write(ctx, websocket.MessageBinary, encodeFrame(tagUpdate, []byte("ping"))); err != nil {
+		t.Fatalf("b write update: %v", err)
+	}
+	typ, got, err = a.Read(ctx)
+	if err != nil {
+		t.Fatalf("a read: %v", err)
+	}
+	if typ != websocket.MessageBinary || len(got) < 1 || got[0] != tagUpdate {
+		t.Fatalf("a got tag=%x, want update (awareness must not have echoed)", got)
+	}
+}
+
+// TestIntegration_WSPage_UnknownTagIgnored: forward-compat — an unknown tag
+// is silently dropped, the conn stays open, and a subsequent valid update
+// still round-trips.
+func TestIntegration_WSPage_UnknownTagIgnored(t *testing.T) {
+	ts, d := newWSWiredServer(t)
+	owner := seedUser(t, d, "owner", "ownerpw1", false)
+	editor := seedUser(t, d, "editor", "editorpw1", false)
+	space := seedSpace(t, d, "S", "s", owner)
+	seedMember(t, d, space, editor, roleEditor)
+	pageID := seedPage(t, d, space, "P")
+
+	ownerC := loginClient(t, ts, "owner", "ownerpw1")
+	editorC := loginClient(t, ts, "editor", "editorpw1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	a, _, err := websocket.Dial(ctx, wsURLFor(ts, pageID),
+		&websocket.DialOptions{HTTPClient: ownerC})
+	if err != nil {
+		t.Fatalf("dial a: %v", err)
+	}
+	defer a.CloseNow()
+	b, _, err := websocket.Dial(ctx, wsURLFor(ts, pageID),
+		&websocket.DialOptions{HTTPClient: editorC})
+	if err != nil {
+		t.Fatalf("dial b: %v", err)
+	}
+	defer b.CloseNow()
+
+	if _, _, err := a.Read(ctx); err != nil {
+		t.Fatalf("a sync-init: %v", err)
+	}
+	if _, _, err := b.Read(ctx); err != nil {
+		t.Fatalf("b sync-init: %v", err)
+	}
+
+	if err := a.Write(ctx, websocket.MessageBinary, []byte{0x99, 0xde, 0xad, 0xbe, 0xef}); err != nil {
+		t.Fatalf("a write unknown: %v", err)
+	}
+	// Subsequent legitimate update must still flow A→B.
+	if err := a.Write(ctx, websocket.MessageBinary, encodeFrame(tagUpdate, []byte("after-unknown"))); err != nil {
+		t.Fatalf("a write update: %v", err)
+	}
+	typ, got, err := b.Read(ctx)
+	if err != nil {
+		t.Fatalf("b read: %v", err)
+	}
+	if typ != websocket.MessageBinary || len(got) < 1 || got[0] != tagUpdate {
+		t.Fatalf("b got tag=%x, want update (unknown tag should be silently dropped)", got)
+	}
+	if !bytes.Equal(got[1:], []byte("after-unknown")) {
+		t.Fatalf("b payload = %x, want %q", got[1:], "after-unknown")
+	}
+
+	// And the unknown tag itself never landed in storage.
+	var n int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ?`, pageID).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("rows after one valid update + one unknown tag = %d, want 1", n)
+	}
+}
+
 // --- helpers ----------------------------------------------------------------
 
 // decodeSyncInit reverses encodeSyncInit. Test-only — production never

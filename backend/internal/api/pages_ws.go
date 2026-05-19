@@ -37,6 +37,12 @@ import (
 //	                                      layout:
 //	                                        u32 snapLen | snapLen bytes
 //	                                        u32 nUpd    | (u32 len + bytes) * n
+//	0x05  awareness        peer↔server : ephemeral y-protocols/awareness blob.
+//	                                      Server treats the payload as opaque
+//	                                      and rebroadcasts to every OTHER peer
+//	                                      in the room. Never persisted —
+//	                                      awareness state lives only as long
+//	                                      as the ws sessions that produced it.
 //
 // Any unknown tag is ignored — keeps the protocol forward-extensible.
 
@@ -45,6 +51,7 @@ const (
 	tagSnapshotReq  byte = 0x02
 	tagSnapshotResp byte = 0x03
 	tagSyncInit     byte = 0x04
+	tagAwareness    byte = 0x05
 )
 
 // wsReadLimit bounds a single inbound ws message. Yjs full-state sync vectors
@@ -418,6 +425,17 @@ func (s *Server) handleWSFrame(ctx context.Context, rm *room, sender *peer, fram
 	case tagSnapshotResp:
 		if err := rm.applySnapshot(ctx, s.DB, payload); err != nil {
 			log.Printf("ws page %d: apply snapshot: %v", rm.pageID, err)
+		}
+	case tagAwareness:
+		// Awareness is ephemeral: rebroadcast to other peers, never persist.
+		// The server is opaque to y-protocols/awareness payload format — peers
+		// decode it on receipt via applyAwarenessUpdate.
+		rebroadcast := encodeFrame(tagAwareness, payload)
+		for _, other := range rm.peerList() {
+			if other == sender {
+				continue
+			}
+			_ = other.conn.Write(ctx, websocket.MessageBinary, rebroadcast)
 		}
 	default:
 		// Unknown / future tag: ignore so the protocol stays forward-extensible.

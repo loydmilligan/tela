@@ -11,8 +11,10 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, FileText, Plus, Trash2 } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { pushRecentPage } from '../../lib/recentPages'
+import type { TelaProvider } from '../../lib/collab/tela-provider'
 import { useMe } from '../../lib/queries/auth'
 import { useSpaceMembers } from '../../lib/queries/members'
+import { PresenceAvatars } from './presence-avatars'
 import {
   useAllPages,
   useCreatePage,
@@ -138,6 +140,37 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   // first page open per session has a brief loading-skeleton window.
   const roleResolved = me.data != null && members.data != null
   const isViewer = roleResolved && myMembership?.role === 'viewer'
+
+  // M7.4 — collab provider, lifted into PageView so the header
+  // <PresenceAvatars /> and the local-awareness user-state seeding share
+  // the exact provider instance Milkdown is binding y-prosemirror against.
+  // `provider` is set via the MilkdownEditor onCollabReady callback once
+  // the editor mounts and the provider is constructed. It's nulled by the
+  // PageEditor remount on page change (parent key=page.id) — no manual
+  // teardown needed here.
+  const [provider, setProvider] = useState<TelaProvider | null>(null)
+  useEffect(() => {
+    if (!provider) return
+    if (!me.data) return
+    const myId = me.data.id
+    const myUsername = me.data.username
+    // colorIdx = stable per-user hue index into --collab-cursor-{1..8}. id%8
+    // matches the brief; deterministic across reloads so a peer's avatar /
+    // cursor colour doesn't drift.
+    const seedLocal = () => {
+      provider.awareness.setLocalState({
+        user: {
+          id: myId,
+          username: myUsername,
+          colorIdx: myId % 8,
+        },
+      })
+    }
+    if (provider.getStatus() === 'connected') seedLocal()
+    return provider.onStatus((status) => {
+      if (status === 'connected') seedLocal()
+    })
+  }, [provider, me.data])
 
   // Alive-page-ids snapshot powers M5.2d broken-wikilink rendering. `null` is
   // the "don't know yet" state — the editor's decoration plugin keeps every
@@ -300,6 +333,9 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
       <header className="flex items-center justify-between gap-[var(--space-4)] px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
         <Breadcrumb spaceId={spaceId} pageId={page.id} />
         <div className="flex items-center gap-[var(--space-3)]">
+          <PresenceAvatars
+            awareness={provider?.awareness ?? null}
+          />
           <SaveIndicator status={status} />
           <Button
             type="button"
@@ -343,6 +379,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
               aliveWikilinkIds={aliveWikilinkIds}
               collabPageId={isViewer ? null : page.id}
               readOnly={isViewer}
+              onCollabReady={setProvider}
             />
           </Suspense>
         ) : (
