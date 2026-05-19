@@ -39,5 +39,15 @@
        70% alpha reads as a hint, not a marker; calm enough not to compete
        with --accent (indigo) used for wikilinks. */
     --comment-anchor-color: #ca8a04;
+
+    /* M9.2 — diff add/del/gutter palette against the white editor surface.
+       Soft mint + rose tints (the lightest readable green / red on #ffffff)
+       with darker fg text so changed lines remain legible without screaming. */
+    --diff-add-bg: #dcfce7;
+    --diff-add-fg: #166534;
+    --diff-del-bg: #fee2e2;
+    --diff-del-fg: #991b1b;
+    --diff-gutter-bg: #f3f4f6;
+    --diff-gutter-fg: #6b7280;
   }
 }

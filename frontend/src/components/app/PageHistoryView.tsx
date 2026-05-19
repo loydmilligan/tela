@@ -9,6 +9,7 @@ import { usePage } from '../../lib/queries/pages'
 import { useSpace } from '../../lib/queries/spaces'
 import {
   revisionKeys,
+  useRevision,
   useRevisions,
   type PageRevision,
 } from '../../lib/queries/page-revisions'
@@ -24,6 +25,7 @@ import {
   CardTitle,
 } from '../ui/card'
 import { cn } from '../../lib/utils'
+import { DiffViewer } from './DiffViewer'
 
 const REVISIONS_PAGE_SIZE = 50
 
@@ -216,8 +218,9 @@ function PageHistoryAuthed({
           ) : null}
         </section>
 
-        <RevisionPanePlaceholder
+        <RevisionPane
           revision={selectedRevision}
+          pageId={pageId}
           isOwner={isOwner}
         />
       </div>
@@ -278,15 +281,13 @@ function RevisionRow({ revision, selected, onSelect }: RevisionRowProps) {
   )
 }
 
-interface RevisionPanePlaceholderProps {
+interface RevisionPaneProps {
   revision: PageRevision | null
+  pageId: number
   isOwner: boolean
 }
 
-function RevisionPanePlaceholder({
-  revision,
-  isOwner,
-}: RevisionPanePlaceholderProps) {
+function RevisionPane({ revision, pageId, isOwner }: RevisionPaneProps) {
   if (!revision) {
     return (
       <Card className="self-start">
@@ -298,13 +299,39 @@ function RevisionPanePlaceholder({
         </CardHeader>
         <CardBody>
           <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-            The diff viewer is landing in the next slice.
+            The diff will appear here.
           </p>
         </CardBody>
       </Card>
     )
   }
+  return (
+    <RevisionPaneSelected
+      revision={revision}
+      pageId={pageId}
+      isOwner={isOwner}
+    />
+  )
+}
+
+interface RevisionPaneSelectedProps {
+  revision: PageRevision
+  pageId: number
+  isOwner: boolean
+}
+
+function RevisionPaneSelected({
+  revision,
+  pageId,
+  isOwner,
+}: RevisionPaneSelectedProps) {
+  const fullRevision = useRevision({ pageId, revId: revision.id })
+  const page = usePage(pageId)
   const ts = parseSqliteTs(revision.created_at).toLocaleString()
+  const bothSettled =
+    fullRevision.data != null && page.data != null
+  const anyError = fullRevision.isError || page.isError
+
   return (
     <Card className="self-start">
       <CardHeader>
@@ -314,10 +341,20 @@ function RevisionPanePlaceholder({
         </CardDescription>
       </CardHeader>
       <CardBody>
-        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          Diff viewer landing in M9.2 — this pane will show the side-by-side
-          comparison between this revision and the current page body.
-        </p>
+        {anyError ? (
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+            Couldn't load this revision.
+          </p>
+        ) : !bothSettled ? (
+          <DiffPaneSkeleton />
+        ) : (
+          <DiffViewer
+            oldBody={fullRevision.data.body}
+            newBody={page.data.body}
+            oldLabel={`Revision #${revision.id}`}
+            newLabel="Current"
+          />
+        )}
         {isOwner ? (
           <div className="pt-[var(--space-2)]">
             <Button
@@ -325,7 +362,7 @@ function RevisionPanePlaceholder({
               variant="secondary"
               size="sm"
               disabled
-              title="Diff viewer landing next — try after M9.2"
+              title="Open as draft lands in M9.3"
             >
               <History width={14} height={14} /> Open as draft
             </Button>
@@ -333,6 +370,17 @@ function RevisionPanePlaceholder({
         ) : null}
       </CardBody>
     </Card>
+  )
+}
+
+function DiffPaneSkeleton() {
+  return (
+    <div className="flex flex-col gap-[var(--space-2)]">
+      <div className="h-[var(--space-6)] w-1/3 rounded-[var(--radius-sm)] bg-[var(--surface-3)]" />
+      <div className="h-[var(--space-7)] rounded-[var(--radius-sm)] bg-[var(--surface-3)]" />
+      <div className="h-[var(--space-7)] rounded-[var(--radius-sm)] bg-[var(--surface-3)]" />
+      <div className="h-[var(--space-7)] rounded-[var(--radius-sm)] bg-[var(--surface-3)]" />
+    </div>
   )
 }
 

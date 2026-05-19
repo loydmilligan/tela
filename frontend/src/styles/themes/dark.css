@@ -40,5 +40,16 @@
        slightly cooler / desaturated so the comment cue isn't read as an
        error signal. */
     --comment-anchor-color: #facc15;
+
+    /* M9.2 — diff palette against the near-black surface. Deep green / red
+       tints (saturated, not glowing) for changed-line backgrounds; the fg
+       picks up lighter equivalents of --success / --danger so the changed
+       line content reads against the dark tinted background. */
+    --diff-add-bg: #0f3a1e;
+    --diff-add-fg: #86efac;
+    --diff-del-bg: #3a1414;
+    --diff-del-fg: #fca5a5;
+    --diff-gutter-bg: #1f1f27;
+    --diff-gutter-fg: #6b7280;
   }
 }

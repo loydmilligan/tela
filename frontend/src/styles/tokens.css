@@ -115,5 +115,17 @@
        selections that may sit over the same range. Defaults below mirror
        the light palette so an unthemed root still renders reasonably. */
     --comment-anchor-color: #ca8a04;
+
+    /* M9.2 — DiffViewer palette. Two tinted-bg+fg pairs (additions, deletions)
+       plus a gutter pair for line-number columns. Defaults mirror the light
+       palette so an unthemed root still renders reasonably; per-theme values
+       live in themes/*.css. The bg is a soft tint that doesn't fight the
+       editor body, the fg is the line-content text colour on that tint. */
+    --diff-add-bg: #dcfce7;
+    --diff-add-fg: #166534;
+    --diff-del-bg: #fee2e2;
+    --diff-del-fg: #991b1b;
+    --diff-gutter-bg: #f3f4f6;
+    --diff-gutter-fg: #6b7280;
   }
 }

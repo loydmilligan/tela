@@ -40,5 +40,15 @@
        cream surface (#fbf6ec) without screaming. Still distinct enough from
        --accent (#b4543a, warm red) at the 70% alpha used by the underline. */
     --comment-anchor-color: #a8742a;
+
+    /* M9.2 — diff palette tuned to the cream surface (#fbf6ec). Lower-chroma
+       sage + peach tints so the diff bg sits with the warm theme instead of
+       fighting it; fg text is mid-darkness so changed lines stay legible. */
+    --diff-add-bg: #e1e6c8;
+    --diff-add-fg: #4a5e1f;
+    --diff-del-bg: #f0d6c2;
+    --diff-del-fg: #7a2a2a;
+    --diff-gutter-bg: #ead9be;
+    --diff-gutter-fg: #7a6a55;
   }
 }
