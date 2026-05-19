@@ -30,6 +30,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/spaces/{id}", srv.UpdateSpace)
 	mux.HandleFunc("DELETE /api/spaces/{id}", srv.DeleteSpace)
 	mux.HandleFunc("GET /api/spaces/{id}/index-version", srv.GetSpaceIndexVersion)
+	mux.HandleFunc("POST /api/spaces/{id}/import", srv.ImportSpace)
 
 	mux.HandleFunc("GET /api/pages", srv.ListPages)
 	mux.HandleFunc("GET /api/pages/all", srv.ListAllPages)

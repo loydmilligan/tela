@@ -1,0 +1,343 @@
+package mdimport
+
+import (
+	"context"
+	"database/sql"
+	"strings"
+	"testing"
+
+	"github.com/zcag/tela/backend/internal/db"
+)
+
+// newImportTestDB opens an in-memory SQLite, runs every migration, and seeds
+// the minimal users + spaces + space_members rows needed for FK constraints
+// on the import path (page_revisions.author_id FK → users.id).
+func newImportTestDB(t *testing.T) (*sql.DB, int64, int64) {
+	t.Helper()
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+	if err := db.Migrate(context.Background(), d); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	res, err := d.Exec(`INSERT INTO users (username, password_hash, is_instance_admin, is_active)
+	                    VALUES ('importer', 'x', 1, 1)`)
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	userID, _ := res.LastInsertId()
+	res, err = d.Exec(`INSERT INTO spaces (name, slug) VALUES ('Test', 'test')`)
+	if err != nil {
+		t.Fatalf("seed space: %v", err)
+	}
+	spaceID, _ := res.LastInsertId()
+	if _, err := d.Exec(`INSERT INTO space_members (space_id, user_id, role)
+	                     VALUES (?, ?, 'owner')`, spaceID, userID); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	return d, spaceID, userID
+}
+
+func runImport(t *testing.T, d *sql.DB, spaceID, userID int64, parentID *int64, files []ImportFile, dryRun bool) *Result {
+	t.Helper()
+	tx, err := d.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	res, err := Import(context.Background(), tx, spaceID, parentID, userID, files, dryRun)
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("import: %v", err)
+	}
+	if dryRun {
+		tx.Rollback()
+	} else {
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("commit: %v", err)
+		}
+	}
+	return res
+}
+
+func countPages(t *testing.T, d *sql.DB, spaceID int64) int {
+	t.Helper()
+	var n int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM pages WHERE space_id = ?`, spaceID).Scan(&n); err != nil {
+		t.Fatalf("count pages: %v", err)
+	}
+	return n
+}
+
+// 1. Single .md at root → 1 page, title from filename.
+func TestImport_SingleRootFile_TitleFromFilename(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "hello.md", Content: []byte("just a paragraph, no heading\n")},
+	}, false)
+	if r.Summary.Created != 1 || len(r.Pages) != 1 {
+		t.Fatalf("summary=%+v pages=%d", r.Summary, len(r.Pages))
+	}
+	if r.Pages[0].Title != "hello" {
+		t.Fatalf("title=%q want 'hello'", r.Pages[0].Title)
+	}
+	if r.Pages[0].ParentID != nil {
+		t.Fatalf("parent_id=%v want nil", r.Pages[0].ParentID)
+	}
+	if countPages(t, d, sp) != 1 {
+		t.Fatalf("db has %d pages, want 1", countPages(t, d, sp))
+	}
+}
+
+// 2. Single dir w/ README.md → 1 index page, README content as body, title = dir name.
+func TestImport_SingleDir_WithReadme(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	readme := "# Some Heading\n\nReadme body content.\n"
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Foo/README.md", Content: []byte(readme)},
+	}, false)
+	if r.Summary.Created != 1 || len(r.Pages) != 1 {
+		t.Fatalf("summary=%+v pages=%d", r.Summary, len(r.Pages))
+	}
+	if r.Pages[0].Title != "Foo" {
+		t.Fatalf("title=%q want 'Foo' (dir name overrides README H1)", r.Pages[0].Title)
+	}
+	var body string
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+		t.Fatalf("query body: %v", err)
+	}
+	if body != readme {
+		t.Fatalf("body=%q want full README content", body)
+	}
+}
+
+// 3. Single dir WITHOUT README, 2 .md → 1 synthesized empty index + 2 children.
+func TestImport_SingleDir_NoReadme_SynthesizesIndex(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Notes/alpha.md", Content: []byte("alpha body")},
+		{Path: "Notes/beta.md", Content: []byte("beta body")},
+	}, false)
+	if r.Summary.Created != 3 {
+		t.Fatalf("created=%d want 3", r.Summary.Created)
+	}
+	// First page should be the index (Notes); the other two should reference it as parent.
+	var indexPage *ImportedPage
+	for i := range r.Pages {
+		if r.Pages[i].Title == "Notes" {
+			indexPage = &r.Pages[i]
+			break
+		}
+	}
+	if indexPage == nil {
+		t.Fatalf("no Notes index page found in %+v", r.Pages)
+	}
+	if indexPage.ParentID != nil {
+		t.Fatalf("Notes index parent_id=%v want nil (top-level)", indexPage.ParentID)
+	}
+	var body string
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, indexPage.ID).Scan(&body); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if body != "" {
+		t.Fatalf("synthesized index body=%q want empty", body)
+	}
+	for _, p := range r.Pages {
+		if p.Title == "Notes" {
+			continue
+		}
+		if p.ParentID == nil || *p.ParentID != indexPage.ID {
+			t.Fatalf("child %q parent=%v want %d", p.Title, p.ParentID, indexPage.ID)
+		}
+	}
+}
+
+// 4. Nested dirs (3-deep), README at each level.
+func TestImport_NestedDirs_StackedReadmeIndices(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "A/README.md", Content: []byte("A readme")},
+		{Path: "A/B/README.md", Content: []byte("AB readme")},
+		{Path: "A/B/C/README.md", Content: []byte("ABC readme")},
+		{Path: "A/B/C/leaf.md", Content: []byte("leaf body")},
+	}, false)
+	if r.Summary.Created != 4 {
+		t.Fatalf("created=%d want 4", r.Summary.Created)
+	}
+	titles := map[string]int64{}
+	parents := map[int64]*int64{}
+	for _, p := range r.Pages {
+		titles[p.Title] = p.ID
+		parents[p.ID] = p.ParentID
+	}
+	if parents[titles["A"]] != nil {
+		t.Fatalf("A parent=%v want nil", parents[titles["A"]])
+	}
+	if parents[titles["B"]] == nil || *parents[titles["B"]] != titles["A"] {
+		t.Fatalf("B parent=%v want A(%d)", parents[titles["B"]], titles["A"])
+	}
+	if parents[titles["C"]] == nil || *parents[titles["C"]] != titles["B"] {
+		t.Fatalf("C parent=%v want B(%d)", parents[titles["C"]], titles["B"])
+	}
+	if parents[titles["leaf"]] == nil || *parents[titles["leaf"]] != titles["C"] {
+		t.Fatalf("leaf parent=%v want C(%d)", parents[titles["leaf"]], titles["C"])
+	}
+}
+
+// 5. Title conflict: against existing DB sibling + against in-batch sibling.
+func TestImport_TitleConflict_AppendsNumber(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	// Pre-seed an existing top-level "Foo" page.
+	if _, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                     VALUES (?, NULL, 'Foo', 'existing', 0)`, sp); err != nil {
+		t.Fatalf("seed existing: %v", err)
+	}
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Foo.md", Content: []byte("first foo")},
+		{Path: "Foo.txt-but-md.md", Content: []byte("---\ntitle: Foo\n---\nsecond foo")},
+	}, false)
+	if r.Summary.ConflictsRenamed != 2 {
+		t.Fatalf("conflicts_renamed=%d want 2", r.Summary.ConflictsRenamed)
+	}
+	titles := []string{}
+	for _, p := range r.Pages {
+		titles = append(titles, p.Title)
+	}
+	wantTitles := map[string]bool{"Foo (2)": false, "Foo (3)": false}
+	for _, ti := range titles {
+		if _, ok := wantTitles[ti]; ok {
+			wantTitles[ti] = true
+		}
+	}
+	for ti, seen := range wantTitles {
+		if !seen {
+			t.Fatalf("missing rename %q in titles=%v", ti, titles)
+		}
+	}
+}
+
+// 6. Frontmatter title overrides filename and H1.
+func TestImport_FrontmatterTitle_OverridesFilenameAndH1(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	content := "---\ntitle: Custom\nfoo: bar\n---\n# Different Heading\n\nBody.\n"
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "random.md", Content: []byte(content)},
+	}, false)
+	if r.Pages[0].Title != "Custom" {
+		t.Fatalf("title=%q want 'Custom'", r.Pages[0].Title)
+	}
+	var body string
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if strings.Contains(body, "title: Custom") {
+		t.Fatalf("frontmatter not stripped from body: %q", body)
+	}
+	if !strings.Contains(body, "# Different Heading") {
+		t.Fatalf("H1 missing from body after strip: %q", body)
+	}
+}
+
+// 6b. H1 fallback when frontmatter is absent.
+func TestImport_H1FallbackTitle(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "random.md", Content: []byte("# Hello World\n\nBody text.\n")},
+	}, false)
+	if r.Pages[0].Title != "Hello World" {
+		t.Fatalf("title=%q want 'Hello World'", r.Pages[0].Title)
+	}
+}
+
+// 7. Non-md file → skipped, no page created.
+func TestImport_NonMd_Skipped(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Foo/img.png", Content: []byte{0x89, 0x50, 0x4e, 0x47}},
+		{Path: "Foo/README.md", Content: []byte("real content")},
+	}, false)
+	if r.Summary.Created != 1 || len(r.Skipped) != 1 {
+		t.Fatalf("created=%d skipped=%d want 1/1", r.Summary.Created, len(r.Skipped))
+	}
+	if r.Skipped[0].Reason != "not_markdown" {
+		t.Fatalf("skipped reason=%q want 'not_markdown'", r.Skipped[0].Reason)
+	}
+	if r.Summary.Skipped != 1 {
+		t.Fatalf("summary.skipped=%d want 1", r.Summary.Skipped)
+	}
+}
+
+// 8. dry_run=true → response shows planned pages with negative IDs, DB unchanged.
+func TestImport_DryRun_NoDBWrites(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Foo/README.md", Content: []byte("body")},
+		{Path: "Foo/leaf.md", Content: []byte("leaf")},
+	}, true)
+	if r.Summary.Created != 2 || len(r.Pages) != 2 {
+		t.Fatalf("dry-run summary=%+v len(Pages)=%d", r.Summary, len(r.Pages))
+	}
+	for _, p := range r.Pages {
+		if p.ID >= 0 {
+			t.Fatalf("dry-run page id=%d, want negative placeholder", p.ID)
+		}
+	}
+	if got := countPages(t, d, sp); got != 0 {
+		t.Fatalf("db has %d pages after dry-run, want 0", got)
+	}
+}
+
+// 10. README case-insensitive: readme.md, Readme.md, README.md.
+func TestImport_ReadmeCaseInsensitive(t *testing.T) {
+	for _, name := range []string{"readme.md", "Readme.md", "README.md"} {
+		t.Run(name, func(t *testing.T) {
+			d, sp, u := newImportTestDB(t)
+			r := runImport(t, d, sp, u, nil, []ImportFile{
+				{Path: "Bar/" + name, Content: []byte("body for " + name)},
+			}, false)
+			if r.Summary.Created != 1 || r.Pages[0].Title != "Bar" {
+				t.Fatalf("for %s: summary=%+v title=%q want 1 created + 'Bar'", name, r.Summary, r.Pages[0].Title)
+			}
+			var body string
+			if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+				t.Fatalf("body: %v", err)
+			}
+			if !strings.Contains(body, "body for "+name) {
+				t.Fatalf("for %s: body=%q does not contain README content", name, body)
+			}
+		})
+	}
+}
+
+// Path-traversal rejection: `..` segments end up in the errors array.
+func TestImport_PathTraversal_Rejected(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "../etc/passwd.md", Content: []byte("evil")},
+		{Path: "/abs/path.md", Content: []byte("also evil")},
+		{Path: "ok.md", Content: []byte("legit")},
+	}, false)
+	if r.Summary.Created != 1 || len(r.Errors) != 2 {
+		t.Fatalf("created=%d errors=%d want 1/2", r.Summary.Created, len(r.Errors))
+	}
+}
+
+// Page-revision seeding: every created page should produce one revision row
+// with source='import', so the new page already has page-history visible.
+func TestImport_SeedsPageRevision(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Notes/leaf.md", Content: []byte("body")},
+	}, false)
+	if r.Summary.Created != 2 {
+		t.Fatalf("created=%d want 2 (index + leaf)", r.Summary.Created)
+	}
+	var nRevs int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_revisions WHERE source = 'import'`).Scan(&nRevs); err != nil {
+		t.Fatalf("count revisions: %v", err)
+	}
+	if nRevs != 2 {
+		t.Fatalf("page_revisions for import=%d want 2", nRevs)
+	}
+}
