@@ -99,6 +99,18 @@ export interface SessionRow {
   current: boolean
 }
 
+// Row in GET /api/admin/users (M6.2). Mirrors backend's adminUserDTO.
+// Timestamps are SQLite-native — render via localDateFromSqlite for the
+// 'Created' column.
+export interface AdminUserRow {
+  id: number
+  username: string
+  is_instance_admin: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface ApiErrorBody {
   error: string
   code: string

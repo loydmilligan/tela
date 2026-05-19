@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
+import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
 import { Button } from '../components/ui/button'
+import { useMe } from '../lib/queries/auth'
 import { cn } from '../lib/utils'
 
 interface SettingsTab {
@@ -9,20 +11,28 @@ interface SettingsTab {
   render: () => React.ReactNode
 }
 
-// Tabs the rail offers. Only 'Profile' lives here today; the rail is built
-// from this list so M6.5 / M6.6 can drop additional entries (e.g. Users,
-// Spaces) without restructuring the shell.
-const TABS: SettingsTab[] = [
-  {
-    id: 'profile',
-    label: 'Profile',
-    render: () => <SettingsProfileTab />,
-  },
-]
+const PROFILE_TAB: SettingsTab = {
+  id: 'profile',
+  label: 'Profile',
+  render: () => <SettingsProfileTab />,
+}
+
+const USERS_TAB: SettingsTab = {
+  id: 'users',
+  label: 'Users',
+  render: () => <SettingsUsersTab />,
+}
 
 export function SettingsPage() {
-  const [activeId, setActiveId] = useState(TABS[0].id)
-  const active = TABS.find((t) => t.id === activeId) ?? TABS[0]
+  const me = useMe()
+  // The Users tab is gated on instance-admin; the array itself drops it for
+  // non-admins so /settings looks identical to today's Profile-only shell.
+  const tabs = useMemo<SettingsTab[]>(() => {
+    if (me.data?.is_instance_admin) return [PROFILE_TAB, USERS_TAB]
+    return [PROFILE_TAB]
+  }, [me.data?.is_instance_admin])
+  const [activeId, setActiveId] = useState(tabs[0].id)
+  const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
 
   return (
     <div className="flex-1 flex min-h-0">
@@ -30,7 +40,7 @@ export function SettingsPage() {
         aria-label="Settings sections"
         className="shrink-0 w-[var(--space-8)] sm:w-[14rem] border-r border-[var(--border-subtle)] bg-[var(--surface-2)] py-[var(--space-4)] px-[var(--space-3)] flex flex-col gap-[var(--space-1)]"
       >
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive = tab.id === active.id
           return (
             <Button
