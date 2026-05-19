@@ -19,8 +19,15 @@ interface CommentItemProps {
   onDelete: (id: number) => Promise<void>
   // Optimistic rows have negative ids and a 'sending…' pulse.
   isOptimistic: boolean
-  // Visual mute for resolved threads (#74 wires this; safe default false).
+  // Visual mute for resolved threads (#74). Drops opacity on the whole
+  // item; pair with `strikethroughBody` to also draw a line through the
+  // body text (root of a resolved thread only — replies stay readable).
   muted?: boolean
+  // M8.5 — draws a light line-through across the body paragraph (mode
+  // 'view' only). The CommentThread passes this true on the root of a
+  // resolved thread so the body reads as "this comment has been settled"
+  // without obscuring the words.
+  strikethroughBody?: boolean
 }
 
 export function CommentItem({
@@ -31,6 +38,7 @@ export function CommentItem({
   onDelete,
   isOptimistic,
   muted = false,
+  strikethroughBody = false,
 }: CommentItemProps) {
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [draft, setDraft] = useState(comment.body)
@@ -172,7 +180,19 @@ export function CommentItem({
             'm-0 whitespace-pre-wrap',
             'text-[length:var(--text-sm)] leading-[var(--leading-normal)]',
             'text-[var(--text-primary)] font-[family-name:var(--font-sans)]',
+            strikethroughBody && 'line-through',
           )}
+          style={
+            // Light strikethrough so resolved root body reads as settled
+            // without obscuring its text — colour-mixed against currentColor
+            // so it tracks whatever colour the muted text already has.
+            strikethroughBody
+              ? {
+                  textDecorationColor:
+                    'color-mix(in srgb, currentColor 30%, transparent)',
+                }
+              : undefined
+          }
         >
           {comment.body}
         </p>

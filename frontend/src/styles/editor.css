@@ -670,6 +670,26 @@
     );
   }
 
+  /* M8.5 — resolved-thread variant. Only painted when the panel's "Show
+     resolved" filter is on (the plugin emits no decoration at all when the
+     filter is off). Drops the tinted background and swaps the solid
+     underline for a dashed, low-alpha hint so the passage reads as "there
+     was a comment here, it's resolved" rather than fighting for attention
+     with open threads on the same page. */
+  .tela-milkdown .ProseMirror .tela-comment-anchor.is-resolved {
+    background: transparent;
+    border-bottom: 1px dashed
+      color-mix(in srgb, var(--comment-anchor-color) 40%, transparent);
+    opacity: 0.5;
+  }
+  .tela-milkdown .ProseMirror .tela-comment-anchor.is-resolved:hover {
+    background: color-mix(
+      in srgb,
+      var(--comment-anchor-color) 10%,
+      transparent
+    );
+  }
+
   /* M8.4 — 600ms flash. Applied by lib/comments/coordination.ts on
      panel-row → body-scroll for the body anchor, and re-used (same name,
      scoped to panel rows below) for body-anchor → panel-row scroll. The

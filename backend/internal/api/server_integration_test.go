@@ -312,10 +312,10 @@ func TestComments_FullFlow(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
 	bob := seedUser(t, d, "bob", "bobpw1234", false)
-	carol := seedUser(t, d, "carol", "carolpw12", false)
+	carolID := seedUser(t, d, "carol", "carolpw12", false)
 	space := seedSpace(t, d, "Test Space", "test-space", admin)
 	seedMember(t, d, space, bob, "viewer")
-	seedMember(t, d, space, carol, "editor")
+	seedMember(t, d, space, carolID, "editor")
 
 	// Seed a page directly so we know the id.
 	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
@@ -438,6 +438,9 @@ func TestComments_FullFlow(t *testing.T) {
 
 	// 11. include_resolved=true GET returns the resolved root (with the reply).
 	// 12. Soft-deleted root excluded from both filter modes.
+	// 12b. M8.5 acceptance: resolved roots ship resolved_at + resolved_by +
+	//      resolved_by_username populated so the panel can render the
+	//      "Resolved by … • when" line without a second roundtrip.
 	resp, _ = adminC.Get(pageURL + "?include_resolved=true")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET include_resolved status=%d", resp.StatusCode)
@@ -445,8 +448,11 @@ func TestComments_FullFlow(t *testing.T) {
 	var got struct {
 		Threads []struct {
 			Root struct {
-				ID       int64 `json:"id"`
-				Resolved bool  `json:"resolved"`
+				ID                 int64   `json:"id"`
+				Resolved           bool    `json:"resolved"`
+				ResolvedAt         *string `json:"resolved_at"`
+				ResolvedBy         *int64  `json:"resolved_by"`
+				ResolvedByUsername *string `json:"resolved_by_username"`
 			} `json:"root"`
 			Replies []struct {
 				ID int64 `json:"id"`
@@ -462,6 +468,15 @@ func TestComments_FullFlow(t *testing.T) {
 	}
 	if got.Threads[0].Root.ID != rootID || !got.Threads[0].Root.Resolved {
 		t.Fatalf("thread root id=%d resolved=%t, want id=%d resolved=true", got.Threads[0].Root.ID, got.Threads[0].Root.Resolved, rootID)
+	}
+	if got.Threads[0].Root.ResolvedAt == nil || *got.Threads[0].Root.ResolvedAt == "" {
+		t.Fatalf("resolved_at empty on resolved root, want SQLite datetime string")
+	}
+	if got.Threads[0].Root.ResolvedBy == nil || *got.Threads[0].Root.ResolvedBy != carolID {
+		t.Fatalf("resolved_by=%v, want carol id=%d", got.Threads[0].Root.ResolvedBy, carolID)
+	}
+	if got.Threads[0].Root.ResolvedByUsername == nil || *got.Threads[0].Root.ResolvedByUsername != "carol" {
+		t.Fatalf("resolved_by_username=%v, want 'carol'", got.Threads[0].Root.ResolvedByUsername)
 	}
 	if len(got.Threads[0].Replies) != 1 || got.Threads[0].Replies[0].ID != replyID {
 		t.Fatalf("replies=%+v, want one with id=%d", got.Threads[0].Replies, replyID)

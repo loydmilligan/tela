@@ -24,6 +24,18 @@ export const commentThreadsCtx = $ctx<CommentThread[] | null, 'commentThreads'>(
   'commentThreads',
 )
 
+// M8.5 — whether resolved threads should still paint a (muted) underline.
+// Filter OFF (default) → resolved threads emit no decoration at all (the
+// underline disappears, matching what M8.4 shipped). Filter ON → resolved
+// threads emit a `.tela-comment-anchor.is-resolved` decoration; CSS mutes the
+// underline to a dashed, low-alpha hint. Lead pick from the brief: removed
+// when filter off, muted-underline when filter on. React side pushes through
+// the same meta-tx as the thread list.
+export const commentShowResolvedCtx = $ctx<boolean, 'commentShowResolved'>(
+  false,
+  'commentShowResolved',
+)
+
 // React-side callback bundle. Two callbacks live together because both flow
 // through the same React render cycle (PageView owns commentsOpen + the
 // orphan-ids set together). Wrapped in a single slice so updates are atomic.
@@ -83,7 +95,10 @@ export function createCommentAnchorPlugin(
         }
         const threads = ctx.get(commentThreadsCtx.key)
         const callbacks = ctx.get(commentAnchorCallbacksCtx.key)
-        return { decos: buildDecorations(tr.doc, threads, callbacks) }
+        const showResolved = ctx.get(commentShowResolvedCtx.key)
+        return {
+          decos: buildDecorations(tr.doc, threads, callbacks, showResolved),
+        }
       },
     },
     view: (view) => {
@@ -145,6 +160,7 @@ function buildDecorations(
   doc: ProseNode,
   threads: CommentThread[] | null,
   callbacks: CommentAnchorCallbacks | null,
+  showResolved: boolean,
 ): DecorationSet {
   if (!threads || threads.length === 0) {
     callbacks?.onResolved(new Map())
@@ -163,11 +179,12 @@ function buildDecorations(
     // Roots can be optimistic (negative id) — skip; the optimistic row shows
     // in the panel but the underline waits for server confirmation.
     if (root.id < 0) continue
-    // Resolved threads are M8.5's scope — for M8.4 we still resolve so the
-    // panel knows orphan state, but emit no decoration so the underline
-    // disappears once a thread is marked resolved. M8.5 will replace this
-    // with a muted underline gated by the filter toggle.
-    if (root.resolved) continue
+    // Resolved threads with the filter OFF emit no decoration so the
+    // underline disappears (matches M8.4's behaviour). With the filter ON
+    // we still resolve the anchor and emit a muted `.is-resolved`
+    // decoration so the reviewer can see the passage but it visually
+    // recedes vs. open threads.
+    if (root.resolved && !showResolved) continue
     if (!root.anchor_exact) {
       // Defensive — backend won't return a root without anchor fields. A
       // non-anchored legacy row should not crash the plugin.
@@ -191,9 +208,12 @@ function buildDecorations(
     const pmFrom = plainOffsetToPm(segments, resolved.from)
     const pmTo = plainOffsetToPm(segments, resolved.to)
     if (pmFrom == null || pmTo == null || pmFrom >= pmTo) continue
+    const className = root.resolved
+      ? 'tela-comment-anchor is-resolved'
+      : 'tela-comment-anchor'
     decos.push(
       Decoration.inline(pmFrom, pmTo, {
-        class: 'tela-comment-anchor',
+        class: className,
         'data-comment-thread-id': String(root.id),
       }),
     )

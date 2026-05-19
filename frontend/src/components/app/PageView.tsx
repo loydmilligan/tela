@@ -74,6 +74,11 @@ const SAVED_FLASH_MS = 1500
 const BODY_DEBOUNCE_MS = 500
 const RETRY_DELAY_MS = 1500
 
+// Persisted preference: "show resolved comments" on/off. Stored as a single
+// app-wide flag rather than per-page since reviewers usually want a stable
+// global default ("I always want to see resolved threads" vs "I never do").
+const SHOW_RESOLVED_STORAGE_KEY = 'tela:comments:show-resolved'
+
 interface PageViewProps {
   spaceId: number
   pageId: number
@@ -224,6 +229,29 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
     window.setTimeout(() => {
       scrollAndFlashPanelThread(threadId)
     }, 50)
+  }, [])
+
+  // M8.5 — "Show resolved" filter. Lifted into PageView so the editor's
+  // anchor decoration plugin and the panel's thread list stay in lockstep:
+  // the body underline mutes for resolved threads only while this is true.
+  // Persisted under a single localStorage key so the preference survives
+  // reloads but doesn't bleed across pages (one rule for all comments).
+  const [showResolvedComments, setShowResolvedComments] = useState<boolean>(
+    () => {
+      try {
+        return localStorage.getItem(SHOW_RESOLVED_STORAGE_KEY) === '1'
+      } catch {
+        return false
+      }
+    },
+  )
+  const handleShowResolvedChange = useCallback((next: boolean) => {
+    setShowResolvedComments(next)
+    try {
+      localStorage.setItem(SHOW_RESOLVED_STORAGE_KEY, next ? '1' : '0')
+    } catch {
+      // Private-mode / quota — fall through; UX still works for this session.
+    }
   }, [])
 
   // Pass an empty array (not undefined) to the editor when comments are
@@ -494,6 +522,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
               commentThreads={commentThreadsForEditor}
               onAnchorClick={isViewer ? undefined : handleAnchorClick}
               onAnchorsResolved={isViewer ? undefined : handleAnchorsResolved}
+              showResolvedAnchors={showResolvedComments}
             />
           </Suspense>
         ) : (
@@ -528,6 +557,8 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
           me={{ id: me.data.id, username: me.data.username }}
           isSpaceOwner={isSpaceOwner}
           orphanIds={orphanIds}
+          showResolved={showResolvedComments}
+          onShowResolvedChange={handleShowResolvedChange}
         />
       ) : null}
     </div>

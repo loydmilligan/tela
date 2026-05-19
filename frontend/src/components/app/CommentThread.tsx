@@ -3,6 +3,7 @@ import { CornerDownRight, MessageSquare } from 'lucide-react'
 import type { CommentThread as CommentThreadType } from '../../lib/comments/use-comments'
 import { ApiError } from '../../lib/api'
 import { scrollAndFlashBodyAnchor } from '../../lib/comments/coordination'
+import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 import { Button } from '../ui/button'
 import { CommentItem } from './CommentItem'
 import { ReplyComposer } from './ReplyComposer'
@@ -15,6 +16,11 @@ interface CommentThreadProps {
   onEditComment: (id: number, body: string) => Promise<void>
   onDeleteComment: (id: number) => Promise<void>
   onReply: (parentId: number, body: string) => Promise<void>
+  // M8.5 — toggle the root's resolved flag. Editor+ on the space is
+  // gate-kept at the backend; the panel still shows the affordance for
+  // viewers-of-editor-spaces because viewers never see this surface at
+  // all (PageView gates them out before CommentsPanel mounts).
+  onToggleResolved: (id: number, resolved: boolean) => Promise<void>
   // M8.4 — root id is not currently resolvable against editor text (the
   // anchor passage was deleted / drifted past the fuzzy resolver). Shows
   // an "Orphaned" tag and disables the body-scroll click affordance since
@@ -33,9 +39,12 @@ export function CommentThread({
   onEditComment,
   onDeleteComment,
   onReply,
+  onToggleResolved,
   isOrphan = false,
 }: CommentThreadProps) {
   const [replying, setReplying] = useState(false)
+  const [resolving, setResolving] = useState(false)
+  const [resolveError, setResolveError] = useState<string | null>(null)
   const { root, replies } = thread
   const rootMuted = root.resolved
 
@@ -46,6 +55,20 @@ export function CommentThread({
     } catch (err) {
       // Surface failure into the reply composer's error path by re-throwing.
       throw err instanceof ApiError ? err : new Error('reply failed')
+    }
+  }
+
+  async function handleToggleResolved() {
+    setResolving(true)
+    setResolveError(null)
+    try {
+      await onToggleResolved(root.id, !root.resolved)
+    } catch (err) {
+      setResolveError(
+        err instanceof ApiError ? err.message : 'Failed to update.',
+      )
+    } finally {
+      setResolving(false)
     }
   }
 
@@ -114,7 +137,29 @@ export function CommentThread({
         onDelete={onDeleteComment}
         isOptimistic={isOptimistic(root.id)}
         muted={rootMuted}
+        strikethroughBody={rootMuted}
       />
+
+      {root.resolved ? (
+        <p
+          className={cn(
+            'm-0 px-[var(--space-1)]',
+            'text-[length:var(--text-xs)] text-[var(--text-muted)]',
+            'font-[family-name:var(--font-sans)] opacity-80',
+          )}
+        >
+          Resolved by{' '}
+          <span className="font-medium">
+            {root.resolved_by_username ?? 'unknown'}
+          </span>
+          {root.resolved_at ? (
+            <>
+              {' '}
+              • {relativeTimeFromSqlite(root.resolved_at)}
+            </>
+          ) : null}
+        </p>
+      ) : null}
 
       {replies.length > 0 ? (
         <ul className="m-0 p-0 flex flex-col gap-[var(--space-1)] pl-[var(--space-4)] border-l-2 border-[var(--border-subtle)]">
@@ -146,22 +191,27 @@ export function CommentThread({
             <CornerDownRight width={12} height={12} /> Reply
           </Button>
         ) : null}
-        {/*
-          M8.5 (#74) wires the resolve PATCH. v0 renders a disabled
-          placeholder so the affordance ships now and #74 only has to
-          toggle disabled + the onClick handler.
-        */}
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          disabled
-          title="Resolve toggle ships in M8.5 (#74)"
+          disabled={isOptimistic(root.id) || resolving}
+          onClick={() => void handleToggleResolved()}
+          title={root.resolved ? 'Reopen this thread' : 'Resolve this thread'}
         >
           <MessageSquare width={12} height={12} />{' '}
           {root.resolved ? 'Reopen' : 'Resolve'}
         </Button>
       </div>
+
+      {resolveError ? (
+        <p
+          role="alert"
+          className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]"
+        >
+          {resolveError}
+        </p>
+      ) : null}
 
       {replying ? (
         <ReplyComposer

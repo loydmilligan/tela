@@ -14,6 +14,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '../ui/sheet'
+import { Toggle } from '../ui/toggle'
 import { CommentComposer } from './CommentComposer'
 import { CommentThread } from './CommentThread'
 
@@ -38,6 +39,12 @@ interface CommentsPanelProps {
   // anchor-decoration plugin), passed through so CommentThread can render
   // an "Orphaned" tag.
   orphanIds: Set<number>
+  // M8.5 — controls the "Show resolved (N)" filter. Lifted to PageView so
+  // the editor's in-body anchor decoration stays in sync with whatever
+  // mode the panel is in (resolved threads paint a muted underline only
+  // when showResolved is true).
+  showResolved: boolean
+  onShowResolvedChange: (next: boolean) => void
 }
 
 export function CommentsPanel({
@@ -50,6 +57,8 @@ export function CommentsPanel({
   me,
   isSpaceOwner,
   orphanIds,
+  showResolved,
+  onShowResolvedChange,
 }: CommentsPanelProps) {
   // Backend orders threads ASC by created_at; show newest at top in the panel.
   const commentsQuery = useComments({ pageId })
@@ -58,14 +67,19 @@ export function CommentsPanel({
   const deleteComment = useDeleteComment(pageId)
 
   const threadsData = commentsQuery.data
-  const displayThreads = useMemo(() => {
-    // Newest first. (#74 will filter resolved here based on a localStorage
-    // toggle; v0 ships everything since the backend already returns the full
-    // set for the count derivation.)
-    if (!threadsData) return []
-    return [...threadsData].reverse()
-  }, [threadsData])
   const threads = threadsData ?? []
+  const totalOpenCount = threads.filter((t) => !t.root.resolved).length
+  const totalResolvedCount = threads.length - totalOpenCount
+
+  const displayThreads = useMemo(() => {
+    // Newest first. M8.5 — hide resolved threads when the filter is off so
+    // the panel reads as "what still needs attention" by default.
+    if (!threadsData) return []
+    const filtered = showResolved
+      ? threadsData
+      : threadsData.filter((t) => !t.root.resolved)
+    return [...filtered].reverse()
+  }, [threadsData, showResolved])
 
   async function handleCreateRoot(input: {
     body: string
@@ -93,7 +107,9 @@ export function CommentsPanel({
     await deleteComment.mutateAsync({ id })
   }
 
-  const totalOpenCount = threads.filter((t) => !t.root.resolved).length
+  async function handleToggleResolved(id: number, resolved: boolean) {
+    await updateComment.mutateAsync({ id, resolved })
+  }
 
   return (
     // modal={false} — the comments panel sits beside the editor; the user
@@ -128,6 +144,18 @@ export function CommentsPanel({
                 ? '1 open thread on this page.'
                 : `${totalOpenCount} open threads on this page.`}
           </SheetDescription>
+          {totalResolvedCount > 0 ? (
+            <div className="mt-[var(--space-2)]">
+              <Toggle
+                size="sm"
+                pressed={showResolved}
+                onPressedChange={onShowResolvedChange}
+                aria-label={`Show ${totalResolvedCount} resolved ${totalResolvedCount === 1 ? 'thread' : 'threads'}`}
+              >
+                Show resolved ({totalResolvedCount})
+              </Toggle>
+            </div>
+          ) : null}
         </SheetHeader>
 
         <SheetBody className="flex flex-col gap-[var(--space-4)]">
@@ -165,6 +193,7 @@ export function CommentsPanel({
                   onEditComment={handleEdit}
                   onDeleteComment={handleDelete}
                   onReply={handleReply}
+                  onToggleResolved={handleToggleResolved}
                   isOrphan={orphanIds.has(thread.root.id)}
                 />
               ))}

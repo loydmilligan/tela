@@ -43,6 +43,7 @@ import {
 import {
   COMMENT_ANCHOR_META,
   commentAnchorCallbacksCtx,
+  commentShowResolvedCtx,
   commentThreadsCtx,
   createCommentAnchorPlugin,
   type CommentAnchorCallbacks,
@@ -105,6 +106,11 @@ export interface MilkdownEditorProps {
   onAnchorsResolved?: (
     resolutions: Map<number, { from: number; to: number } | null>,
   ) => void
+  // M8.5 — when true, resolved threads still paint a muted underline
+  // (`.tela-comment-anchor.is-resolved`). When false (default), the
+  // underline disappears for resolved threads. Mirrors the panel's
+  // "Show resolved" filter so the body and panel stay in sync.
+  showResolvedAnchors?: boolean
 }
 
 // Reconnecting banner copy.
@@ -126,6 +132,7 @@ function MilkdownEditorInner({
   commentThreads,
   onAnchorClick,
   onAnchorsResolved,
+  showResolvedAnchors = false,
 }: MilkdownEditorProps) {
   const pluginViewFactory = usePluginViewFactory()
 
@@ -349,6 +356,7 @@ function MilkdownEditorInner({
           }
           ctx.set(commentThreadsCtx.key, commentThreads ?? null)
           ctx.set(commentAnchorCallbacksCtx.key, stableCallbacks)
+          ctx.set(commentShowResolvedCtx.key, showResolvedAnchors)
           const anchorPlugin = createCommentAnchorPlugin(ctx)
           ctx.update(prosePluginsCtx, (existing) => [...existing, anchorPlugin])
         }
@@ -364,7 +372,8 @@ function MilkdownEditorInner({
       .use(wikilinkAliveIdsCtx)
       .use(wikilinkDecorationPlugin)
       .use(commentThreadsCtx)
-      .use(commentAnchorCallbacksCtx),
+      .use(commentAnchorCallbacksCtx)
+      .use(commentShowResolvedCtx),
   )
 
   useEffect(() => {
@@ -395,16 +404,20 @@ function MilkdownEditorInner({
   // (new comment, deleted comment, resolve toggle) should paint immediately
   // since they reflect a discrete user action elsewhere in the UI rather
   // than continuous typing. Skipped if comments aren't enabled (viewer).
+  // M8.5 — same effect carries the show-resolved-anchors flag so toggling
+  // the panel filter repaints in-body decorations without an extra round
+  // through React state.
   useEffect(() => {
     if (loading) return
     if (!commentsEnabled) return
     const editor = get()
     editor?.action((ctx) => {
       ctx.set(commentThreadsCtx.key, commentThreads ?? null)
+      ctx.set(commentShowResolvedCtx.key, showResolvedAnchors)
       const view = ctx.get(editorViewCtx)
       view.dispatch(view.state.tr.setMeta(COMMENT_ANCHOR_META, true))
     })
-  }, [loading, get, commentsEnabled, commentThreads])
+  }, [loading, get, commentsEnabled, commentThreads, showResolvedAnchors])
 
   // M7.2: force PM to re-read the `editable` predicate when collab status
   // or readOnly flips. PM only re-evaluates editable inside updateState,
