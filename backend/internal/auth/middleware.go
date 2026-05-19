@@ -120,6 +120,29 @@ func DeleteSession(ctx context.Context, d *sql.DB, sessionID string) error {
 	return err
 }
 
+// sessionExec is the subset of *sql.DB / *sql.Tx the session helpers use, so
+// the same call works whether the caller already has an open tx or not.
+type sessionExec interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// DeleteUserSessions removes every session for userID. Used by admin
+// password reset + admin deactivate so the affected user is logged out of
+// every device immediately.
+func DeleteUserSessions(ctx context.Context, d sessionExec, userID int64) error {
+	_, err := d.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+	return err
+}
+
+// DeleteUserSessionsExcept removes every session for userID except exceptID.
+// Used by self-service password change + "logout everywhere" so the caller's
+// own session survives.
+func DeleteUserSessionsExcept(ctx context.Context, d sessionExec, userID int64, exceptID string) error {
+	_, err := d.ExecContext(ctx,
+		`DELETE FROM sessions WHERE user_id = ? AND id != ?`, userID, exceptID)
+	return err
+}
+
 // CookieSecure reports whether the session cookie should carry the Secure
 // flag. True only when TELA_PUBLIC_BASE_URL has an https:// scheme — local
 // dev (http://localhost:8780) keeps the cookie usable.

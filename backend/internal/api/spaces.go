@@ -20,6 +20,10 @@ const (
 
 	// SQLITE_CONSTRAINT_UNIQUE — extended error code for UNIQUE violations.
 	sqliteConstraintUnique = 2067
+	// SQLITE_CONSTRAINT_PRIMARYKEY — extended error code for PK conflicts
+	// (covers composite PRIMARY KEY tables like space_members where a
+	// duplicate row trips PK rather than a separate UNIQUE index).
+	sqliteConstraintPrimaryKey = 1555
 )
 
 var (
@@ -321,8 +325,9 @@ func normalizeSlug(s string) string {
 
 func isUniqueConstraintErr(err error) bool {
 	var sqlErr *sqlitedrv.Error
-	if errors.As(err, &sqlErr) && sqlErr.Code() == sqliteConstraintUnique {
-		return true
+	if !errors.As(err, &sqlErr) {
+		return false
 	}
-	return false
+	code := sqlErr.Code()
+	return code == sqliteConstraintUnique || code == sqliteConstraintPrimaryKey
 }

@@ -33,6 +33,22 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.User, bool) {
 	return u, true
 }
 
+// requireInstanceAdmin gates an endpoint to instance-admins only. Writes the
+// 401 envelope when the caller isn't authenticated (defensive — should be
+// caught by middleware), or the 403 envelope when the caller is authenticated
+// but not an instance admin.
+func requireInstanceAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, bool) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return nil, false
+	}
+	if !u.IsInstanceAdmin {
+		writeError(w, http.StatusForbidden, "forbidden", "instance admin required")
+		return nil, false
+	}
+	return u, true
+}
+
 // spaceRole returns the user's role for spaceID, or sql.ErrNoRows when they
 // are not a member.
 func spaceRole(ctx context.Context, db *sql.DB, userID, spaceID int64) (string, error) {

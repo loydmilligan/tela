@@ -77,6 +77,21 @@ func main() {
 
 	mux.HandleFunc("GET /api/search", srv.Search)
 
+	mux.HandleFunc("GET /api/admin/users", srv.ListAdminUsers)
+	mux.HandleFunc("POST /api/admin/users", srv.CreateAdminUser)
+	mux.HandleFunc("PATCH /api/admin/users/{id}", srv.PatchAdminUser)
+	mux.HandleFunc("DELETE /api/admin/users/{id}", srv.DeleteAdminUser)
+
+	mux.HandleFunc("POST /api/users/me/password", srv.ChangePassword)
+	mux.HandleFunc("GET /api/users/me/sessions", srv.ListMySessions)
+	mux.HandleFunc("DELETE /api/users/me/sessions", srv.DeleteAllMySessionsExceptCurrent)
+	mux.HandleFunc("DELETE /api/users/me/sessions/{id}", srv.DeleteMySession)
+
+	mux.HandleFunc("GET /api/spaces/{id}/members", srv.ListSpaceMembers)
+	mux.HandleFunc("POST /api/spaces/{id}/members", srv.AddSpaceMember)
+	mux.HandleFunc("PATCH /api/spaces/{id}/members/{user_id}", srv.PatchSpaceMember)
+	mux.HandleFunc("DELETE /api/spaces/{id}/members/{user_id}", srv.DeleteSpaceMember)
+
 	handler := auth.Middleware(d)(mux)
 
 	log.Printf("tela backend listening on %s", addr)
