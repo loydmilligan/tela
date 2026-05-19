@@ -38,6 +38,7 @@
     --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
     --sidebar-width: 17rem;
+    --sheet-width: 420px;
 
     --surface-1: #ffffff;
     --surface-2: #f7f7f8;

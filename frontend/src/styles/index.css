@@ -110,6 +110,102 @@
     animation: tela-dialog-out var(--duration-fast) var(--ease-out);
   }
 
+  @keyframes tela-sheet-in-right {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes tela-sheet-out-right {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes tela-sheet-in-left {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes tela-sheet-out-left {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
+  .tela-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--text-primary) 40%, transparent);
+    backdrop-filter: blur(2px);
+  }
+  .tela-sheet-overlay[data-state='open'] {
+    animation: tela-fade-in var(--duration-base) var(--ease-out);
+  }
+  .tela-sheet-overlay[data-state='closed'] {
+    animation: tela-fade-out var(--duration-fast) var(--ease-out);
+  }
+
+  .tela-sheet-content {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    width: var(--sheet-width);
+    max-width: 100vw;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 20px 50px -10px
+      color-mix(in srgb, var(--text-primary) 25%, transparent);
+    display: flex;
+    flex-direction: column;
+    outline: none;
+  }
+
+  .tela-sheet-content--right {
+    right: 0;
+    border-left: 1px solid var(--border-subtle);
+  }
+  .tela-sheet-content--right[data-state='open'] {
+    animation: tela-sheet-in-right var(--duration-base) var(--ease-out);
+  }
+  .tela-sheet-content--right[data-state='closed'] {
+    animation: tela-sheet-out-right var(--duration-fast) var(--ease-out);
+  }
+
+  .tela-sheet-content--left {
+    left: 0;
+    border-right: 1px solid var(--border-subtle);
+  }
+  .tela-sheet-content--left[data-state='open'] {
+    animation: tela-sheet-in-left var(--duration-base) var(--ease-out);
+  }
+  .tela-sheet-content--left[data-state='closed'] {
+    animation: tela-sheet-out-left var(--duration-fast) var(--ease-out);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tela-sheet-content--right[data-state='open'],
+    .tela-sheet-content--left[data-state='open'] {
+      animation: tela-fade-in var(--duration-fast) var(--ease-out);
+    }
+    .tela-sheet-content--right[data-state='closed'],
+    .tela-sheet-content--left[data-state='closed'] {
+      animation: tela-fade-out var(--duration-fast) var(--ease-out);
+    }
+  }
+
   .tela-tooltip-content {
     z-index: 50;
     background: var(--surface-3);
