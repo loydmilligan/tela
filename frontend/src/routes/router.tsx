@@ -10,6 +10,7 @@ import {
   useParams,
 } from '@tanstack/react-router'
 import { FilePlus, Plus } from 'lucide-react'
+import { AppCommandHost } from '../components/app/AppCommandHost'
 import { NewSpaceDialog } from '../components/app/NewSpaceDialog'
 import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
@@ -23,18 +24,60 @@ import {
   CardTitle,
 } from '../components/ui/card'
 import { queryClient } from '../lib/queryClient'
+import {
+  authKeys,
+  fetchMe,
+  sanitizeNextPath,
+  type AuthUser,
+} from '../lib/queries/auth'
 import { spaceKeys } from '../lib/queries/spaces'
 import { pageKeys } from '../lib/queries/pages'
 import { api, ApiError } from '../lib/api'
 import { clearLastPage, readLastPage, writeLastPage } from '../lib/lastPage'
 import { useCreatePage, usePages } from '../lib/queries/pages'
+import { LoginPage } from './login'
 import type { Page, PageTreeNode, Space } from '../lib/types'
 
-// Two-pane app shell: fixed sidebar on the left, flexible main pane on the right.
-// The main pane has its own top bar (with the theme switcher and a slot for
-// per-page actions later), and the routed Outlet underneath.
+// Resolve the session once and cache it; both AppLayout and LoginRoute reuse
+// the same cached result so a quick login → redirect doesn't trigger two
+// /api/auth/me round-trips.
+function ensureMe(): Promise<AuthUser | null> {
+  return queryClient.ensureQueryData({
+    queryKey: authKeys.me(),
+    queryFn: fetchMe,
+    retry: false,
+    staleTime: Infinity,
+  })
+}
+
+// Bare root: just an Outlet. The login route renders WITHOUT the sidebar
+// shell, so we can't bake the shell into the root component anymore.
 const rootRoute = createRootRoute({
-  component: function RootLayout() {
+  component: function Root() {
+    return <Outlet />
+  },
+})
+
+// Pathless layout route ("_app") owning every authenticated page. Hosts the
+// sidebar + header chrome and the app-level command palette host. Gates
+// access via beforeLoad — unauthenticated visitors are bounced to /login.
+const appLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: '_app',
+  beforeLoad: async ({ location }) => {
+    const user = await ensureMe()
+    if (user) return
+    // Path + search only. TanStack's `location.href` is already the routed
+    // URL (no origin); we strip any accidental origin defensively in case
+    // the router ever emits one — protocol-relative `//evil` slips past the
+    // `startsWith('/')` check, but the LoginRoute sanitizer rejects those.
+    const here = (location.href || '/').replace(window.location.origin, '')
+    throw redirect({
+      to: '/login',
+      search: { next: here },
+    })
+  },
+  component: function AppLayout() {
     return (
       <div className="h-screen flex bg-[var(--surface-1)] text-[var(--text-primary)] overflow-hidden">
         <Sidebar />
@@ -49,9 +92,28 @@ const rootRoute = createRootRoute({
             <Outlet />
           </main>
         </div>
+        {/* AppCommandHost is mounted INSIDE the authed layout so its
+            useQuery hooks (spaces, search) don't fire on /login and trip
+            the global 401-redirect. */}
+        <AppCommandHost />
       </div>
     )
   },
+})
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/login',
+  validateSearch: (search: Record<string, unknown>): { next?: string } =>
+    typeof search.next === 'string' ? { next: search.next } : {},
+  beforeLoad: async ({ search }) => {
+    const user = await ensureMe()
+    if (!user) return
+    const next = sanitizeNextPath(search.next) ?? '/'
+    // Cast: `next` is a validated in-app path string, not a typed route.
+    throw redirect({ to: next as never })
+  },
+  component: LoginPage,
 })
 
 async function ensureSpaces(): Promise<Space[]> {
@@ -65,7 +127,7 @@ async function ensureSpaces(): Promise<Space[]> {
 }
 
 const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/',
   beforeLoad: async () => {
     const spaces = await ensureSpaces()
@@ -135,7 +197,7 @@ const indexRoute = createRoute({
 })
 
 const spaceRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/spaces/$spaceId',
   parseParams: (raw) => ({ spaceId: Number(raw.spaceId) }),
   stringifyParams: (params) => ({ spaceId: String(params.spaceId) }),
@@ -148,7 +210,7 @@ const spaceIndexRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: '/',
   component: function SpaceLanding() {
-    const { spaceId } = useParams({ from: '/spaces/$spaceId/' })
+    const { spaceId } = useParams({ from: '/_app/spaces/$spaceId/' })
     const navigate = useNavigate()
     const tree = usePages({ spaceId, tree: true })
     const createPage = useCreatePage()
@@ -223,14 +285,19 @@ const pageRoute = createRoute({
     writeLastPage({ spaceId: params.spaceId, pageId: params.pageId })
   },
   component: function PageRouteComponent() {
-    const { spaceId, pageId } = useParams({ from: '/spaces/$spaceId/pages/$pageId' })
+    const { spaceId, pageId } = useParams({
+      from: '/_app/spaces/$spaceId/pages/$pageId',
+    })
     return <PageView spaceId={spaceId} pageId={pageId} />
   },
 })
 
 const routeTree = rootRoute.addChildren([
-  indexRoute,
-  spaceRoute.addChildren([spaceIndexRoute, pageRoute]),
+  loginRoute,
+  appLayoutRoute.addChildren([
+    indexRoute,
+    spaceRoute.addChildren([spaceIndexRoute, pageRoute]),
+  ]),
 ])
 
 export const router = createRouter({

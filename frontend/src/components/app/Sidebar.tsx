@@ -2,6 +2,7 @@ import { useParams } from '@tanstack/react-router'
 import { FilePlus } from 'lucide-react'
 import { PagesTree } from './PagesTree'
 import { SpacesList } from './SpacesList'
+import { UserMenu } from './UserMenu'
 import { Button } from '../ui/button'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { IS_MAC } from '../../lib/useGlobalShortcut'
@@ -48,6 +49,7 @@ export function Sidebar() {
       ) : (
         <div className="flex-1" />
       )}
+      <UserMenu />
     </aside>
   )
 }
