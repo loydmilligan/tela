@@ -11,6 +11,8 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronRight, FileText, Plus, Trash2 } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { pushRecentPage } from '../../lib/recentPages'
+import { useMe } from '../../lib/queries/auth'
+import { useSpaceMembers } from '../../lib/queries/members'
 import {
   useAllPages,
   useCreatePage,
@@ -111,6 +113,31 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   const [title, setTitle] = useState(page.title)
   const [body, setBody] = useState(page.body)
   const [deleteOpen, setDeleteOpen] = useState(false)
+
+  // M7.2 — viewer role gating. The backend rejects ws upgrade for viewers
+  // (HTTP 403 + code `viewer_no_write`). We prefer Option A from the task
+  // brief: check role up-front via the already-needed space members query
+  // and skip opening a ws entirely for viewers — they render the page from
+  // pages.body as a non-editable Milkdown. Editors and owners get a live
+  // Yjs session via MilkdownEditor's `collabPageId` path.
+  const me = useMe()
+  const members = useSpaceMembers(spaceId)
+  const myMembership = useMemo(
+    () =>
+      me.data && members.data
+        ? members.data.find((m) => m.user_id === me.data!.id) ?? null
+        : null,
+    [me.data, members.data],
+  )
+  // Both queries must resolve before we mount the editor — otherwise the
+  // role-pending window would mount Milkdown in non-collab mode, then
+  // re-mount it in collab mode once role resolves. The re-mount would
+  // throw away local PM state and (worse) double-seed the Y.Doc fragment.
+  // `useMe` is typically cache-hot from the auth gate; `useSpaceMembers`
+  // has 30s staleTime so within-space navigation is also instant. The
+  // first page open per session has a brief loading-skeleton window.
+  const roleResolved = me.data != null && members.data != null
+  const isViewer = roleResolved && myMembership?.role === 'viewer'
 
   // Alive-page-ids snapshot powers M5.2d broken-wikilink rendering. `null` is
   // the "don't know yet" state — the editor's decoration plugin keeps every
@@ -304,17 +331,23 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
           )}
         />
 
-        <Suspense fallback={<EditorFallback />}>
-          <MilkdownEditor
-            defaultValue={page.body}
-            onChange={handleBodyChange}
-            onBlur={handleBodyBlur}
-            autoFocus={bodyAutoFocus}
-            ariaLabel="Page body"
-            className={EDITOR_MIN_H}
-            aliveWikilinkIds={aliveWikilinkIds}
-          />
-        </Suspense>
+        {roleResolved ? (
+          <Suspense fallback={<EditorFallback />}>
+            <MilkdownEditor
+              defaultValue={page.body}
+              onChange={handleBodyChange}
+              onBlur={handleBodyBlur}
+              autoFocus={bodyAutoFocus}
+              ariaLabel="Page body"
+              className={EDITOR_MIN_H}
+              aliveWikilinkIds={aliveWikilinkIds}
+              collabPageId={isViewer ? null : page.id}
+              readOnly={isViewer}
+            />
+          </Suspense>
+        ) : (
+          <EditorFallback />
+        )}
 
         <ChildPagesSection
           spaceId={spaceId}
