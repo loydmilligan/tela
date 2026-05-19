@@ -119,6 +119,20 @@ export function AppCommandHost() {
   const spacesQuery = useSpaces()
   const spaces = spacesQuery.data ?? []
 
+  // M10.1 — first-palette-open-per-session: dynamic-import the body-index
+  // module and kick off per-space version checks against
+  // /api/spaces/{id}/index-version. The kickoff helper guards itself via a
+  // module-scoped boolean, so this effect is safe to fire on every palette
+  // open. Depending on `spacesQuery.data` (rather than the `?? []`-stabilised
+  // `spaces`) keeps the dep array referentially stable across renders.
+  const spacesData = spacesQuery.data
+  useEffect(() => {
+    if (!open || !spacesData || spacesData.length === 0) return
+    void import('../../lib/search/body-index').then((m) => {
+      m.kickoffPaletteVersionCheck(spacesData)
+    })
+  }, [open, spacesData])
+
   const openNewPage = useCallback(
     (opts?: { prefillTitle?: string }) => {
       const ctx = readRouteContext()

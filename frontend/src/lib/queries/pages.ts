@@ -201,6 +201,22 @@ export function useCreatePage() {
   })
 }
 
+// M10.1 — fire-and-forget body-index updates from PATCH/DELETE onSuccess.
+// Dynamic-imports the body-index module so it stays out of the main chunk
+// for users who never PATCH a page or open the palette. Vite caches the
+// module after first load, so subsequent calls are O(1).
+function notifyBodyIndexUpdate(page: Page): void {
+  void import('../search/body-index').then((m) => {
+    m.bodyIndexUpdateOneShim(page)
+  })
+}
+
+function notifyBodyIndexRemove(pageId: number): void {
+  void import('../search/body-index').then((m) => {
+    m.bodyIndexRemoveShim(pageId)
+  })
+}
+
 export function useUpdatePage() {
   const qc = useQueryClient()
   return useMutation({
@@ -215,6 +231,7 @@ export function useUpdatePage() {
       qc.setQueryData(pageKeys.detail(updated.id), updated)
       void qc.invalidateQueries({ queryKey: pageKeys.space(updated.space_id) })
       emitPageMutation()
+      notifyBodyIndexUpdate(updated)
     },
   })
 }
@@ -230,6 +247,7 @@ export function useDeletePage() {
       qc.removeQueries({ queryKey: pageKeys.detail(id) })
       void qc.invalidateQueries({ queryKey: pageKeys.space(vars.spaceId) })
       emitPageMutation()
+      notifyBodyIndexRemove(id)
     },
   })
 }
