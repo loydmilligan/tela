@@ -36,6 +36,7 @@ import { api, ApiError } from '../lib/api'
 import { clearLastPage, readLastPage, writeLastPage } from '../lib/lastPage'
 import { useCreatePage, usePages } from '../lib/queries/pages'
 import { LoginPage } from './login'
+import { SettingsPage } from './settings'
 import type { Page, PageTreeNode, Space } from '../lib/types'
 
 // Resolve the session once and cache it; both AppLayout and LoginRoute reuse
@@ -196,6 +197,12 @@ const indexRoute = createRoute({
   },
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/settings',
+  component: SettingsPage,
+})
+
 const spaceRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/spaces/$spaceId',
@@ -296,6 +303,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   appLayoutRoute.addChildren([
     indexRoute,
+    settingsRoute,
     spaceRoute.addChildren([spaceIndexRoute, pageRoute]),
   ]),
 ])

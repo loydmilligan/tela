@@ -46,8 +46,13 @@ export function UserMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" className="min-w-[14rem]">
-          <DropdownMenuItem disabled>
-            <Settings width={14} height={14} /> Settings (coming soon)
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault()
+              void navigate({ to: '/settings' })
+            }}
+          >
+            <Settings width={14} height={14} /> Settings
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

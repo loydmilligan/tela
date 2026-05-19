@@ -85,6 +85,20 @@ export interface MovePageInput {
   position?: number
 }
 
+// Row in GET /api/users/me/sessions (M6.2). Timestamps are SQLite-native
+// `YYYY-MM-DD HH:MM:SS` strings (no `Z`); parse via `parseSqliteTs` and
+// related helpers — never `new Date(s)` directly. `current=true` flags the
+// session whose cookie made the request, which the UI uses to mark the row
+// and disable its revoke control.
+export interface SessionRow {
+  id: string
+  last_seen_at: string
+  expires_at: string
+  created_at: string
+  user_agent: string
+  current: boolean
+}
+
 export interface ApiErrorBody {
   error: string
   code: string
