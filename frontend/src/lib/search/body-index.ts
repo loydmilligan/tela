@@ -339,6 +339,19 @@ export function bodyIndexUpdateOneShim(page: Page): void {
       body: page.body,
       updated_at: page.updated_at,
     })
+    .then(() => {
+      // Bump LS watermark + version so the next palette-open drift check sees
+      // the upserted row as already-ingested and skips a redundant fetch.
+      // The server-side index-version is MAX(updated_at) over the space's
+      // pages; if another page is more recent than this one, our value will
+      // be lower than the server's and the drift check will still fire — so
+      // this is safe to write unconditionally.
+      const prevSince = readSince(page.space_id)
+      const nextSince =
+        page.updated_at > prevSince ? page.updated_at : prevSince
+      writeSince(page.space_id, nextSince)
+      writeVersion(page.space_id, nextSince)
+    })
     .catch((e) => {
       console.warn('body-index updateOne failed', e)
     })
@@ -381,5 +394,35 @@ async function checkOneSpace(spaceId: number): Promise<void> {
     writeVersion(spaceId, version)
   } catch {
     // Non-member spaces 403, network errors, etc. — palette must remain usable.
+  }
+}
+
+// ---------- Logout sweep -----------------------------------------------------
+
+// Called from useLogout.onSettled to prevent the previous user's body
+// indexes from leaking into the next signed-in user's palette / /search.
+// Clears module-scoped state (the in-memory registry + the per-session
+// version-check flag) and sweeps the per-space LS watermark/version keys.
+// IDB is intentionally NOT cleared — it's a persistent cache, and the next
+// user's drift check 403s out on non-member spaces, so the cache stays
+// inaccessible to non-members until they regain membership.
+export function clearAllBodyIndexes(): void {
+  loaded.clear()
+  loadInFlight.clear()
+  didCheckThisSession = false
+  try {
+    const sincePrefix = 'tela:body-index:space-'
+    const toRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith(sincePrefix)) {
+        toRemove.push(key)
+      }
+    }
+    for (const key of toRemove) {
+      localStorage.removeItem(key)
+    }
+  } catch {
+    // storage unavailable — in-memory clear is the load-bearing fix
   }
 }

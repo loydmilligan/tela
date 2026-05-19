@@ -74,6 +74,17 @@ export function useLogout() {
       qc.setQueryData(authKeys.me(), null)
       qc.removeQueries({ queryKey: spaceKeys.all })
       qc.removeQueries({ queryKey: pageKeys.all })
+      // Body-fuzzy indexes live in module-scoped state (per-space Orama
+      // instances + a once-per-session drift-check flag). Without sweeping
+      // them, user A's body content stays addressable in user B's palette
+      // until a full page reload. Dynamic-import keeps the Orama runtime
+      // off this hot auth path.
+      void import('../search/body-index')
+        .then((m) => m.clearAllBodyIndexes())
+        .catch(() => {
+          // Best-effort — chunk-load failure during logout is non-fatal;
+          // the next palette-open will still 403-gate non-member spaces.
+        })
     },
   })
 }
