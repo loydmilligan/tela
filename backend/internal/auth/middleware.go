@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -51,27 +52,33 @@ func UserFromContext(ctx context.Context) (*User, bool) {
 // pointed at an inactive/deleted user. Callers should treat this as 401.
 var ErrInvalidSession = errors.New("auth: invalid session")
 
-// LoadSessionAndSlide validates sessionID, slides expires_at forward by
-// SessionMaxAge, and stamps last_seen_at — all in a single tx so concurrent
-// requests can't see a half-extended session. Returns the resolved user.
+// LoadSessionAndSlide validates sessionID and best-effort slides expires_at
+// forward by SessionMaxAge + stamps last_seen_at. Returns ErrInvalidSession
+// for missing/expired/inactive; any other error is a real DB problem the
+// caller should propagate as 500.
+//
+// Implementation note: the validate + slide used to share a DEFERRED tx, but
+// under SQLite WAL two parallel requests sharing one cookie both pass the
+// SELECT in read mode, then both try to upgrade to writer on the UPDATE —
+// the loser hits SQLITE_BUSY because busy_timeout doesn't apply to write
+// promotion of a DEFERRED tx. Splitting into a single-statement SELECT plus
+// a best-effort UPDATE serializes naturally via per-statement locking. The
+// slide is an optimisation (rolling-window extension), not a correctness
+// invariant — a failed slide just means the session expires earlier than it
+// would have; the current request still completes.
 func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*User, error) {
-	tx, err := d.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
 	var (
-		userID  int64
-		isAdmin int
+		userID   int64
+		username string
+		isAdmin  int
 	)
-	err = tx.QueryRowContext(ctx, `
-		SELECT u.id, u.is_instance_admin
+	err := d.QueryRowContext(ctx, `
+		SELECT u.id, u.username, u.is_instance_admin
 		  FROM sessions s
 		  JOIN users u ON u.id = s.user_id
 		 WHERE s.id = ?
 		   AND s.expires_at > datetime('now')
-		   AND u.is_active = 1`, sessionID).Scan(&userID, &isAdmin)
+		   AND u.is_active = 1`, sessionID).Scan(&userID, &username, &isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidSession
 	}
@@ -80,19 +87,12 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 	}
 
 	newExpires := time.Now().UTC().Add(SessionMaxAge).Format("2006-01-02 15:04:05")
-	if _, err := tx.ExecContext(ctx,
+	if _, err := d.ExecContext(ctx,
 		`UPDATE sessions SET expires_at = ?, last_seen_at = datetime('now') WHERE id = ?`,
 		newExpires, sessionID); err != nil {
-		return nil, err
+		log.Printf("auth: session slide failed for %s: %v", sessionID, err)
 	}
 
-	var username string
-	if err := tx.QueryRowContext(ctx, `SELECT username FROM users WHERE id = ?`, userID).Scan(&username); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
 	return &User{ID: userID, Username: username, IsInstanceAdmin: isAdmin == 1}, nil
 }
 
@@ -194,8 +194,13 @@ func Middleware(d *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 			u, err := LoadSessionAndSlide(r.Context(), d, c.Value)
-			if err != nil {
+			if errors.Is(err, ErrInvalidSession) {
 				writeUnauthorized(w)
+				return
+			}
+			if err != nil {
+				log.Printf("auth: session lookup failed: %v", err)
+				writeInternal(w)
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), u)))
@@ -207,6 +212,12 @@ func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(`{"error":"unauthorized","code":"unauthorized"}`))
+}
+
+func writeInternal(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	_, _ = w.Write([]byte(`{"error":"internal error","code":"internal"}`))
 }
 
 var (
