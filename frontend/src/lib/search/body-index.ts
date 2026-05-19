@@ -4,11 +4,15 @@
 //
 // Strategy: per-space Orama instance with full bodies, hydrated from the
 // `/api/pages/bodies?space_id=&since=&cursor=&limit=` cursor-paginated endpoint
-// (M10.0, commit 9e9bde0). Persisted to IndexedDB via @orama/plugin-data-persistence
-// keyed `tela:bodyIndexes > space-<id>:v1`. LS watermark per space tracks the
-// max `updated_at` we've ingested so refresh() pulls only deltas. LS version
-// per space mirrors the last `/api/spaces/{id}/index-version` value we've
-// reconciled against — palette open compares and triggers a refresh on drift.
+// (M10.0, commit 9e9bde0). Persisted to IndexedDB via orama's native
+// `save()`/`load()` (NOT `@orama/plugin-data-persistence` — that plugin's
+// `import dpack` pulls Node `stream` via msgpack and throws in-browser; see
+// memory.md "Known Pitfalls"). IDB layout: DB `tela`, store `bodyIndexes`,
+// key `space-<id>:v1`, value = `JSON.stringify(oramaSave(orama))`. LS
+// watermark per space tracks the max `updated_at` we've ingested so refresh()
+// pulls only deltas. LS version per space mirrors the last
+// `/api/spaces/{id}/index-version` value we've reconciled against — palette
+// open compares and triggers a refresh on drift.
 //
 // PATCH-onSuccess: useUpdatePage fires `bodyIndexUpdateOneShim(updated)` — if
 // the page's space has a loaded index, the row is upserted; otherwise no-op.
