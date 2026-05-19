@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { MoreHorizontal, Plus, RotateCw } from 'lucide-react'
+import { MoreHorizontal, Plus, RotateCw, UsersRound } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import {
   useDeleteSpace,
@@ -29,6 +29,7 @@ import {
 import { Input } from '../ui/input'
 import { cn } from '../../lib/utils'
 import { NewSpaceDialog } from './NewSpaceDialog'
+import { ShareSpaceDialog } from './ShareSpaceDialog'
 
 interface SpacesListProps {
   activeSpaceId: number | null
@@ -142,6 +143,7 @@ interface SpaceRowProps {
 
 function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
   const [renameOpen, setRenameOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   return (
@@ -179,6 +181,9 @@ function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setShareOpen(true)}>
+            <UsersRound width={14} height={14} /> Share
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem destructive onSelect={() => setDeleteOpen(true)}>
             Delete
@@ -190,6 +195,11 @@ function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
         space={space}
         open={renameOpen}
         onOpenChange={setRenameOpen}
+      />
+      <ShareSpaceDialog
+        space={space}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
       />
       <DeleteSpaceDialog
         space={space}

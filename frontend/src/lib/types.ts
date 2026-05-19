@@ -99,6 +99,17 @@ export interface SessionRow {
   current: boolean
 }
 
+// Row in GET /api/spaces/{id}/members (M6.2). Mirrors backend's
+// spaceMemberDTO. Backend orders rows owner → editor → viewer (role ASC
+// sorts that way alphabetically) then username ASC.
+export interface SpaceMember {
+  user_id: number
+  username: string
+  role: 'owner' | 'editor' | 'viewer'
+  created_at: string
+  updated_at: string
+}
+
 // Row in GET /api/admin/users (M6.2). Mirrors backend's adminUserDTO.
 // Timestamps are SQLite-native — render via localDateFromSqlite for the
 // 'Created' column.
