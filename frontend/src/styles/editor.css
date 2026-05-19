@@ -643,4 +643,71 @@
       transparent
     );
   }
+
+  /* M8.4 — comment anchor decoration. Painted by lib/comments/anchor-decoration.ts
+     over every passage that has at least one open comment thread on it.
+     Visual language is intentionally calm (tinted background + solid
+     underline at ~70% alpha) so it doesn't fight wikilinks (--accent colour
+     + dotted underline) or remote-peer selections (--collab-cursor-N at
+     25% alpha) when they overlap. Click is delegated through PM's
+     handleClick — see anchor-decoration.ts. */
+  .tela-milkdown .ProseMirror .tela-comment-anchor {
+    background: color-mix(
+      in srgb,
+      var(--comment-anchor-color) 18%,
+      transparent
+    );
+    border-bottom: 1.5px solid
+      color-mix(in srgb, var(--comment-anchor-color) 70%, transparent);
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-out);
+  }
+  .tela-milkdown .ProseMirror .tela-comment-anchor:hover {
+    background: color-mix(
+      in srgb,
+      var(--comment-anchor-color) 32%,
+      transparent
+    );
+  }
+
+  /* M8.4 — 600ms flash. Applied by lib/comments/coordination.ts on
+     panel-row → body-scroll for the body anchor, and re-used (same name,
+     scoped to panel rows below) for body-anchor → panel-row scroll. The
+     class is removed after FLASH_MS by the helper. */
+  .tela-milkdown .ProseMirror .tela-comment-anchor.is-flash {
+    animation: tela-comment-flash 600ms ease-out;
+  }
+  @keyframes tela-comment-flash {
+    0% {
+      background: color-mix(
+        in srgb,
+        var(--comment-anchor-color) 70%,
+        transparent
+      );
+    }
+    100% {
+      background: color-mix(
+        in srgb,
+        var(--comment-anchor-color) 18%,
+        transparent
+      );
+    }
+  }
+
+  /* M8.4 — panel-row flash (body-click → panel-open + scroll). Selects
+     the CommentThread <li> directly so the rule lives next to the body
+     decoration rule and shares the same keyframe-name family. */
+  li[data-comment-thread-id].is-flash {
+    animation: tela-comment-row-flash 600ms ease-out;
+  }
+  @keyframes tela-comment-row-flash {
+    0% {
+      box-shadow: 0 0 0 2px
+        color-mix(in srgb, var(--comment-anchor-color) 70%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 2px
+        color-mix(in srgb, var(--comment-anchor-color) 0%, transparent);
+    }
+  }
 }

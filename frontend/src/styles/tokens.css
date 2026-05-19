@@ -106,5 +106,14 @@
        keeps the underlying text legible across all 3 themes; tuned against
        the brightest dark-theme hues (the worst case for over-saturation). */
     --collab-selection-alpha: 25%;
+
+    /* M8.4 — base hue for the in-body comment-anchor underline + tint.
+       Semantic name (the colour signals "there's a comment on this passage",
+       independent of theme); per-theme values live in themes/*.css. The
+       editor.css rules mix this against transparent at low alpha so the
+       underline doesn't fight wikilinks, syntax tokens, or remote-peer
+       selections that may sit over the same range. Defaults below mirror
+       the light palette so an unthemed root still renders reasonably. */
+    --comment-anchor-color: #ca8a04;
   }
 }

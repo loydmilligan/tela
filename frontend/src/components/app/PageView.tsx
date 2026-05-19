@@ -14,6 +14,7 @@ import { ApiError } from '../../lib/api'
 import { pushRecentPage } from '../../lib/recentPages'
 import type { TelaProvider } from '../../lib/collab/tela-provider'
 import { captureAnchor, type CommentAnchor } from '../../lib/comments/anchor'
+import { scrollAndFlashPanelThread } from '../../lib/comments/coordination'
 import { useComments } from '../../lib/comments/use-comments'
 import { useMe } from '../../lib/queries/auth'
 import { useSpaceMembers } from '../../lib/queries/members'
@@ -176,10 +177,10 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
       return null
     }
   }, [])
-  // Drives the "Comments (N)" badge on the header toggle. The CommentsPanel
-  // shares the same queryKey, so this hook hits the cache instead of
-  // re-fetching when the panel is open. Skipped entirely for viewers — they
-  // see no comments surface and the backend would 403 them.
+  // Drives the "Comments (N)" badge on the header toggle, feeds the
+  // CommentsPanel, and (M8.4) feeds the in-body anchor-decoration plugin.
+  // Shared queryKey so all three consume the same cache; skipped entirely
+  // for viewers (backend 403s them).
   const commentsForHeader = useComments({
     pageId: page.id,
     enabled: roleResolved && !isViewer,
@@ -189,6 +190,48 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
     if (!data) return null
     return data.reduce((n, t) => n + (t.root.resolved ? 0 : 1), 0)
   }, [commentsForHeader.data])
+
+  // M8.4 — orphan-thread map. The editor's anchor-decoration plugin reports
+  // each thread's resolution after every rebuild (debounced 250ms on
+  // typing, immediate on thread-list change). null = no match in the
+  // current text → render an "Orphaned" tag in the panel. Stored as a
+  // sorted-ish array of ids in a Set for O(1) lookup per thread row.
+  const [orphanIds, setOrphanIds] = useState<Set<number>>(() => new Set())
+  const handleAnchorsResolved = useCallback(
+    (resolutions: Map<number, { from: number; to: number } | null>) => {
+      const next = new Set<number>()
+      for (const [id, range] of resolutions) {
+        if (range === null) next.add(id)
+      }
+      // Avoid setState if the new set is identical to the previous one —
+      // a same-size, same-membership Set should not retrigger renders.
+      setOrphanIds((prev) => {
+        if (prev.size !== next.size) return next
+        for (const id of next) if (!prev.has(id)) return next
+        return prev
+      })
+    },
+    [],
+  )
+
+  // M8.4 — body-click → panel-open + scroll. The decoration plugin fires
+  // this when the user clicks any .tela-comment-anchor span. Opens the
+  // Sheet if closed and scrolls/flashes the matching thread row. A short
+  // setTimeout gives Radix one frame to mount the row's DOM before the
+  // scroll attempt.
+  const handleAnchorClick = useCallback((threadId: number) => {
+    setCommentsOpen(true)
+    window.setTimeout(() => {
+      scrollAndFlashPanelThread(threadId)
+    }, 50)
+  }, [])
+
+  // Pass an empty array (not undefined) to the editor when comments are
+  // enabled — see milkdown-editor.tsx commentsEnabled doc: the editor
+  // builder closure captures the prop ONCE at build time, so undefined-now
+  // would never upgrade to plugin-mounted when the query later returns.
+  const commentThreadsForEditor =
+    roleResolved && !isViewer ? (commentsForHeader.data ?? []) : undefined
 
   // M7.4 — collab provider, lifted into PageView so the header
   // <PresenceAvatars /> and the local-awareness user-state seeding share
@@ -448,6 +491,9 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
               onCollabReady={setProvider}
               onViewReady={isViewer ? undefined : handleViewReady}
               onSelectionChange={isViewer ? undefined : handleSelectionChange}
+              commentThreads={commentThreadsForEditor}
+              onAnchorClick={isViewer ? undefined : handleAnchorClick}
+              onAnchorsResolved={isViewer ? undefined : handleAnchorsResolved}
             />
           </Suspense>
         ) : (
@@ -481,6 +527,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
           anchorPreview={selectionEmpty ? null : selectionPreview}
           me={{ id: me.data.id, username: me.data.username }}
           isSpaceOwner={isSpaceOwner}
+          orphanIds={orphanIds}
         />
       ) : null}
     </div>

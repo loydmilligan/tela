@@ -40,6 +40,14 @@ import {
   wikilinkAliveIdsCtx,
   wikilinkDecorationPlugin,
 } from './milkdown-wikilink-decoration'
+import {
+  COMMENT_ANCHOR_META,
+  commentAnchorCallbacksCtx,
+  commentThreadsCtx,
+  createCommentAnchorPlugin,
+  type CommentAnchorCallbacks,
+} from '../../lib/comments/anchor-decoration'
+import type { CommentThread } from '../../lib/comments/use-comments'
 
 export interface MilkdownEditorProps {
   defaultValue: string
@@ -82,6 +90,21 @@ export interface MilkdownEditorProps {
   // a single tiny PM plugin so we don't double-up subscription paths.
   onViewReady?: (view: EditorView | null) => void
   onSelectionChange?: (state: { isEmpty: boolean; text: string }) => void
+  // M8.4 — anchor decoration. When `commentThreads` is provided (incl. an
+  // empty array meaning "no threads"), the editor mounts the comment-anchor
+  // decoration plugin and underlines each thread's resolved passage. Null /
+  // undefined disables the plugin entirely (viewer-role fallback).
+  //
+  // `onAnchorClick` fires when the user clicks any underlined passage —
+  // PageView uses it to open the Sheet + scroll the matching panel row into
+  // view. `onAnchorsResolved` fires after every decoration rebuild with the
+  // map of {threadId → resolved range | null}; PageView reads it to render
+  // "Orphaned" tags on threads whose passage no longer matches.
+  commentThreads?: CommentThread[] | null
+  onAnchorClick?: (threadId: number) => void
+  onAnchorsResolved?: (
+    resolutions: Map<number, { from: number; to: number } | null>,
+  ) => void
 }
 
 // Reconnecting banner copy.
@@ -100,12 +123,40 @@ function MilkdownEditorInner({
   onCollabReady,
   onViewReady,
   onSelectionChange,
+  commentThreads,
+  onAnchorClick,
+  onAnchorsResolved,
 }: MilkdownEditorProps) {
   const pluginViewFactory = usePluginViewFactory()
 
+  // M8.4 — whether to mount the anchor-decoration plugin. `commentThreads`
+  // being `undefined` (caller never passed the prop, e.g. viewer fallback)
+  // disables; passing an empty array enables (treated as "no threads on
+  // this page yet" — the plugin slot still wires so the first POST'd
+  // comment can paint without an editor remount). Caller must pass an
+  // array (even if `[]`) for non-viewer pages to ensure the plugin mounts
+  // at build time; passing `undefined` until the TanStack query returns
+  // would miss the build window since the editor builder closure runs
+  // once.
+  const commentsEnabled = commentThreads !== undefined
+
   // Keep callbacks fresh without recreating the editor on every render.
-  const callbacks = useRef({ onChange, onBlur, onViewReady, onSelectionChange })
-  callbacks.current = { onChange, onBlur, onViewReady, onSelectionChange }
+  const callbacks = useRef({
+    onChange,
+    onBlur,
+    onViewReady,
+    onSelectionChange,
+    onAnchorClick,
+    onAnchorsResolved,
+  })
+  callbacks.current = {
+    onChange,
+    onBlur,
+    onViewReady,
+    onSelectionChange,
+    onAnchorClick,
+    onAnchorsResolved,
+  }
 
   // M8.3 — single-source the selection projection so the PM plugin and any
   // future consumer read selection text via the same '\n' block separator
@@ -280,6 +331,27 @@ function MilkdownEditorInner({
             yUndoPlugin(),
           ])
         }
+
+        // M8.4 — anchor decoration. Always-on for non-viewer pages
+        // (commentsEnabled). Positioned AFTER yCursorPlugin in the collab
+        // branch (so caret widgets still hit-test correctly above the
+        // underline) and also wired in non-collab mode. Plugin reads the
+        // thread list via commentThreadsCtx and dispatches a meta-flagged
+        // rebuild tx — the React useEffect below pushes new threads into
+        // the slice + dispatches the tx atomically.
+        if (commentsEnabled) {
+          // Stable callback bundle — reads live refs each call so prop
+          // changes (PageView re-renders) don't require an editor rebuild.
+          const stableCallbacks: CommentAnchorCallbacks = {
+            onAnchorClick: (id) => callbacks.current.onAnchorClick?.(id),
+            onResolved: (resolutions) =>
+              callbacks.current.onAnchorsResolved?.(resolutions),
+          }
+          ctx.set(commentThreadsCtx.key, commentThreads ?? null)
+          ctx.set(commentAnchorCallbacksCtx.key, stableCallbacks)
+          const anchorPlugin = createCommentAnchorPlugin(ctx)
+          ctx.update(prosePluginsCtx, (existing) => [...existing, anchorPlugin])
+        }
       })
       .use(commonmark)
       .use(gfm)
@@ -290,7 +362,9 @@ function MilkdownEditorInner({
       .use(slashPlugin)
       .use(wikilinkPlugin)
       .use(wikilinkAliveIdsCtx)
-      .use(wikilinkDecorationPlugin),
+      .use(wikilinkDecorationPlugin)
+      .use(commentThreadsCtx)
+      .use(commentAnchorCallbacksCtx),
   )
 
   useEffect(() => {
@@ -314,6 +388,23 @@ function MilkdownEditorInner({
       view.dispatch(view.state.tr.setMeta(WIKILINK_ALIVE_IDS_META, true))
     })
   }, [loading, get, aliveWikilinkIds])
+
+  // M8.4 — push thread-list updates into the comment-anchor ctx slice and
+  // trigger an immediate rebuild via the COMMENT_ANCHOR_META tx. The plugin's
+  // internal scheduler handles debounce on doc-change; thread-list changes
+  // (new comment, deleted comment, resolve toggle) should paint immediately
+  // since they reflect a discrete user action elsewhere in the UI rather
+  // than continuous typing. Skipped if comments aren't enabled (viewer).
+  useEffect(() => {
+    if (loading) return
+    if (!commentsEnabled) return
+    const editor = get()
+    editor?.action((ctx) => {
+      ctx.set(commentThreadsCtx.key, commentThreads ?? null)
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(COMMENT_ANCHOR_META, true))
+    })
+  }, [loading, get, commentsEnabled, commentThreads])
 
   // M7.2: force PM to re-read the `editable` predicate when collab status
   // or readOnly flips. PM only re-evaluates editable inside updateState,

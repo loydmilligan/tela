@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { CornerDownRight, MessageSquare } from 'lucide-react'
 import type { CommentThread as CommentThreadType } from '../../lib/comments/use-comments'
 import { ApiError } from '../../lib/api'
+import { scrollAndFlashBodyAnchor } from '../../lib/comments/coordination'
 import { Button } from '../ui/button'
 import { CommentItem } from './CommentItem'
 import { ReplyComposer } from './ReplyComposer'
@@ -14,6 +15,11 @@ interface CommentThreadProps {
   onEditComment: (id: number, body: string) => Promise<void>
   onDeleteComment: (id: number) => Promise<void>
   onReply: (parentId: number, body: string) => Promise<void>
+  // M8.4 — root id is not currently resolvable against editor text (the
+  // anchor passage was deleted / drifted past the fuzzy resolver). Shows
+  // an "Orphaned" tag and disables the body-scroll click affordance since
+  // there's nothing in the body to scroll to.
+  isOrphan?: boolean
 }
 
 function isOptimistic(id: number): boolean {
@@ -27,6 +33,7 @@ export function CommentThread({
   onEditComment,
   onDeleteComment,
   onReply,
+  isOrphan = false,
 }: CommentThreadProps) {
   const [replying, setReplying] = useState(false)
   const { root, replies } = thread
@@ -42,6 +49,20 @@ export function CommentThread({
     }
   }
 
+  // M8.4 — panel-row click → editor scroll + body underline flash. Delegated
+  // off the <li> so a click anywhere in the row (except on an interactive
+  // descendant — buttons, textarea, the reply composer) targets the
+  // commented passage in the body. Skipped when the thread is orphaned
+  // (no passage to scroll to) or still optimistic (no server-side id, no
+  // backing decoration in the body yet).
+  function handleRowClick(e: MouseEvent<HTMLLIElement>) {
+    if (isOrphan) return
+    if (isOptimistic(root.id)) return
+    const target = e.target as HTMLElement | null
+    if (target?.closest('button, textarea, input, a')) return
+    scrollAndFlashBodyAnchor(root.id)
+  }
+
   return (
     <li
       className={cn(
@@ -49,21 +70,40 @@ export function CommentThread({
         'rounded-[var(--radius-md)] border border-[var(--border-subtle)]',
         'bg-[var(--surface-1)]',
         'flex flex-col gap-[var(--space-1)]',
+        !isOrphan && !isOptimistic(root.id) && 'cursor-pointer',
       )}
       data-comment-thread-id={String(root.id)}
+      onClick={handleRowClick}
     >
       {root.anchor_exact ? (
-        <blockquote
-          className={cn(
-            'm-0 px-[var(--space-3)] py-[var(--space-2)]',
-            'border-l-2 border-[var(--border-strong)]',
-            'bg-[var(--surface-2)]',
-            'text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]',
-            'whitespace-pre-wrap line-clamp-3',
-          )}
-        >
-          {root.anchor_exact}
-        </blockquote>
+        <div className="flex items-start gap-[var(--space-2)]">
+          <blockquote
+            className={cn(
+              'flex-1 m-0 px-[var(--space-3)] py-[var(--space-2)]',
+              'border-l-2 border-[var(--border-strong)]',
+              'bg-[var(--surface-2)]',
+              'text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]',
+              'whitespace-pre-wrap line-clamp-3',
+            )}
+          >
+            {root.anchor_exact}
+          </blockquote>
+          {isOrphan ? (
+            <span
+              aria-label="Orphaned thread"
+              title="The commented passage was deleted or drifted past the resolver."
+              className={cn(
+                'shrink-0 mt-[var(--space-1)] px-[var(--space-2)]',
+                'rounded-[var(--radius-xs)]',
+                'text-[length:var(--text-xs)] font-[family-name:var(--font-sans)] uppercase tracking-wider',
+                'bg-[var(--surface-2)] text-[var(--text-muted)]',
+                'border border-[var(--border-subtle)]',
+              )}
+            >
+              Orphaned
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       <CommentItem

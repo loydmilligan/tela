@@ -34,5 +34,11 @@
     --collab-cursor-6: #60a5fa;
     --collab-cursor-7: #c4b5fd;
     --collab-cursor-8: #f9a8d4;
+
+    /* M8.4 — soft amber-yellow so the underline reads against the near-black
+       editor surface (#0f0f12). Distinct from --warning (#fbbf24) by being
+       slightly cooler / desaturated so the comment cue isn't read as an
+       error signal. */
+    --comment-anchor-color: #facc15;
   }
 }

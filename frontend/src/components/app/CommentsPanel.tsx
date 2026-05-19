@@ -33,6 +33,11 @@ interface CommentsPanelProps {
   // True iff the viewer's space role is 'owner'. Owners can delete any
   // comment in the page.
   isSpaceOwner: boolean
+  // M8.4 — thread root ids whose anchor failed to resolve against the
+  // current editor text. Owned by PageView (populated by the editor's
+  // anchor-decoration plugin), passed through so CommentThread can render
+  // an "Orphaned" tag.
+  orphanIds: Set<number>
 }
 
 export function CommentsPanel({
@@ -44,6 +49,7 @@ export function CommentsPanel({
   anchorPreview,
   me,
   isSpaceOwner,
+  orphanIds,
 }: CommentsPanelProps) {
   // Backend orders threads ASC by created_at; show newest at top in the panel.
   const commentsQuery = useComments({ pageId })
@@ -159,6 +165,7 @@ export function CommentsPanel({
                   onEditComment={handleEdit}
                   onDeleteComment={handleDelete}
                   onReply={handleReply}
+                  isOrphan={orphanIds.has(thread.root.id)}
                 />
               ))}
             </ul>

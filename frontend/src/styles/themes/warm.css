@@ -35,5 +35,10 @@
     --collab-cursor-6: #2c5f7a;
     --collab-cursor-7: #7a4b8c;
     --collab-cursor-8: #a83269;
+
+    /* M8.4 — slightly dustier amber so the underline integrates with the
+       cream surface (#fbf6ec) without screaming. Still distinct enough from
+       --accent (#b4543a, warm red) at the 70% alpha used by the underline. */
+    --comment-anchor-color: #a8742a;
   }
 }

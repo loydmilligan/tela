@@ -34,5 +34,10 @@
     --collab-cursor-6: #2563eb;
     --collab-cursor-7: #7c3aed;
     --collab-cursor-8: #db2777;
+
+    /* M8.4 — warm amber against #ffffff. Mid-darkness so the underline at
+       70% alpha reads as a hint, not a marker; calm enough not to compete
+       with --accent (indigo) used for wikilinks. */
+    --comment-anchor-color: #ca8a04;
   }
 }
