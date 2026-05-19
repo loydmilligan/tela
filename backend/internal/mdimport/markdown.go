@@ -15,6 +15,24 @@
 //     rows) get a `(N)` suffix appended until unique.
 //   - Wikilinks `[[X]]` and relative `[…](./y.md)` links are NOT rewritten —
 //     v0 leaves them as broken text per Q39 #3 (deferred).
+//
+// Flatten-root pre-pass (locked by PO Q40 C + Q42 B, 2026-05-19):
+//   - When every markdown path in the upload shares a single non-empty top-
+//     level directory (rootDir), a pre-pass runs before the regular hierarchy
+//     resolution. `<input webkitdirectory>` always prepends the picked folder
+//     name to every relative path, so without this pass the user-visible
+//     result is a wrapping page they did not intend.
+//   - With root README (`rootDir/README.md`, case-insensitive basename): one
+//     wrapper page is created at the request's parent_id, titled by rootDir's
+//     basename and bodied by the README (frontmatter-stripped). The README is
+//     consumed; all other paths have their `rootDir/` prefix stripped and
+//     nest under the wrapper. Behavior is identical whether parent_id is the
+//     space root or a real page (Q42 B).
+//   - Without root README: pure flatten — strip the `rootDir/` prefix from
+//     all paths so files formerly directly inside rootDir attach to the
+//     request's parent_id and the rest of the pipeline runs unchanged.
+//   - When the upload has multiple top-level dirs (or only files at root),
+//     the pre-pass is a no-op and today's behavior is preserved.
 package mdimport
 
 import (
@@ -71,6 +89,14 @@ type Result struct {
 	Errors  []ErrorFile    `json:"errors"`
 }
 
+// mdEntry is one accepted markdown file inside the importer's working set —
+// `consumed` marks it as claimed by a directory index page so Pass 2 skips it.
+type mdEntry struct {
+	path     string
+	content  string
+	consumed bool
+}
+
 // Import processes a list of markdown files and inserts them as pages under
 // spaceID/parentID. The caller owns the transaction lifecycle: tx.Commit on
 // success, tx.Rollback on hard error or when dryRun=true.
@@ -93,12 +119,6 @@ func Import(
 		Errors:  []ErrorFile{},
 	}
 
-	type mdEntry struct {
-		path     string
-		content  string
-		consumed bool // claimed as the index for its parent directory
-	}
-
 	mdFiles := make([]mdEntry, 0, len(files))
 	for _, f := range files {
 		clean, err := sanitizePath(f.Path)
@@ -112,6 +132,30 @@ func Import(
 			continue
 		}
 		mdFiles = append(mdFiles, mdEntry{path: clean, content: string(f.Content)})
+	}
+
+	// M14.5 pre-pass: detect a single top-level directory and flatten it (or
+	// wrap when a root README exists). See package doc-comment for the
+	// locked Q40 C + Q42 B spec.
+	var (
+		havePendingWrapper bool
+		wrapperTitle       string
+		wrapperBody        string
+		wrapperImportPath  string
+	)
+	if rootDir := singleTopLevelDir(mdFiles); rootDir != "" {
+		if idx := findRootReadme(mdFiles, rootDir); idx >= 0 {
+			rawBody, _ := StripFrontmatter(mdFiles[idx].content)
+			havePendingWrapper = true
+			wrapperTitle = path.Base(rootDir)
+			wrapperBody = rawBody
+			wrapperImportPath = mdFiles[idx].path
+			mdFiles = append(mdFiles[:idx], mdFiles[idx+1:]...)
+		}
+		prefix := rootDir + "/"
+		for i := range mdFiles {
+			mdFiles[i].path = strings.TrimPrefix(mdFiles[i].path, prefix)
+		}
 	}
 
 	sort.Slice(mdFiles, func(i, j int) bool { return mdFiles[i].path < mdFiles[j].path })
@@ -297,6 +341,26 @@ func Import(
 		return pageID, nil
 	}
 
+	// Materialize the pending wrapper page (if the pre-pass set one up).
+	// The wrapper is inserted at the request's parent_id and then becomes
+	// the new effective parent for the rest of the import — every stripped
+	// path nests under it.
+	if havePendingWrapper {
+		if err := preloadSiblings(parentID); err != nil {
+			return nil, err
+		}
+		resolved, renamed := resolveTitle(parentID, wrapperTitle)
+		if renamed {
+			result.Summary.ConflictsRenamed++
+		}
+		wrapperID, err := insertPage(parentID, resolved, wrapperBody, wrapperImportPath)
+		if err != nil {
+			return nil, err
+		}
+		ref := wrapperID
+		parentID = &ref
+	}
+
 	// Pass 1: create directory index pages (shallow → deep). Each is parented
 	// at either request.parent_id (top-level dir) or the parent dir's id.
 	for _, d := range sortedDirs {
@@ -392,6 +456,46 @@ func Import(
 
 	result.Summary.Skipped = len(result.Skipped)
 	return result, nil
+}
+
+// singleTopLevelDir returns the shared first path-segment when every entry
+// in files lives below the same non-empty top-level directory. Returns ""
+// when files is empty, when any entry sits at the upload root (no slash),
+// or when entries disagree on the first segment.
+func singleTopLevelDir(files []mdEntry) string {
+	if len(files) == 0 {
+		return ""
+	}
+	var rootDir string
+	for _, f := range files {
+		idx := strings.IndexByte(f.path, '/')
+		if idx <= 0 {
+			return ""
+		}
+		seg := f.path[:idx]
+		if rootDir == "" {
+			rootDir = seg
+		} else if rootDir != seg {
+			return ""
+		}
+	}
+	return rootDir
+}
+
+// findRootReadme returns the index of the README directly inside rootDir
+// (case-insensitive basename match on `README.md`), or -1 when absent. The
+// directory prefix itself is matched case-sensitively — only the basename
+// is case-insensitive.
+func findRootReadme(files []mdEntry, rootDir string) int {
+	for i, f := range files {
+		if path.Dir(f.path) != rootDir {
+			continue
+		}
+		if strings.EqualFold(path.Base(f.path), "README.md") {
+			return i
+		}
+	}
+	return -1
 }
 
 // sanitizePath normalises a relative path from the multipart filename. It

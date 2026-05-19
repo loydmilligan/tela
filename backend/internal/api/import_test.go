@@ -154,8 +154,10 @@ func TestImport_FullFlow(t *testing.T) {
 		}
 	})
 
-	// 3. Single dir without README → synthesized empty index + 2 children.
-	t.Run("single_dir_no_readme", func(t *testing.T) {
+	// 3. Single top-level dir without README → flatten pre-pass strips the
+	// shared prefix; files become siblings at the request's parent_id (here
+	// space root). No wrapper page is created. Locks M14.5 Q40 C + Q42 B.
+	t.Run("single_dir_no_readme_flattens", func(t *testing.T) {
 		resp, body := postImport(t, adminC, ts.URL, space, nil, false, []importFilePart{
 			{relPath: "Notes/alpha.md", body: "alpha body"},
 			{relPath: "Notes/beta.md", body: "beta body"},
@@ -164,27 +166,15 @@ func TestImport_FullFlow(t *testing.T) {
 			t.Fatalf("status=%d body=%s", resp.StatusCode, body)
 		}
 		got := decodeImportResp(t, body)
-		if got.Summary.Created != 3 {
-			t.Fatalf("created=%d want 3", got.Summary.Created)
-		}
-		var indexID int64
-		for _, p := range got.Pages {
-			if p.Title == "Notes" {
-				indexID = p.ID
-				if p.ParentID != nil {
-					t.Fatalf("Notes parent=%v want nil", p.ParentID)
-				}
-			}
-		}
-		if indexID == 0 {
-			t.Fatalf("no Notes index page: %+v", got.Pages)
+		if got.Summary.Created != 2 {
+			t.Fatalf("created=%d want 2 (alpha + beta, no synthesized 'Notes')", got.Summary.Created)
 		}
 		for _, p := range got.Pages {
 			if p.Title == "Notes" {
-				continue
+				t.Fatalf("unexpected wrapper 'Notes' after flatten: %+v", p)
 			}
-			if p.ParentID == nil || *p.ParentID != indexID {
-				t.Fatalf("child %q parent=%v want Notes(%d)", p.Title, p.ParentID, indexID)
+			if p.ParentID != nil {
+				t.Fatalf("page %q parent_id=%v want nil (flattened to space root)", p.Title, p.ParentID)
 			}
 		}
 	})

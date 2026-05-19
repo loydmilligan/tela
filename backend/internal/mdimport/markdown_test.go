@@ -141,44 +141,32 @@ func TestImport_SingleDir_WithReadme_FrontmatterIgnored(t *testing.T) {
 	}
 }
 
-// 3. Single dir WITHOUT README, 2 .md → 1 synthesized empty index + 2 children.
-func TestImport_SingleDir_NoReadme_SynthesizesIndex(t *testing.T) {
+// 3. Single top-level dir, no README, parent_id == space root → flatten:
+// strip the dir prefix, no wrapper, files become siblings at the space root.
+// Locks Q40 C + Q42 B (no-README half).
+func TestImport_FlattenSpaceRoot_NoReadme(t *testing.T) {
 	d, sp, u := newImportTestDB(t)
 	r := runImport(t, d, sp, u, nil, []ImportFile{
 		{Path: "Notes/alpha.md", Content: []byte("alpha body")},
 		{Path: "Notes/beta.md", Content: []byte("beta body")},
 	}, false)
-	if r.Summary.Created != 3 {
-		t.Fatalf("created=%d want 3", r.Summary.Created)
-	}
-	// First page should be the index (Notes); the other two should reference it as parent.
-	var indexPage *ImportedPage
-	for i := range r.Pages {
-		if r.Pages[i].Title == "Notes" {
-			indexPage = &r.Pages[i]
-			break
-		}
-	}
-	if indexPage == nil {
-		t.Fatalf("no Notes index page found in %+v", r.Pages)
-	}
-	if indexPage.ParentID != nil {
-		t.Fatalf("Notes index parent_id=%v want nil (top-level)", indexPage.ParentID)
-	}
-	var body string
-	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, indexPage.ID).Scan(&body); err != nil {
-		t.Fatalf("body: %v", err)
-	}
-	if body != "" {
-		t.Fatalf("synthesized index body=%q want empty", body)
+	if r.Summary.Created != 2 {
+		t.Fatalf("created=%d want 2 (flat, no synthesized 'Notes' wrapper)", r.Summary.Created)
 	}
 	for _, p := range r.Pages {
 		if p.Title == "Notes" {
-			continue
+			t.Fatalf("unexpected wrapper page 'Notes' present after flatten: %+v", p)
 		}
-		if p.ParentID == nil || *p.ParentID != indexPage.ID {
-			t.Fatalf("child %q parent=%v want %d", p.Title, p.ParentID, indexPage.ID)
+		if p.ParentID != nil {
+			t.Fatalf("page %q parent_id=%v want nil (flattened to space root)", p.Title, p.ParentID)
 		}
+	}
+	titles := map[string]bool{}
+	for _, p := range r.Pages {
+		titles[p.Title] = true
+	}
+	if !titles["alpha"] || !titles["beta"] {
+		t.Fatalf("titles=%v want both 'alpha' and 'beta' at root", titles)
 	}
 }
 
@@ -354,19 +342,176 @@ func TestImport_PathTraversal_Rejected(t *testing.T) {
 
 // Page-revision seeding: every created page should produce one revision row
 // with source='import', so the new page already has page-history visible.
+// Fixture uses 2 top-level dirs so the flatten pre-pass is a no-op and both
+// wrapper-index pages plus the leaf get materialized (3 revs).
 func TestImport_SeedsPageRevision(t *testing.T) {
 	d, sp, u := newImportTestDB(t)
 	r := runImport(t, d, sp, u, nil, []ImportFile{
 		{Path: "Notes/leaf.md", Content: []byte("body")},
+		{Path: "Other/leaf.md", Content: []byte("other body")},
 	}, false)
-	if r.Summary.Created != 2 {
-		t.Fatalf("created=%d want 2 (index + leaf)", r.Summary.Created)
+	if r.Summary.Created != 4 {
+		t.Fatalf("created=%d want 4 (Notes + leaf + Other + leaf)", r.Summary.Created)
 	}
 	var nRevs int
 	if err := d.QueryRow(`SELECT COUNT(*) FROM page_revisions WHERE source = 'import'`).Scan(&nRevs); err != nil {
 		t.Fatalf("count revisions: %v", err)
 	}
-	if nRevs != 2 {
-		t.Fatalf("page_revisions for import=%d want 2", nRevs)
+	if nRevs != 4 {
+		t.Fatalf("page_revisions for import=%d want 4", nRevs)
+	}
+}
+
+// FlattenSpaceRoot_WithReadme_Wrapped — single top-level dir + root README,
+// parent_id == space root → wrapper page (title = dir basename, body = README)
+// at space root; non-README files nest under wrapper. Locks Q42 B at root.
+func TestImport_FlattenSpaceRoot_WithReadme_Wrapped(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Notes/README.md", Content: []byte("notes overview body")},
+		{Path: "Notes/alpha.md", Content: []byte("alpha body")},
+		{Path: "Notes/beta.md", Content: []byte("beta body")},
+	}, false)
+	if r.Summary.Created != 3 {
+		t.Fatalf("created=%d want 3 (Notes wrapper + alpha + beta)", r.Summary.Created)
+	}
+	var wrapper *ImportedPage
+	for i := range r.Pages {
+		if r.Pages[i].Title == "Notes" {
+			wrapper = &r.Pages[i]
+			break
+		}
+	}
+	if wrapper == nil {
+		t.Fatalf("missing 'Notes' wrapper page in %+v", r.Pages)
+	}
+	if wrapper.ParentID != nil {
+		t.Fatalf("wrapper parent_id=%v want nil (space root)", wrapper.ParentID)
+	}
+	var body string
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, wrapper.ID).Scan(&body); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if body != "notes overview body" {
+		t.Fatalf("wrapper body=%q want 'notes overview body'", body)
+	}
+	for _, p := range r.Pages {
+		if p.Title == "Notes" {
+			continue
+		}
+		if p.ParentID == nil || *p.ParentID != wrapper.ID {
+			t.Fatalf("child %q parent=%v want %d (wrapper)", p.Title, p.ParentID, wrapper.ID)
+		}
+	}
+}
+
+// FlattenRealParent_NoReadme — single top-level dir, no README, parent_id ==
+// a real page → flat siblings under that real parent (no wrapper).
+func TestImport_FlattenRealParent_NoReadme(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	// Pre-create a real parent page.
+	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES (?, NULL, 'Manual', '', 0)`, sp)
+	if err != nil {
+		t.Fatalf("seed parent: %v", err)
+	}
+	parentID, _ := res.LastInsertId()
+	r := runImport(t, d, sp, u, &parentID, []ImportFile{
+		{Path: "Notes/alpha.md", Content: []byte("alpha body")},
+		{Path: "Notes/beta.md", Content: []byte("beta body")},
+	}, false)
+	if r.Summary.Created != 2 {
+		t.Fatalf("created=%d want 2 (alpha + beta, no wrapper)", r.Summary.Created)
+	}
+	for _, p := range r.Pages {
+		if p.Title == "Notes" {
+			t.Fatalf("unexpected wrapper 'Notes' under real parent: %+v", p)
+		}
+		if p.ParentID == nil || *p.ParentID != parentID {
+			t.Fatalf("page %q parent_id=%v want %d (real parent)", p.Title, p.ParentID, parentID)
+		}
+	}
+}
+
+// FlattenRealParent_WithReadme_Wrapped — single top-level dir + root README,
+// parent_id == a real page → wrapper nested under real parent, rest under
+// wrapper. This is the Q42 B "wrap regardless of parent type" lock.
+func TestImport_FlattenRealParent_WithReadme_Wrapped(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES (?, NULL, 'Manual', '', 0)`, sp)
+	if err != nil {
+		t.Fatalf("seed parent: %v", err)
+	}
+	parentID, _ := res.LastInsertId()
+	r := runImport(t, d, sp, u, &parentID, []ImportFile{
+		{Path: "Notes/README.md", Content: []byte("notes overview body")},
+		{Path: "Notes/leaf.md", Content: []byte("leaf body")},
+	}, false)
+	if r.Summary.Created != 2 {
+		t.Fatalf("created=%d want 2 (Notes wrapper + leaf)", r.Summary.Created)
+	}
+	var wrapper *ImportedPage
+	for i := range r.Pages {
+		if r.Pages[i].Title == "Notes" {
+			wrapper = &r.Pages[i]
+			break
+		}
+	}
+	if wrapper == nil {
+		t.Fatalf("missing 'Notes' wrapper page in %+v", r.Pages)
+	}
+	if wrapper.ParentID == nil || *wrapper.ParentID != parentID {
+		t.Fatalf("wrapper parent_id=%v want %d (real parent)", wrapper.ParentID, parentID)
+	}
+	var body string
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, wrapper.ID).Scan(&body); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if body != "notes overview body" {
+		t.Fatalf("wrapper body=%q want 'notes overview body'", body)
+	}
+	for _, p := range r.Pages {
+		if p.Title == "Notes" {
+			continue
+		}
+		if p.ParentID == nil || *p.ParentID != wrapper.ID {
+			t.Fatalf("child %q parent=%v want %d (wrapper)", p.Title, p.ParentID, wrapper.ID)
+		}
+	}
+}
+
+// MultipleTopLevelDirs_NoFlatten — 2+ top-level dirs means the pre-pass is
+// a no-op and the existing dir→index synthesis fires. Regression lock so
+// the flatten path doesn't accidentally swallow this case.
+func TestImport_MultipleTopLevelDirs_NoFlatten(t *testing.T) {
+	d, sp, u := newImportTestDB(t)
+	r := runImport(t, d, sp, u, nil, []ImportFile{
+		{Path: "Alpha/a.md", Content: []byte("a body")},
+		{Path: "Beta/b.md", Content: []byte("b body")},
+	}, false)
+	if r.Summary.Created != 4 {
+		t.Fatalf("created=%d want 4 (Alpha + a + Beta + b)", r.Summary.Created)
+	}
+	titles := map[string]*ImportedPage{}
+	for i := range r.Pages {
+		titles[r.Pages[i].Title] = &r.Pages[i]
+	}
+	for _, want := range []string{"Alpha", "Beta", "a", "b"} {
+		if titles[want] == nil {
+			t.Fatalf("missing page %q in %+v", want, r.Pages)
+		}
+	}
+	if titles["Alpha"].ParentID != nil {
+		t.Fatalf("Alpha parent_id=%v want nil", titles["Alpha"].ParentID)
+	}
+	if titles["Beta"].ParentID != nil {
+		t.Fatalf("Beta parent_id=%v want nil", titles["Beta"].ParentID)
+	}
+	if titles["a"].ParentID == nil || *titles["a"].ParentID != titles["Alpha"].ID {
+		t.Fatalf("a parent=%v want Alpha(%d)", titles["a"].ParentID, titles["Alpha"].ID)
+	}
+	if titles["b"].ParentID == nil || *titles["b"].ParentID != titles["Beta"].ID {
+		t.Fatalf("b parent=%v want Beta(%d)", titles["b"].ParentID, titles["Beta"].ID)
 	}
 }
