@@ -80,12 +80,14 @@ export function useLogout() {
 
 // Validate a `?next=` param before bouncing back into the app. We only accept
 // in-app paths (`/foo`), and explicitly reject protocol-relative `//evil.com`
-// and absolute / scheme-bearing URLs. Empty / unrecognised values → null so
-// callers can fall back to '/'.
+// and absolute / scheme-bearing URLs. We also reject `/login...` so the
+// post-login redirect can't ping-pong back through the login route. Empty /
+// unrecognised values → null so callers can fall back to '/'.
 export function sanitizeNextPath(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   if (raw.length === 0) return null
   if (!raw.startsWith('/')) return null
   if (raw.startsWith('//')) return null
+  if (/^\/login(\/|\?|#|$)/i.test(raw)) return null
   return raw
 }
