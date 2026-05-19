@@ -204,6 +204,42 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+// M10.2 — dedicated full-page body-fuzzy search. Hosts the same Orama indexes
+// the palette tier-3 uses, but with filters (space, updated-since) and a
+// top-50 result list. Lazy-loaded so the bundle (and its bodyExcerpt /
+// SearchResult deps) stays off the main chunk until the user navigates here.
+const searchRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/search',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { q?: string; spaces?: number[]; since?: string } => {
+    const out: { q?: string; spaces?: number[]; since?: string } = {}
+    if (typeof search.q === 'string') out.q = search.q
+    const rawSpaces = search.spaces
+    let ids: number[] | null = null
+    if (Array.isArray(rawSpaces)) {
+      ids = rawSpaces
+        .map((s) => (typeof s === 'number' ? s : Number(s)))
+        .filter((n): n is number => Number.isFinite(n))
+    } else if (typeof rawSpaces === 'number' && Number.isFinite(rawSpaces)) {
+      ids = [rawSpaces]
+    } else if (typeof rawSpaces === 'string' && rawSpaces.length > 0) {
+      const n = Number(rawSpaces)
+      if (Number.isFinite(n)) ids = [n]
+    }
+    if (ids && ids.length > 0) out.spaces = ids
+    if (typeof search.since === 'string' && search.since.length > 0) {
+      out.since = search.since
+    }
+    return out
+  },
+  component: lazyRouteComponent(
+    () => import('../components/app/SearchView'),
+    'SearchRoute',
+  ),
+})
+
 const spaceRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/spaces/$spaceId',
@@ -330,6 +366,7 @@ const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([
     indexRoute,
     settingsRoute,
+    searchRoute,
     spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
   ]),
 ])

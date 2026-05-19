@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Clock } from 'lucide-react'
+import { ArrowRight, Clock, Search } from 'lucide-react'
 import {
   CommandPalette,
   prefixForMode,
@@ -10,6 +10,8 @@ import {
 } from '../ui/command'
 import { useSpaces } from '../../lib/queries/spaces'
 import { router } from '../../routes/router'
+import { useTier3BodyHits } from '../../lib/useTier3BodyHits'
+import { bodyExcerpt } from '../../lib/search/body-excerpt'
 import {
   getTheme,
   setTheme,
@@ -93,6 +95,7 @@ export function AppCommandHost() {
 
   const titleHits = useTier1TitleHits(trimmedQuery, open)
   const searchResults = useTier2SearchResults(trimmedQuery)
+  const bodyHits = useTier3BodyHits(debouncedQuery.trim(), open)
 
   // Snapshot recently-viewed pages each time the palette opens so a navigation
   // away and back surfaces the freshly-visited page without remounting the
@@ -248,12 +251,56 @@ export function AppCommandHost() {
       )
   }, [searchResults, titleHits])
 
+  // Tier-3 body-fuzzy hits. Dedupe against tier-1 AND tier-2 (a body row whose
+  // page is already surfaced as a title or FTS5 hit is noise). Excerpt is
+  // plain text — no <mark>, no HTML — generated via bodyExcerpt around the
+  // first match. Breadcrumb is the space name (parent-chain reconstruction
+  // would require a per-row pageKeys.detail fetch, killing perceived perf;
+  // deferred from v0). Uses `spacesData` (stable useQuery reference) rather
+  // than the `?? []`-derived `spaces` so the memo doesn't re-run every render.
+  const bodyItems = useMemo<CommandItem[]>(() => {
+    if (bodyHits.length === 0) return []
+    const tier1Ids = new Set(titleHits.map((h) => h.pageId))
+    const tier2Ids = new Set((searchResults ?? []).map((r) => r.page_id))
+    const items: CommandItem[] = []
+    for (const hit of bodyHits) {
+      if (tier1Ids.has(hit.id) || tier2Ids.has(hit.id)) continue
+      const spaceName =
+        spacesData?.find((s) => s.id === hit.space_id)?.name ?? ''
+      const excerpt = bodyExcerpt(hit.body, trimmedQuery)
+      items.push({
+        id: `page-t3:${hit.id}`,
+        title: hit.title || 'Untitled',
+        subtitle: excerpt ? <span>{excerpt}</span> : undefined,
+        breadcrumb: spaceName || undefined,
+        icon: <Search aria-hidden width={14} height={14} />,
+        onSelect: () => navigateToPage(hit.space_id, hit.id),
+      })
+    }
+    if (trimmedQuery.length > 0) {
+      items.push({
+        id: `search-all:${trimmedQuery}`,
+        title: `See all results for "${trimmedQuery}" in /search`,
+        keywords: [trimmedQuery],
+        icon: <ArrowRight aria-hidden width={14} height={14} />,
+        onSelect: () => {
+          void router.navigate({
+            to: '/search',
+            search: { q: trimmedQuery },
+          })
+        },
+      })
+    }
+    return items
+  }, [bodyHits, titleHits, searchResults, spacesData, trimmedQuery])
+
   const pagesItems = useMemo<PagesItems>(() => {
     if (trimmedQuery.length === 0) return recentsItems
-    // Grouped form: tier-1 renders under "Titles" at the top, tier-2 under
-    // "All pages" below. Either group may be empty; we filter them out so the
-    // surviving group renders unlabelled-ish (the heading still draws unless
-    // the group is dropped entirely).
+    // Grouped form: tier-1 under "Titles" at the top, tier-2 under "All
+    // pages", tier-3 under "Body matches" with a trailing "See all results"
+    // navigator. Any group may be empty; we filter them out so the surviving
+    // group renders unlabelled-ish (the heading still draws unless the group
+    // is dropped entirely).
     const groups: CommandItemGroup[] = []
     if (titleItems.length > 0) {
       groups.push({ label: 'Titles', items: titleItems })
@@ -261,8 +308,11 @@ export function AppCommandHost() {
     if (searchItems.length > 0) {
       groups.push({ label: 'All pages', items: searchItems })
     }
+    if (bodyItems.length > 0) {
+      groups.push({ label: 'Body matches', items: bodyItems })
+    }
     return groups
-  }, [trimmedQuery, recentsItems, titleItems, searchItems])
+  }, [trimmedQuery, recentsItems, titleItems, searchItems, bodyItems])
 
   const pagesEmptyMessage = useMemo<string | undefined>(() => {
     if (trimmedQuery.length === 0) {
@@ -270,9 +320,9 @@ export function AppCommandHost() {
         ? undefined
         : 'Recently viewed pages will appear here. Type to search.'
     }
-    // If tier-1 has results we don't show empty messaging even while tier-2 is
-    // still in flight — the user sees something instantly.
-    if (titleItems.length > 0) return undefined
+    // If tier-1 / tier-3 has results we don't show empty messaging even while
+    // tier-2 is still in flight — the user sees something instantly.
+    if (titleItems.length > 0 || bodyItems.length > 0) return undefined
     // Loading state — only visible on the very first query for a key, since
     // keepPreviousData keeps stale data around through subsequent re-queries.
     if (searchResults == null) return 'Searching…'
@@ -283,6 +333,7 @@ export function AppCommandHost() {
     recents.length,
     searchResults,
     titleItems.length,
+    bodyItems.length,
   ])
 
   return (
