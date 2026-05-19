@@ -43,26 +43,7 @@ function isAuthEndpoint(path: string): boolean {
   return path.startsWith('/api/auth/')
 }
 
-// Verifies the session is actually dead before bouncing the user.
-// Background: the M6.1 backend's session-slide write tx
-// (LoadSessionAndSlide) races on concurrent requests with the same cookie;
-// 8 parallel auth-gated curls reliably surface ~5/8 spurious 401s. A real
-// page mount fires ~5 parallel queries (page detail / tree / space /
-// backlinks / all-pages), so without this guard the user is randomly
-// kicked back to /login on every navigation. /api/auth/me also opens its
-// own slide tx; once contention clears it returns 200, which is our signal
-// to swallow the 401 as a transient race rather than a genuine expiry.
-// TanStack Query's default retry: 1 then recovers the original request.
-async function emitAuthRequired(): Promise<void> {
-  try {
-    const r = await fetch('/api/auth/me', {
-      headers: { Accept: 'application/json' },
-    })
-    if (r.ok) return
-  } catch {
-    // Network failure on the probe — fall through to dispatch so the user
-    // at least lands on /login rather than a broken UI.
-  }
+function emitAuthRequired(): void {
   const next = window.location.pathname + window.location.search
   window.dispatchEvent(
     new CustomEvent<AuthRequiredDetail>(AUTH_REQUIRED_EVENT, {
@@ -97,7 +78,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     if (res.status === 401 && !isAuthEndpoint(path)) {
-      void emitAuthRequired()
+      emitAuthRequired()
     }
     if (isJson) {
       const body = (await res.json().catch(() => null)) as ApiErrorBody | null
