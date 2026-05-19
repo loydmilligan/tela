@@ -639,6 +639,7 @@ export { CmdkGroup as CommandGroup, CmdkSeparator as CommandSeparator }
 
 // Mode helper re-exported so the app-level host can compute prefix-seeded
 // search-request payloads without re-deriving the prefix table.
+// eslint-disable-next-line react-refresh/only-export-components
 export { prefixForMode }
 
 // Shared utility for app-level mounts: registers the Cmd-K / Cmd-Shift-P /
@@ -650,6 +651,7 @@ export interface PaletteShortcuts {
   onNewPage?: () => void
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePaletteShortcuts({
   onOpenPages,
   onOpenCommands,

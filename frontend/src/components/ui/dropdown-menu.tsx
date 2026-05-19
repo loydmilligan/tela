@@ -2,8 +2,11 @@ import { forwardRef } from 'react'
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { cn } from '../../lib/utils'
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const DropdownMenu = DropdownMenuPrimitive.Root
+// eslint-disable-next-line react-refresh/only-export-components
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
+// eslint-disable-next-line react-refresh/only-export-components
 export const DropdownMenuPortal = DropdownMenuPrimitive.Portal
 
 export const DropdownMenuContent = forwardRef<

@@ -3,9 +3,13 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const Dialog = DialogPrimitive.Root
+// eslint-disable-next-line react-refresh/only-export-components
 export const DialogTrigger = DialogPrimitive.Trigger
+// eslint-disable-next-line react-refresh/only-export-components
 export const DialogClose = DialogPrimitive.Close
+// eslint-disable-next-line react-refresh/only-export-components
 export const DialogPortal = DialogPrimitive.Portal
 
 export const DialogOverlay = forwardRef<
