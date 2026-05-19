@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/zcag/tela/backend/internal/auth"
@@ -89,7 +90,10 @@ func (s *Server) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 // Me returns the currently authenticated user. Bypasses the middleware so it
-// can answer the frontend's boot probe with a clean 401 envelope.
+// can answer the frontend's boot probe with a clean 401 envelope. Mirrors the
+// error-class split from auth.Middleware: ErrInvalidSession → 401, every
+// other DB error → 500 (so a transient backend failure doesn't evict the
+// signed-in user).
 func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(auth.CookieName)
 	if err != nil || c.Value == "" {
@@ -97,8 +101,13 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, err := auth.LoadSessionAndSlide(r.Context(), s.DB, c.Value)
-	if err != nil {
+	if errors.Is(err, auth.ErrInvalidSession) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+	if err != nil {
+		log.Printf("auth.Me: session lookup failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal", "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
