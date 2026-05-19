@@ -303,6 +303,221 @@ func TestIntegration_GetPage_MissingIdReturnsForbidden(t *testing.T) {
 	}
 }
 
+// TestComments_FullFlow exercises the M8.0 comments REST surface end-to-end
+// through the wired stack: role gating, anchor validation, reply parentage,
+// author-only edit, editor+ resolve, owner hard-delete, and soft-delete
+// cascade visibility. One fixture covers every published constraint so a
+// regression in any one branch lights up fast.
+func TestComments_FullFlow(t *testing.T) {
+	ts, d := newWiredServer(t)
+	admin := seedUser(t, d, "admin", "adminpw12", true)
+	bob := seedUser(t, d, "bob", "bobpw1234", false)
+	carol := seedUser(t, d, "carol", "carolpw12", false)
+	space := seedSpace(t, d, "Test Space", "test-space", admin)
+	seedMember(t, d, space, bob, "viewer")
+	seedMember(t, d, space, carol, "editor")
+
+	// Seed a page directly so we know the id.
+	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES (?, NULL, 'P', 'hello world body', 0)`, space)
+	if err != nil {
+		t.Fatalf("seed page: %v", err)
+	}
+	pageID, _ := res.LastInsertId()
+	pageURL := fmt.Sprintf("%s/api/pages/%d/comments", ts.URL, pageID)
+
+	adminC := loginClient(t, ts, "admin", "adminpw12")
+	bobC := loginClient(t, ts, "bob", "bobpw1234")
+	carolC := loginClient(t, ts, "carol", "carolpw12")
+
+	// 1. viewer bob GET → 403.
+	if r, _ := bobC.Get(pageURL); r.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer GET status=%d want 403", r.StatusCode)
+	}
+
+	// 2. viewer bob POST → 403.
+	if r, _ := bobC.Post(pageURL, "application/json",
+		strings.NewReader(`{"body":"x","anchor_prefix":"","anchor_exact":"hello","anchor_suffix":""}`)); r.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer POST status=%d want 403", r.StatusCode)
+	}
+
+	// 3. owner admin POST root → 201, capture ID.
+	rootID := mustPostComment(t, adminC, pageURL,
+		`{"body":"root by admin","anchor_prefix":"","anchor_exact":"hello","anchor_suffix":" world"}`)
+
+	// 4. owner admin POST reply (parent=root) → 201.
+	replyID := mustPostComment(t, adminC, pageURL,
+		fmt.Sprintf(`{"body":"reply by admin","parent_id":%d}`, rootID))
+
+	// 5. POST reply with parent_id of another reply → 400 comment_reply_to_reply.
+	resp, _ := adminC.Post(pageURL, "application/json",
+		strings.NewReader(fmt.Sprintf(`{"body":"x","parent_id":%d}`, replyID)))
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), `"code":"comment_reply_to_reply"`) {
+		t.Fatalf("reply-to-reply status=%d body=%s", resp.StatusCode, body)
+	}
+
+	// 6. POST root without anchor fields → 400 comment_no_anchor.
+	resp, _ = adminC.Post(pageURL, "application/json", strings.NewReader(`{"body":"no anchor"}`))
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), `"code":"comment_no_anchor"`) {
+		t.Fatalf("no-anchor status=%d body=%s", resp.StatusCode, body)
+	}
+
+	// 7. author admin PATCH own comment body → 200.
+	resp, _ = patchJSON(adminC, fmt.Sprintf("%s/api/comments/%d", ts.URL, rootID),
+		`{"body":"edited root"}`)
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("author edit status=%d body=%s", resp.StatusCode, b)
+	}
+	resp.Body.Close()
+
+	// 8. non-author carol PATCH admin's comment body → 403.
+	resp, _ = patchJSON(carolC, fmt.Sprintf("%s/api/comments/%d", ts.URL, rootID),
+		`{"body":"hijack"}`)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-author edit status=%d want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 9a. editor carol PATCH resolved:true on root → 200.
+	resp, _ = patchJSON(carolC, fmt.Sprintf("%s/api/comments/%d", ts.URL, rootID),
+		`{"resolved":true}`)
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("editor resolve status=%d body=%s", resp.StatusCode, b)
+	}
+	resp.Body.Close()
+
+	// 9b. second PATCH resolved:true → 409 comment_already_resolved.
+	resp, _ = patchJSON(carolC, fmt.Sprintf("%s/api/comments/%d", ts.URL, rootID),
+		`{"resolved":true}`)
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), `"code":"comment_already_resolved"`) {
+		t.Fatalf("double-resolve status=%d body=%s", resp.StatusCode, body)
+	}
+
+	// 9c. resolve on reply → 400 bad_request (replies are not resolvable).
+	resp, _ = patchJSON(carolC, fmt.Sprintf("%s/api/comments/%d", ts.URL, replyID),
+		`{"resolved":true}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("resolve-reply status=%d want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 9d. PATCH with both body AND resolved → 400 bad_request.
+	resp, _ = patchJSON(adminC, fmt.Sprintf("%s/api/comments/%d", ts.URL, rootID),
+		`{"body":"x","resolved":false}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("mutually-exclusive PATCH status=%d want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Add a fresh root authored by carol so we can verify the owner-deletes-any path.
+	otherRoot := mustPostComment(t, carolC, pageURL,
+		`{"body":"carol root","anchor_prefix":"","anchor_exact":"world","anchor_suffix":" body"}`)
+
+	// 10. owner admin DELETE carol's comment → 204; row has deleted_at set.
+	resp, _ = deleteReq(adminC, fmt.Sprintf("%s/api/comments/%d", ts.URL, otherRoot))
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("owner delete status=%d body=%s", resp.StatusCode, b)
+	}
+	resp.Body.Close()
+	var deletedAt sql.NullString
+	if err := d.QueryRow(`SELECT deleted_at FROM comments WHERE id = ?`, otherRoot).Scan(&deletedAt); err != nil {
+		t.Fatalf("lookup deleted comment: %v", err)
+	}
+	if !deletedAt.Valid {
+		t.Fatalf("deleted_at not set after DELETE")
+	}
+
+	// 11. include_resolved=true GET returns the resolved root (with the reply).
+	// 12. Soft-deleted root excluded from both filter modes.
+	resp, _ = adminC.Get(pageURL + "?include_resolved=true")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET include_resolved status=%d", resp.StatusCode)
+	}
+	var got struct {
+		Threads []struct {
+			Root struct {
+				ID       int64 `json:"id"`
+				Resolved bool  `json:"resolved"`
+			} `json:"root"`
+			Replies []struct {
+				ID int64 `json:"id"`
+			} `json:"replies"`
+		} `json:"threads"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	resp.Body.Close()
+	if len(got.Threads) != 1 {
+		t.Fatalf("got %d threads with include_resolved, want 1 (resolved admin root only — carol root soft-deleted)", len(got.Threads))
+	}
+	if got.Threads[0].Root.ID != rootID || !got.Threads[0].Root.Resolved {
+		t.Fatalf("thread root id=%d resolved=%t, want id=%d resolved=true", got.Threads[0].Root.ID, got.Threads[0].Root.Resolved, rootID)
+	}
+	if len(got.Threads[0].Replies) != 1 || got.Threads[0].Replies[0].ID != replyID {
+		t.Fatalf("replies=%+v, want one with id=%d", got.Threads[0].Replies, replyID)
+	}
+
+	// 13. Default GET (resolved excluded) returns no threads.
+	resp, _ = adminC.Get(pageURL)
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode default list: %v", err)
+	}
+	resp.Body.Close()
+	if len(got.Threads) != 0 {
+		t.Fatalf("default GET returned %d threads, want 0 (resolved hidden)", len(got.Threads))
+	}
+
+	// 14. Reopen → thread reappears in default GET.
+	resp, _ = patchJSON(adminC, fmt.Sprintf("%s/api/comments/%d", ts.URL, rootID),
+		`{"resolved":false}`)
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("reopen status=%d body=%s", resp.StatusCode, b)
+	}
+	resp.Body.Close()
+	resp, _ = adminC.Get(pageURL)
+	got.Threads = nil
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode after reopen: %v", err)
+	}
+	resp.Body.Close()
+	if len(got.Threads) != 1 || got.Threads[0].Root.ID != rootID || got.Threads[0].Root.Resolved {
+		t.Fatalf("after reopen got threads=%+v, want one open root id=%d", got.Threads, rootID)
+	}
+}
+
+func mustPostComment(t *testing.T, c *http.Client, url, body string) int64 {
+	t.Helper()
+	resp, err := c.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("post comment: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("post comment status=%d body=%s body-sent=%s", resp.StatusCode, b, body)
+	}
+	var got struct {
+		Comment struct {
+			ID int64 `json:"id"`
+		} `json:"comment"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode comment: %v", err)
+	}
+	return got.Comment.ID
+}
+
 func patchJSON(c *http.Client, u, body string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPatch, u, strings.NewReader(body))
 	if err != nil {

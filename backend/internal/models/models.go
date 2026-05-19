@@ -18,3 +18,26 @@ type Page struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
+
+// Comment is the wire shape for an M8 comment row. Roots have ParentID==nil
+// and populate the three Anchor* fields; replies set ParentID and leave
+// Anchor* nil. Resolved metadata only meaningful on roots. The backend
+// excludes soft-deleted rows from list endpoints, so DeletedAt never
+// surfaces to clients.
+type Comment struct {
+	ID           int64   `json:"id"`
+	PageID       int64   `json:"page_id"`
+	ParentID     *int64  `json:"parent_id"`
+	AuthorID     int64   `json:"author_id"`
+	AuthorName   string  `json:"author_username"`
+	Body         string  `json:"body"`
+	AnchorPrefix *string `json:"anchor_prefix,omitempty"`
+	AnchorExact  *string `json:"anchor_exact,omitempty"`
+	AnchorSuffix *string `json:"anchor_suffix,omitempty"`
+	Resolved     bool    `json:"resolved"`
+	ResolvedAt   *string `json:"resolved_at,omitempty"`
+	ResolvedBy   *int64  `json:"resolved_by,omitempty"`
+	ResolvedName *string `json:"resolved_by_username,omitempty"`
+	CreatedAt    string  `json:"created_at"`
+	UpdatedAt    string  `json:"updated_at"`
+}
