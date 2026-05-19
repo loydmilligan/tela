@@ -285,6 +285,16 @@ const pageRoute = createRoute({
   path: 'pages/$pageId',
   parseParams: (raw) => ({ pageId: Number(raw.pageId) }),
   stringifyParams: (params) => ({ pageId: String(params.pageId) }),
+  // M9.3 — soft-draft restore. `?draft=$revId` opens the page in draft mode,
+  // seeded from that revision's body. Owner-only enforcement lives in
+  // PageView (this just types + parses the param so consumers can read it
+  // via useSearch without manually pulling from window.location).
+  validateSearch: (search: Record<string, unknown>): { draft?: number } => {
+    const raw = search.draft
+    if (raw == null) return {}
+    const n = typeof raw === 'number' ? raw : Number(raw)
+    return Number.isFinite(n) && n > 0 ? { draft: n } : {}
+  },
   beforeLoad: ({ params }) => {
     // Remember the last-viewed page so a future cold mount can restore it. We
     // write eagerly here (rather than only on a successful detail fetch) so

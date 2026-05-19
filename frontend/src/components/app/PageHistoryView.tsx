@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, History } from 'lucide-react'
 import { ApiError, api } from '../../lib/api'
@@ -24,6 +24,15 @@ import {
   CardHeader,
   CardTitle,
 } from '../ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog'
 import { cn } from '../../lib/utils'
 import { DiffViewer } from './DiffViewer'
 
@@ -220,6 +229,7 @@ function PageHistoryAuthed({
 
         <RevisionPane
           revision={selectedRevision}
+          spaceId={spaceId}
           pageId={pageId}
           isOwner={isOwner}
         />
@@ -283,11 +293,17 @@ function RevisionRow({ revision, selected, onSelect }: RevisionRowProps) {
 
 interface RevisionPaneProps {
   revision: PageRevision | null
+  spaceId: number
   pageId: number
   isOwner: boolean
 }
 
-function RevisionPane({ revision, pageId, isOwner }: RevisionPaneProps) {
+function RevisionPane({
+  revision,
+  spaceId,
+  pageId,
+  isOwner,
+}: RevisionPaneProps) {
   if (!revision) {
     return (
       <Card className="self-start">
@@ -308,6 +324,7 @@ function RevisionPane({ revision, pageId, isOwner }: RevisionPaneProps) {
   return (
     <RevisionPaneSelected
       revision={revision}
+      spaceId={spaceId}
       pageId={pageId}
       isOwner={isOwner}
     />
@@ -316,21 +333,36 @@ function RevisionPane({ revision, pageId, isOwner }: RevisionPaneProps) {
 
 interface RevisionPaneSelectedProps {
   revision: PageRevision
+  spaceId: number
   pageId: number
   isOwner: boolean
 }
 
 function RevisionPaneSelected({
   revision,
+  spaceId,
   pageId,
   isOwner,
 }: RevisionPaneSelectedProps) {
   const fullRevision = useRevision({ pageId, revId: revision.id })
   const page = usePage(pageId)
+  const navigate = useNavigate()
   const ts = parseSqliteTs(revision.created_at).toLocaleString()
   const bothSettled =
     fullRevision.data != null && page.data != null
   const anyError = fullRevision.isError || page.isError
+
+  // M9.3 — Open-as-draft confirmation. State lives per selected revision so
+  // switching revisions in the list discards any half-opened dialog.
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const handleOpenAsDraft = useCallback(() => {
+    setConfirmOpen(false)
+    void navigate({
+      to: '/spaces/$spaceId/pages/$pageId',
+      params: { spaceId, pageId },
+      search: { draft: revision.id },
+    })
+  }, [navigate, spaceId, pageId, revision.id])
 
   return (
     <Card className="self-start">
@@ -361,11 +393,38 @@ function RevisionPaneSelected({
               type="button"
               variant="secondary"
               size="sm"
-              disabled
-              title="Open as draft lands in M9.3"
+              onClick={() => setConfirmOpen(true)}
             >
               <History width={14} height={14} /> Open as draft
             </Button>
+            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    Open Revision #{revision.id} as draft?
+                  </DialogTitle>
+                  <DialogDescription>
+                    This will load Revision #{revision.id}'s body into your
+                    editor. You can review and edit, then press Save to commit
+                    (which creates a new revision) or Cancel to abandon.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="ghost">
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleOpenAsDraft}
+                  >
+                    Open draft
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         ) : null}
       </CardBody>

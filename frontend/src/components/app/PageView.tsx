@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   ChevronRight,
   FileText,
@@ -25,6 +25,7 @@ import { scrollAndFlashPanelThread } from '../../lib/comments/coordination'
 import { useComments } from '../../lib/comments/use-comments'
 import { useMe } from '../../lib/queries/auth'
 import { useSpaceMembers } from '../../lib/queries/members'
+import { useRevision } from '../../lib/queries/page-revisions'
 import { CommentsPanel } from './CommentsPanel'
 import { PresenceAvatars } from './presence-avatars'
 import {
@@ -38,6 +39,13 @@ import {
 import { useSpace } from '../../lib/queries/spaces'
 import type { Page, PageTreeNode } from '../../lib/types'
 import { Button } from '../ui/button'
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '../ui/card'
 import {
   Dialog,
   DialogClose,
@@ -94,6 +102,13 @@ interface PageViewProps {
 export function PageView({ spaceId, pageId }: PageViewProps) {
   const page = usePage(pageId)
   const navigate = useNavigate()
+  // M9.3 — soft-draft mode is opted into via `?draft=$revId`. Owner-only
+  // semantics are enforced inside PageEditor (we still need `me` + members
+  // to know who the viewer is). The param is typed by the route's
+  // validateSearch in router.tsx.
+  const { draft: draftRevId } = useSearch({
+    from: '/_app/spaces/$spaceId/pages/$pageId',
+  })
 
   // 404 / wrong-space handling
   if (page.isError) {
@@ -114,6 +129,7 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
       key={page.data.id}
       page={page.data}
       spaceId={spaceId}
+      draftRevId={draftRevId ?? null}
       onDeleted={() =>
         void navigate({ to: '/spaces/$spaceId', params: { spaceId } })
       }
@@ -124,11 +140,13 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
 interface PageEditorProps {
   page: Page
   spaceId: number
+  draftRevId: number | null
   onDeleted: () => void
 }
 
-function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
+function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
   const updatePage = useUpdatePage()
+  const navigate = useNavigate()
   const [title, setTitle] = useState(page.title)
   const [body, setBody] = useState(page.body)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -158,6 +176,57 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   const roleResolved = me.data != null && members.data != null
   const isViewer = roleResolved && myMembership?.role === 'viewer'
   const isSpaceOwner = myMembership?.role === 'owner'
+
+  // M9.3 — soft-draft mode. Owner-only (Q30): non-owners that paste a
+  // ?draft=N URL silently drop back to normal mode. We can't compute
+  // `isDraftMode` until role resolves; until then, treat as not-in-draft so
+  // the regular editor / viewer-empty branches behave as before. A
+  // useEffect emits the one-shot console.warn for non-owner URL paste so
+  // the param doesn't disappear silently from the developer's POV.
+  const isDraftMode = draftRevId != null && roleResolved && isSpaceOwner
+  const draftRevisionQuery = useRevision({
+    pageId: page.id,
+    revId: draftRevId,
+    enabled: isDraftMode,
+  })
+  useEffect(() => {
+    if (draftRevId != null && roleResolved && !isSpaceOwner) {
+      console.warn(
+        `tela: ?draft=${draftRevId} ignored — only space owners can open a revision as draft.`,
+      )
+    }
+  }, [draftRevId, roleResolved, isSpaceOwner])
+
+  // Seed the editor with the revision body + title exactly once per draft
+  // entry. A ref tracks which revision we've already seeded so React's
+  // strict-mode double-invoke or any unrelated re-render can't clobber
+  // in-flight edits. Cleared when draft mode exits.
+  const seededForRevIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!isDraftMode) {
+      seededForRevIdRef.current = null
+      return
+    }
+    if (draftRevId == null) return
+    if (seededForRevIdRef.current === draftRevId) return
+    const rev = draftRevisionQuery.data
+    if (!rev) return
+    seededForRevIdRef.current = draftRevId
+    // One-shot seed per draft entry (guarded above) — correct-by-design
+    // effect-driven setState (memory.md "set-state-in-effect snapshot pattern").
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTitle(rev.title)
+    setBody(rev.body)
+  }, [isDraftMode, draftRevId, draftRevisionQuery.data])
+
+  const stripDraftParam = useCallback(() => {
+    void navigate({
+      to: '/spaces/$spaceId/pages/$pageId',
+      params: { spaceId, pageId: page.id },
+      search: {},
+      replace: true,
+    })
+  }, [navigate, spaceId, page.id])
 
   // M8.3 — comments surface. The panel toggle, panel itself, and selection
   // bridge are all gated behind a non-viewer role; viewers don't see the
@@ -371,7 +440,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   )
 
   const save = useCallback(
-    async (patch: { title?: string; body?: string }) => {
+    async (patch: { title?: string; body?: string }): Promise<boolean> => {
       // Any new save attempt supersedes a pending retry of an earlier payload.
       if (retryTimerRef.current != null) {
         window.clearTimeout(retryTimerRef.current)
@@ -382,7 +451,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
         const updated = await updatePage.mutateAsync({ id: page.id, ...patch })
         lastSavedRef.current = { title: updated.title, body: updated.body }
         setStatus('saved')
-        return
+        return true
       } catch (err) {
         // 5xx → one automatic retry after a short delay. 4xx and network
         // errors (status === 0) go straight to 'error' — those won't
@@ -405,15 +474,19 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
               setStatus('error')
             }
           }, RETRY_DELAY_MS)
-          return
+          return false
         }
         setStatus('error')
+        return false
       }
     },
     [page.id, updatePage],
   )
 
   const handleTitleBlur = useCallback(() => {
+    // In draft mode the user commits explicitly via the Save button; blurring
+    // the title input must not persist.
+    if (isDraftMode) return
     const trimmed = title.trim()
     if (trimmed === lastSavedRef.current.title) return
     if (!trimmed) {
@@ -422,13 +495,16 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
       return
     }
     void save({ title: trimmed })
-  }, [title, save])
+  }, [title, save, isDraftMode])
 
   // Debounced body auto-save: schedule a save 500ms after the last keystroke;
   // blur cancels the timer and fires immediately if there's a pending change.
+  // In draft mode we still update local `body` state but suppress the
+  // debounced save — user commits via the explicit Save button.
   const handleBodyChange = useCallback(
     (next: string) => {
       setBody(next)
+      if (isDraftMode) return
       cancelPendingSave()
       debounceRef.current = window.setTimeout(() => {
         debounceRef.current = null
@@ -436,7 +512,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
         void save({ body: next })
       }, BODY_DEBOUNCE_MS)
     },
-    [save, cancelPendingSave],
+    [save, cancelPendingSave, isDraftMode],
   )
 
   // Read latest body via ref so onBlur, which is wired into Milkdown's
@@ -445,11 +521,29 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
   bodyRef.current = body
 
   const handleBodyBlur = useCallback(() => {
+    if (isDraftMode) return
     cancelPendingSave()
     const current = bodyRef.current
     if (current === lastSavedRef.current.body) return
     void save({ body: current })
-  }, [save, cancelPendingSave])
+  }, [save, cancelPendingSave, isDraftMode])
+
+  // M9.3 — explicit draft commit. Force-flushes any in-flight debounce
+  // (no-op in draft mode since we suppressed auto-save, but cheap and safe)
+  // then PATCHes title + body via the existing save flow. On success the
+  // ?draft= param is stripped — PageView re-renders and the editor remounts
+  // (key flips from `draft-N` to `live`) with the now-canonical body.
+  const handleDraftSave = useCallback(async () => {
+    cancelPendingSave()
+    const trimmedTitle = title.trim() || lastSavedRef.current.title
+    const ok = await save({ title: trimmedTitle, body })
+    if (!ok) return
+    stripDraftParam()
+  }, [cancelPendingSave, title, body, save, stripDraftParam])
+
+  const handleDraftCancel = useCallback(() => {
+    stripDraftParam()
+  }, [stripDraftParam])
 
   // autoFocus rule: empty title → focus title; non-empty → focus body.
   const titleAutoFocus = page.title.length === 0
@@ -460,61 +554,106 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
       <header className="flex items-center justify-between gap-[var(--space-4)] px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
         <Breadcrumb spaceId={spaceId} pageId={page.id} />
         <div className="flex items-center gap-[var(--space-3)]">
-          <PresenceAvatars
-            awareness={provider?.awareness ?? null}
-          />
-          <SaveIndicator status={status} />
-          {roleResolved && !isViewer ? (
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              aria-label="History"
-              className="h-[var(--space-8)] px-[var(--space-3)]"
-            >
-              <Link
-                to="/spaces/$spaceId/pages/$pageId/history"
-                params={{ spaceId, pageId: page.id }}
+          {isDraftMode ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleDraftCancel}
+                className="h-[var(--space-8)] px-[var(--space-3)]"
               >
-                <History width={16} height={16} />
-                <span>History</span>
-              </Link>
-            </Button>
-          ) : null}
-          {roleResolved && !isViewer ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label="Comments"
-              onClick={() => setCommentsOpen(true)}
-              className="h-[var(--space-8)] px-[var(--space-3)]"
-            >
-              <MessageSquare width={16} height={16} />
-              {openThreadCount != null ? (
-                <span>Comments ({openThreadCount})</span>
-              ) : (
-                <span>Comments</span>
-              )}
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label="Delete page"
-            onClick={() => setDeleteOpen(true)}
-            className="h-[var(--space-8)] w-[var(--space-8)] p-0 hover:text-[var(--danger)]"
-          >
-            <Trash2 width={16} height={16} />
-          </Button>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => void handleDraftSave()}
+                disabled={status === 'saving' || status === 'retrying'}
+                className="h-[var(--space-8)] px-[var(--space-3)]"
+              >
+                {status === 'saving' || status === 'retrying'
+                  ? 'Saving…'
+                  : 'Save'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <PresenceAvatars awareness={provider?.awareness ?? null} />
+              <SaveIndicator status={status} />
+              {roleResolved && !isViewer ? (
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="sm"
+                  aria-label="History"
+                  className="h-[var(--space-8)] px-[var(--space-3)]"
+                >
+                  <Link
+                    to="/spaces/$spaceId/pages/$pageId/history"
+                    params={{ spaceId, pageId: page.id }}
+                  >
+                    <History width={16} height={16} />
+                    <span>History</span>
+                  </Link>
+                </Button>
+              ) : null}
+              {roleResolved && !isViewer ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Comments"
+                  onClick={() => setCommentsOpen(true)}
+                  className="h-[var(--space-8)] px-[var(--space-3)]"
+                >
+                  <MessageSquare width={16} height={16} />
+                  {openThreadCount != null ? (
+                    <span>Comments ({openThreadCount})</span>
+                  ) : (
+                    <span>Comments</span>
+                  )}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Delete page"
+                onClick={() => setDeleteOpen(true)}
+                className="h-[var(--space-8)] w-[var(--space-8)] p-0 hover:text-[var(--danger)]"
+              >
+                <Trash2 width={16} height={16} />
+              </Button>
+            </>
+          )}
         </div>
       </header>
 
       <div className="flex-1 flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[48rem] w-full self-center min-h-0">
+        {isDraftMode ? (
+          <div
+            role="status"
+            className={cn(
+              'flex items-center gap-[var(--space-2)]',
+              'bg-[var(--surface-2)] border border-[var(--border-subtle)]',
+              'rounded-[var(--radius-sm)]',
+              'px-[var(--space-3)] py-[var(--space-2)]',
+              'text-[length:var(--text-sm)] text-[var(--text-muted)]',
+            )}
+          >
+            <History aria-hidden width={14} height={14} />
+            <span>
+              Restoring Revision #{draftRevId} · review and press Save to
+              commit, or Cancel to abandon.
+            </span>
+          </div>
+        ) : null}
+
         <Input
           size="lg"
-          autoFocus={titleAutoFocus}
+          autoFocus={titleAutoFocus && !isDraftMode}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={handleTitleBlur}
@@ -528,9 +667,48 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
           )}
         />
 
-        {roleResolved ? (
+        {isDraftMode ? (
+          draftRevisionQuery.isError ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Couldn't load revision</CardTitle>
+                <CardDescription>
+                  Revision #{draftRevId} couldn't be retrieved. Cancel to
+                  return to the live page.
+                </CardDescription>
+              </CardHeader>
+              <CardFooter>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleDraftCancel}
+                >
+                  Cancel draft
+                </Button>
+              </CardFooter>
+            </Card>
+          ) : !draftRevisionQuery.data ? (
+            <EditorFallback />
+          ) : (
+            <Suspense fallback={<EditorFallback />}>
+              <MilkdownEditor
+                key={`draft-${draftRevId}`}
+                defaultValue={draftRevisionQuery.data.body}
+                onChange={handleBodyChange}
+                onBlur={handleBodyBlur}
+                autoFocus={true}
+                ariaLabel="Page body (draft)"
+                className={EDITOR_MIN_H}
+                aliveWikilinkIds={aliveWikilinkIds}
+                collabPageId={null}
+                readOnly={false}
+              />
+            </Suspense>
+          )
+        ) : roleResolved ? (
           <Suspense fallback={<EditorFallback />}>
             <MilkdownEditor
+              key="live"
               defaultValue={page.body}
               onChange={handleBodyChange}
               onBlur={handleBodyBlur}
@@ -570,7 +748,7 @@ function PageEditor({ page, spaceId, onDeleted }: PageEditorProps) {
         onDeleted={onDeleted}
       />
 
-      {roleResolved && !isViewer && me.data ? (
+      {roleResolved && !isViewer && !isDraftMode && me.data ? (
         <CommentsPanel
           pageId={page.id}
           open={commentsOpen}
