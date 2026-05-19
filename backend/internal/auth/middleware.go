@@ -170,12 +170,17 @@ func SetSessionCookie(w http.ResponseWriter, id string) {
 
 // IsPublicPath returns true for routes that bypass Middleware. Per the M6.1
 // brief: /api/health and everything under /api/auth/. Login is anonymous
-// by definition; logout + me handle cookie presence themselves.
+// by definition; logout + me handle cookie presence themselves. M11.0 adds
+// /p/* — the public OG-share route, gated by User-Agent allowlist instead of
+// session cookie because crawlers don't carry sessions.
 func IsPublicPath(p string) bool {
 	if p == "/api/health" {
 		return true
 	}
-	return strings.HasPrefix(p, "/api/auth/")
+	if strings.HasPrefix(p, "/api/auth/") {
+		return true
+	}
+	return strings.HasPrefix(p, "/p/")
 }
 
 // Middleware enforces the session cookie on every request except IsPublicPath.

@@ -69,4 +69,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// M7.1 LiveCollab: ws upgrade for Yjs relay. Authed via auth.Middleware
 	// on the upgrade request — must NOT be added to auth.IsPublicPath.
 	mux.HandleFunc("GET /ws/pages/{id}", srv.WSPage)
+
+	// M11.0 OG share: public unauthenticated route. Crawler UAs get OG HTML;
+	// real browsers get 302'd to the SPA. MUST be on auth.IsPublicPath.
+	mux.HandleFunc("GET /p/{id}", srv.HandlePublicShare)
+	mux.HandleFunc("GET /p/{id}/{slug}", srv.HandlePublicShare)
 }
