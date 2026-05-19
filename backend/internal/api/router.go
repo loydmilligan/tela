@@ -44,6 +44,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/comments/{id}", srv.PatchComment)
 	mux.HandleFunc("DELETE /api/comments/{id}", srv.DeleteComment)
 
+	mux.HandleFunc("GET /api/pages/{id}/revisions", srv.ListPageRevisions)
+	mux.HandleFunc("GET /api/pages/{id}/revisions/{rev_id}", srv.GetPageRevision)
+
 	mux.HandleFunc("GET /api/search", srv.Search)
 
 	mux.HandleFunc("GET /api/admin/users", srv.ListAdminUsers)

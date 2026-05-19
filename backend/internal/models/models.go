@@ -24,6 +24,21 @@ type Page struct {
 // Anchor* nil. Resolved metadata only meaningful on roots. The backend
 // excludes soft-deleted rows from list endpoints, so DeletedAt never
 // surfaces to clients.
+// PageRevision is the wire shape for an M9 page_revisions row. author_id is
+// nullable; author_username is joined from users when present. byte_size is
+// length(body) at write time, cached so list views don't pull the full body.
+type PageRevision struct {
+	ID             int64   `json:"id"`
+	PageID         int64   `json:"page_id"`
+	Title          string  `json:"title"`
+	Body           string  `json:"body,omitempty"`
+	AuthorID       *int64  `json:"author_id"`
+	AuthorUsername *string `json:"author_username,omitempty"`
+	Source         string  `json:"source"`
+	ByteSize       int64   `json:"byte_size"`
+	CreatedAt      string  `json:"created_at"`
+}
+
 type Comment struct {
 	ID           int64   `json:"id"`
 	PageID       int64   `json:"page_id"`

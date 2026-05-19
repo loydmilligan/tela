@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -431,6 +432,15 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
+	}
+	// M9.0 snapshot-on-save: every persisted PATCH that actually changes body
+	// or title writes a page_revisions row. Runs AFTER commit so a failure
+	// here cannot roll the user's save back — we log and proceed.
+	if p.Body != existing.Body || p.Title != existing.Title {
+		authorID := u.ID
+		if _, err := insertPageRevision(ctx, s.DB, id, p.Body, p.Title, &authorID, "manual"); err != nil {
+			log.Printf("page %d snapshot revision failed: %v", id, err)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"page": p})
 }
