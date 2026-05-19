@@ -24,6 +24,7 @@ import { prosemirrorToYXmlFragment, ySyncPlugin, yUndoPlugin } from 'y-prosemirr
 import { cn } from '../../lib/utils'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { TelaProvider, type TelaProviderStatus } from '../../lib/collab/tela-provider'
+import { useLeaderElection } from '../../lib/collab/use-leader-election'
 import { slashPlugin, SlashView } from './milkdown-slash'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
@@ -93,7 +94,16 @@ function MilkdownEditorInner({
     const doc = new Y.Doc()
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = `${proto}//${window.location.host}/ws/pages/${collabPageId}`
-    collabRef.current = { doc, provider: new TelaProvider(url, doc) }
+    const provider = new TelaProvider(url, doc)
+    // M7.3: seed local awareness state so this peer is visible in the
+    // awareness map and leader election can pick it up. Without this seed,
+    // getStates() would be empty and useLeaderElection would never claim
+    // leadership → no saves would ever fire. #65 will replace this with a
+    // real {user: {...}} payload on first 'connected' event; either ordering
+    // is fine because leader election only cares about clientID, not state
+    // contents.
+    provider.awareness.setLocalState({})
+    collabRef.current = { doc, provider }
   }
 
   const [collabStatus, setCollabStatus] = useState<TelaProviderStatus>(
@@ -108,6 +118,19 @@ function MilkdownEditorInner({
     setCollabStatus(collab.provider.getStatus())
     return collab.provider.onStatus(setCollabStatus)
   }, [])
+
+  // M7.3: leader-election state. Read once per render via the hook, then
+  // mirror into a ref so the Milkdown listener callbacks (set up once at
+  // editor creation) can read the live value without being rebuilt on
+  // every leadership flip. In non-collab mode awareness is null and the
+  // hook returns false — callbacks below check `collabRef.current != null`
+  // before consulting the leader flag, so the legacy non-collab save path
+  // stays unconditional.
+  const isLeader = useLeaderElection(
+    collabRef.current?.provider.awareness ?? null,
+  )
+  const isLeaderRef = useRef(isLeader)
+  isLeaderRef.current = isLeader
 
   // Editable predicate. PM evaluates this on every updateState. We use a
   // ref-backed read so the predicate's identity is stable but its result
@@ -125,9 +148,26 @@ function MilkdownEditorInner({
         ctx
           .get(listenerCtx)
           .markdownUpdated((_, md, prev) => {
-            if (md !== prev) callbacks.current.onChange(md)
+            if (md === prev) return
+            // M7.3: in collab mode, only the elected leader (lowest
+            // awareness clientID) fires save. Non-leader peers still
+            // receive the y-prosemirror sync and update PM locally — but
+            // they MUST NOT invoke onChange (which schedules the PATCH).
+            // Yjs has already converged the doc across the room, so a save
+            // from any one peer carries the canonical body; multi-peer
+            // saves would be wasted duplicates. In non-collab mode
+            // (collabRef == null) the legacy single-author path is
+            // unconditional.
+            if (collabRef.current != null && !isLeaderRef.current) return
+            callbacks.current.onChange(md)
           })
-          .blur(() => callbacks.current.onBlur?.())
+          .blur(() => {
+            // Same leader gate as markdownUpdated. Blur in PageView cancels
+            // the pending debounce and saves immediately; non-leaders have
+            // no pending save and shouldn't author one either.
+            if (collabRef.current != null && !isLeaderRef.current) return
+            callbacks.current.onBlur?.()
+          })
         ctx.set(slashPlugin.key, {
           view: pluginViewFactory({ component: SlashView }),
         })
