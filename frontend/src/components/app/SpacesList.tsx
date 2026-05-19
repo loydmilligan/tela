@@ -75,7 +75,7 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
               No spaces yet
             </p>
             <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-              Spaces hold trees of pages.
+              Create a space to get started.
             </p>
           </CardBody>
           <CardFooter className="px-[var(--space-4)] pt-0 pb-[var(--space-3)]">
@@ -85,7 +85,7 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
               className="w-full"
               onClick={() => setNewOpen(true)}
             >
-              <Plus width={14} height={14} /> Create your first space
+              <Plus width={14} height={14} /> New space
             </Button>
           </CardFooter>
         </Card>

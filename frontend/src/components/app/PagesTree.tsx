@@ -17,6 +17,8 @@ import {
 import type { PageTreeNode } from '../../lib/types'
 import { useExpandedNodes } from '../../lib/useExpandedNodes'
 import { Button } from '../ui/button'
+import { Card, CardBody, CardFooter } from '../ui/card'
+import { emitOpenNewPage } from '../../lib/newPageEvent'
 import {
   Dialog,
   DialogClose,
@@ -100,9 +102,26 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
       ) : null}
 
       {tree.data && nodes.length === 0 ? (
-        <p className="m-0 px-[var(--space-2)] py-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          No pages yet.
-        </p>
+        <Card className="bg-[var(--surface-1)]">
+          <CardBody className="px-[var(--space-4)] py-[var(--space-3)] gap-[var(--space-1)]">
+            <p className="m-0 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+              No pages yet
+            </p>
+            <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+              Add a page to start writing.
+            </p>
+          </CardBody>
+          <CardFooter className="px-[var(--space-4)] pt-0 pb-[var(--space-3)]">
+            <Button
+              variant="primary"
+              size="sm"
+              className="w-full"
+              onClick={() => emitOpenNewPage()}
+            >
+              <FilePlus width={14} height={14} /> New page
+            </Button>
+          </CardFooter>
+        </Card>
       ) : null}
 
       <ul className="m-0 p-0 list-none flex flex-col gap-[1px]">
