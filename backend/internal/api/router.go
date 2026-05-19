@@ -74,5 +74,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// M11.0 OG share: public unauthenticated route. Crawler UAs get OG HTML;
 	// real browsers get 302'd to the SPA. MUST be on auth.IsPublicPath.
 	mux.HandleFunc("GET /p/{id}", srv.HandlePublicShare)
+	// M11.1 OG image: public, not UA-gated (image fetchers carry arbitrary
+	// UAs). Registered before /p/{id}/{slug} so the more-specific literal
+	// pattern wins regardless of mux iteration order.
+	mux.HandleFunc("GET /p/{id}/og.png", srv.HandleOGImage)
 	mux.HandleFunc("GET /p/{id}/{slug}", srv.HandlePublicShare)
 }
