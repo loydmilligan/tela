@@ -18,6 +18,10 @@ type searchHit struct {
 }
 
 func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"results": []searchHit{}})
@@ -31,9 +35,10 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 		       snippet(pages_fts, 1, '<mark>', '</mark>', '…', 32)
 		FROM pages_fts
 		JOIN pages p ON p.id = pages_fts.rowid
+		JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
 		WHERE pages_fts MATCH ?
 		ORDER BY bm25(pages_fts) ASC
-		LIMIT ?`, fts, searchLimit)
+		LIMIT ?`, u.ID, fts, searchLimit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "search query failed")
 		return

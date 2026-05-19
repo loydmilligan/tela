@@ -56,6 +56,10 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", srv.Health)
 
+	mux.HandleFunc("POST /api/auth/login", srv.Login)
+	mux.HandleFunc("POST /api/auth/logout", srv.Logout)
+	mux.HandleFunc("GET /api/auth/me", srv.Me)
+
 	mux.HandleFunc("GET /api/spaces", srv.ListSpaces)
 	mux.HandleFunc("POST /api/spaces", srv.CreateSpace)
 	mux.HandleFunc("GET /api/spaces/{id}", srv.GetSpace)
@@ -73,8 +77,10 @@ func main() {
 
 	mux.HandleFunc("GET /api/search", srv.Search)
 
+	handler := auth.Middleware(d)(mux)
+
 	log.Printf("tela backend listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
 }

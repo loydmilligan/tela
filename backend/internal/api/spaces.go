@@ -38,8 +38,16 @@ type spaceUpdateRequest struct {
 }
 
 func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.DB.QueryContext(r.Context(),
-		`SELECT id, name, slug, created_at, updated_at FROM spaces ORDER BY name ASC`)
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	rows, err := s.DB.QueryContext(r.Context(), `
+		SELECT s.id, s.name, s.slug, s.created_at, s.updated_at
+		  FROM spaces s
+		  JOIN space_members sm ON sm.space_id = s.id
+		 WHERE sm.user_id = ?
+		 ORDER BY s.name ASC`, u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list spaces failed")
 		return
@@ -63,6 +71,11 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	var req spaceCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
@@ -101,7 +114,18 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := s.DB.ExecContext(r.Context(),
+	// Wrap the space insert + creator-owner membership row in one tx so a
+	// crash between the two can't leave the caller locked out of the space
+	// they just created (M6.1 auto-own carry-over from #36).
+	ctx := r.Context()
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
+		return
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
 		`INSERT INTO spaces(name, slug) VALUES (?, ?)`, name, slug)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
@@ -116,9 +140,19 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "create space: last insert id failed")
 		return
 	}
-	sp, err := selectSpaceByID(r.Context(), s.DB, id)
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO space_members(space_id, user_id, role) VALUES (?, ?, 'owner')`,
+		id, u.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "assign space owner failed")
+		return
+	}
+	sp, err := selectSpaceByIDTx(ctx, tx, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch created space failed")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"space": sp})
@@ -127,6 +161,9 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetSpace(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDParam(w, r, "id")
 	if !ok {
+		return
+	}
+	if _, ok := s.requireMembership(w, r, id); !ok {
 		return
 	}
 	sp, err := selectSpaceByID(r.Context(), s.DB, id)
@@ -144,6 +181,14 @@ func (s *Server) GetSpace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDParam(w, r, "id")
 	if !ok {
+		return
+	}
+	role, ok := s.requireMembership(w, r, id)
+	if !ok {
+		return
+	}
+	if !canEdit(role) {
+		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
 		return
 	}
 
@@ -225,6 +270,14 @@ func (s *Server) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	role, ok := s.requireMembership(w, r, id)
+	if !ok {
+		return
+	}
+	if role != roleOwner {
+		writeError(w, http.StatusForbidden, "forbidden", "owner role required")
+		return
+	}
 	res, err := s.DB.ExecContext(r.Context(), `DELETE FROM spaces WHERE id = ?`, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete space failed")
@@ -245,6 +298,14 @@ func (s *Server) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 func selectSpaceByID(ctx context.Context, db *sql.DB, id int64) (models.Space, error) {
 	var sp models.Space
 	err := db.QueryRowContext(ctx,
+		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = ?`, id,
+	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.CreatedAt, &sp.UpdatedAt)
+	return sp, err
+}
+
+func selectSpaceByIDTx(ctx context.Context, tx *sql.Tx, id int64) (models.Space, error) {
+	var sp models.Space
+	err := tx.QueryRowContext(ctx,
 		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = ?`, id,
 	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.CreatedAt, &sp.UpdatedAt)
 	return sp, err

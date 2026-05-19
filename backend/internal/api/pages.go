@@ -67,6 +67,9 @@ func (s *Server) ListPages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup space failed")
 		return
 	}
+	if _, ok := s.requireMembership(w, r, spaceID); !ok {
+		return
+	}
 
 	if q.Get("tree") == "1" {
 		tree, err := buildPageTree(r.Context(), s.DB, spaceID)
@@ -121,16 +124,21 @@ func (s *Server) ListPages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"pages": pages})
 }
 
-// ListAllPages returns every page in every space as a flat list, ordered by
-// space_name then title. Powers the cross-space `[[Page]]` picker. No
-// pagination — single-user, <100 pages assumed (same bound as the orama
-// tier-1 index).
+// ListAllPages returns every page in every space the caller is a member of
+// as a flat list, ordered by space_name then title. Powers the cross-space
+// `[[Page]]` picker. No pagination — single-user, <100 pages assumed (same
+// bound as the orama tier-1 index).
 func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT p.id, p.space_id, s.name, p.title
 		  FROM pages p
 		  JOIN spaces s ON s.id = p.space_id
-		 ORDER BY s.name ASC, p.title ASC`)
+		  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+		 ORDER BY s.name ASC, p.title ASC`, u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list pages failed")
 		return
@@ -175,6 +183,10 @@ func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	var req pageCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
@@ -206,6 +218,20 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	role, err := spaceRoleTx(ctx, tx, u.ID, req.SpaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
+		return
+	}
+	if !canEdit(role) {
+		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
+		return
+	}
 
 	if err := verifySpaceExistsTx(ctx, tx, req.SpaceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -293,11 +319,18 @@ func (s *Server) GetPage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch page failed")
 		return
 	}
+	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"page": p})
 }
 
 func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	u, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -342,6 +375,29 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	existing, err := selectPageByIDTx(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "page not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
+		return
+	}
+	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
+		return
+	}
+	if !canEdit(role) {
+		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
+		return
+	}
+
 	stmt := "UPDATE pages SET " + strings.Join(sets, ", ") + " WHERE id = ?"
 	res, err := tx.ExecContext(ctx, stmt, args...)
 	if err != nil {
@@ -380,6 +436,10 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	ctx := r.Context()
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -387,6 +447,29 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	existing, err := selectPageByIDTx(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "page not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
+		return
+	}
+	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
+		return
+	}
+	if !canEdit(role) {
+		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
+		return
+	}
 
 	// Cache the live title onto any incoming page_links rows so backlinks
 	// from other pages still render with a usable label after deletion.
@@ -429,6 +512,10 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	u, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -494,6 +581,20 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sourceRole, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
+		return
+	}
+	if !canEdit(sourceRole) {
+		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
+		return
+	}
+
 	targetSpaceID := page.SpaceID
 	if spaceIDSet {
 		targetSpaceID = newSpaceID
@@ -504,6 +605,21 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 			}
 			writeError(w, http.StatusInternalServerError, "internal", "lookup target space failed")
 			return
+		}
+		if targetSpaceID != page.SpaceID {
+			targetRole, err := spaceRoleTx(ctx, tx, u.ID, targetSpaceID)
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusForbidden, "forbidden", "not a member of target space")
+				return
+			}
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal", "lookup target membership failed")
+				return
+			}
+			if !canEdit(targetRole) {
+				writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required in target space")
+				return
+			}
 		}
 	}
 

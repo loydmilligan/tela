@@ -25,15 +25,21 @@ type backlinkHit struct {
 
 // Backlinks lists pages that link TO the requested page (i.e. sources where
 // page_links.target_id = {id}). 404 if the page itself doesn't exist; empty
-// list when no incoming links. Sort: space_name ASC, title ASC.
+// list when no incoming links. Sort: space_name ASC, title ASC. Source pages
+// in spaces the caller is not a member of are filtered out — no title or
+// snippet leakage across membership boundaries.
 func (s *Server) Backlinks(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 
-	var exists int
-	err := s.DB.QueryRowContext(r.Context(), `SELECT 1 FROM pages WHERE id = ?`, id).Scan(&exists)
+	var targetSpaceID int64
+	err := s.DB.QueryRowContext(r.Context(), `SELECT space_id FROM pages WHERE id = ?`, id).Scan(&targetSpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "page not found")
 		return
@@ -42,14 +48,18 @@ func (s *Server) Backlinks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
 		return
 	}
+	if _, ok := s.requireMembership(w, r, targetSpaceID); !ok {
+		return
+	}
 
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT p.id, p.space_id, s.name, p.title, p.body
 		  FROM page_links l
 		  JOIN pages p ON p.id = l.source_id
 		  JOIN spaces s ON s.id = p.space_id
+		  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
 		 WHERE l.target_id = ?
-		 ORDER BY s.name ASC, p.title ASC`, id)
+		 ORDER BY s.name ASC, p.title ASC`, u.ID, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list backlinks failed")
 		return
