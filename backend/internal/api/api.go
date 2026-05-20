@@ -1,6 +1,9 @@
 package api
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+)
 
 // Server bundles dependencies shared across HTTP handlers.
 type Server struct {
@@ -11,10 +14,16 @@ type Server struct {
 }
 
 func New(db *sql.DB) *Server {
-	return &Server{
+	s := &Server{
 		DB:           db,
 		rooms:        newRoomRegistry(),
 		shareSecret:  loadOrGenerateShareSecret(),
 		shareLimiter: newShareRateLimiter(),
 	}
+	// Sweep stale share-rate-limit buckets every shareRateWindow so the
+	// limiter map cannot grow unbounded under adversarial load. Tied to
+	// context.Background() — the goroutine outlives non-graceful tests, which
+	// is fine: each test process is short-lived.
+	go s.shareLimiter.sweepLoop(context.Background())
+	return s
 }

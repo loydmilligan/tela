@@ -193,6 +193,44 @@ func newShareRateLimiter() *shareRateLimiter {
 	return &shareRateLimiter{buckets: map[string][]time.Time{}}
 }
 
+// sweep removes empty buckets and prunes stale times from non-empty ones.
+// Bounds buckets memory under adversarial load — without it a stream of
+// distinct (token, IP) keys grows the map monotonically.
+func (rl *shareRateLimiter) sweep() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	cutoff := time.Now().Add(-shareRateWindow)
+	for k, times := range rl.buckets {
+		kept := times[:0]
+		for _, t := range times {
+			if t.After(cutoff) {
+				kept = append(kept, t)
+			}
+		}
+		if len(kept) == 0 {
+			delete(rl.buckets, k)
+		} else {
+			rl.buckets[k] = kept
+		}
+	}
+}
+
+// sweepLoop runs sweep once per shareRateWindow until ctx is cancelled. Started
+// from api.New for the production server lifetime; tests inherit the goroutine
+// but each test process is short-lived so the leak is benign.
+func (rl *shareRateLimiter) sweepLoop(ctx context.Context) {
+	t := time.NewTicker(shareRateWindow)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			rl.sweep()
+		}
+	}
+}
+
 // allow returns (ok, retryAfter). When ok=false the second value is how long
 // the caller should wait before retrying — the time until the oldest in-bucket
 // attempt rolls out of the window.
@@ -223,20 +261,43 @@ func (rl *shareRateLimiter) allow(token, ip string) (bool, time.Duration) {
 	return true, 0
 }
 
+// normalizeIPForBucket folds an IP-or-IP:port string into a canonical bucket
+// key. Strips port (IPv4 1.2.3.4:5; IPv6 [::1]:5), strips IPv6 brackets, drops
+// the zone suffix (fe80::1%eth0). Falls back to the raw trimmed string when
+// net.ParseIP cannot make sense of the input — this is rate-limit metadata,
+// not auth, so a best-effort key is preferable to refusing the request.
+func normalizeIPForBucket(raw string) string {
+	s := strings.TrimSpace(raw)
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		s = host
+	}
+	s = strings.Trim(s, "[]")
+	if i := strings.Index(s, "%"); i >= 0 {
+		s = s[:i]
+	}
+	if ip := net.ParseIP(s); ip != nil {
+		return ip.String()
+	}
+	return s
+}
+
 // clientIPForRateLimit returns the client IP to key the rate-limit bucket on.
-// Caddy sets X-Forwarded-For; in direct-test scenarios we fall back to the
-// host portion of r.RemoteAddr.
+// Reads the RIGHTMOST X-Forwarded-For entry — Caddy's trusted_proxies block
+// strips any client-supplied XFF and appends a single trustworthy hop, so the
+// rightmost is what Caddy itself authored. Reading the leftmost (the previous
+// behaviour) made the limiter trivial to defeat: an attacker could rotate the
+// header per request and mint a fresh 5-attempt bucket every time.
 func clientIPForRateLimit(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			return strings.TrimSpace(xff[:i])
+		if i := strings.LastIndexByte(xff, ','); i >= 0 {
+			return normalizeIPForBucket(xff[i+1:])
 		}
-		return strings.TrimSpace(xff)
+		return normalizeIPForBucket(xff)
 	}
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+		return normalizeIPForBucket(host)
 	}
-	return r.RemoteAddr
+	return normalizeIPForBucket(r.RemoteAddr)
 }
 
 // shareURLFor produces the absolute https URL the FE serves for a share token.

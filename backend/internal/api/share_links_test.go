@@ -878,6 +878,126 @@ func TestShareTree_NoDescendants_ReturnsRootOnly(t *testing.T) {
 	}
 }
 
+// TestShare_PageMovedOutOfSubtree_Returns404 — M15.4 follow-up B (M-3 regression).
+// Locked design #12: subtree scope is live. Pages moved INTO the subtree after
+// share creation are included; pages moved OUT must 404. Existing tests cover
+// cross-space pages that were never in scope; this one exercises the "in-scope
+// then moved out" path explicitly.
+func TestShare_PageMovedOutOfSubtree_Returns404(t *testing.T) {
+	env := newShareTestEnv(t)
+	var otherSpaceID int64
+	if err := env.db.QueryRow(`SELECT space_id FROM pages WHERE id = ?`, env.other).Scan(&otherSpaceID); err != nil {
+		t.Fatalf("lookup other space id: %v", err)
+	}
+	sh := mustShareCreate(t, env.adminC, env.tsURL, env.page,
+		`{"include_descendants":true}`)
+
+	pub := newUnauthClient(t)
+	pageURL := fmt.Sprintf("%s/api/share/%s/page/%d", env.tsURL, sh.Token, env.child)
+
+	// Pre-move: child is in scope, so the public page handler returns 200.
+	pre, err := pub.Get(pageURL)
+	if err != nil {
+		t.Fatalf("pre-move get: %v", err)
+	}
+	if pre.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(pre.Body)
+		pre.Body.Close()
+		t.Fatalf("pre-move status=%d want 200 body=%s", pre.StatusCode, b)
+	}
+	pre.Body.Close()
+
+	// Move child out of the shared subtree to Other Space (root parent).
+	moveBody := fmt.Sprintf(`{"space_id":%d,"parent_id":null,"position":0}`, otherSpaceID)
+	mvResp, err := postJSON(env.adminC,
+		fmt.Sprintf("%s/api/pages/%d/move", env.tsURL, env.child), moveBody)
+	if err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	if mvResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(mvResp.Body)
+		mvResp.Body.Close()
+		t.Fatalf("move status=%d want 200 body=%s", mvResp.StatusCode, b)
+	}
+	mvResp.Body.Close()
+
+	// Post-move: child is out of scope, public handler must 404 with not_found.
+	post, err := pub.Get(pageURL)
+	if err != nil {
+		t.Fatalf("post-move get: %v", err)
+	}
+	defer post.Body.Close()
+	if post.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(post.Body)
+		t.Fatalf("post-move status=%d want 404 body=%s", post.StatusCode, b)
+	}
+	body, _ := io.ReadAll(post.Body)
+	if !strings.Contains(string(body), `"code":"not_found"`) {
+		t.Fatalf("post-move body=%s missing not_found code", body)
+	}
+}
+
+// TestSharePasswordAuth_RotatedXFFStillRateLimited — M15.4 follow-up B (S-2 regression).
+// Before the fix, clientIPForRateLimit read the LEFTMOST X-Forwarded-For entry,
+// so an attacker could rotate that header per request and mint a fresh 5/min
+// bucket each time. With the RIGHTMOST + normalize fix in place, the bucket
+// key is the Caddy-authored hop (rightmost), which remains stable across the
+// rotation — so the 6th attempt hits the limiter.
+//
+// The test bypasses Caddy (httptest.Server connects the client directly to the
+// backend), so we simulate Caddy's framing by sending a two-value XFF on every
+// attempt: a rotating attacker-supplied LEFTMOST entry plus a fixed RIGHTMOST
+// hop that stands in for what Caddy would have written. Old LEFTMOST code
+// would bucket each attempt under a different IP and never hit 429; new
+// RIGHTMOST code buckets all attempts under the same IP.
+func TestSharePasswordAuth_RotatedXFFStillRateLimited(t *testing.T) {
+	env := newShareTestEnv(t)
+	sh := mustShareCreate(t, env.adminC, env.tsURL, env.page,
+		`{"include_descendants":false,"password":"hunter2hunter2"}`)
+
+	authURL := fmt.Sprintf("%s/api/share/%s/auth", env.tsURL, sh.Token)
+	pub := newUnauthClient(t)
+	send := func(t *testing.T, xff string, label string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, authURL,
+			strings.NewReader(`{"password":"wrong"}`))
+		if err != nil {
+			t.Fatalf("%s build req: %v", label, err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", xff)
+		resp, err := pub.Do(req)
+		if err != nil {
+			t.Fatalf("%s do: %v", label, err)
+		}
+		return resp
+	}
+
+	for i := 0; i < 5; i++ {
+		spoof := fmt.Sprintf("%d.%d.%d.%d", i+1, i+1, i+1, i+1)
+		// Rightmost is the "Caddy-authored" hop; fixed across requests.
+		resp := send(t, spoof+", 10.0.0.42", fmt.Sprintf("attempt %d", i+1))
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status=%d want 401", i+1, resp.StatusCode)
+		}
+	}
+	// 6th attempt — rightmost identical to the previous 5 → bucket cap hit → 429.
+	resp := send(t, "99.99.99.99, 10.0.0.42", "attempt 6")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("attempt 6 status=%d want 429 body=%s", resp.StatusCode, b)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"code":"too_many_requests"`) {
+		t.Fatalf("body=%s missing too_many_requests code", body)
+	}
+	if resp.Header.Get("Retry-After") == "" {
+		t.Fatalf("Retry-After header missing on 429")
+	}
+}
+
 // Helper kept simple: returns the decoded share envelope; bails with t.Fatalf
 // on any non-201 status.
 func mustShareCreate(t *testing.T, c *http.Client, baseURL string, pageID int64, body string) shareLinkAPI {

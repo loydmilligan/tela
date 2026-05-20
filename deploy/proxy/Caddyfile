@@ -1,3 +1,13 @@
+{
+	servers {
+		# With trusted_proxies set, Caddy strips any X-Forwarded-For entries it
+		# cannot vouch for and writes a single trustworthy hop — the client IP
+		# from Caddy's own listener. The backend's clientIPForRateLimit reads
+		# the RIGHTMOST entry, so this pairs to deny client-supplied XFF spoofs.
+		trusted_proxies static private_ranges
+	}
+}
+
 :80 {
 	handle /api/* {
 		reverse_proxy backend:8080
