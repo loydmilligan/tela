@@ -13,6 +13,13 @@
   body,
   #root {
     height: 100%;
+    /* iOS Safari: %-heights on html resolve against the large viewport
+       (address bar hidden), so the chain html/body/#root stays slightly
+       taller than what's visible while the address bar is showing,
+       producing bounce-scroll on touch devices. `dvh` matches the
+       currently-visible viewport. Last-wins; older browsers without dvh
+       support silently ignore the second declaration. */
+    height: 100dvh;
   }
 
   body {

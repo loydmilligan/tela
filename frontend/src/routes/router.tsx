@@ -81,7 +81,7 @@ const appLayoutRoute = createRoute({
   },
   component: function AppLayout() {
     return (
-      <div className="h-screen flex bg-[var(--surface-1)] text-[var(--text-primary)] overflow-hidden">
+      <div className="h-dvh flex bg-[var(--surface-1)] text-[var(--text-primary)] overflow-hidden">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0">
           <header className="flex items-center justify-between px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
@@ -90,7 +90,7 @@ const appLayoutRoute = createRoute({
             </h1>
             <ThemeSwitcher />
           </header>
-          <main className="flex-1 flex flex-col overflow-y-auto min-h-0">
+          <main className="flex-1 flex flex-col overflow-y-auto overscroll-contain min-h-0">
             <Outlet />
           </main>
         </div>

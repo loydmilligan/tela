@@ -77,7 +77,7 @@ export function SharePasswordScreen({ token }: SharePasswordScreenProps) {
     auth.isPending || retryAfter > 0 || password.length === 0
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--surface-1)] text-[var(--text-primary)]">
+    <div className="min-h-dvh flex flex-col bg-[var(--surface-1)] text-[var(--text-primary)]">
       <header className="flex items-center justify-between px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
         <h1 className="m-0 text-[length:var(--text-lg)] leading-[var(--leading-tight)] font-[family-name:var(--font-sans)]">
           tela
