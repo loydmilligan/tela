@@ -15,6 +15,7 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import { insertTableCommand } from '@milkdown/kit/preset/gfm'
 import { COLLAPSIBLE_DEFAULT_SUMMARY } from './milkdown-collapsibles'
+import { insertExcalidraw } from './milkdown-excalidraw'
 
 export const slashPlugin = slashFactory('tela-slash')
 
@@ -75,6 +76,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     hint: 'Toggleable details block',
     keywords: ['collapsible', 'details', 'toggle', 'disclosure', 'expand'],
     run: insertCollapsible,
+  },
+  {
+    id: 'excalidraw',
+    label: 'Excalidraw',
+    hint: 'Hand-drawn diagram',
+    keywords: ['excalidraw', 'diagram', 'drawing', 'sketch', 'whiteboard'],
+    run: insertExcalidraw,
   },
   {
     id: 'code',

@@ -47,9 +47,12 @@ import {
   detailsSummarySchema,
 } from './milkdown-collapsibles'
 import {
+  excalidrawClickPlugin,
+  excalidrawOpenCtx,
   excalidrawRemarkPlugin,
   excalidrawSchema,
   pageIdCtx,
+  type ExcalidrawOpenHandler,
 } from './milkdown-excalidraw'
 import {
   WIKILINK_ALIVE_IDS_META,
@@ -139,6 +142,13 @@ export interface MilkdownEditorProps {
   // always real. Stable across the editor's lifetime — PageView keys the
   // editor by page id, so a page switch unmounts/remounts.
   pageId?: number
+  // M13.3b — open-Edit-Sheet handler. Invoked when the user clicks any
+  // diagram atom in editable mode OR runs the slash-menu `Excalidraw`
+  // entry. Null/undefined in share-mode (ShareReader doesn't pass it) and
+  // viewer-mode (PageView passes undefined): the click plugin and slash
+  // entry are no-ops in those modes. Callbacks captured via a ref so prop
+  // changes don't rebuild the editor.
+  onOpenExcalidrawSheet?: ExcalidrawOpenHandler
 }
 
 // Reconnecting banner copy.
@@ -163,6 +173,7 @@ function MilkdownEditorInner({
   showResolvedAnchors = false,
   wikilinkMode = 'edit',
   pageId = 0,
+  onOpenExcalidrawSheet,
 }: MilkdownEditorProps) {
   const pluginViewFactory = usePluginViewFactory()
 
@@ -185,6 +196,7 @@ function MilkdownEditorInner({
     onSelectionChange,
     onAnchorClick,
     onAnchorsResolved,
+    onOpenExcalidrawSheet,
   })
   callbacks.current = {
     onChange,
@@ -193,6 +205,7 @@ function MilkdownEditorInner({
     onSelectionChange,
     onAnchorClick,
     onAnchorsResolved,
+    onOpenExcalidrawSheet,
   }
 
   // M8.3 — single-source the selection projection so the PM plugin and any
@@ -322,6 +335,17 @@ function MilkdownEditorInner({
         // the editor's lifetime (editor remounts on page change), so a single
         // ctx.set at build time is sufficient — no useEffect needed.
         ctx.set(pageIdCtx.key, pageId)
+        // M13.3b — wire the open-Edit-Sheet ctx. A stable trampoline reads
+        // `callbacks.current.onOpenExcalidrawSheet` at fire time so the
+        // PageView can swap handlers without rebuilding the editor. Null in
+        // share-mode (ShareReader doesn't pass the prop) — the click plugin
+        // and slash entry both short-circuit on a null handler, so they're
+        // safe to mount unconditionally.
+        const openTrampoline: ExcalidrawOpenHandler | null =
+          wikilinkMode === 'share'
+            ? null
+            : (req) => callbacks.current.onOpenExcalidrawSheet?.(req)
+        ctx.set(excalidrawOpenCtx.key, openTrampoline)
         ctx.set(imageAttr.key, () => ({ loading: 'lazy' }))
         // M12.1 — register only the curated grammar set (24 langs) on the
         // shared refractor/core singleton. The plugin's static import of
@@ -451,8 +475,10 @@ function MilkdownEditorInner({
       // view path. The Edit Sheet (M13.3b / #113) opens on click in
       // edit-mode and lazy-loads the Excalidraw library only then.
       .use(pageIdCtx)
+      .use(excalidrawOpenCtx)
       .use(excalidrawRemarkPlugin)
-      .use(excalidrawSchema),
+      .use(excalidrawSchema)
+      .use(excalidrawClickPlugin),
   )
 
   useEffect(() => {

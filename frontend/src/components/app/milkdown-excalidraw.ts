@@ -1,12 +1,19 @@
-import { $ctx, $nodeSchema, $remark } from '@milkdown/kit/utils'
+import { $ctx, $nodeSchema, $prose, $remark } from '@milkdown/kit/utils'
+import { Plugin } from '@milkdown/kit/prose/state'
+import type { Ctx } from '@milkdown/ctx'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { TextSelection } from '@milkdown/kit/prose/state'
 
 // M13.3a — Excalidraw view-mode renderer.
+// M13.3b — Edit-Sheet click handler + slash-menu insert helper (this file
+// stays plugin-side; the Sheet itself ships in excalidraw-edit-sheet.tsx as
+// a lazy chunk and is wired by PageView through `excalidrawOpenCtx`).
 //
 // Recognizes ```excalidraw\n{json}\n``` markdown fences and materializes them
 // as ProseMirror atom nodes that render `<img src=/api/diagrams/{page_id}/{
 // scene_hash}.png>` against the M13.2 backend (#111). Read-only view path:
 // ZERO Excalidraw runtime, ZERO new npm deps. The Edit Sheet ships in M13.3b
-// (#113) as a separate lazy chunk.
+// (#113) as a separate lazy chunk gated by `excalidrawOpenCtx`.
 //
 // Three pieces wired together:
 // 1. `excalidrawRemarkPlugin` — mdast transformer. Matches `code` nodes whose
@@ -31,6 +38,34 @@ import { $ctx, $nodeSchema, $remark } from '@milkdown/kit/utils'
 const SCENE_HASH_RE = /^[a-f0-9]{8,64}$/
 
 export const pageIdCtx = $ctx<number, 'excalidrawPageId'>(0, 'excalidrawPageId')
+
+// M13.3b — open-Edit-Sheet handler passed in by the host (PageView). Null in
+// share-mode / viewer-mode / unmounted state: any click on a diagram is a
+// no-op (the atom never shows an edit affordance in those modes because the
+// chrome key off `[contenteditable=true]` via `view.editable`).
+//
+// `pos` is the captured ProseMirror position of the atom node at click /
+// insert time. The host's `onSave` callback uses it to dispatch a
+// `setNodeMarkup` tx with the freshly-saved scene attrs. Since the Sheet is
+// modal-with-overlay, the doc shape can't drift between click and save
+// (concurrent collab edits on an atom node are forbidden — atoms are one
+// edit unit).
+export interface ExcalidrawOpenRequest {
+  sceneHash: string
+  altText: string
+  sceneJSON: string
+  onSave: (next: {
+    sceneHash: string
+    altText: string
+    sceneJSON: string
+  }) => void
+}
+export type ExcalidrawOpenHandler = (req: ExcalidrawOpenRequest) => void
+
+export const excalidrawOpenCtx = $ctx<ExcalidrawOpenHandler | null, 'excalidrawOpen'>(
+  null,
+  'excalidrawOpen',
+)
 
 interface MdastNode {
   type: string
@@ -136,9 +171,24 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
   toDOM: (node) => {
     const { sceneHash, altText, sceneJSON } = (node as unknown as ExcalidrawSchemaNode).attrs
     const pageId = ctx.get(pageIdCtx.key)
+    // M13.3b — the hover-edit affordance. CSS controls visibility (hidden
+    // unless wrapper is hovered AND the editor is editable, gated by the
+    // `[contenteditable='true']` ancestor selector in editor.css). The
+    // button click bubbles up to the wrapper div where the
+    // `excalidrawClickPlugin` catches it and dispatches the open callback.
+    const editBtn: ['button', Record<string, string>, string] = [
+      'button',
+      {
+        type: 'button',
+        class: 'tela-excalidraw-edit-btn',
+        contenteditable: 'false',
+        'aria-label': 'Edit diagram',
+      },
+      'Edit',
+    ]
     if (!sceneHash) {
       // Newly-inserted atom (slash menu) with no PNG yet. Placeholder chrome
-      // hints the user to open the Edit Sheet (M13.3b will wire that path).
+      // hints the user to open the Edit Sheet.
       return [
         'div',
         {
@@ -147,7 +197,8 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
           'data-alt-text': altText,
           'data-scene-json': sceneJSON,
         },
-        '[Empty diagram — Edit to draw]',
+        ['span', { class: 'tela-excalidraw-empty-label' }, '[Empty diagram — click to draw]'],
+        editBtn,
       ]
     }
     return [
@@ -166,6 +217,7 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
           loading: 'lazy',
         },
       ],
+      editBtn,
     ]
   },
   parseMarkdown: {
@@ -199,3 +251,111 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
     },
   },
 }))
+
+// M13.3b — click handler. Intercepts clicks on any `.tela-excalidraw` wrapper
+// in editable mode and invokes the host's Edit-Sheet open callback with the
+// current atom attrs + an onSave that dispatches `setNodeMarkup` at the node
+// position. In read-only mode (`view.editable === false`) the click is a
+// no-op (and the hover Edit button is hidden via CSS). In share-mode the
+// host registers a null open handler, so the plugin is mounted but never
+// fires anything.
+export const excalidrawClickPlugin = $prose((ctx) => {
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        click: (view, event) => {
+          if (!view.editable) return false
+          const targetEl =
+            (event.target instanceof Element &&
+              event.target.closest('.tela-excalidraw')) ||
+            null
+          if (!targetEl) return false
+          const openCb = ctx.get(excalidrawOpenCtx.key)
+          if (!openCb) return false
+
+          const pos = view.posAtDOM(targetEl, 0)
+          if (pos < 0) return false
+          const node = view.state.doc.nodeAt(pos)
+          if (!node || node.type.name !== 'excalidraw') return false
+
+          const sceneHash = typeof node.attrs.sceneHash === 'string' ? node.attrs.sceneHash : ''
+          const altText = typeof node.attrs.altText === 'string' ? node.attrs.altText : ''
+          const sceneJSON = typeof node.attrs.sceneJSON === 'string' ? node.attrs.sceneJSON : ''
+
+          openCb({
+            sceneHash,
+            altText,
+            sceneJSON,
+            onSave: (next) => {
+              const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+                sceneHash: next.sceneHash,
+                altText: next.altText,
+                sceneJSON: next.sceneJSON,
+              })
+              view.dispatch(tr)
+            },
+          })
+          event.preventDefault()
+          return true
+        },
+      },
+    },
+  })
+})
+
+// M13.3b — slash-menu insert helper. Constructs an empty `excalidraw` atom
+// node, replaces the current selection with it, and immediately opens the
+// Edit Sheet at the inserted position so the user lands in the canvas. The
+// approach mirrors `insertCollapsible` from M13.1 (walk the post-replacement
+// doc to find the newly-inserted node by attribute — robust to PM's
+// positioning quirks for atoms at various contexts).
+export function insertExcalidraw(ctx: Ctx): void {
+  const view = ctx.get(editorViewCtx)
+  const { state } = view
+  const excalidrawType = state.schema.nodes.excalidraw
+  if (!excalidrawType) return
+  const openCb = ctx.get(excalidrawOpenCtx.key)
+
+  const atom = excalidrawType.create({ sceneHash: '', altText: '', sceneJSON: '' })
+  const tr = state.tr.replaceSelectionWith(atom)
+  // Find the inserted atom: it's the LAST excalidraw node in the post-tr
+  // doc whose sceneHash is empty (the user can't realistically have other
+  // empty atoms in the doc — they're inserted only via this helper and
+  // immediately get a hash on first save). Even if they did, the worst case
+  // is opening the Sheet on a different empty atom — harmless.
+  let insertedPos = -1
+  tr.doc.descendants((node, pos) => {
+    if (node.type === excalidrawType && node.attrs.sceneHash === '') {
+      insertedPos = pos
+    }
+    return true
+  })
+  if (insertedPos !== -1) {
+    // Park the selection just after the atom so a follow-up keystroke lands
+    // on a sensible position (or NodeSelection on the atom itself if PM
+    // prefers — `Selection.near` resolves to a valid neighbor).
+    tr.setSelection(TextSelection.near(tr.doc.resolve(insertedPos + atom.nodeSize)))
+  }
+  view.dispatch(tr.scrollIntoView())
+  if (insertedPos !== -1 && openCb) {
+    // Capture the position locally; the onSave closure dispatches at the
+    // post-insertion position. The Sheet opens on top of the just-inserted
+    // empty placeholder; saving promotes it to a populated diagram.
+    openCb({
+      sceneHash: '',
+      altText: '',
+      sceneJSON: '',
+      onSave: (next) => {
+        const v = ctx.get(editorViewCtx)
+        const node = v.state.doc.nodeAt(insertedPos)
+        if (!node || node.type !== excalidrawType) return
+        const tr2 = v.state.tr.setNodeMarkup(insertedPos, undefined, {
+          sceneHash: next.sceneHash,
+          altText: next.altText,
+          sceneJSON: next.sceneJSON,
+        })
+        v.dispatch(tr2)
+      },
+    })
+  }
+}

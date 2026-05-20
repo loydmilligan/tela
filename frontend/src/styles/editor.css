@@ -389,6 +389,7 @@
      the same chrome without a Milkdown editor mount. */
   .tela-excalidraw {
     display: block;
+    position: relative;
     margin: 0 0 var(--space-3);
     padding: var(--space-2);
     border: 1px solid var(--border-subtle);
@@ -412,6 +413,36 @@
   .tela-milkdown .ProseMirror .tela-excalidraw.ProseMirror-selectednode {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+  /* M13.3b — hover-Edit affordance. Hidden by default; revealed on hover
+     of the wrapper iff the editor is editable. Pointer events disabled
+     so the click event bubbles to the wrapper (the click plugin reads the
+     wrapper via closest()). */
+  .tela-excalidraw-edit-btn {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-out);
+    pointer-events: none;
+  }
+  /* Visible only inside an editable surface (PM sets contenteditable=true on
+     the editor root; share-mode + viewer-mode both flip it to false). */
+  .tela-milkdown [contenteditable='true'] .tela-excalidraw:hover .tela-excalidraw-edit-btn,
+  .tela-milkdown [contenteditable='true'] .tela-excalidraw:focus-within .tela-excalidraw-edit-btn {
+    opacity: 1;
+  }
+  .tela-excalidraw-empty-label {
+    display: block;
   }
 
   /* Inline code */
