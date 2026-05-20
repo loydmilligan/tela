@@ -308,7 +308,20 @@ export const detailsNodeView = $prose((ctx) => {
           dom.className = 'tela-details'
           const readOnly = ctx.get(detailsReadOnlyCtx.key)
           if (!readOnly) dom.setAttribute('open', '')
-          return { dom, contentDOM: dom }
+          return {
+            dom,
+            contentDOM: dom,
+            // The `open` attribute is runtime UI state owned by the
+            // user-agent + modifier-click toggle plugin (M13.5 #116). It is
+            // NOT a PM schema attr — keeping it out of the doc state is the
+            // whole point ("transient" per the M13.1 brief). Without this
+            // ignoreMutation, PM's MutationObserver sees every open-attr
+            // flip and rebuilds the nodeView, which re-runs this constructor
+            // and forces `open=''` again in edit mode — snapping a
+            // user-initiated close back to open.
+            ignoreMutation: (m) =>
+              m.type === 'attributes' && m.attributeName === 'open',
+          }
         },
       },
     },

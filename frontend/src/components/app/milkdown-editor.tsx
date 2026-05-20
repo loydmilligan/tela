@@ -57,6 +57,16 @@ import {
   type ExcalidrawOpenHandler,
   type ExcalidrawOpenRequest,
 } from './milkdown-excalidraw'
+import {
+  modifierClickEnabledCtx,
+  modifierClickPlugin,
+  wikilinkNavigateCtx,
+  type WikilinkNavigateHandler,
+} from './milkdown-modifier-click'
+import { useQueryClient } from '@tanstack/react-query'
+import { pageKeys } from '../../lib/queries/pages'
+import { navigateToPage } from '../../lib/pageHitItem'
+import type { PageListItem } from '../../lib/types'
 
 // M13.3b — ExcalidrawEditSheet lazy-imports `@excalidraw/excalidraw` (~290 KB
 // gz total) on first open. Owned by the editor (not PageView) so the lazy
@@ -223,6 +233,19 @@ function MilkdownEditorInner({
   const [excalidrawSheet, setExcalidrawSheet] =
     useState<ExcalidrawOpenRequest | null>(null)
 
+  // M13.5 (#116) — modifier-click wikilink follow. Resolve pageId → space_id
+  // via the cross-space allFlat cache (populated by useAllPages, refreshed
+  // through the page-mutation bus). Cache miss = broken / out-of-scope link;
+  // bail silently so the user can plain-click to invoke the new-page dialog
+  // through the existing broken-wikilink path.
+  const queryClient = useQueryClient()
+  const wikilinkNavigate: WikilinkNavigateHandler = (pageId) => {
+    const pages = queryClient.getQueryData<PageListItem[]>(pageKeys.allFlat())
+    const page = pages?.find((p) => p.id === pageId)
+    if (!page) return
+    navigateToPage(page.space_id, pageId)
+  }
+
   // M8.3 — single-source the selection projection so the PM plugin and any
   // future consumer read selection text via the same '\n' block separator
   // contract that lib/comments/anchor.ts uses. Diverging here would silently
@@ -366,6 +389,17 @@ function MilkdownEditorInner({
             ? null
             : (req) => setExcalidrawSheet(req)
         ctx.set(excalidrawOpenCtx.key, openTrampoline)
+        // M13.5 (#116) — modifier-click follow. Off in share and viewer
+        // modes (those keep native click behaviour: share has its own
+        // ShareReader wrapper, viewer doesn't need to follow links from
+        // inside an uneditable surface). The wikilink navigate handler
+        // closes over a stable QueryClient instance, so capturing once at
+        // build time is correct — each call reads fresh cache state.
+        ctx.set(
+          modifierClickEnabledCtx.key,
+          wikilinkMode !== 'share' && !readOnly,
+        )
+        ctx.set(wikilinkNavigateCtx.key, wikilinkNavigate)
         ctx.set(imageAttr.key, () => ({ loading: 'lazy' }))
         // M12.1 — register only the curated grammar set (24 langs) on the
         // shared refractor/core singleton. The plugin's static import of
@@ -500,7 +534,14 @@ function MilkdownEditorInner({
       .use(excalidrawOpenCtx)
       .use(excalidrawRemarkPlugin)
       .use(excalidrawSchema)
-      .use(excalidrawClickPlugin),
+      .use(excalidrawClickPlugin)
+      // M13.5 (#116) — ctrl/cmd-click to follow wikilinks + external links
+      // and to toggle force-open collapsibles. Mounted unconditionally; the
+      // handler short-circuits on the modifierClickEnabled flag (off in
+      // share-mode and viewer-mode).
+      .use(modifierClickEnabledCtx)
+      .use(wikilinkNavigateCtx)
+      .use(modifierClickPlugin),
   )
 
   useEffect(() => {
@@ -614,6 +655,13 @@ function MilkdownEditorInner({
     const dom = domBox.el
     if (!dom) return
     const onClick = (e: MouseEvent) => {
+      // M13.5 (#116) — leave modifier-clicks to the modifierClickPlugin.
+      // ctrl/cmd-click on a broken wikilink is treated as "follow"; the
+      // navigate handler bails on cache miss, leaving no surprise dialog.
+      // defaultPrevented short-circuit covers the rare case where another
+      // PM plugin already handled the click (e.g. an excalidraw atom
+      // overlapping a wikilink — unlikely but defensive).
+      if (e.ctrlKey || e.metaKey || e.defaultPrevented) return
       const target = e.target as HTMLElement | null
       if (!target) return
       const broken = target.closest('.tela-wikilink--broken')
