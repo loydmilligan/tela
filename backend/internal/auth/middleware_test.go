@@ -23,9 +23,11 @@ func TestIsPublicPath(t *testing.T) {
 		"/api/share/abc123":     true, // M15.0 token-scoped public read API
 		"/share/abc123":         true, // M15.5 bot-UA-gated OG envelope
 		"/share/abc123/p/42":    true,
+		"/api/diagrams/123/abcdef.png": true, // M13.2 PNG sidecar (public, content-addressed)
 		"/api/spaces":           false,
 		"/api/pages/1":          false,
 		"/api/pages/1/backlink": false,
+		"/api/pages/1/diagrams": false, // M13.2 PUT lives on the session-gated /api/pages/* path
 		"/api/search":           false,
 		"/api/auth":             false, // no trailing slash — not under /api/auth/
 		"/share":                false, // no trailing slash — not under /share/

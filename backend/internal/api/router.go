@@ -50,6 +50,11 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/pages/{id}/revisions", srv.ListPageRevisions)
 	mux.HandleFunc("GET /api/pages/{id}/revisions/{rev_id}", srv.GetPageRevision)
 
+	// M13.2 RichView Excalidraw PNG sidecar (HYBRID storage). PUT is
+	// session-authed editor+ on the page's space; the GET counterpart below
+	// is on /api/diagrams/* (public) so it can be served without a session.
+	mux.HandleFunc("PUT /api/pages/{id}/diagrams", srv.UploadPageDiagram)
+
 	// M15.0 PublicShare management: session-authed, editor+ on source page's
 	// space. Soft-delete via revoked_at so the audit trail survives revocation.
 	mux.HandleFunc("POST /api/pages/{id}/shares", srv.CreateShareLink)
@@ -86,6 +91,14 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// M7.1 LiveCollab: ws upgrade for Yjs relay. Authed via auth.Middleware
 	// on the upgrade request — must NOT be added to auth.IsPublicPath.
 	mux.HandleFunc("GET /ws/pages/{id}", srv.WSPage)
+
+	// M13.2 RichView PNG sidecar GET: public, content-addressed by scene_hash.
+	// MUST be on auth.IsPublicPath via the /api/diagrams/ HasPrefix branch.
+	// Lives outside /api/pages/* so the session-gated PageView prefix doesn't
+	// need regex special-casing to carve out a public hole. The .png suffix
+	// lives inside the {file} path value (Go 1.22 mux wildcards must end a
+	// segment); the handler strips it before validating against the hex regex.
+	mux.HandleFunc("GET /api/diagrams/{page_id}/{file}", srv.ServePageDiagramPNG)
 
 	// M11.0 OG share: public unauthenticated route. Crawler UAs get OG HTML;
 	// real browsers get 302'd to the SPA. MUST be on auth.IsPublicPath.

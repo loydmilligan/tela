@@ -177,7 +177,11 @@ func SetSessionCookie(w http.ResponseWriter, id string) {
 // themselves via the token + an optional HMAC password cookie. M15.5 adds
 // /share/* — bot-UA-gated OG envelope for share links; crawlers don't carry
 // sessions, so the session middleware would otherwise 401 before the handler
-// could decide whether to serve OG HTML or a 404.
+// could decide whether to serve OG HTML or a 404. M13.2 adds /api/diagrams/* —
+// public PNG sidecar served content-addressed by scene_hash for read-only
+// Excalidraw rendering (zero runtime cost for viewers). Mirrors the
+// /p/{id}/og.png precedent: page-derived image, opaque hash, identical
+// Cache-Control posture.
 func IsPublicPath(p string) bool {
 	if p == "/api/health" {
 		return true
@@ -186,6 +190,9 @@ func IsPublicPath(p string) bool {
 		return true
 	}
 	if strings.HasPrefix(p, "/api/share/") {
+		return true
+	}
+	if strings.HasPrefix(p, "/api/diagrams/") {
 		return true
 	}
 	if strings.HasPrefix(p, "/share/") {
