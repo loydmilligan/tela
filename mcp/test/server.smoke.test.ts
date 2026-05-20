@@ -4,14 +4,28 @@
 
 import { describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const binPath = resolve(here, "..", "dist", "server.js");
 const hasBuild = existsSync(binPath);
+
+// Regression for 0.1.0 symlink bug: npx spawns the binary via
+// `node_modules/.bin/tela-mcp` which is a symlink to dist/server.js. The
+// entrypoint guard used path equality, which doesn't follow symlinks, so
+// main() never ran and the process exited 0 silently. We mirror that
+// invocation here by creating a real symlink and invoking via it. Should be
+// indistinguishable from a direct spawn from the test's perspective.
+function setupSymlinkBin(): { path: string; cleanup: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), "tela-mcp-symlink-"));
+  const linkPath = join(dir, "tela-mcp");
+  symlinkSync(binPath, linkPath);
+  return { path: linkPath, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
 
 interface JsonRpcResponse {
   jsonrpc: "2.0";
@@ -21,8 +35,25 @@ interface JsonRpcResponse {
 }
 
 describe.skipIf(!hasBuild)("stdio smoke", () => {
-  it("responds to initialize then tools/list with the full read+write tool surface", async () => {
-    const child = spawn(process.execPath, [binPath], {
+  // Both invocation paths must behave identically: a direct spawn of
+  // dist/server.js, and a spawn via a symlink (npx's bin-dir layout).
+  const invocations: Array<{ name: string; mkArgv: () => { argv0: string; cleanup: () => void } }> = [
+    {
+      name: "direct (node dist/server.js)",
+      mkArgv: () => ({ argv0: binPath, cleanup: () => {} }),
+    },
+    {
+      name: "via bin symlink (npx invocation shape)",
+      mkArgv: () => {
+        const { path, cleanup } = setupSymlinkBin();
+        return { argv0: path, cleanup };
+      },
+    },
+  ];
+
+  it.each(invocations)("$name responds to initialize + tools/list with full surface", async ({ mkArgv }) => {
+    const { argv0, cleanup } = mkArgv();
+    const child = spawn(process.execPath, [argv0], {
       env: {
         ...process.env,
         TELA_BASE_URL: "http://127.0.0.1:1", // unreachable, irrelevant for handshake
@@ -102,6 +133,7 @@ describe.skipIf(!hasBuild)("stdio smoke", () => {
       );
     } finally {
       child.kill("SIGTERM");
+      cleanup();
     }
   });
 });

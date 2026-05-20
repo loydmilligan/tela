@@ -7,7 +7,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -279,8 +279,28 @@ async function main(): Promise<void> {
   await server.connect(transport);
 }
 
-const invokedDirectly = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (invokedDirectly) {
+// Determine whether this module is the process entrypoint.
+//
+// Direct invocation (`node dist/server.js`) and bin-symlink invocation
+// (`npx -y tela-mcp@latest`, which spawns `node_modules/.bin/tela-mcp` → the
+// real server.js) must both run main(). `path.resolve` does NOT follow
+// symlinks, so a naive equality check between `process.argv[1]` and
+// `fileURLToPath(import.meta.url)` returns false when invoked via the bin
+// symlink — main() never runs and the process exits 0 silently with no MCP
+// handshake response. Resolve symlinks on both sides via realpathSync to
+// compare canonical filesystem paths.
+function isProcessEntrypoint(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    const argvReal = realpathSync(resolve(process.argv[1]));
+    const moduleReal = realpathSync(fileURLToPath(import.meta.url));
+    return argvReal === moduleReal;
+  } catch {
+    return false;
+  }
+}
+
+if (isProcessEntrypoint()) {
   main().catch((err) => {
     console.error("[tela-mcp] fatal:", err);
     process.exit(1);
