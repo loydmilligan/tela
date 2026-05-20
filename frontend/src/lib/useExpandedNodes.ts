@@ -66,5 +66,29 @@ export function useExpandedNodes(spaceId: number | null | undefined) {
     [spaceId],
   )
 
-  return { expanded, toggle, expand }
+  // expandMany batches an ancestor-chain expansion into a single setState +
+  // single localStorage write. Used by the auto-reveal effect when the active
+  // page id changes from outside the tree (backlinks, palette, wikilinks,
+  // direct URL) and one or more of its ancestors are currently collapsed.
+  const expandMany = useCallback(
+    (ids: number[]) => {
+      if (spaceId == null || ids.length === 0) return
+      setExpanded((prev) => {
+        let changed = false
+        const next = new Set(prev)
+        for (const id of ids) {
+          if (!next.has(id)) {
+            next.add(id)
+            changed = true
+          }
+        }
+        if (!changed) return prev
+        write(spaceId, next)
+        return next
+      })
+    },
+    [spaceId],
+  )
+
+  return { expanded, toggle, expand, expandMany }
 }

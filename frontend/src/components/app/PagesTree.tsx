@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ChevronDown,
@@ -41,6 +41,19 @@ import { cn } from '../../lib/utils'
 
 const UNTITLED_TITLE = 'Untitled'
 
+// findAncestors returns the chain of ancestor ids from outermost root down to
+// the target's immediate parent. Returns [] when the target is itself a root,
+// null when the target isn't in the tree at all. Used by the auto-reveal
+// effect to expand every collapsed ancestor on a route change.
+function findAncestors(nodes: PageTreeNode[], targetId: number): number[] | null {
+  for (const node of nodes) {
+    if (node.id === targetId) return []
+    const childChain = findAncestors(node.children, targetId)
+    if (childChain != null) return [node.id, ...childChain]
+  }
+  return null
+}
+
 interface PagesTreeProps {
   spaceId: number
   activePageId: number | null
@@ -50,9 +63,22 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
   const navigate = useNavigate()
   const tree = usePages({ spaceId, tree: true })
   const createPage = useCreatePage()
-  const { expanded, toggle, expand } = useExpandedNodes(spaceId)
+  const { expanded, toggle, expand, expandMany } = useExpandedNodes(spaceId)
 
-  const nodes = (tree.data as PageTreeNode[] | undefined) ?? []
+  const treeData = tree.data as PageTreeNode[] | undefined
+  const nodes = treeData ?? []
+
+  // Auto-reveal the active page when navigation lands on it from outside the
+  // sidebar (backlink click, command-palette result, [[wikilink]], direct URL,
+  // tela://page/N link). The highlight prop already flows through; this just
+  // ensures every collapsed ancestor on the path gets opened so the row is
+  // rendered. Negative ids (optimistic collab placeholders) won't match any
+  // tree row → findAncestors returns null → no-op.
+  useEffect(() => {
+    if (activePageId == null || activePageId < 0 || !treeData) return
+    const chain = findAncestors(treeData, activePageId)
+    if (chain && chain.length > 0) expandMany(chain)
+  }, [activePageId, treeData, expandMany])
 
   async function handleCreate(parentId: number | null) {
     if (parentId != null) expand(parentId)
@@ -200,6 +226,18 @@ function PageNode({
   const hasChildren = node.children.length > 0
   const isOpen = expanded.has(node.id)
   const active = activePageId === node.id
+  const rowRef = useRef<HTMLDivElement | null>(null)
+
+  // Scroll the row into view exactly once each time it transitions to active.
+  // `block: 'nearest'` is a no-op when the row is already on-screen, so we
+  // don't fight the user who has manually scrolled the sidebar. Fires on
+  // mount-active too (which is the path that matters: the auto-expand effect
+  // reveals a previously hidden ancestor → child node mounts already active).
+  useEffect(() => {
+    if (active && rowRef.current) {
+      rowRef.current.scrollIntoView({ block: 'nearest' })
+    }
+  }, [active])
 
   async function handleNewChild() {
     onExpand(node.id)
@@ -221,6 +259,7 @@ function PageNode({
   return (
     <li className="m-0 p-0 list-none">
       <div
+        ref={rowRef}
         className={cn(
           'group flex items-center gap-[var(--space-1)] pr-[var(--space-1)] rounded-[var(--radius-sm)]',
           'hover:bg-[var(--surface-2)]',
@@ -253,6 +292,7 @@ function PageNode({
 
         <button
           type="button"
+          aria-current={active ? 'page' : undefined}
           onClick={() =>
             void navigate({
               to: '/spaces/$spaceId/pages/$pageId',
