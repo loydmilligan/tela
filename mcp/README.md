@@ -1,6 +1,6 @@
 # tela-mcp
 
-MCP (Model Context Protocol) server for [Tela](https://tela.cagdas.io). Exposes spaces, pages, search, backlinks, page writes, comments, and bulk markdown import to MCP-capable clients (Claude Code, etc.) over stdio.
+MCP (Model Context Protocol) server for [Tela](https://tela.cagdas.io). Exposes spaces (read + CRUD), pages, search, backlinks, page writes, comments, bulk markdown import, and feedback submission to MCP-capable clients (Claude Code, etc.) over stdio.
 
 The server is a tiny TypeScript process: it bearer-auths against the Tela REST API using a personal access token and translates each MCP tool call into one HTTP request. No state is held client-side.
 
@@ -57,6 +57,9 @@ A `tela://page/{id}` resource template is also registered, matching the wikilink
 | `delete_page`    | Delete a page. Backlinks from other pages are preserved with the last title. | write          |
 | `add_comment`    | Attach a root comment, anchored by a `{prefix, exact, suffix}` text triplet. | write          |
 | `import_markdown`| Walk a local directory, zip every `*.md` on the fly, bulk-import to a space. Pass `dry_run=true` to preview. 8 MiB total cap — split larger batches. | write          |
+| `create_space`   | Create a Tela space. `{name, slug?}` → returns the new row. Creator auto-becomes owner. | write          |
+| `update_space`   | Patch a space's `name` and/or `slug`. Owner role required within the space. | write          |
+| `delete_space`   | Delete a space AND all its pages, comments, revisions, share links. Irreversible cascade. Owner role required. | **admin**      |
 | `submit_feedback`| Submit free-text feedback about Tela / `tela-mcp` itself (friction, bugs, missing capabilities). NOT for page content notes — use `add_comment` for those. | read           |
 
 ### Scopes and space restriction

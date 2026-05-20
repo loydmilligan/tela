@@ -26,6 +26,9 @@ import { deletePage, deletePageInputSchema } from "./tools/delete-page.js";
 import { addComment, addCommentInputSchema } from "./tools/add-comment.js";
 import { importMarkdown, importMarkdownInputSchema } from "./tools/import-markdown.js";
 import { submitFeedback, submitFeedbackInputSchema } from "./tools/submit-feedback.js";
+import { createSpace, createSpaceInputSchema } from "./tools/create-space.js";
+import { updateSpace, updateSpaceInputSchema } from "./tools/update-space.js";
+import { deleteSpace, deleteSpaceInputSchema } from "./tools/delete-space.js";
 import { registerPageResource } from "./resources/page.js";
 
 function readPackageVersion(): string {
@@ -247,6 +250,54 @@ export function buildServer(client: TelaClient, version: string): McpServer {
     async (args) => {
       try {
         return ok(await importMarkdown(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_space",
+    {
+      description:
+        "Create a new Tela space. Creator auto-becomes owner. Requires write scope on the API key.",
+      inputSchema: createSpaceInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await createSpace(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_space",
+    {
+      description:
+        "Patch a space's name and/or slug. Requires write scope on the API key AND owner role within the target space (backend rejects editors). At least one of name, slug must be provided.",
+      inputSchema: updateSpaceInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await updateSpace(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_space",
+    {
+      description:
+        "Delete a space AND all its pages, comments, revisions, share links. Irreversible cascade. Requires admin scope on the API key AND owner role within the target space.",
+      inputSchema: deleteSpaceInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await deleteSpace(client, args));
       } catch (err) {
         return fail(err);
       }

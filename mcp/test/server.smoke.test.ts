@@ -120,7 +120,9 @@ describe.skipIf(!hasBuild)("stdio smoke", () => {
         [
           "add_comment",
           "create_page",
+          "create_space",
           "delete_page",
+          "delete_space",
           "get_page",
           "import_markdown",
           "list_backlinks",
@@ -130,6 +132,7 @@ describe.skipIf(!hasBuild)("stdio smoke", () => {
           "search_bodies",
           "submit_feedback",
           "update_page",
+          "update_space",
         ].sort(),
       );
     } finally {
