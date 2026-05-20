@@ -16,6 +16,7 @@ import (
 func TestIsPublicPath(t *testing.T) {
 	cases := map[string]bool{
 		"/api/health":           true,
+		"/api/version":          true, // M16.A.1.5 build-metadata probe (public)
 		"/api/auth/login":       true,
 		"/api/auth/logout":      true,
 		"/api/auth/me":          true,

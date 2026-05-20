@@ -186,6 +186,13 @@ func IsPublicPath(p string) bool {
 	if p == "/api/health" {
 		return true
 	}
+	// M16.A.1.5 build-metadata probe. Public so the MCP server (M16.B.1) can
+	// compat-check the backend on startup with no credentials. Prefix not
+	// equality to match the convention of other public-prefix branches —
+	// future sub-routes under /api/version/ would auto-bypass.
+	if strings.HasPrefix(p, "/api/version") {
+		return true
+	}
 	if strings.HasPrefix(p, "/api/auth/") {
 		return true
 	}

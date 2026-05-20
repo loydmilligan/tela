@@ -4,6 +4,12 @@ services:
   backend:
     build:
       context: ../backend
+      args:
+        # M16.A.1.5 build metadata. Injected into internal/api package vars
+        # via -ldflags (see backend/Dockerfile). Surface via GET /api/version
+        # — public route the MCP server uses for compat checking.
+        VERSION: ${TELA_VERSION:-dev}
+        COMMIT: ${TELA_COMMIT:-unknown}
     environment:
       TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
       TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}

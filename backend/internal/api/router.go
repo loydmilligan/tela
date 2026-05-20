@@ -20,6 +20,13 @@ func Handler(d *sql.DB) http.Handler {
 func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", srv.Health)
 
+	// M16.A.1.5 build-metadata probe. Public (see auth.IsPublicPath) — the MCP
+	// server (M16.B.1) hits this at startup with no credentials to compat-check
+	// itself against the running backend version. Values are injected via
+	// ldflags at build time; defaults are version=dev / commit=unknown /
+	// built_at=process-start.
+	mux.HandleFunc("GET /api/version", srv.Version)
+
 	mux.HandleFunc("POST /api/auth/login", srv.Login)
 	mux.HandleFunc("POST /api/auth/logout", srv.Logout)
 	mux.HandleFunc("GET /api/auth/me", srv.Me)
