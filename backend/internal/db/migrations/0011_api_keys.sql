@@ -9,9 +9,11 @@
 --     stored. Bearer auth looks rows up by key_hmac (UNIQUE) — the unique
 --     index lookup is the constant-time compare equivalent since we never
 --     touch the raw secret.
---   - key_prefix is the first 8 chars of the raw key, kept for UI
---     identification so users can tell their keys apart in the management
---     list without re-displaying the secret.
+--   - key_prefix is the first 8 chars of the random body (after the
+--     `tela_pat_` preamble), kept for UI identification so users can tell
+--     their keys apart in the management list without re-displaying the
+--     secret. Slicing the literal raw[:8] would yield "tela_pat" for every
+--     row (identical across the table) — the preamble is constant by design.
 --   - scope is one of read / write / admin, enforced at the API layer.
 --   - space_id NULL means the key inherits the user's normal space-membership
 --     visibility; non-NULL gates ALL page/comment access to that single

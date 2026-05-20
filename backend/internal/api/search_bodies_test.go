@@ -197,7 +197,7 @@ func TestSearchBodies_BearerScopes(t *testing.T) {
 	// space restriction. Returns the raw token.
 	seedKey := func(scope string, spaceID *int64) string {
 		t.Helper()
-		raw, _, _, err := auth.NewAPIKey(auth.LoadAPIKeySecret())
+		raw, prefix, _, err := auth.NewAPIKey(auth.LoadAPIKeySecret())
 		if err != nil {
 			t.Fatalf("new api key: %v", err)
 		}
@@ -209,7 +209,7 @@ func TestSearchBodies_BearerScopes(t *testing.T) {
 		if _, err := d.ExecContext(context.Background(), `
 			INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
 			VALUES (?, 'k', ?, ?, ?, ?)`,
-			uid, raw[:8], hmacHex, scope, spaceArg); err != nil {
+			uid, prefix, hmacHex, scope, spaceArg); err != nil {
 			t.Fatalf("seed key: %v", err)
 		}
 		return raw

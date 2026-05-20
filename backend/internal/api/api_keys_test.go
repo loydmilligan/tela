@@ -102,8 +102,15 @@ func TestAPIKeys_CreateThenListReturnsKeyOnce(t *testing.T) {
 	if !strings.HasPrefix(created.APIKey.Key, "tela_pat_") {
 		t.Fatalf("raw key %q missing tela_pat_ prefix", created.APIKey.Key)
 	}
-	if created.APIKey.KeyPrefix != created.APIKey.Key[:8] {
-		t.Fatalf("key_prefix=%q does not match raw[:8]=%q", created.APIKey.KeyPrefix, created.APIKey.Key[:8])
+	// key_prefix is the first 8 chars of the random body (after the
+	// `tela_pat_` preamble) so rows in the UI list can be told apart. Slicing
+	// raw[:8] would yield the literal "tela_pat" for every key.
+	wantPrefix := created.APIKey.Key[len(auth.TokenPrefix) : len(auth.TokenPrefix)+8]
+	if created.APIKey.KeyPrefix != wantPrefix {
+		t.Fatalf("key_prefix=%q want %q (first 8 chars of body)", created.APIKey.KeyPrefix, wantPrefix)
+	}
+	if created.APIKey.KeyPrefix == "tela_pat" {
+		t.Fatalf("key_prefix collapsed to format preamble — slicing bug regressed")
 	}
 
 	// LIST must not return the raw key.
@@ -193,11 +200,11 @@ func TestAPIKeys_BearerReadScopeBlocksWrite(t *testing.T) {
 	// so the goroutine wouldn't see the api_keys table.
 	ts, d := newWiredServerOnDisk(t)
 	uid := seedUser(t, d, "admin", "adminpw12", true)
-	rawKey, _, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
+	rawKey, prefix, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
 	if _, err := d.ExecContext(context.Background(), `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
 		VALUES (?, 'k', ?, ?, 'read', NULL)`,
-		uid, rawKey[:8], auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey)); err != nil {
+		uid, prefix, auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey)); err != nil {
 		t.Fatalf("seed key: %v", err)
 	}
 
@@ -234,11 +241,11 @@ func TestAPIKeys_BearerSpaceRestrictionGatesPageAccess(t *testing.T) {
 	pageInB := seedPageInSpace(t, d, spaceB, nil, "p-b", "body-b")
 
 	// Issue a key scoped to spaceA only.
-	rawKey, _, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
+	rawKey, prefix, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
 	if _, err := d.ExecContext(context.Background(), `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
 		VALUES (?, 'spaceA-only', ?, ?, 'write', ?)`,
-		uid, rawKey[:8], auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey), spaceA); err != nil {
+		uid, prefix, auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey), spaceA); err != nil {
 		t.Fatalf("seed key: %v", err)
 	}
 

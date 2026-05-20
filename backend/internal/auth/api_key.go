@@ -133,15 +133,17 @@ func HMACAPIKey(secret []byte, rawKey string) string {
 
 // NewAPIKey generates a fresh raw token and returns (raw, prefix, hmacHex).
 // raw is the value returned to the user (once) on POST /api/api_keys; prefix
-// is the first 8 chars of raw kept for UI identification; hmacHex is stored
-// in api_keys.key_hmac.
+// is the first 8 chars of the random body (after the tela_pat_ preamble) so
+// the management UI can tell rotated keys apart — slicing raw[:8] would yield
+// the literal "tela_pat" for every key, which is identical across the table.
+// hmacHex is stored in api_keys.key_hmac.
 func NewAPIKey(secret []byte) (string, string, string, error) {
 	buf := make([]byte, apiKeyBodyBytes)
 	if _, err := rand.Read(buf); err != nil {
 		return "", "", "", err
 	}
 	raw := TokenPrefix + base64.RawURLEncoding.EncodeToString(buf)
-	prefix := raw[:8]
+	prefix := raw[len(TokenPrefix) : len(TokenPrefix)+8]
 	return raw, prefix, HMACAPIKey(secret, raw), nil
 }
 

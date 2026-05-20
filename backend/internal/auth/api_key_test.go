@@ -106,8 +106,15 @@ func TestNewAPIKey_ShapeAndHMACDeterministic(t *testing.T) {
 	if len(raw) != 9+43 {
 		t.Fatalf("raw length=%d, want 52", len(raw))
 	}
-	if prefix != raw[:8] {
-		t.Fatalf("prefix=%q, want first 8 chars of raw (%q)", prefix, raw[:8])
+	// Prefix is the first 8 chars of the random body, NOT raw[:8]. raw[:8]
+	// is the constant "tela_pat" (preamble minus the trailing underscore at
+	// index 8), which is identical across every key in the table.
+	wantPrefix := raw[len(TokenPrefix) : len(TokenPrefix)+8]
+	if prefix != wantPrefix {
+		t.Fatalf("prefix=%q, want first 8 chars of random body (%q)", prefix, wantPrefix)
+	}
+	if prefix == "tela_pat" {
+		t.Fatalf("prefix collapsed to format preamble %q — slicing bug regressed", prefix)
 	}
 	// HMAC is deterministic — re-hashing the same raw under the same secret
 	// must return the same hex string. Without that property the middleware

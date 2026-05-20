@@ -358,9 +358,9 @@ function ApiKeyRowItem({ row }: { row: ApiKeyRow }) {
           </div>
           <span
             className="text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-mono)]"
-            title="Key prefix (first 8 characters)"
+            title="Key prefix (first 8 chars of the random body)"
           >
-            {row.key_prefix}…
+            tela_pat_{row.key_prefix}…
           </span>
           <span className="text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
             Last used {lastUsedLabel} · Expires {expiresLabel} · Created{' '}
