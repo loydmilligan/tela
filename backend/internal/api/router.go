@@ -95,6 +95,11 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /api/search", srv.Search)
 
+	// M16.A.5 server-side body-fuzzy search. Powers the MCP `search_bodies`
+	// tool so stdio agents don't have to spin up an Orama runtime on every
+	// invocation. Session OR bearer-`read`; member of space_id required.
+	mux.HandleFunc("GET /api/search/bodies", srv.SearchBodies)
+
 	mux.HandleFunc("GET /api/admin/users", srv.ListAdminUsers)
 	mux.HandleFunc("POST /api/admin/users", srv.CreateAdminUser)
 	mux.HandleFunc("PATCH /api/admin/users/{id}", srv.PatchAdminUser)
