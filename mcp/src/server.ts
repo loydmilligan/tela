@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Tela MCP server (M16.B.1). Read-only phase — write tools (create_page,
-// update_page, delete_page, add_comment, import_markdown) ship in M16.C.1
-// and are deliberately NOT registered here.
+// Tela MCP server. Read + write + import tool surface (M16.B.1 + M16.C.1).
 //
 // Transport: stdio. Process is spawned by the MCP host (Claude Code, etc.)
 // per .mcp.json. All tool calls become bearer-authed HTTP requests against
@@ -22,6 +20,11 @@ import { getPage, getPageInputSchema } from "./tools/get-page.js";
 import { search, searchInputSchema } from "./tools/search.js";
 import { searchBodies, searchBodiesInputSchema } from "./tools/search-bodies.js";
 import { listBacklinks, listBacklinksInputSchema } from "./tools/list-backlinks.js";
+import { createPage, createPageInputSchema } from "./tools/create-page.js";
+import { updatePage, updatePageInputSchema } from "./tools/update-page.js";
+import { deletePage, deletePageInputSchema } from "./tools/delete-page.js";
+import { addComment, addCommentInputSchema } from "./tools/add-comment.js";
+import { importMarkdown, importMarkdownInputSchema } from "./tools/import-markdown.js";
 import { registerPageResource } from "./resources/page.js";
 
 function readPackageVersion(): string {
@@ -163,6 +166,85 @@ export function buildServer(client: TelaClient, version: string): McpServer {
     async (args) => {
       try {
         return ok(await listBacklinks(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_page",
+    {
+      description:
+        "Create a new page. Requires write scope on the API key (or admin); editor/owner on the target space. Returns the created page row.",
+      inputSchema: createPageInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await createPage(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_page",
+    {
+      description:
+        "Update title and/or body of an existing page. At least one of title, body must be provided. Snapshots a revision when content changes.",
+      inputSchema: updatePageInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await updatePage(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_page",
+    {
+      description: "Delete a page. Backlinks from other pages are preserved with the page's last-known title.",
+      inputSchema: deletePageInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await deletePage(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_comment",
+    {
+      description:
+        "Attach a root comment to a page, anchored by a (prefix, exact, suffix) text triplet. Pass ~32 chars of context on each side of the selected text.",
+      inputSchema: addCommentInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await addComment(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "import_markdown",
+    {
+      description:
+        "Bulk-import a directory of .md files into a space. Walks `local_path` recursively, preserves the directory structure as nested pages. 8 MiB total cap — split larger imports. Pass dry_run=true to preview without writing.",
+      inputSchema: importMarkdownInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await importMarkdown(client, args));
       } catch (err) {
         return fail(err);
       }

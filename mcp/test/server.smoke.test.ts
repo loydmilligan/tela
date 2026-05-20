@@ -21,7 +21,7 @@ interface JsonRpcResponse {
 }
 
 describe.skipIf(!hasBuild)("stdio smoke", () => {
-  it("responds to initialize then tools/list with the 6 read tools", async () => {
+  it("responds to initialize then tools/list with the full read+write tool surface", async () => {
     const child = spawn(process.execPath, [binPath], {
       env: {
         ...process.env,
@@ -86,7 +86,19 @@ describe.skipIf(!hasBuild)("stdio smoke", () => {
       const tools = (listRes.result as { tools: Array<{ name: string }> }).tools;
       const names = tools.map((t) => t.name).sort();
       expect(names).toEqual(
-        ["get_page", "list_backlinks", "list_pages", "list_spaces", "search", "search_bodies"].sort(),
+        [
+          "add_comment",
+          "create_page",
+          "delete_page",
+          "get_page",
+          "import_markdown",
+          "list_backlinks",
+          "list_pages",
+          "list_spaces",
+          "search",
+          "search_bodies",
+          "update_page",
+        ].sort(),
       );
     } finally {
       child.kill("SIGTERM");
