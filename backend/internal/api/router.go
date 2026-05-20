@@ -10,11 +10,26 @@ import (
 // Handler builds the canonical Tela HTTP handler: every route registered
 // against a single mux, then wrapped with auth.Middleware. Used by both
 // cmd/tela/main.go and the integration test suite so the two never drift.
+//
+// The Server's AuditWriter is threaded into Middleware so bearer-authed
+// requests emit api_key_audit rows. Tests that need to assert on the audit
+// table flush via srv.AuditWriter().Flush() before reading.
 func Handler(d *sql.DB) http.Handler {
 	srv := New(d)
 	mux := http.NewServeMux()
 	registerRoutes(srv, mux)
-	return auth.Middleware(d)(mux)
+	return auth.Middleware(d, srv.auditWriter)(mux)
+}
+
+// HandlerWithServer is the wired-handler variant that also returns the
+// underlying *Server. Used by integration tests so they can reach
+// srv.AuditWriter().Flush() between issuing a bearer request and querying
+// the api_key_audit table.
+func HandlerWithServer(d *sql.DB) (http.Handler, *Server) {
+	srv := New(d)
+	mux := http.NewServeMux()
+	registerRoutes(srv, mux)
+	return auth.Middleware(d, srv.auditWriter)(mux), srv
 }
 
 func registerRoutes(srv *Server, mux *http.ServeMux) {
@@ -98,6 +113,13 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/api_keys", srv.CreateAPIKey)
 	mux.HandleFunc("GET /api/api_keys", srv.ListAPIKeys)
 	mux.HandleFunc("DELETE /api/api_keys/{id}", srv.DeleteAPIKey)
+
+	// M16.A.2 API-key audit log read. Owner-of-key OR instance-admin via the
+	// cookie session; bearer-mode callers need admin scope (a read/write key
+	// reading its own audit trail would let a stolen token enumerate the
+	// surface used to detect it). Writes happen asynchronously in
+	// auth.Middleware on the bearer-auth path.
+	mux.HandleFunc("GET /api/api_keys/{id}/audit", srv.ListAPIKeyAudit)
 
 	mux.HandleFunc("GET /api/spaces/{id}/members", srv.ListSpaceMembers)
 	mux.HandleFunc("POST /api/spaces/{id}/members", srv.AddSpaceMember)

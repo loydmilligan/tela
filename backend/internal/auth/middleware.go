@@ -226,7 +226,14 @@ func IsPublicPath(p string) bool {
 // rejects unrecognised scopes (defence-in-depth — the CHECK constraint on
 // api_keys.scope already enforces the same set). Space restriction lives in
 // the API-key handler layer because the relevant space_id is route-shaped.
-func Middleware(d *sql.DB) func(http.Handler) http.Handler {
+//
+// aw is the M16.A.2 audit-log sink. nil-safe so tests that don't care about
+// audit can keep their existing two-arg signature semantics (just pass nil).
+// When non-nil, every bearer-authed request — including scope-blocked 403s,
+// downstream-handler 4xx/5xx, and 200 success — submits a single
+// fire-and-forget event after the response is written. Invalid bearer tokens
+// (no resolved api_key_id) emit nothing: there's no FK target.
+func Middleware(d *sql.DB, aw *AuditWriter) func(http.Handler) http.Handler {
 	secret := LoadAPIKeySecret()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +244,7 @@ func Middleware(d *sql.DB) func(http.Handler) http.Handler {
 			if tok := extractBearerToken(r); tok != "" {
 				k, err := LookupAPIKey(r.Context(), d, secret, tok)
 				if errors.Is(err, ErrInvalidAPIKey) {
+					// No FK target — nothing to audit.
 					writeUnauthorized(w)
 					return
 				}
@@ -245,23 +253,36 @@ func Middleware(d *sql.DB) func(http.Handler) http.Handler {
 					writeInternal(w)
 					return
 				}
+				// Wrap the writer so we can capture the final status code
+				// the downstream handler (or this middleware) sends, then
+				// emit a single audit event in defer regardless of how the
+				// response was produced.
+				sw := newAuditResponseWriter(w)
+				defer func() {
+					aw.Submit(AuditEvent{
+						APIKeyID:   k.ID,
+						Method:     r.Method,
+						Path:       r.URL.Path,
+						StatusCode: sw.statusCode(),
+					})
+				}()
 				if !scopeAllowsMethod(k.Scope, r.Method) {
-					writeForbidden(w, "api_key_scope", "api key scope does not permit this method")
+					writeForbidden(sw, "api_key_scope", "api key scope does not permit this method")
 					return
 				}
 				u, err := userForAPIKey(r.Context(), d, k.UserID)
 				if errors.Is(err, ErrInvalidAPIKey) {
-					writeUnauthorized(w)
+					writeUnauthorized(sw)
 					return
 				}
 				if err != nil {
 					log.Printf("auth: api key user lookup failed: %v", err)
-					writeInternal(w)
+					writeInternal(sw)
 					return
 				}
 				ctx := WithUser(r.Context(), u)
 				ctx = WithAPIKey(ctx, k)
-				next.ServeHTTP(w, r.WithContext(ctx))
+				next.ServeHTTP(sw, r.WithContext(ctx))
 				return
 			}
 			c, err := r.Cookie(CookieName)

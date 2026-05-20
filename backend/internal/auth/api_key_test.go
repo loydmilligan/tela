@@ -260,7 +260,7 @@ func TestMiddleware_BearerHappyPathAttachesContext(t *testing.T) {
 		gotScope   string
 		gotIsKey   bool
 	)
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := UserFromContext(r.Context()); ok {
 			gotUserID = u.ID
 		}
@@ -293,7 +293,7 @@ func TestMiddleware_BearerScopeReadOnlyBlocksMutation(t *testing.T) {
 	raw, _ := seedAPIKeyDB(t, d, uid, ScopeRead, nil, nil, "ro")
 
 	reached := false
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		reached = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -333,7 +333,7 @@ func TestMiddleware_BearerInvalidDoesNotFallBackToCookie(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("inner handler should not run when bearer is invalid")
 	}))
 	rec := httptest.NewRecorder()
@@ -358,7 +358,7 @@ func TestMiddleware_CookieStillWorksWithoutBearer(t *testing.T) {
 	}
 
 	reached := false
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
 		if _, ok := APIKeyFromContext(r.Context()); ok {
 			t.Fatal("cookie session leaked into APIKey context")

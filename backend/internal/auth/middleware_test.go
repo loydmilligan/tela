@@ -61,7 +61,7 @@ func TestCookieSecure_RespectsPublicBaseURLScheme(t *testing.T) {
 
 func TestMiddleware_RejectsMissingCookie(t *testing.T) {
 	d := newAuthTestDB(t)
-	mw := Middleware(d)
+	mw := Middleware(d, nil)
 	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("inner handler should not be reached without a session")
 	}))
@@ -78,7 +78,7 @@ func TestMiddleware_RejectsMissingCookie(t *testing.T) {
 
 func TestMiddleware_RejectsBogusCookie(t *testing.T) {
 	d := newAuthTestDB(t)
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("inner handler should not be reached with a bogus session id")
 	}))
 	rec := httptest.NewRecorder()
@@ -93,7 +93,7 @@ func TestMiddleware_RejectsBogusCookie(t *testing.T) {
 func TestMiddleware_BypassesPublicPath(t *testing.T) {
 	d := newAuthTestDB(t)
 	reached := false
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		reached = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -139,7 +139,7 @@ func TestMiddleware_HappyPathSlidesSessionAndAttachesUser(t *testing.T) {
 
 	var gotUserID int64
 	var gotUsername string
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, ok := UserFromContext(r.Context())
 		if !ok {
 			t.Fatal("UserFromContext returned !ok behind middleware")
@@ -188,7 +188,7 @@ func TestMiddleware_RejectsInactiveUser(t *testing.T) {
 		t.Fatalf("deactivate: %v", err)
 	}
 
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("inner handler should not run for deactivated user")
 	}))
 	rec := httptest.NewRecorder()
@@ -314,7 +314,7 @@ func TestMiddleware_ReturnsInternalOnDBError(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	h := Middleware(d)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("inner handler should not run when session lookup errors")
 	}))
 	rec := httptest.NewRecorder()

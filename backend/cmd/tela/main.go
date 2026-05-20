@@ -53,6 +53,13 @@ func main() {
 
 	handler := api.Handler(d)
 
+	// M16.A.2 API-key audit retention GC. Background goroutine sweeps
+	// api_key_audit rows older than TELA_API_KEY_AUDIT_DAYS (default 30) every
+	// 6h. Tied to context.Background() — the process exits before the loop
+	// cares about cancellation, and we accept the small leak (the goroutine
+	// is bounded by process lifetime).
+	auth.StartAuditGC(context.Background(), d)
+
 	log.Printf("tela backend listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("server failed: %v", err)
