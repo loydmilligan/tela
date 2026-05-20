@@ -8,7 +8,7 @@ TELA_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo
 TELA_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 EXPORT_BUILD := TELA_VERSION=$(TELA_VERSION) TELA_COMMIT=$(TELA_COMMIT)
 
-.PHONY: up down logs build clean dev be-dev fe-dev storybook help
+.PHONY: up down logs build clean dev be-dev fe-dev storybook help test-mcp-integration
 
 help:
 	@echo "tela — common targets"
@@ -21,6 +21,7 @@ help:
 	@echo "  make be-dev     # run backend in dev mode (go run)"
 	@echo "  make fe-dev     # run frontend in dev mode (vite)"
 	@echo "  make storybook  # run Storybook for the frontend"
+	@echo "  make test-mcp-integration  # live MCP <-> backend E2E (boots stack, runs tests, tears down)"
 
 up:
 	$(EXPORT_BUILD) $(COMPOSE) up -d --build
@@ -55,3 +56,28 @@ dev:
 
 storybook:
 	cd frontend && npm run storybook
+
+# M16.C.2 — live integration test for the MCP server against a real backend.
+# Boots the stack with -p tela-test (isolated volumes), seeds deterministic
+# admin credentials, builds the MCP, runs vitest.integration.config, then
+# tears everything down. The `trap` ensures we always clean up even when the
+# test step exits non-zero.
+TEST_COMPOSE := docker compose -p tela-test -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml
+test-mcp-integration:
+	@set -eu; \
+	TELA_PUBLIC_BASE_URL="http://localhost:18780"; \
+	TELA_SHARE_SECRET="$$(openssl rand -hex 32)"; \
+	TELA_API_KEY_SECRET="$$(openssl rand -hex 32)"; \
+	TELA_ADMIN_USERNAME="testadmin"; \
+	TELA_ADMIN_PASSWORD="testpassword123"; \
+	export TELA_PUBLIC_BASE_URL TELA_SHARE_SECRET TELA_API_KEY_SECRET TELA_ADMIN_USERNAME TELA_ADMIN_PASSWORD $(EXPORT_BUILD); \
+	trap '$(TEST_COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true' EXIT INT TERM; \
+	echo "[test-mcp-integration] booting tela-test stack…"; \
+	$(TEST_COMPOSE) up -d --build --wait; \
+	echo "[test-mcp-integration] building MCP server (npm ci → prepare → tsc)…"; \
+	npm --prefix mcp ci --silent; \
+	echo "[test-mcp-integration] running live vitest suite…"; \
+	TELA_BASE_URL="$$TELA_PUBLIC_BASE_URL" \
+	TELA_ADMIN_USERNAME="$$TELA_ADMIN_USERNAME" \
+	TELA_ADMIN_PASSWORD="$$TELA_ADMIN_PASSWORD" \
+	  npm --prefix mcp run test:integration

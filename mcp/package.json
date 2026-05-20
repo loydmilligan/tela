@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
     "test": "vitest run",
-    "test:smoke": "vitest run --config vitest.smoke.config.ts"
+    "test:smoke": "vitest run --config vitest.smoke.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

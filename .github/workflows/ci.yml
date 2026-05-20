@@ -1,0 +1,50 @@
+name: ci
+
+# M16.C.2 — protects against silent shape-drift between the MCP server and
+# the backend REST API. Runs the full integration suite when a PR touches
+# any of: backend/, mcp/, deploy/. Other paths (frontend-only changes,
+# README edits) skip the heavy stack-boot and finish in seconds.
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "mcp/**"
+      - "deploy/**"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "mcp/**"
+      - "deploy/**"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  mcp-integration:
+    name: MCP <-> backend integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: mcp/package-lock.json
+
+      - name: Show docker compose version
+        run: docker compose version
+
+      - name: Run integration test
+        run: make test-mcp-integration
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          docker compose -p tela-test \
+            -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml \
+            logs --no-color --tail=200 || true

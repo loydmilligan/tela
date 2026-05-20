@@ -1,0 +1,39 @@
+# Test-only overlay used by `make test-mcp-integration` (M16.C.2).
+#
+# Brings up the full stack with:
+#   - Deterministic bootstrap admin credentials so the integration test can
+#     log in without scraping the random-password banner from logs.
+#   - A healthcheck on the proxy so `docker compose up -d --wait` waits for
+#     the backend to be reachable through Caddy before the test connects.
+#   - No production secrets — TELA_SHARE_SECRET / TELA_API_KEY_SECRET are
+#     supplied by the Make target via env, with throw-away dev values.
+#
+# Apply via:
+#   docker compose -p tela-test \
+#     -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml ...
+#
+# The `-p tela-test` project name keeps volumes (tela-data, caddy-*) isolated
+# from any dev / prod stack running on the same host.
+
+services:
+  backend:
+    environment:
+      TELA_ADMIN_USERNAME: ${TELA_ADMIN_USERNAME:-testadmin}
+      TELA_ADMIN_PASSWORD: ${TELA_ADMIN_PASSWORD:-testpassword123}
+
+  proxy:
+    # !override replaces the base file's `ports:` list (otherwise compose
+    # concatenates, and the test would try to bind 8780 too — colliding with
+    # any dev stack running on the same host). 18780 is chosen to be visually
+    # adjacent to the prod port so log lines stay greppable.
+    ports: !override
+      - "18780:80"
+    # Caddy alpine ships with busybox wget — probing /api/health through the
+    # proxy doubles as a smoke test that the reverse_proxy /api/* handle is
+    # actually wired. `up -d --wait` will block until this returns 0.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/api/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+      start_period: 5s
