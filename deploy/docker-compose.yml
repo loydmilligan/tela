@@ -4,6 +4,9 @@ services:
   backend:
     build:
       context: ../backend
+    environment:
+      TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
+      TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}
     expose:
       - "8080"
     volumes:
