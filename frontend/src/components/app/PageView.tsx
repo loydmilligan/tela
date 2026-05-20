@@ -29,7 +29,14 @@ import { useSpaceMembers } from '../../lib/queries/members'
 import { useRevision } from '../../lib/queries/page-revisions'
 import { CommentsPanel } from './CommentsPanel'
 import { PresenceAvatars } from './presence-avatars'
-import { ShareManagerSheet } from './ShareManagerSheet'
+
+// ShareManagerSheet only opens when an editor+ clicks the header Share button;
+// its Sheet + create-form + management hooks + Lucide icons are ~15 KB raw that
+// shouldn't ride in the main entry chunk on every paint. Split into its own
+// lazy chunk (loaded on first Share click).
+const ShareManagerSheet = lazy(() =>
+  import('./ShareManagerSheet').then((m) => ({ default: m.ShareManagerSheet })),
+)
 import {
   useAllPages,
   useCreatePage,
@@ -781,11 +788,13 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
       ) : null}
 
       {roleResolved && !isViewer && !isDraftMode ? (
-        <ShareManagerSheet
-          pageId={page.id}
-          open={shareOpen}
-          onOpenChange={setShareOpen}
-        />
+        <Suspense fallback={null}>
+          <ShareManagerSheet
+            pageId={page.id}
+            open={shareOpen}
+            onOpenChange={setShareOpen}
+          />
+        </Suspense>
       ) : null}
     </div>
   )

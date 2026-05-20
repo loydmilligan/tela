@@ -1,7 +1,19 @@
 import { Suspense, lazy, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { cn } from '../../lib/utils'
-import { parseWikilinkPageId } from './milkdown-wikilink-decoration'
+
+// Inlined (not imported from milkdown-wikilink-decoration.ts) so Rollup doesn't
+// see the wikilink-decoration module as a shared dep of two lazy roots
+// (ShareReader + MilkdownEditor) — that split was producing a 320 KB
+// milkdown-wikilink-decoration-*.js chunk separate from milkdown-editor-*.js.
+// 5-line duplication is cheaper than the chunk split.
+function parseWikilinkPageId(href: string): number | null {
+  const prefix = 'tela://page/'
+  if (!href.startsWith(prefix)) return null
+  const tail = href.slice(prefix.length)
+  if (!/^\d+$/.test(tail)) return null
+  return Number(tail)
+}
 
 // Lazy-loaded — share-mode bundle should not bloat the main chunk for logged-in
 // users; MilkdownEditor's whole grammar/Yjs blob ships as the existing milkdown

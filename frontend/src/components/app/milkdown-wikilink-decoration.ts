@@ -66,7 +66,7 @@ export const wikilinkDecorationPlugin = $prose((ctx) => {
 // Returns the numeric page id, or null for a non-numeric tail (treated as
 // broken at the call site). `parseWikiLinks` server-side only emits numeric
 // ids, but a hand-typed `tela://page/abc` could still land in the doc.
-export function parseWikilinkPageId(href: string): number | null {
+function parseWikilinkPageId(href: string): number | null {
   const prefix = 'tela://page/'
   if (!href.startsWith(prefix)) return null
   const tail = href.slice(prefix.length)
