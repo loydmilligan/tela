@@ -37,7 +37,7 @@ interface UpdateSpaceResponse {
 export async function updateSpace(
   client: TelaClient,
   args: UpdateSpaceArgs,
-): Promise<SpaceRow> {
+): Promise<{ space: SpaceRow }> {
   if (args.name === undefined && args.slug === undefined) {
     throw new Error("at least one of name, slug must be provided");
   }
@@ -45,5 +45,5 @@ export async function updateSpace(
   if (args.name !== undefined) body.name = args.name;
   if (args.slug !== undefined) body.slug = args.slug;
   const res = await client.patchJSON<UpdateSpaceResponse>(`/api/spaces/${args.id}`, body);
-  return res.space;
+  return { space: res.space };
 }

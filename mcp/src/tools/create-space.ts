@@ -35,9 +35,9 @@ interface CreateSpaceResponse {
 export async function createSpace(
   client: TelaClient,
   args: CreateSpaceArgs,
-): Promise<SpaceRow> {
+): Promise<{ space: SpaceRow }> {
   const body: Record<string, unknown> = { name: args.name };
   if (args.slug !== undefined) body.slug = args.slug;
   const res = await client.postJSON<CreateSpaceResponse>("/api/spaces", body);
-  return res.space;
+  return { space: res.space };
 }

@@ -7,7 +7,7 @@ import { deleteSpace, deleteSpaceInputSchema } from "../src/tools/delete-space.j
 import { makeEmptyResponseClient, makeFlakyClient, makeMockClient } from "./fixtures.js";
 
 describe("create_space", () => {
-  it("POSTs JSON to /api/spaces and returns the unwrapped space row", async () => {
+  it("POSTs JSON to /api/spaces and returns the space row wrapped in a { space } envelope", async () => {
     const { client, requests } = makeMockClient({
       status: 201,
       body: {
@@ -21,8 +21,8 @@ describe("create_space", () => {
       },
     });
     const out = await createSpace(client, { name: "Research", slug: "research" });
-    expect(out.id).toBe(42);
-    expect(out.slug).toBe("research");
+    expect(out.space.id).toBe(42);
+    expect(out.space.slug).toBe("research");
     expect(requests).toHaveLength(1);
     expect(requests[0].method).toBe("POST");
     expect(requests[0].url).toBe("http://test.local/api/spaces");
@@ -75,13 +75,13 @@ describe("create_space", () => {
       },
     ]);
     const out = await createSpace(client, { name: "After Retry" });
-    expect(out.id).toBe(99);
+    expect(out.space.id).toBe(99);
     expect(requests).toHaveLength(2);
   });
 });
 
 describe("update_space", () => {
-  it("PATCHes /api/spaces/{id} with only the provided fields and unwraps the envelope", async () => {
+  it("PATCHes /api/spaces/{id} with only the provided fields and returns the row wrapped in a { space } envelope", async () => {
     const { client, requests } = makeMockClient({
       body: {
         space: {
@@ -94,8 +94,8 @@ describe("update_space", () => {
       },
     });
     const out = await updateSpace(client, { id: 4, name: "Renamed" });
-    expect(out.id).toBe(4);
-    expect(out.name).toBe("Renamed");
+    expect(out.space.id).toBe(4);
+    expect(out.space.name).toBe("Renamed");
     expect(requests[0].method).toBe("PATCH");
     expect(requests[0].url).toBe("http://test.local/api/spaces/4");
     expect(JSON.parse(requests[0].body as string)).toEqual({ name: "Renamed" });
