@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { slashFactory, SlashProvider } from '@milkdown/kit/plugin/slash'
+import { slashFactory } from '@milkdown/kit/plugin/slash'
 import { usePluginViewContext } from '@prosemirror-adapter/react'
 import { useInstance } from '@milkdown/react'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
@@ -209,8 +209,7 @@ function clearSlashTrigger(ctx: Ctx) {
 
 export function SlashView() {
   const ref = useRef<HTMLDivElement>(null)
-  const providerRef = useRef<SlashProvider | null>(null)
-  const { view, prevState } = usePluginViewContext()
+  const { view } = usePluginViewContext()
   const [loading, getEditor] = useInstance()
 
   const [{ visible, query }, setSlashState] = useState<SlashState>({
@@ -221,46 +220,89 @@ export function SlashView() {
 
   const items = useMemo(() => filterCommands(query), [query])
 
+  // Move the menu out of the editor DOM so PM doesn't manage it, mirroring
+  // what SlashProvider would do on its first update() call. We don't use
+  // SlashProvider here because its internal lodash.debounce reliably gets
+  // wedged in our React + Yjs + Vite setup (the 200ms timer keeps resetting
+  // and #onUpdate never fires past the initial appendChild), leaving the
+  // menu hidden after every `/` press. Positioning + show/hide is simple
+  // enough to manage directly via view.coordsAtPos.
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const provider = new SlashProvider({
-      content: el,
-      shouldShow(v) {
-        if (!v.hasFocus()) return false
-        if (!v.editable) return false
-        return readSlashState(v) != null
-      },
-      floatingUIOptions: { strategy: 'fixed' },
-    })
-    providerRef.current = provider
-    return () => {
-      provider.destroy()
-      providerRef.current = null
+    const parent = view.dom.parentElement
+    if (parent && el.parentElement !== parent) {
+      parent.appendChild(el)
     }
-  }, [])
+  }, [view])
 
-  // Run on every editor update. shouldShow gates visibility; we also mirror
-  // the query into React state so the list can filter.
+  // Per-render: read slash state from the live view, then show + position
+  // the menu (or hide it). Position is computed from view.coordsAtPos so
+  // the menu lands directly below the cursor; a follow-up rAF re-measures
+  // and flips upward if the menu would overflow the bottom of the viewport.
   useEffect(() => {
-    providerRef.current?.update(view, prevState)
+    const el = ref.current
+    if (!el) return
     const next = readSlashState(view)
-    if (next) {
-      setSlashState((prev) =>
-        prev.visible && prev.query === next.query
-          ? prev
-          : { visible: true, query: next.query },
-      )
-    } else {
+    const shouldShow = next != null && view.hasFocus() && view.editable
+    if (!shouldShow) {
+      el.dataset.show = 'false'
       setSlashState((prev) =>
         prev.visible ? { visible: false, query: '' } : prev,
       )
+      return
     }
+    const { from } = view.state.selection
+    const coords = view.coordsAtPos(from)
+    el.style.left = `${coords.left}px`
+    el.style.top = `${coords.bottom + 4}px`
+    el.dataset.show = 'true'
+    setSlashState((prev) =>
+      prev.visible && prev.query === next.query
+        ? prev
+        : { visible: true, query: next.query },
+    )
+    // Re-measure after paint so we can flip / clamp if the rendered menu
+    // would overflow the viewport. Without this, opening near the bottom
+    // of the page can leave the menu partially off-screen.
+    const rafId = requestAnimationFrame(() => {
+      const r = el.getBoundingClientRect()
+      const vh = window.innerHeight
+      const vw = window.innerWidth
+      let top = coords.bottom + 4
+      // Prefer below; if it overflows bottom AND there's more room above,
+      // flip up. Then clamp so the menu always stays inside the viewport.
+      if (top + r.height > vh && coords.top > vh - coords.bottom) {
+        top = coords.top - r.height - 4
+      }
+      top = Math.max(4, Math.min(top, vh - r.height - 4))
+      let left = coords.left
+      if (left + r.width > vw) {
+        left = vw - r.width - 4
+      }
+      left = Math.max(4, left)
+      el.style.top = `${top}px`
+      el.style.left = `${left}px`
+    })
+    return () => cancelAnimationFrame(rafId)
   })
 
   useEffect(() => {
     setActiveIdx(0)
   }, [query, items.length])
+
+  // Keep the active item in view when arrow-nav moves the selection past
+  // the menu's max-height scroll region. 'instant' so rapid arrow-down
+  // doesn't visually lag the selection.
+  useEffect(() => {
+    if (!visible) return
+    const container = ref.current
+    if (!container) return
+    const active = container.querySelector(
+      '[aria-selected="true"]',
+    ) as HTMLElement | null
+    active?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+  }, [activeIdx, visible])
 
   const runCommand = useCallback(
     (cmd: SlashCommand) => {
