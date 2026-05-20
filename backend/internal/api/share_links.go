@@ -456,6 +456,9 @@ func (s *Server) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
+		return
+	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Collapse non-member to 404 so non-members can't enumerate pages.
@@ -541,6 +544,9 @@ func (s *Server) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
+		return
+	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
 		return
 	}
 	role, err := spaceRole(ctx, s.DB, u.ID, page.SpaceID)
@@ -707,6 +713,9 @@ func (s *Server) PatchShareLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup parent page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
+		return
+	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "share not found")
@@ -803,6 +812,9 @@ func (s *Server) DeleteShareLink(w http.ResponseWriter, r *http.Request) {
 	page, err := selectPageByIDTx(ctx, tx, share.PageID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup parent page failed")
+		return
+	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
 		return
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)

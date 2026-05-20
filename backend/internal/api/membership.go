@@ -73,9 +73,17 @@ func spaceRoleTx(ctx context.Context, tx *sql.Tx, userID, spaceID int64) (string
 // appropriate 401/403/500 envelope when access should be denied. Returns
 // (role, true) on success; (_, false) means the response has been written and
 // the caller must return immediately.
+//
+// When the request is bearer-authed AND the API key carries a space_id
+// restriction, accessing any other space short-circuits to 403
+// api_key_space_scope BEFORE the membership check — the underlying user might
+// be a member of that other space, but the bearer scope is a strict ceiling.
 func (s *Server) requireMembership(w http.ResponseWriter, r *http.Request, spaceID int64) (string, bool) {
 	u, ok := requireUser(w, r)
 	if !ok {
+		return "", false
+	}
+	if !enforceAPIKeySpaceScope(w, r, spaceID) {
 		return "", false
 	}
 	role, err := spaceRole(r.Context(), s.DB, u.ID, spaceID)
@@ -88,4 +96,28 @@ func (s *Server) requireMembership(w http.ResponseWriter, r *http.Request, space
 		return "", false
 	}
 	return role, true
+}
+
+// enforceAPIKeySpaceScope writes a 403 api_key_space_scope envelope and
+// returns false when the request is bearer-authed AND the API key has a
+// space_id restriction that doesn't match spaceID. On all other paths
+// (cookie session, no restriction, restriction matches) returns true without
+// writing anything.
+//
+// Called from handler entry points that already know the target space — the
+// page handlers resolve it from a path param or a parent lookup, then call
+// this helper before any role check. Standalone from requireMembership so
+// tx-shaped handlers (CreatePage, UpdatePage, DeletePage, MovePage) can
+// gate inside their existing tx flow without re-running the membership
+// query.
+func enforceAPIKeySpaceScope(w http.ResponseWriter, r *http.Request, spaceID int64) bool {
+	k, ok := auth.APIKeyFromContext(r.Context())
+	if !ok || k.SpaceID == nil {
+		return true
+	}
+	if *k.SpaceID != spaceID {
+		writeError(w, http.StatusForbidden, "api_key_space_scope", "api key is restricted to a different space")
+		return false
+	}
+	return true
 }

@@ -58,6 +58,9 @@ func (s *Server) ListComments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
+		return
+	}
 	role, err := spaceRole(ctx, s.DB, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusForbidden, "forbidden", "not a member")
@@ -169,6 +172,9 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
+		return
+	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
 		return
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
@@ -331,6 +337,9 @@ func (s *Server) PatchComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup parent page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
+		return
+	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusForbidden, "forbidden", "not a member")
@@ -460,6 +469,9 @@ func (s *Server) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	page, err := selectPageByIDTx(ctx, tx, pageID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup parent page failed")
+		return
+	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
 		return
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)

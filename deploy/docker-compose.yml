@@ -7,6 +7,7 @@ services:
     environment:
       TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
       TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}
+      TELA_API_KEY_SECRET:  ${TELA_API_KEY_SECRET}
     expose:
       - "8080"
     volumes:

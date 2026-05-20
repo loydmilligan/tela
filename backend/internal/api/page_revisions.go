@@ -68,6 +68,9 @@ func (s *Server) ListPageRevisions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
+		return
+	}
 	role, err := spaceRole(ctx, s.DB, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusForbidden, "forbidden", "not a member")
@@ -168,6 +171,9 @@ func (s *Server) GetPageRevision(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
+		return
+	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
 		return
 	}
 	role, err := spaceRole(ctx, s.DB, u.ID, page.SpaceID)

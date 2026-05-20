@@ -88,6 +88,9 @@ func (s *Server) UploadPageDiagram(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
+		return
+	}
 	role, err := spaceRole(ctx, s.DB, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusForbidden, "forbidden", "not a member")

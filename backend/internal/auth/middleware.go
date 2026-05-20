@@ -201,14 +201,60 @@ func IsPublicPath(p string) bool {
 	return strings.HasPrefix(p, "/p/")
 }
 
-// Middleware enforces the session cookie on every request except IsPublicPath.
-// Validates and slides the session, attaches the User to context, and writes
-// the canonical 401 envelope on any failure.
+// Middleware enforces authentication on every request except IsPublicPath.
+// Two credential paths:
+//
+//  1. Authorization: Bearer tela_pat_xxx — M16.A.1 API keys. Checked FIRST,
+//     before the session cookie, so a request that explicitly carried a
+//     bearer header cannot fall back to a session on failure (explicit
+//     failure beats accidental session escalation). On success attaches both
+//     the *User and *APIKey to context; per-method scope gating fires here,
+//     per-route admin/space gating fires inside individual handlers via
+//     APIKeyFromContext.
+//
+//  2. Cookie tela_session — pre-existing session-cookie path. Unchanged for
+//     requests that don't carry an Authorization header.
+//
+// Bearer mode honours scope at the method level (read → GET/HEAD only) and
+// rejects unrecognised scopes (defence-in-depth — the CHECK constraint on
+// api_keys.scope already enforces the same set). Space restriction lives in
+// the API-key handler layer because the relevant space_id is route-shaped.
 func Middleware(d *sql.DB) func(http.Handler) http.Handler {
+	secret := LoadAPIKeySecret()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if IsPublicPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if tok := extractBearerToken(r); tok != "" {
+				k, err := LookupAPIKey(r.Context(), d, secret, tok)
+				if errors.Is(err, ErrInvalidAPIKey) {
+					writeUnauthorized(w)
+					return
+				}
+				if err != nil {
+					log.Printf("auth: api key lookup failed: %v", err)
+					writeInternal(w)
+					return
+				}
+				if !scopeAllowsMethod(k.Scope, r.Method) {
+					writeForbidden(w, "api_key_scope", "api key scope does not permit this method")
+					return
+				}
+				u, err := userForAPIKey(r.Context(), d, k.UserID)
+				if errors.Is(err, ErrInvalidAPIKey) {
+					writeUnauthorized(w)
+					return
+				}
+				if err != nil {
+					log.Printf("auth: api key user lookup failed: %v", err)
+					writeInternal(w)
+					return
+				}
+				ctx := WithUser(r.Context(), u)
+				ctx = WithAPIKey(ctx, k)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 			c, err := r.Cookie(CookieName)
@@ -235,6 +281,17 @@ func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(`{"error":"unauthorized","code":"unauthorized"}`))
+}
+
+// writeForbidden emits the canonical 403 envelope. Used by the bearer middleware
+// to report scope-gating refusals (api_key_scope) — the body matches the {error,
+// code} shape every other handler emits via writeError.
+func writeForbidden(w http.ResponseWriter, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	// Escape the message minimally — no untrusted input flows here, callers
+	// pass static strings.
+	_, _ = w.Write([]byte(`{"error":"` + message + `","code":"` + code + `"}`))
 }
 
 func writeInternal(w http.ResponseWriter) {

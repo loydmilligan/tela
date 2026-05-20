@@ -83,6 +83,15 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/users/me/sessions", srv.DeleteAllMySessionsExceptCurrent)
 	mux.HandleFunc("DELETE /api/users/me/sessions/{id}", srv.DeleteMySession)
 
+	// M16.A.1 API keys: bearer-token management. Instance-admin only via the
+	// session cookie path, OR a bearer key with admin scope. Keys are issued
+	// once on POST and never re-exposed — list/delete operate over key_prefix
+	// + opaque id, not the raw token. Owner of a key can DELETE their own
+	// (soft-revoke).
+	mux.HandleFunc("POST /api/api_keys", srv.CreateAPIKey)
+	mux.HandleFunc("GET /api/api_keys", srv.ListAPIKeys)
+	mux.HandleFunc("DELETE /api/api_keys/{id}", srv.DeleteAPIKey)
+
 	mux.HandleFunc("GET /api/spaces/{id}/members", srv.ListSpaceMembers)
 	mux.HandleFunc("POST /api/spaces/{id}/members", srv.AddSpaceMember)
 	mux.HandleFunc("PATCH /api/spaces/{id}/members/{user_id}", srv.PatchSpaceMember)

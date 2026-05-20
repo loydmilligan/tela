@@ -87,6 +87,9 @@ func (s *Server) ImportSpace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup space failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, spaceID) {
+		return
+	}
 
 	role, err := spaceRoleTx(ctx, tx, u.ID, spaceID)
 	if errors.Is(err, sql.ErrNoRows) {

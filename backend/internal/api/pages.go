@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/models"
 )
 
@@ -134,12 +135,30 @@ func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT p.id, p.space_id, s.name, p.title
-		  FROM pages p
-		  JOIN spaces s ON s.id = p.space_id
-		  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
-		 ORDER BY s.name ASC, p.title ASC`, u.ID)
+	// Bearer-mode with a space_id restriction narrows the cross-space listing
+	// to just that one space. Without the filter the wikilink picker would
+	// surface page ids the key isn't allowed to open (the actual GET would
+	// then 403 — confusing UX, defends against accidental id leakage).
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
+		rows, err = s.DB.QueryContext(r.Context(), `
+			SELECT p.id, p.space_id, s.name, p.title
+			  FROM pages p
+			  JOIN spaces s ON s.id = p.space_id
+			  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			 WHERE p.space_id = ?
+			 ORDER BY s.name ASC, p.title ASC`, u.ID, *k.SpaceID)
+	} else {
+		rows, err = s.DB.QueryContext(r.Context(), `
+			SELECT p.id, p.space_id, s.name, p.title
+			  FROM pages p
+			  JOIN spaces s ON s.id = p.space_id
+			  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			 ORDER BY s.name ASC, p.title ASC`, u.ID)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list pages failed")
 		return
@@ -220,6 +239,9 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	if !enforceAPIKeySpaceScope(w, r, req.SpaceID) {
+		return
+	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, req.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusForbidden, "forbidden", "not a member")
@@ -389,6 +411,9 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, existing.SpaceID) {
+		return
+	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusForbidden, "forbidden", "not a member")
@@ -471,6 +496,9 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
+		return
+	}
+	if !enforceAPIKeySpaceScope(w, r, existing.SpaceID) {
 		return
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
@@ -598,6 +626,9 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
 		return
 	}
+	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
+		return
+	}
 
 	sourceRole, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -625,6 +656,9 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if targetSpaceID != page.SpaceID {
+			if !enforceAPIKeySpaceScope(w, r, targetSpaceID) {
+				return
+			}
 			targetRole, err := spaceRoleTx(ctx, tx, u.ID, targetSpaceID)
 			if errors.Is(err, sql.ErrNoRows) {
 				writeError(w, http.StatusForbidden, "forbidden", "not a member of target space")

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+
+	"github.com/zcag/tela/backend/internal/auth"
 )
 
 const searchLimit = 25
@@ -30,15 +32,35 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 
 	fts := buildFTSPhrasePrefix(q)
 
-	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT p.id, p.space_id, p.title,
-		       snippet(pages_fts, 1, '<mark>', '</mark>', '…', 32)
-		FROM pages_fts
-		JOIN pages p ON p.id = pages_fts.rowid
-		JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
-		WHERE pages_fts MATCH ?
-		ORDER BY bm25(pages_fts) ASC
-		LIMIT ?`, u.ID, fts, searchLimit)
+	// Bearer-mode with a space_id restriction narrows the FTS join down to that
+	// one space — without the filter we'd surface titles/snippets from any
+	// space the user is a member of, even though the bearer scope forbids
+	// opening them.
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
+		rows, err = s.DB.QueryContext(r.Context(), `
+			SELECT p.id, p.space_id, p.title,
+			       snippet(pages_fts, 1, '<mark>', '</mark>', '…', 32)
+			FROM pages_fts
+			JOIN pages p ON p.id = pages_fts.rowid
+			JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			WHERE pages_fts MATCH ? AND p.space_id = ?
+			ORDER BY bm25(pages_fts) ASC
+			LIMIT ?`, u.ID, fts, *k.SpaceID, searchLimit)
+	} else {
+		rows, err = s.DB.QueryContext(r.Context(), `
+			SELECT p.id, p.space_id, p.title,
+			       snippet(pages_fts, 1, '<mark>', '</mark>', '…', 32)
+			FROM pages_fts
+			JOIN pages p ON p.id = pages_fts.rowid
+			JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			WHERE pages_fts MATCH ?
+			ORDER BY bm25(pages_fts) ASC
+			LIMIT ?`, u.ID, fts, searchLimit)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "search query failed")
 		return
