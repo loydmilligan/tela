@@ -1,4 +1,5 @@
-import { $nodeSchema, $remark } from '@milkdown/kit/utils'
+import { $ctx, $nodeSchema, $prose, $remark } from '@milkdown/kit/utils'
+import { Plugin } from '@milkdown/kit/prose/state'
 
 // M13.1 — collapsibles via raw `<details><summary>` HTML pass-through.
 // Two schema nodes (`details` + `details_summary`) materialize the GitHub-style
@@ -233,17 +234,15 @@ export const detailsSchema = $nodeSchema('details', () => ({
   // need a `contentElement` selector here because PM treats the details as the
   // container and recursively parses its children.
   parseDOM: [{ tag: 'details' }],
-  // Always render with `open` in the editor view so the body is visible and the
-  // caret can land inside it. Native `<details>` defaults to closed (body
-  // hidden) — and Chromium routes typing into a hidden contenteditable region
-  // to the closest visible editable text node (the summary), which would
-  // strand keystrokes in the wrong place. The `open` attribute is purely a
-  // DOM-level rendering hint; it is NOT serialized to markdown (toMarkdown
-  // below emits a bare `<details>` so external markdown viewers — GitHub,
-  // etc. — render closed by default, matching the canonical `<details>` UX).
-  // Users can click the summary to toggle in the editor; the toggle state is
-  // session-only by design (see file-top comment).
-  toDOM: () => ['details', { class: 'tela-details', open: '' }, 0],
+  // toDOM is used for clipboard / parseDOM round-trips. In-editor rendering
+  // goes through `detailsNodeView` below, which decides whether to set the
+  // `open` attribute based on `view.editable`: editable view (live editor)
+  // forces `open` so caret-routing into the body works (Chromium would
+  // otherwise route typing through the summary when the body is hidden by a
+  // closed <details>); read-only view (share-mode, viewer-mode) leaves it
+  // closed so the user clicks the summary to expand — matching native
+  // HTMLDetailsElement UX and the canonical GitHub-rendered shape.
+  toDOM: () => ['details', { class: 'tela-details' }, 0],
   parseMarkdown: {
     match: ({ type }) => type === 'details',
     runner: (state, node, type) => {
@@ -281,3 +280,37 @@ export const detailsSchema = $nodeSchema('details', () => ({
     },
   },
 }))
+
+// Tracks whether the editor was MOUNTED in read-only mode (share-mode,
+// viewer-mode). NOT the same as `view.editable`, which also flips false
+// during transient collab connecting/disconnect — using `view.editable` at
+// nodeView construction time misfires because the ws hasn't opened yet on
+// first mount (collabStatus = 'connecting' → editable predicate returns
+// false), so the nodeView would render closed in edit-mode and not
+// re-open when ws connects. This ctx is set once at editor build time from
+// the React `readOnly` + `wikilinkMode` props (both stable across the
+// editor's lifetime — PageView keys by page id) and is read once per
+// nodeView construction.
+export const detailsReadOnlyCtx = $ctx(false, 'detailsReadOnly')
+
+// NodeView for `details`. Edit mode (readOnly === false): force `open=''`
+// on the <details> element so caret-routing into the body works (Chromium
+// routes typing on a hidden contenteditable region through the closest
+// visible editable text node, which would be the <summary>). Read-only
+// (share-mode, viewer-mode): leave `open` unset — native <details> renders
+// closed by default, and the user clicks the <summary> to expand.
+export const detailsNodeView = $prose((ctx) => {
+  return new Plugin({
+    props: {
+      nodeViews: {
+        details: () => {
+          const dom = document.createElement('details')
+          dom.className = 'tela-details'
+          const readOnly = ctx.get(detailsReadOnlyCtx.key)
+          if (!readOnly) dom.setAttribute('open', '')
+          return { dom, contentDOM: dom }
+        },
+      },
+    },
+  })
+})

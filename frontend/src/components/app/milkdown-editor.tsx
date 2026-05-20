@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
   Editor,
   defaultValueCtx,
@@ -43,6 +43,8 @@ import {
 } from './milkdown-callouts'
 import {
   collapsiblesRemarkPlugin,
+  detailsNodeView,
+  detailsReadOnlyCtx,
   detailsSchema,
   detailsSummarySchema,
 } from './milkdown-collapsibles'
@@ -53,7 +55,18 @@ import {
   excalidrawSchema,
   pageIdCtx,
   type ExcalidrawOpenHandler,
+  type ExcalidrawOpenRequest,
 } from './milkdown-excalidraw'
+
+// M13.3b — ExcalidrawEditSheet lazy-imports `@excalidraw/excalidraw` (~290 KB
+// gz total) on first open. Owned by the editor (not PageView) so the lazy
+// declaration, useState, and Suspense JSX all live in this milkdown-editor
+// chunk — already lazy-loaded itself, so the cost never lands in main.
+const ExcalidrawEditSheet = lazy(() =>
+  import('./excalidraw-edit-sheet').then((m) => ({
+    default: m.ExcalidrawEditSheet,
+  })),
+)
 import {
   WIKILINK_ALIVE_IDS_META,
   wikilinkAliveIdsCtx,
@@ -140,15 +153,9 @@ export interface MilkdownEditorProps {
   // the `/api/diagrams/{pageId}/{sceneHash}.png` URL. 0 = unset (placeholder
   // URL would 404); PageView and ShareReader pass `page.id` so the URL is
   // always real. Stable across the editor's lifetime — PageView keys the
-  // editor by page id, so a page switch unmounts/remounts.
+  // editor by page id, so a page switch unmounts/remounts. Also used by the
+  // M13.3b Edit Sheet for PUT /api/pages/{pageId}/diagrams.
   pageId?: number
-  // M13.3b — open-Edit-Sheet handler. Invoked when the user clicks any
-  // diagram atom in editable mode OR runs the slash-menu `Excalidraw`
-  // entry. Null/undefined in share-mode (ShareReader doesn't pass it) and
-  // viewer-mode (PageView passes undefined): the click plugin and slash
-  // entry are no-ops in those modes. Callbacks captured via a ref so prop
-  // changes don't rebuild the editor.
-  onOpenExcalidrawSheet?: ExcalidrawOpenHandler
 }
 
 // Reconnecting banner copy.
@@ -173,7 +180,6 @@ function MilkdownEditorInner({
   showResolvedAnchors = false,
   wikilinkMode = 'edit',
   pageId = 0,
-  onOpenExcalidrawSheet,
 }: MilkdownEditorProps) {
   const pluginViewFactory = usePluginViewFactory()
 
@@ -196,7 +202,6 @@ function MilkdownEditorInner({
     onSelectionChange,
     onAnchorClick,
     onAnchorsResolved,
-    onOpenExcalidrawSheet,
   })
   callbacks.current = {
     onChange,
@@ -205,8 +210,18 @@ function MilkdownEditorInner({
     onSelectionChange,
     onAnchorClick,
     onAnchorsResolved,
-    onOpenExcalidrawSheet,
   }
+
+  // M13.3b — Excalidraw Edit Sheet state. `null` = closed. The click /
+  // slash-insert plugin's `openTrampoline` below pushes the open request
+  // here; the Sheet renders alongside <Milkdown /> and calls `onSave` on
+  // successful save. Owned by the editor (not PageView) so the cost of the
+  // lazy import + state + Suspense JSX never lands in the main bundle.
+  // Null in share-mode and read-only mode: the editor's click plugin
+  // short-circuits on a null `excalidrawOpenCtx`, so the setter is never
+  // invoked in those modes.
+  const [excalidrawSheet, setExcalidrawSheet] =
+    useState<ExcalidrawOpenRequest | null>(null)
 
   // M8.3 — single-source the selection projection so the PM plugin and any
   // future consumer read selection text via the same '\n' block separator
@@ -331,20 +346,25 @@ function MilkdownEditorInner({
           })
         }
         ctx.set(wikilinkModeCtx.key, wikilinkMode)
+        // M13.4 — share-mode + viewer-mode render collapsibles CLOSED by
+        // default (matching native <details> UX); editable mode forces them
+        // open so caret-routing into the body works. See detailsReadOnlyCtx
+        // for why this isn't read from view.editable.
+        ctx.set(detailsReadOnlyCtx.key, wikilinkMode === 'share' || Boolean(readOnly))
         // M13.3a — page id for excalidrawSchema.toDOM's PNG URL. Stable across
         // the editor's lifetime (editor remounts on page change), so a single
         // ctx.set at build time is sufficient — no useEffect needed.
         ctx.set(pageIdCtx.key, pageId)
-        // M13.3b — wire the open-Edit-Sheet ctx. A stable trampoline reads
-        // `callbacks.current.onOpenExcalidrawSheet` at fire time so the
-        // PageView can swap handlers without rebuilding the editor. Null in
-        // share-mode (ShareReader doesn't pass the prop) — the click plugin
-        // and slash entry both short-circuit on a null handler, so they're
-        // safe to mount unconditionally.
+        // M13.3b — wire the open-Edit-Sheet ctx. Null in share-mode and
+        // read-only mode: the click plugin and slash-insert helper both
+        // short-circuit on a null handler, so they're safe to mount
+        // unconditionally. In editable mode the trampoline pushes into local
+        // state; `setExcalidrawSheet` from useState is reference-stable, so
+        // capturing it once at editor-build time is correct.
         const openTrampoline: ExcalidrawOpenHandler | null =
-          wikilinkMode === 'share'
+          wikilinkMode === 'share' || readOnly
             ? null
-            : (req) => callbacks.current.onOpenExcalidrawSheet?.(req)
+            : (req) => setExcalidrawSheet(req)
         ctx.set(excalidrawOpenCtx.key, openTrampoline)
         ctx.set(imageAttr.key, () => ({ loading: 'lazy' }))
         // M12.1 — register only the curated grammar set (24 langs) on the
@@ -467,6 +487,8 @@ function MilkdownEditorInner({
       .use(collapsiblesRemarkPlugin)
       .use(detailsSummarySchema)
       .use(detailsSchema)
+      .use(detailsReadOnlyCtx)
+      .use(detailsNodeView)
       // M13.3a — Excalidraw view-mode renderer. The remark plugin walks the
       // mdast for ```excalidraw fences, parses the JSON, validates the
       // scene_hash, and rewrites the node to `excalidraw`. The schema
@@ -636,6 +658,23 @@ function MilkdownEditorInner({
         </div>
       ) : null}
       <Milkdown />
+      {excalidrawSheet ? (
+        <Suspense fallback={null}>
+          <ExcalidrawEditSheet
+            open
+            onOpenChange={(next) => {
+              if (!next) setExcalidrawSheet(null)
+            }}
+            pageId={pageId}
+            initialJSON={excalidrawSheet.sceneJSON}
+            initialAltText={excalidrawSheet.altText}
+            onSave={(next) => {
+              excalidrawSheet.onSave(next)
+              setExcalidrawSheet(null)
+            }}
+          />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

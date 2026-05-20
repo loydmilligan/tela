@@ -71,17 +71,10 @@ import { BacklinksSection } from './BacklinksSection'
 
 // Milkdown is the largest dependency in the app (~700 KB raw). Lazy-load it so
 // non-editor routes (sidebar, spaces list, command palette) don't pay for it
-// on first paint.
+// on first paint. M13.3b — the editor also owns the Excalidraw Edit Sheet
+// lazy chunk internally, so opening a diagram never lands a byte in main.
 const MilkdownEditor = lazy(() =>
   import('./milkdown-editor').then((m) => ({ default: m.MilkdownEditor })),
-)
-
-// M13.3b — ExcalidrawEditSheet lazy-imports `@excalidraw/excalidraw` (~290 KB
-// gz total) on first open. Splitting this AND the Sheet itself into a
-// separate lazy chunk keeps the main + milkdown chunks unchanged: Excalidraw
-// only ever lands on a user actively opening a diagram.
-const ExcalidrawEditSheet = lazy(() =>
-  import('./excalidraw-edit-sheet').then((m) => ({ default: m.ExcalidrawEditSheet })),
 )
 
 const EDITOR_MIN_H = 'min-h-[calc(var(--space-8)*8)]'
@@ -253,23 +246,6 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
   const editorViewRef = useRef<EditorView | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-
-  // M13.3b — Excalidraw Edit Sheet state. `null` = closed. When opened, the
-  // request payload includes the atom node's current attrs plus the onSave
-  // callback the editor's click/insert plugin captured against a stable
-  // ProseMirror position. The Sheet calls onSave({sceneHash, altText,
-  // sceneJSON}) on successful save, then we close. Viewers + draft mode
-  // skip rendering the Sheet entirely (the handler prop is also undefined).
-  const [excalidrawSheet, setExcalidrawSheet] = useState<{
-    sceneHash: string
-    altText: string
-    sceneJSON: string
-    onSave: (next: {
-      sceneHash: string
-      altText: string
-      sceneJSON: string
-    }) => void
-  } | null>(null)
   const [selectionEmpty, setSelectionEmpty] = useState(true)
   const [selectionPreview, setSelectionPreview] = useState('')
   const handleViewReady = useCallback((view: EditorView | null) => {
@@ -751,7 +727,6 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                 collabPageId={null}
                 readOnly={false}
                 pageId={page.id}
-                onOpenExcalidrawSheet={setExcalidrawSheet}
               />
             </Suspense>
           )
@@ -776,7 +751,6 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
               onAnchorsResolved={isViewer ? undefined : handleAnchorsResolved}
               showResolvedAnchors={showResolvedComments}
               pageId={page.id}
-              onOpenExcalidrawSheet={isViewer ? undefined : setExcalidrawSheet}
             />
           </Suspense>
         ) : (
@@ -822,24 +796,6 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
             pageId={page.id}
             open={shareOpen}
             onOpenChange={setShareOpen}
-          />
-        </Suspense>
-      ) : null}
-
-      {roleResolved && !isViewer && excalidrawSheet ? (
-        <Suspense fallback={null}>
-          <ExcalidrawEditSheet
-            open
-            onOpenChange={(next) => {
-              if (!next) setExcalidrawSheet(null)
-            }}
-            pageId={page.id}
-            initialJSON={excalidrawSheet.sceneJSON}
-            initialAltText={excalidrawSheet.altText}
-            onSave={(next) => {
-              excalidrawSheet.onSave(next)
-              setExcalidrawSheet(null)
-            }}
           />
         </Suspense>
       ) : null}

@@ -53,15 +53,30 @@ export interface ExcalidrawEditSheetProps {
   onSave: (next: DiagramPayload) => void | Promise<void>
 }
 
-// Editor map ours → Excalidraw. Read once on mount; the user changing themes
-// mid-edit doesn't re-skin the canvas (rare; the obvious workaround is to
-// close and reopen). Documented here so a future maintainer doesn't add a
-// useEffect that re-mounts Excalidraw on theme switch (would lose scene
-// state).
+// Editor map ours → Excalidraw. `dark` → dark; `light` + `warm` → light.
+// Excalidraw v0.18 supports prop-driven theme switching (the `theme` prop
+// updates the canvas chrome on re-render without losing scene state), so we
+// track `data-theme` on <html> via a MutationObserver and feed the live value
+// into the component — see useExcalidrawTheme below.
 function detectExcalidrawTheme(): 'light' | 'dark' {
   if (typeof document === 'undefined') return 'light'
   const t = document.documentElement.getAttribute('data-theme')
   return t === 'dark' ? 'dark' : 'light'
+}
+
+function useExcalidrawTheme(): 'light' | 'dark' {
+  const [theme, setTheme] = useState<'light' | 'dark'>(detectExcalidrawTheme)
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const root = document.documentElement
+    const observer = new MutationObserver(() => {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
+      setTheme((prev) => (prev === next ? prev : next))
+    })
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
+  return theme
 }
 
 // Dyn-imported wrapper. Two reasons to load BOTH the component and the export
@@ -254,7 +269,7 @@ export function ExcalidrawEditSheet({
     files: Record<string, unknown>
   } | null>(null)
   const initialData = parseInitialData(initialJSON)
-  const theme = detectExcalidrawTheme()
+  const theme = useExcalidrawTheme()
 
   // Reset transient state every time the sheet (re)opens. One-shot effect
   // tied to `open`: the eslint rule doesn't model the "edge-triggered reset"
