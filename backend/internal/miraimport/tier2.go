@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Tier-2 covers the 15 mira visual block types that don't map cleanly to
@@ -205,7 +206,7 @@ func renderTimeline(b block) string {
 	}
 	parts := make([]string, 0, len(body.Events))
 	for _, e := range body.Events {
-		date := timelineDateDisplay(e.Date)
+		date := formatTimelineDate(timelineDateDisplay(e.Date))
 		section := "### " + escapeMarkdown(date) + "\n- " + escapeMarkdown(e.Label)
 		parts = append(parts, section)
 	}
@@ -253,6 +254,23 @@ func timelineDateDisplay(raw json.RawMessage) string {
 		return start + " – " + endStr
 	}
 	return ""
+}
+
+// formatTimelineDate trims an RFC3339 ISO timestamp to a human heading. Pure
+// dates (H/M/S all zero in the source timezone) render as `YYYY-MM-DD`; any
+// other time renders as `YYYY-MM-DD HH:MM` in the source timezone, dropping
+// the seconds + tz suffix. Strings that don't parse as RFC3339 — including
+// mira's already-pretty display strings like "Q2 2026" — pass through
+// unchanged so the bare-string and object-form `display` paths still work.
+func formatTimelineDate(s string) string {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return s
+	}
+	if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 {
+		return t.Format("2006-01-02")
+	}
+	return t.Format("2006-01-02 15:04")
 }
 
 // ---- kanban ----

@@ -165,6 +165,113 @@ func TestImportMira_FullFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("url_json_path_auto_appended", func(t *testing.T) {
+		// PO pastes the canonical mira render URL `/p/<slug>` (text/html); the
+		// backend should transparently fetch the `/p/<slug>.json` alternate so
+		// every entry point (FE Settings, paste-hook, MCP, raw curl) works
+		// without each layer having to learn the rewrite rule.
+		var gotPath string
+		mira := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			if r.URL.Path != "/p/cagdas-brief.json" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{
+				"template":"page",
+				"blocks":[
+					{"type":"heading_1","heading_1":{"rich_text":[{"type":"text","text":{"content":"Brief"}}]}}
+				]
+			}`)
+		}))
+		defer mira.Close()
+		host := mustHost(t, mira.URL)
+		t.Setenv("TELA_MIRA_ALLOWED_HOSTS", host)
+		trustTestTLS(t)
+		bareURL := mira.URL + "/p/cagdas-brief"
+		body := fmt.Sprintf(`{"source_url": %q}`, bareURL)
+		resp, out := postImportMira(t, adminC, ts.URL, space, body)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("status=%d body=%s want 201 (auto-append should rewrite /p/<slug> → /p/<slug>.json)", resp.StatusCode, out)
+		}
+		if gotPath != "/p/cagdas-brief.json" {
+			t.Fatalf("upstream got path=%q want /p/cagdas-brief.json", gotPath)
+		}
+		got := decodeImportMiraResp(t, out)
+		// Source comment preserves the PO-supplied URL, NOT the rewritten one
+		// — so deletion + re-import via the comment marker can round-trip.
+		wantComment := fmt.Sprintf("<!-- mira-source: %s -->", bareURL)
+		if !strings.Contains(got.Page.Body, wantComment) {
+			t.Fatalf("body missing original source comment %q: %q", wantComment, got.Page.Body)
+		}
+	})
+
+	t.Run("url_json_path_no_rewrite_outside_slug_shape", func(t *testing.T) {
+		// Defense-in-depth: paths that aren't a bare slug (already-suffixed,
+		// nested, or non-/p/ shapes) must pass through unchanged so the
+		// content-type guard still fails closed on misuse.
+		mira := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Serve only the verbatim path; .json rewrite would produce a 404
+			// here, which we'd then fail the test on.
+			if r.URL.Path != "/r/sometoken" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"template":"page","blocks":[]}`)
+		}))
+		defer mira.Close()
+		host := mustHost(t, mira.URL)
+		t.Setenv("TELA_MIRA_ALLOWED_HOSTS", host)
+		trustTestTLS(t)
+		body := fmt.Sprintf(`{"source_url": "%s/r/sometoken"}`, mira.URL)
+		resp, out := postImportMira(t, adminC, ts.URL, space, body)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("status=%d body=%s want 201 (non-slug path should NOT be rewritten)", resp.StatusCode, out)
+		}
+	})
+
+	t.Run("url_password_required", func(t *testing.T) {
+		// Mira's password-gated pages return a 401 with a useful
+		// {error, unlock} JSON envelope. The handler must surface this as a
+		// distinct 403 with the unlock URL preserved so clients can guide
+		// the user to the unlock page instead of swallowing it as a
+		// generic non-2xx.
+		const unlockURL = "https://mira.cagdas.io/r/abc123token"
+		mira := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, `{"error":"password_required","unlock":%q}`, unlockURL)
+		}))
+		defer mira.Close()
+		host := mustHost(t, mira.URL)
+		t.Setenv("TELA_MIRA_ALLOWED_HOSTS", host)
+		trustTestTLS(t)
+		body := fmt.Sprintf(`{"source_url": %q}`, mira.URL)
+		resp, out := postImportMira(t, adminC, ts.URL, space, body)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("status=%d body=%s want 403", resp.StatusCode, out)
+		}
+		var env struct {
+			Error  string `json:"error"`
+			Code   string `json:"code"`
+			Unlock string `json:"unlock"`
+		}
+		if err := json.Unmarshal(out, &env); err != nil {
+			t.Fatalf("decode error envelope: %v (body=%s)", err, out)
+		}
+		if env.Code != "mira_password_required" {
+			t.Fatalf("code=%q want mira_password_required (body=%s)", env.Code, out)
+		}
+		if env.Unlock != unlockURL {
+			t.Fatalf("unlock=%q want %q", env.Unlock, unlockURL)
+		}
+		if env.Error == "" {
+			t.Fatalf("error message must be non-empty (body=%s)", out)
+		}
+	})
+
 	t.Run("url_oversized_response", func(t *testing.T) {
 		big := strings.Repeat("a", (1<<20)+10)
 		mira := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

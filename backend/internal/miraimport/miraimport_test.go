@@ -503,6 +503,46 @@ func TestConvert_Tier2_Timeline(t *testing.T) {
 	}
 }
 
+func TestConvert_Tier2_Timeline_TrimsISOMidnight(t *testing.T) {
+	// Mira timeline events arrive as full ISO timestamps. Pure dates (H/M/S
+	// zero) should collapse to YYYY-MM-DD so the heading isn't an ugly
+	// `2026-05-20T00:00:00Z` band.
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"timeline","timeline":{
+				"events":[
+					{"date":"2026-05-20T00:00:00Z","label":"midnight event"}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### 2026-05-20\n- midnight event")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Timeline_TrimsISOWithTimeOfDay(t *testing.T) {
+	// Non-midnight times keep hour+minute but drop seconds + tz so headings
+	// stay readable. The displayed clock matches the source-offset hour
+	// (14:00 in +03:00 stays 14:00, not 11:00 UTC).
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"timeline","timeline":{
+				"events":[
+					{"date":"2026-05-20T14:00:00+03:00","label":"afternoon event"}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### 2026-05-20 14:00\n- afternoon event")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
 func TestConvert_Tier2_Kanban(t *testing.T) {
 	_, body := mustConvert(t, `{
 		"template":"page",
