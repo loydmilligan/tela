@@ -671,6 +671,49 @@
     color: var(--text-muted);
   }
 
+  /* M18.B.2 — mira paste-hook popover. Positioned via JS (left/top set as
+     inline styles by the React component); the slash menu and this popover
+     share the same fixed-floating-card aesthetic so they read as one family
+     of editor affordances. */
+  .tela-mira-paste-popover {
+    position: fixed;
+    z-index: 50;
+    min-width: 18rem;
+    max-width: 26rem;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    box-shadow: 0 10px 30px -8px
+      color-mix(in srgb, var(--text-primary) 25%, transparent);
+    display: none;
+    flex-direction: column;
+    gap: var(--space-3);
+    outline: none;
+  }
+  .tela-mira-paste-popover[data-show='true'] {
+    display: flex;
+  }
+  .tela-mira-paste-popover-url {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tela-mira-paste-popover-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .tela-mira-paste-popover-error {
+    margin: 0;
+  }
+
   /* Wikilink decoration — applied by wikilinkDecorationPlugin to every link
      mark whose href starts with `tela://page/`. M5.2d will toggle the
      `--broken` modifier when the link's target page no longer exists; the
