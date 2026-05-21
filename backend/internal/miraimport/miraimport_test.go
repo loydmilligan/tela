@@ -396,27 +396,411 @@ func TestConvert_Mermaid(t *testing.T) {
 }
 
 func TestConvert_UnknownBlock_Stub(t *testing.T) {
+	// Forward-compat: a made-up future block type must hit the unknown-block
+	// stub without a Tier-2 footer (the stub is its own marker).
 	_, body := mustConvert(t, `{
 		"template":"page",
 		"blocks":[
-			{"type":"some_future_thing","some_future_thing":{}}
+			{"type":"__future_block__","__future_block__":{}}
 		]
 	}`)
-	want := "> ⚠️ Unsupported mira block: some_future_thing"
+	want := "> ⚠️ Unsupported mira block: __future_block__"
 	if body != want {
 		t.Fatalf("body = %q, want %q", body, want)
 	}
+	if strings.Contains(body, "visual fidelity reduced") {
+		t.Fatalf("unknown stub should not carry Tier-2 footer; body = %q", body)
+	}
 }
 
-func TestConvert_Tier2_BlocksFallToStub(t *testing.T) {
-	// A.2 will route these to real Tier-2 renderers. For A.1 they must hit
-	// the unknown-block stub so import still succeeds.
-	for _, tier2Type := range []string{"chart", "kanban", "timeline", "stat_grid", "diff"} {
-		t.Run(tier2Type, func(t *testing.T) {
-			payload := `{"template":"page","blocks":[{"type":"` + tier2Type + `","` + tier2Type + `":{}}]}`
+// ----- Tier-2 placeholder converters -----
+//
+// Each Tier-2 test exercises the renderer with a minimal inline JSON literal
+// and asserts both the structural output AND that the Tier-2 footer is
+// appended.
+
+const tier2FooterLit = "> _Imported from mira render — visual fidelity reduced._"
+
+func wantTier2(content string) string {
+	return content + "\n\n" + tier2FooterLit
+}
+
+func TestConvert_Tier2_Chart(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"chart","chart":{
+				"chart_type":"line",
+				"title":"Weekly renders",
+				"x_axis":{"type":"category","label":"week","categories":["W1","W2"]},
+				"y_axis":{"type":"number","label":"renders"},
+				"series":[
+					{"name":"Free","data":[10,20]},
+					{"name":"Paid","data":[5,15]}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### Weekly renders\n\n| week | Free | Paid |\n| --- | --- | --- |\n| W1 | 10 | 5 |\n| W2 | 20 | 15 |")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Chart_NoCategories_BulletFallback(t *testing.T) {
+	// Pie/donut have no x_axis — fall back to a per-series bullet list.
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"chart","chart":{
+				"chart_type":"pie",
+				"title":"Browser share",
+				"series":[{"name":"Chrome","data":[60,30,10]}]
+			}}
+		]
+	}`)
+	want := wantTier2("### Browser share\n\n- **Chrome:** 60, 30, 10")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_StatGrid(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"stat_grid","stat_grid":{
+				"title":"KPIs",
+				"tiles":[
+					{"label":"Revenue","value":"$4.2M"},
+					{"label":"Latency","value":86,"unit":"ms"}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### KPIs\n\n- **Revenue:** $4.2M\n- **Latency:** 86 ms")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Timeline(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"timeline","timeline":{
+				"title":"Releases",
+				"events":[
+					{"date":"2026-01-01","label":"v1 ships"},
+					{"date":{"sort":"2026-04-01","display":"Q2 2026"},"label":"v2 plan"}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### Releases\n\n### 2026-01-01\n- v1 ships\n\n### Q2 2026\n- v2 plan")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Kanban(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"kanban","kanban":{
+				"title":"Sprint 24",
+				"columns":[
+					{"name":"Todo","cards":[{"title":"task one"},{"title":"task two"}]},
+					{"name":"Done","cards":[{"title":"task three"}]}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### Sprint 24\n\n### Todo\n- task one\n- task two\n\n### Done\n- task three")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_ComparisonMatrix(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"comparison_matrix","comparison_matrix":{
+				"row_label_header":"Feature",
+				"columns":[{"label":"Free"},{"label":"Pro"}],
+				"rows":[
+					{"label":"SSO","cells":["cross","check"]},
+					{"label":"Storage","cells":["5 GB","100 GB"]}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("| Feature | Free | Pro |\n| --- | --- | --- |\n| SSO | ✗ | ✓ |\n| Storage | 5 GB | 100 GB |")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Tabs_FlattenToSections(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"tabs","tabs":{
+				"panels":[
+					{"label":"Overview","blocks":[
+						{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"intro text"}}]}}
+					]},
+					{"label":"Pricing","blocks":[
+						{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"$29/mo"}}]}}
+					]}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### Overview\n\nintro text\n\n### Pricing\n\n$29/mo")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Columns_Flatten(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"columns","columns":{
+				"columns":[
+					{"blocks":[
+						{"type":"heading_3","heading_3":{"rich_text":[{"type":"text","text":{"content":"Free"}}]}}
+					]},
+					{"blocks":[
+						{"type":"heading_3","heading_3":{"rich_text":[{"type":"text","text":{"content":"Paid"}}]}}
+					]}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### Free\n\n### Paid")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Gallery(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"gallery","gallery":{
+				"title":"Tiles",
+				"images":[
+					{"asset_id":"abc123","alt":"first","caption":[{"type":"text","text":{"content":"Tile 1"}}]},
+					{"asset_id":"def456","alt":"second"}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### Tiles\n\n![first](https://mira.cagdas.io/asset/abc123)\n\nTile 1\n\n![second](https://mira.cagdas.io/asset/def456)")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Slides(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"slides","slides":{
+				"slides":[
+					{"title":"Cover","subtitle":"Q3 review","blocks":[
+						{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"first slide body"}}]}}
+					]},
+					{"title":"Ask","blocks":[
+						{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"approve $4M"}}]}}
+					]}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### Cover\n\n*Q3 review*\n\nfirst slide body\n\n### Ask\n\napprove $4M")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Calendar(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"calendar","calendar":{
+				"title":"May launches",
+				"month":"2026-05",
+				"events":[
+					{"date":"2026-05-04","title":"Spec freeze"},
+					{"date":"2026-05-28","title":"GA launch"}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("### May launches\n\n| date | event |\n| --- | --- |\n| 2026-05-04 | Spec freeze |\n| 2026-05-28 | GA launch |")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Map(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"map","map":{
+				"title":"Offices",
+				"markers":[{"lat":37.7,"lng":-122.4,"label":"SF"}]
+			}}
+		]
+	}`)
+	want := wantTier2("> 🗺️ Map: Offices")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Map_NoTitle_UsesFirstMarker(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"map","map":{
+				"markers":[
+					{"lat":37.7,"lng":-122.4,"label":"SF"},
+					{"lat":35.6,"lng":139.6,"label":"Tokyo"}
+				]
+			}}
+		]
+	}`)
+	want := wantTier2("> 🗺️ Map: SF (+1 more)")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Video_WithTitle(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"video","video":{"url":"https://youtu.be/abc","title":"My talk"}}
+		]
+	}`)
+	want := wantTier2("[My talk](https://youtu.be/abc)")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Video_NoTitle_AutoLink(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"video","video":{"url":"https://youtu.be/xyz"}}
+		]
+	}`)
+	want := wantTier2("<https://youtu.be/xyz>")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Network(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"network","network":{"topokit_config":{"nodes":[]}}}
+		]
+	}`)
+	want := wantTier2("> 🕸️ Network diagram (mira-only)")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Diff(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"diff","diff":{
+				"title":"auth fix",
+				"diff":"--- a/x\n+++ b/x\n-old line\n+new line\n"
+			}}
+		]
+	}`)
+	want := wantTier2("### auth fix\n\n" + "```" + "diff\n--- a/x\n+++ b/x\n-old line\n+new line\n" + "```")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Choice(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"choice","choice":{
+				"prompt":"Sprint checklist",
+				"multi":true,
+				"options":[
+					{"id":"docs","label":"Update docs"},
+					{"id":"tests","label":"Write tests"},
+					{"id":"deploy","label":"Deploy to prod"}
+				],
+				"selected":["docs","tests"]
+			}}
+		]
+	}`)
+	want := wantTier2("**Sprint checklist**\n\n- [x] Update docs\n- [x] Write tests\n- [ ] Deploy to prod")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_Approve(t *testing.T) {
+	_, body := mustConvert(t, `{
+		"template":"page",
+		"blocks":[
+			{"type":"approve","approve":{"prompt":"Sign off?","approved":true}}
+		]
+	}`)
+	want := wantTier2("**Sign off?**\n\n- [x] Approved")
+	if body != want {
+		t.Fatalf("body = %q\nwant = %q", body, want)
+	}
+}
+
+func TestConvert_Tier2_FooterPresentOnAllTypes(t *testing.T) {
+	// Each Tier-2 type's minimum payload should render with the footer line.
+	// Maps to the appendTier2Footer helper's invariant.
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{"chart", `{"type":"chart","chart":{"chart_type":"line","title":"t","x_axis":{"type":"category","categories":["a"]},"y_axis":{"type":"number"},"series":[{"name":"s","data":[1]}]}}`},
+		{"stat_grid", `{"type":"stat_grid","stat_grid":{"tiles":[{"label":"a","value":1},{"label":"b","value":2}]}}`},
+		{"timeline", `{"type":"timeline","timeline":{"events":[{"date":"2026-01-01","label":"x"}]}}`},
+		{"kanban", `{"type":"kanban","kanban":{"columns":[{"name":"c","cards":[{"title":"t"}]}]}}`},
+		{"comparison_matrix", `{"type":"comparison_matrix","comparison_matrix":{"columns":[{"label":"a"},{"label":"b"}],"rows":[{"label":"r","cells":["check","cross"]}]}}`},
+		{"tabs", `{"type":"tabs","tabs":{"panels":[{"label":"x","blocks":[{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"y"}}]}}]}]}}`},
+		{"columns", `{"type":"columns","columns":{"columns":[{"blocks":[{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"a"}}]}}]}]}}`},
+		{"gallery", `{"type":"gallery","gallery":{"images":[{"asset_id":"id","alt":"alt"}]}}`},
+		{"slides", `{"type":"slides","slides":{"slides":[{"title":"t","blocks":[]}]}}`},
+		{"calendar", `{"type":"calendar","calendar":{"month":"2026-05","events":[{"date":"2026-05-01","title":"x"}]}}`},
+		{"map", `{"type":"map","map":{"markers":[{"lat":0,"lng":0,"label":"x"}]}}`},
+		{"video", `{"type":"video","video":{"url":"https://youtu.be/x"}}`},
+		{"network", `{"type":"network","network":{"topokit_config":{}}}`},
+		{"diff", `{"type":"diff","diff":{"diff":"--- a\n+++ b\n"}}`},
+		{"choice", `{"type":"choice","choice":{"prompt":"p","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}}`},
+		{"approve", `{"type":"approve","approve":{"prompt":"p"}}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			payload := `{"template":"page","blocks":[` + c.payload + `]}`
 			_, body := mustConvert(t, payload)
-			if !strings.Contains(body, "Unsupported mira block: "+tier2Type) {
-				t.Fatalf("body = %q, want stub for %s", body, tier2Type)
+			if !strings.HasSuffix(body, "\n\n"+tier2FooterLit) {
+				t.Fatalf("%s body missing Tier-2 footer; body = %q", c.name, body)
 			}
 		})
 	}

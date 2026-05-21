@@ -10,9 +10,10 @@
 //   - Tier-1 blocks (this file): the 14 types that map cleanly to markdown —
 //     headings, paragraph, lists, code, quote, divider, image, table,
 //     callout, toggle, mermaid. Rendered faithfully.
-//   - Tier-2 blocks (M18.A.2, follow-up): 15 visual types
-//     (chart, kanban, timeline, …) rendered as best-effort markdown
-//     placeholders.
+//   - Tier-2 blocks (tier2.go): 15 visual types (chart, kanban, timeline, …)
+//     rendered as best-effort markdown placeholders. Each placeholder gets a
+//     trailing blockquote marker so the fidelity gap is visible in the
+//     rendered page.
 //   - Unknown / forward-compat: any unrecognized type emits a
 //     `> ⚠️ Unsupported mira block: <type>` blockquote stub. Schema additions
 //     don't break import; they just render as a visible TODO.
@@ -142,6 +143,9 @@ func renderBlock(b block) string {
 		return renderToggle(b)
 	case "mermaid":
 		return renderMermaid(b)
+	}
+	if s := renderTier2(b); s != "" {
+		return s
 	}
 	return renderUnknown(b.Type)
 }
