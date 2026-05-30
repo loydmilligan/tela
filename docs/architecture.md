@@ -79,35 +79,35 @@ Frontend → `/api/...` (Vite proxy in dev, Caddy in prod) → ServeMux → hand
 - **Membership gate** on `space_members.role`; no row → 403. Mutations require editor-or-owner. Instance-admin does NOT bypass page/space data.
 - **Public paths** (`/share/`, `/p/`, `/api/share/`, `/api/diagrams/`) bypass session middleware via `IsPublicPath` (`HasPrefix`) — each MUST self-authenticate.
 
-### Live collab (M7)
+### Live collab
 - `pages.body` is canonical; Yjs is an overlay that rebases on save. Custom WS transport (NOT y-websocket): 1-byte tag + big-endian payload — `0x01` update, `0x02` snap-req, `0x03` snap-resp, `0x04` sync-init, `0x05` awareness; unknown tags ignored; 16 MiB read limit; server pings 60s.
 - FE shim `lib/collab/tela-provider.ts`. Reconnect 1s→30s; echo-skip via `origin === this`; disconnect removes awareness states before destroy; `pagehide` fires a removal frame.
 - Leader election = lowest awareness `clientID`, gated at the editor's `markdownUpdated`/blur (not in `PageView.save()`). Cursors via `yCursorPlugin`, hue via `data-collab-color`.
 
-### Comments (M8)
+### Comments
 - **Anchored by text strings, never positions:** `{prefix, exact, suffix}` (~32-char window). Capture and resolve must share `view.state.doc.textBetween(0, doc.content.size, '\n')`. Flat/depth-1. Decoration plugin debounces 250ms (doc change) / 200ms (initial mount), mounts in both collab and non-collab branches.
 - **Side-panel Sheet pattern (canonical):** `modal={false}` + `withOverlay={false}` + `onOpenAutoFocus` prevented + `onInteractOutside` guard. Used by CommentsPanel and ShareManagerSheet.
 
-### History (M9)
+### History
 - `page_revisions` snapshot in `UpdatePage` after commit, before the 200 write; only on body/title change; log-and-proceed. Soft-draft via `?draft=$revId` (owner-only); editor keyed `draft-${revId}` vs `live`.
 
-### Body-fuzzy search (M10)
+### Body-fuzzy search
 - Orama index per space, persisted to IndexedDB (`tela > bodyIndexes > space-<id>:v1`); palette tier-3. Logout sweeps via `clearAllBodyIndexes()`.
 
-### OG / public share (M11, M15)
+### OG / public share
 - `/p/{id}`: UA-allowlist — bots get OG HTML, browsers 302 to `/pages/{id}`. `og_image.go` renders a 1200×630 PNG (package-level font, per-request face; no BiDi/RTL/emoji).
 - Public share **reuses the FE in share-mode** at `/share/{token}` (route off root, no session). Token = 32B random base64url (43 chars), DB-unique. Cookie `tela_share_{token}` = `HMAC-SHA256(token||\0||page_id||\0||password_hash, TELA_SHARE_SECRET)`, constant-time compared. Rate limit: in-memory bucket per (token, rightmost-XFF IP), 5/min; identical 404 for missing/revoked/expired/bad-shape.
 
-### Rich view (M13)
+### Rich view
 - Callouts (5 GitHub alert types), collapsibles (`<details>`), Excalidraw diagrams (sidecar `page_diagrams`, content-addressed PNG, `GET /api/diagrams/{page_id}/{file}` public+immutable, `PUT /api/pages/{id}/diagrams` editor+ 8 MiB PNG-magic-byte). Editor lazy-imports `@excalidraw/excalidraw`. Mermaid preserved as fenced code (not rendered).
 
-### Markdown import (M14)
+### Markdown import
 - `POST /api/spaces/{id}/import` (editor+), multipart `parent_id`/`dry_run`/`files`. Flatten-root pre-pass, parents-before-children, README-as-index, frontmatter→H1→filename title, `(2)`/`(3)` dedupe. FE Import tab uses raw `fetch()` (multipart), not `api()`.
 
-### Mira import (M18)
-- `POST /api/spaces/{id}/import-mira` (editor+), JSON `{parent_id?, source_url? | payload?}` (XOR enforced both layers). URL fetch: https-only host allowlist `TELA_MIRA_ALLOWED_HOSTS` (default `mira.cagdas.io`, empty = fail-closed), 5s / 1 MiB caps, Content-Type must be JSON, **no redirects** (`CheckRedirect: http.ErrUseLastResponse` — SSRF guard). Auto-appends `.json` to `/p/<slug>` URLs at ingress (`miraSlugPathRe`, allowlist-gated). Password-gated upstream (401 `password_required`) surfaces as 403 `mira_password_required` with an `unlock` URL (REST only; MCP strips it — parked #152). Converters: `convert.go` (14 Tier-1 block types), `tier2.go` (15 placeholders), unknown → stub. Title = first `heading_1`. Two FE entry points: Settings → Import "From mira", and a Milkdown paste-hook popover.
+### Mira import
+- `POST /api/spaces/{id}/import-mira` (editor+), JSON `{parent_id?, source_url? | payload?}` (XOR enforced both layers). URL fetch: https-only host allowlist `TELA_MIRA_ALLOWED_HOSTS` (default `mira.cagdas.io`, empty = fail-closed), 5s / 1 MiB caps, Content-Type must be JSON, **no redirects** (`CheckRedirect: http.ErrUseLastResponse` — SSRF guard). Auto-appends `.json` to `/p/<slug>` URLs at ingress (`miraSlugPathRe`, allowlist-gated). Password-gated upstream (401 `password_required`) surfaces as 403 `mira_password_required` with an `unlock` URL (REST only; the MCP client currently strips the `unlock` field). Converters: `convert.go` (14 Tier-1 block types), `tier2.go` (15 placeholders), unknown → stub. Title = first `heading_1`. Two FE entry points: Settings → Import "From mira", and a Milkdown paste-hook popover.
 
-### MCP (M16+)
+### MCP
 - `mcp/` subdir, ESM-only, Node ≥ 20, stdio transport. Thin client over REST with a bearer PAT; env `TELA_BASE_URL` + `TELA_API_KEY` required at spawn. 16 tools (read/write/space-CRUD/import/feedback). `tela://page/{id}` resource scheme matches the wikilink scheme. Startup fires an advisory `GET /api/version` compat check (never blocks; skips on non-semver like `dev`/SHAs). See `mcp/README.md` for the tool catalog.
 - **SDK quirks:** subpath imports must end in `.js` even from TS; `registerTool` handler return needs an index signature (use `ok()`/`fail()` helpers); stdout must stay clean JSON-RPC (logs → stderr).
 - **Release flow (headless, from `mcp/`):** `npm version patch --tag-version-prefix=tela-mcp-v && npm publish --access public`, then `git push --follow-tags` from repo root. **Hazards:** (1) verify `npm version` actually made the commit+tag (`git log -1` + `git tag --list 'tela-mcp-v*'`) — it can silently skip; (2) npm strips `bin` values starting with `./` — use `"tela-mcp": "dist/server.js"`; `npm publish --dry-run` first; (3) registry `@latest` has CDN lag — check `npm view tela-mcp versions --json`; (4) ESM entrypoint guard must `realpathSync(...)` both sides or npx-via-symlink exits 0 silently. Smoke via a temp symlink too.

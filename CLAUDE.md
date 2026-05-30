@@ -24,7 +24,7 @@ A self-hostable, markdown-native team wiki: Go + SQLite/FTS5 backend, React/TS f
   2. Theming via CSS custom properties on `[data-theme="..."]` — runtime switch, no rebuild.
   3. Radix + shadcn-style **owned** components only (`src/components/ui/`). No MUI/Chakra/Mantine/Ant/daisyUI.
   4. `@layer tokens, base, components, utilities` ordering is locked.
-  5. **Q8:** every new UI element uses owned primitives + tokens; missing primitive → build it (with a Storybook story) first.
+  5. Every new UI element uses owned primitives + tokens; missing primitive → build it (with a Storybook story) first.
   6. **Yjs is scoped:** imports allowed ONLY in `src/lib/collab/*` and the collab branch of `milkdown-editor.tsx`. Everything else explores pure-markdown / pure-SQL first.
 - **MCP:** tools wrap REST endpoints; row-returning write tools wrap the row in a named envelope (`{ page: ... }`, `{ space: ... }`, `{ comment: ... }`, `{ feedback: ... }`); sentinel returns use `{ ok: true }`. Publish flow + hazards in `docs/architecture.md` (MCP section).
 
@@ -46,7 +46,7 @@ SQLite is created + migrated on first backend start (no migrate step). Backend c
 
 ## Gotchas (learned the hard way — full list in docs/architecture.md)
 
-- **Deploy gap:** coder ships commit+push but do NOT run `make up`; prod silently runs the old binary. After any backend ship, `curl -s https://tela.cagdas.io/api/version` and compare `commit` to `git rev-parse --short HEAD`; if mismatch, `make up` then re-probe. Don't claim "live-verified" before this.
+- **Commit ≠ deploy:** pushing does not deploy — `make up` does. Prod can silently keep running the old binary after a merge. After any backend deploy, `curl -s https://tela.cagdas.io/api/version` and compare `commit` to `git rev-parse --short HEAD`; if mismatch, `make up` then re-probe. Don't claim "live-verified" before this.
 - **Secrets must be set and stable:** missing `TELA_API_KEY_SECRET`/`TELA_SHARE_SECRET` silently defaults to blank (compose only warns) → forgeable tokens. Rotating either invalidates outstanding PATs / share cookies. Diff `deploy/.env` against `.env.example` after any refresh.
 - **Public-path bypass:** `auth.IsPublicPath` is a `HasPrefix` check over `/share/`, `/p/`, `/api/share/`, `/api/diagrams/`. Any new route under these prefixes bypasses session middleware — it MUST self-authenticate.
 - **XFF / rate-limit:** Caddy is the only trusted upstream (`trusted_proxies static private_ranges`); backend reads the **rightmost** XFF hop, not leftmost.
