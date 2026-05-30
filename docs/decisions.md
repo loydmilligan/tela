@@ -20,7 +20,7 @@ Live collab without making CRDT state the source of truth. Yjs rebases onto cano
 ## D6 — Comments anchored by text, not positions
 Comments must survive edits and collab reflows. Anchor = `{prefix, exact, suffix}` text triplet resolved against the document text. → robust to position churn; both capture and resolve must use the identical `textBetween` serialization.
 
-## D7 — Owned design system (tokens + Radix/shadcn), the "Q8" rule
+## D7 — Owned design system (tokens + Radix/shadcn)
 Avoid heavyweight UI kits and ad-hoc styling. Semantic design tokens in `tokens.css`, theming via `[data-theme]`, owned Radix-based primitives only; every new UI element must use an owned primitive (build it with a Storybook story if missing). → consistent, themeable, no MUI/Chakra/etc.; some upfront primitive-building cost.
 
 ## D8 — Public share = reuse the frontend in share-mode

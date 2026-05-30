@@ -18,7 +18,7 @@ From the repo root, `make fe-dev` / `make storybook` wrap these, and `make dev` 
 
 - Design tokens in `src/styles/tokens.css`, semantic names only — never hardcode hex / raw px / radii.
 - Theming via CSS custom properties on `[data-theme="..."]`; `@layer tokens, base, components, utilities` ordering is locked.
-- Owned Radix + shadcn-style primitives in `src/components/ui/` only — no MUI/Chakra/Mantine/Ant/daisyUI. **Q8:** every new UI element uses an owned primitive (build it with a Storybook story first if missing).
+- Owned Radix + shadcn-style primitives in `src/components/ui/` only — no MUI/Chakra/Mantine/Ant/daisyUI. Every new UI element uses an owned primitive (build it with a Storybook story first if missing).
 - Yjs may be imported only in `src/lib/collab/*` and the collab branch of `milkdown-editor.tsx`.
 - State is TanStack Query; routing is TanStack Router (the command palette is a `RouterProvider` sibling — use `router.navigate()`).
 
