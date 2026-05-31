@@ -1,0 +1,270 @@
+---
+// EditorMock — a faithful representation of the tela app UI in the landing's
+// own tokens (NOT a screenshot): sidebar space/page tree, doc top-bar with
+// breadcrumb + live avatars, and a Milkdown-style markdown document. Lines carry
+// data-line indices so AgentWeave can materialize them one-by-one as the loom
+// threads sweep across. Used standalone in "show the product" too.
+interface Props {
+  /** when true, document lines start hidden (revealed by the weave script) */
+  staged?: boolean;
+  class?: string;
+}
+const { staged = false, class: klass = '' } = Astro.props;
+
+const tree = [
+  { label: 'Engineering', depth: 0, icon: 'space' },
+  { label: 'Runbooks', depth: 1, icon: 'page' },
+  { label: 'Incident response', depth: 1, icon: 'page', active: true },
+  { label: 'On-call rotation', depth: 1, icon: 'page' },
+  { label: 'Product', depth: 0, icon: 'space' },
+  { label: 'Roadmap Q3', depth: 1, icon: 'page' },
+];
+---
+
+<div class:list={['editor', { staged }, klass]} data-editor>
+  <!-- window chrome -->
+  <div class="chrome">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span class="chrome-url">tela.cagdas.io<span class="chrome-path">/engineering/incident-response</span></span>
+    <span class="chrome-live"><span class="live-dot"></span>2 editing</span>
+  </div>
+
+  <div class="body">
+    <!-- sidebar -->
+    <aside class="side">
+      <div class="side-search">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <span>Search…</span><kbd>⌘K</kbd>
+      </div>
+      <nav class="tree">
+        {tree.map((t) => (
+          <div class:list={['row', { active: t.active, space: t.icon === 'space' }]} style={`--d:${t.depth}`}>
+            {t.icon === 'space'
+              ? <svg class="ic" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+              : <svg class="ic" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v5h5"/><path d="M5 3h9l5 5v13H5z"/></svg>}
+            <span class="row-label">{t.label}</span>
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <!-- document -->
+    <section class="doc">
+      <div class="doc-top">
+        <span class="crumb">Engineering / Incident response</span>
+        <span class="avatars">
+          <span class="av av1">SK</span>
+          <span class="av av2">M</span>
+        </span>
+      </div>
+
+      <article class="prose">
+        <h1 data-line="0">Incident response</h1>
+        <p data-line="1">When a service degrades, the on-call engineer owns the timeline until handoff. Keep this page open during an incident.</p>
+        <div class="callout" data-line="2">
+          <span class="callout-ic">!</span>
+          <span>Page <strong>@on-call</strong> before paging anyone else. The rotation lives in the linked runbook.</span>
+        </div>
+        <h2 data-line="3">First five minutes</h2>
+        <ul>
+          <li data-line="4">Acknowledge the alert and post in <span class="mention">#incident</span>.</li>
+          <li data-line="5">Open a timeline below — every action gets a timestamp.</li>
+        </ul>
+        <pre class="code" data-line="6" tabindex="0" aria-label="terminal command"><span class="cl"><span class="tk">tela</span> incident open <span class="st">"api-latency"</span> --sev <span class="st">2</span></span></pre>
+        <p class="cursor-line" data-line="7"><span class="caret"></span></p>
+      </article>
+    </section>
+  </div>
+</div>
+
+<style>
+  .editor {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-frame);
+    overflow: hidden;
+    font-size: var(--text-sm);
+  }
+
+  .chrome {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 38px;
+    padding: 0 0.85rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-sunk);
+    color: var(--fg-faint);
+  }
+  .dot { width: 9px; height: 9px; border-radius: var(--radius-full); background: var(--border-strong); }
+  .chrome-url {
+    margin-left: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-faint);
+  }
+  .chrome-path { color: var(--fg-soft); }
+  .chrome-live {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-xs);
+    color: var(--accent);
+  }
+  .live-dot {
+    width: 7px; height: 7px;
+    border-radius: var(--radius-full);
+    background: var(--live-dot);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+
+  .body { display: grid; grid-template-columns: 168px 1fr; min-height: 320px; }
+
+  .side {
+    border-right: 1px solid var(--border);
+    background: var(--surface-sunk);
+    padding: 0.7rem 0.55rem;
+  }
+  .side-search {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--fg-faint);
+    font-size: var(--text-xs);
+    margin-bottom: 0.7rem;
+  }
+  .side-search kbd {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+  }
+  .tree { display: flex; flex-direction: column; gap: 1px; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.32rem 0.45rem;
+    padding-left: calc(0.45rem + var(--d) * 0.7rem);
+    border-radius: var(--radius-sm);
+    color: var(--fg-soft);
+    font-size: var(--text-xs);
+  }
+  .row.space { color: var(--fg-faint); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; }
+  .row.active { background: var(--brand-wash); color: var(--fg); }
+  .row.active .ic { color: var(--brand); }
+  .ic { flex: none; color: var(--fg-faint); }
+  .row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .doc { padding: 1.1rem 1.4rem 1.6rem; overflow: hidden; }
+  .doc-top {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .crumb { font-size: var(--text-xs); color: var(--fg-faint); }
+  .avatars { margin-left: auto; display: flex; }
+  .av {
+    width: 22px; height: 22px;
+    border-radius: var(--radius-full);
+    display: grid; place-items: center;
+    font-size: 10px; font-weight: 600;
+    color: var(--brand-fg);
+    border: 2px solid var(--surface);
+  }
+  .av1 { background: var(--brand); }
+  .av2 { background: var(--accent); color: var(--accent-fg); margin-left: -7px; }
+
+  .prose { color: var(--fg-soft); line-height: var(--leading-normal); }
+  .prose h1 {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--fg);
+    letter-spacing: var(--tracking-tight);
+    margin-bottom: 0.5rem;
+  }
+  .prose h2 {
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--fg);
+    margin: 1rem 0 0.4rem;
+  }
+  .prose p { margin: 0.4rem 0; }
+  .prose ul { margin: 0.3rem 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.25rem; }
+  .prose li { list-style: disc; }
+  .mention { color: var(--accent); }
+
+  .callout {
+    display: flex;
+    gap: 0.55rem;
+    padding: 0.6rem 0.75rem;
+    margin: 0.7rem 0;
+    border: 1px solid var(--pill-border);
+    border-left: 2px solid var(--brand);
+    border-radius: var(--radius-sm);
+    background: var(--brand-wash);
+    color: var(--fg);
+    font-size: var(--text-xs);
+  }
+  .callout strong { color: var(--brand-strong); }
+  .callout-ic {
+    flex: none;
+    width: 16px; height: 16px;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    color: var(--brand-fg);
+    display: grid; place-items: center;
+    font-size: 11px; font-weight: 700;
+  }
+
+  .code {
+    margin: 0.6rem 0;
+    padding: 0.6rem 0.75rem;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--leading-code);
+    color: var(--code-fg);
+    overflow-x: auto;
+  }
+  .code .tk { color: var(--code-token); }
+  .code .st { color: var(--code-string); }
+
+  .cursor-line { min-height: 1.2em; }
+  .caret {
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    vertical-align: text-bottom;
+    background: var(--brand);
+    animation: blink 1.1s steps(2, start) infinite;
+  }
+  @keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
+  /* Staged lines are VISIBLE by default (server-rendered static frame survives
+     no-JS / no-trigger). Only once AgentWeave's script arms the section
+     (.is-animating) do they hide, then reveal one-by-one via .lit as the loom
+     sweeps. Reduced-motion never arms → content just stays at rest. */
+  :global([data-agentweave].is-animating) .editor.staged [data-line] {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out);
+  }
+  :global([data-agentweave].is-animating) .editor.staged [data-line].lit {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .caret { animation: none; }
+  }
+</style>

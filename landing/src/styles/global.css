@@ -1,0 +1,157 @@
+@import url('tailwindcss');
+
+/* Design tokens (OKLCH, one-knob --brand-hue) + @theme exposure + base layer.
+   Imported AFTER tailwindcss so the @theme block extends Tailwind's theme and
+   the @layer base rules land in the right cascade layer. tokens.css is the
+   single source of truth — never hardcode color/spacing outside it. */
+@import url('./tokens.css');
+
+/* ── A11y: real, token-driven focus ring (keyboard users) ─────────────────── */
+:focus-visible {
+  outline: 2px solid var(--brand-strong);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* ── Document defaults (Tailwind preflight covers the reset) ───────────────── */
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizelegibility;
+  line-height: var(--leading-normal);
+  overflow-wrap: break-word;
+}
+
+img, svg, video, canvas, picture {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Theme-toggle crossfade — only during the toggle (class added briefly by
+   the toggle script), never on unrelated hover/focus. Reduced-motion bypasses. */
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition: background-color 240ms var(--ease-out),
+              color 240ms var(--ease-out),
+              border-color 240ms var(--ease-out),
+              box-shadow 240ms var(--ease-out),
+              fill 240ms var(--ease-out),
+              stroke 240ms var(--ease-out) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-transitioning *,
+  .theme-transitioning *::before,
+  .theme-transitioning *::after { transition: none !important; }
+}
+
+/* ── Shared section primitives (token-driven; components compose these) ────── */
+.section {
+  max-width: var(--col-max);
+  margin-inline: auto;
+  padding: var(--section-y) var(--space-gutter);
+}
+.section--tight { padding-block: 5rem; }
+
+.section-head {
+  max-width: 48rem;
+  margin-bottom: 2.75rem;
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-kicker);
+  color: var(--brand);
+  margin-bottom: 1rem;
+}
+
+.kicker-dot {
+  width: 6px; height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--brand);
+}
+
+.h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-snug);
+  color: var(--fg);
+  margin: 0;
+}
+
+.lede {
+  margin-top: 1.1rem;
+  font-size: var(--text-lg);
+  line-height: var(--leading-normal);
+  color: var(--fg-soft);
+  max-width: var(--measure);
+}
+
+.lede strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.codeblock {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-code);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg);
+  overflow-x: auto;
+}
+.codeblock .k { color: var(--code-token); }
+.codeblock .s { color: var(--code-string); }
+.codeblock .c { color: var(--fg-faint); }
+
+/* ── Scroll reveal — IntersectionObserver one-shot (compositor-only).
+   Hidden state is gated on html.js + no-preference, so:
+     • no JS              → content visible (never hidden).
+     • reduced-motion     → content visible (no transition).
+     • supported + motion → reveals once on entry; the .is-visible class PERSISTS,
+       so unlike a scroll-driven view() timeline there is no "stuck at partial
+       opacity" for elements near the page bottom that can't fully scroll. */
+@media (prefers-reduced-motion: no-preference) {
+  html.js .reveal-up {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+  }
+
+  html.js .reveal-up.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* sr-only utility for skip-link + visually-hidden labels */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

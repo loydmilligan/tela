@@ -1,0 +1,66 @@
+---
+// WovenBackdrop — tela's signature "loom" texture. A faint thread grid (warp +
+// weft) on the near-black canvas, with a soft earned-indigo glow and a radial
+// fade so it never competes with content. Pure CSS, no image, compositor-cheap,
+// decorative (aria-hidden). The animated *lit-thread* moment lives in AgentWeave.
+interface Props {
+  /** glow position, e.g. "50% 0%" (top-center) */
+  glow?: string;
+  /** extra classes on the wrapper */
+  class?: string;
+}
+const { glow = '50% -10%', class: klass = '' } = Astro.props;
+---
+
+<div class:list={['woven', klass]} aria-hidden="true" style={`--glow-at:${glow}`}>
+  <div class="woven-threads"></div>
+  <div class="woven-glow"></div>
+</div>
+
+<style>
+  .woven {
+    position: absolute;
+    inset: 0;
+    z-index: -10;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  /* Warp (vertical) + weft (horizontal) threads. Two repeating-linear-gradients
+     at --weave-cell spacing, thread width --weave-line, color --weave-ground.
+     A radial mask fades the grid toward the edges so it dissolves into the void. */
+  .woven-threads {
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        var(--weave-ground) 0,
+        var(--weave-ground) var(--weave-line),
+        transparent var(--weave-line),
+        transparent var(--weave-cell)
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        var(--weave-ground) 0,
+        var(--weave-ground) var(--weave-line),
+        transparent var(--weave-line),
+        transparent var(--weave-cell)
+      );
+    -webkit-mask-image: radial-gradient(120% 90% at var(--glow-at), #000 0%, transparent 72%);
+    mask-image: radial-gradient(120% 90% at var(--glow-at), #000 0%, transparent 72%);
+    opacity: 0.7;
+  }
+
+  /* Earned-indigo glow — a single soft radial wash. Rare, never neon. */
+  .woven-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      48% 38% at var(--glow-at),
+      var(--brand-wash) 0%,
+      transparent 70%
+    );
+    opacity: 0.65;
+  }
+</style>

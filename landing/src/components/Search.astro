@@ -1,0 +1,111 @@
+---
+// §8 — Search. Question-led, answer-first; a small command-palette mock as proof.
+const results = [
+  { title: 'Incident response', space: 'Engineering', snippet: 'Page <mark>@on-call</mark> before paging anyone else…' },
+  { title: 'On-call rotation', space: 'Engineering', snippet: 'The current <mark>on-call</mark> schedule rebuilds weekly…' },
+  { title: 'Postmortem: api-latency', space: 'Engineering', snippet: '…root cause traced to a slow <mark>query</mark> path…' },
+];
+---
+<section id="search" class="section">
+  <div class="grid">
+    <div class="copy reveal-up">
+      <p class="kicker"><span class="kicker-dot"></span>Search</p>
+      <h2 class="h2">How does search work?</h2>
+      <p class="lede">
+        Instant full-text search runs on <strong>SQLite FTS5</strong> in the backend — no
+        Elasticsearch, no external search to run or pay for. The command palette searches
+        titles and bodies with snippet highlights; an Orama index gives client-side fuzzy
+        search per space. Agents hit the same search through the <code>search</code> tool.
+      </p>
+      <p class="note"><code>⌘K</code> from anywhere · highlighted snippets · zero extra services</p>
+    </div>
+
+    <div class="palette-wrap reveal-up" aria-hidden="true">
+      <div class="palette">
+        <div class="pal-input">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <span class="pal-q">on-call<span class="pal-caret"></span></span>
+          <kbd>esc</kbd>
+        </div>
+        <ul class="pal-results">
+          {results.map((r, i) => (
+            <li class:list={['pal-row', { active: i === 0 }]}>
+              <svg class="pal-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v5h5"/><path d="M5 3h9l5 5v13H5z"/></svg>
+              <span class="pal-main">
+                <span class="pal-title">{r.title}</span>
+                <span class="pal-snip" set:html={r.snippet}></span>
+              </span>
+              <span class="pal-space">{r.space}</span>
+            </li>
+          ))}
+        </ul>
+        <div class="pal-foot"><span>FTS5 · 3 results · 4ms</span><span>↑↓ to navigate</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid { display: grid; grid-template-columns: 1fr; gap: 2.5rem; align-items: center; }
+  .note { margin-top: 1.4rem; font-size: var(--text-sm); color: var(--fg-faint); }
+  .note code, .copy code { font-family: var(--font-mono); color: var(--brand); }
+
+  .palette {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    overflow: hidden;
+  }
+  .pal-input {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg-faint);
+  }
+  .pal-q { color: var(--fg); font-size: var(--text-base); }
+  .pal-caret {
+    display: inline-block; width: 2px; height: 1.05em;
+    margin-left: 1px; vertical-align: text-bottom;
+    background: var(--brand);
+    animation: pblink 1.1s steps(2, start) infinite;
+  }
+  @keyframes pblink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+  .pal-input kbd {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+  }
+  .pal-results { display: flex; flex-direction: column; padding: 0.4rem; }
+  .pal-row {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: var(--radius-sm);
+  }
+  .pal-row.active { background: var(--brand-wash); }
+  .pal-ic { color: var(--fg-faint); flex: none; }
+  .pal-row.active .pal-ic { color: var(--brand); }
+  .pal-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .pal-title { color: var(--fg); font-size: var(--text-sm); }
+  .pal-snip { color: var(--fg-faint); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pal-snip :global(mark) { background: transparent; color: var(--brand); font-weight: 500; }
+  .pal-space { margin-left: auto; font-size: var(--text-xs); color: var(--fg-faint); flex: none; }
+  .pal-foot {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.55rem 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface-sunk);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-faint);
+  }
+  @media (min-width: 960px) { .grid { grid-template-columns: 1fr 1fr; gap: 3.5rem; } }
+</style>

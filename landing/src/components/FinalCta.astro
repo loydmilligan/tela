@@ -1,0 +1,66 @@
+---
+// §12 — Final CTA. The close, with the woven backdrop lighting up one last time.
+import WovenBackdrop from './WovenBackdrop.astro';
+---
+<section id="get-started" class="final">
+  <WovenBackdrop glow="50% 120%" />
+  <div class="inner reveal-up">
+    <h2 class="title">Give your agents a wiki they can write to.</h2>
+    <p class="sub">Self-host tela in a few minutes, or open the live instance first.</p>
+    <div class="ctas">
+      <a href="https://github.com/zcag/tela#readme" class="btn-primary" target="_blank" rel="noopener">
+        Self-host it <span class="arr" aria-hidden="true">→</span>
+      </a>
+      <a href="https://tela.cagdas.io/login" class="btn-ghost" target="_blank" rel="noopener">Try the live instance</a>
+    </div>
+    <p class="friction"><code>docker compose up</code> · one binary · your server, your markdown</p>
+  </div>
+</section>
+
+<style>
+  .final {
+    position: relative;
+    overflow: hidden;
+    border-top: 1px solid var(--border);
+  }
+  .inner {
+    max-width: 52rem;
+    margin-inline: auto;
+    padding: 7rem var(--space-gutter);
+    text-align: center;
+  }
+  .title {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 5vw, 3.25rem);
+    font-weight: 700;
+    letter-spacing: var(--tracking-display);
+    line-height: var(--leading-tight);
+    color: var(--fg);
+  }
+  .sub { margin-top: 1.2rem; font-size: var(--text-lg); color: var(--fg-soft); }
+  .ctas { margin-top: 2.2rem; display: flex; flex-wrap: wrap; gap: 0.85rem; justify-content: center; }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    height: 48px; padding: 0 1.5rem;
+    border-radius: var(--radius-sm);
+    background: var(--cta-bg); color: var(--cta-fg);
+    font-weight: 500; font-size: var(--text-base);
+    box-shadow: var(--glow-brand);
+    transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  }
+  .btn-primary:hover { background: var(--cta-bg-hover); }
+  .btn-primary:active { transform: translateY(1px); }
+  .btn-primary .arr { transition: transform var(--dur) var(--ease-out); }
+  .btn-primary:hover .arr { transform: translateX(3px); }
+  .btn-ghost {
+    display: inline-flex; align-items: center;
+    height: 48px; padding: 0 1.3rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--cta-ghost-border);
+    color: var(--fg); font-weight: 500; font-size: var(--text-base);
+    transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+  }
+  .btn-ghost:hover { border-color: var(--brand); background: var(--surface); }
+  .friction { margin-top: 1.6rem; font-size: var(--text-sm); color: var(--fg-faint); }
+  .friction code { font-family: var(--font-mono); color: var(--fg-soft); }
+</style>

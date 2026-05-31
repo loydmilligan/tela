@@ -1,0 +1,152 @@
+---
+// §5 — Honest comparison, as a table. Not a green-tick parity matrix: each row
+// names where tela genuinely wins AND the one thing that alternative still does
+// better. Stacks into labelled blocks on mobile.
+const rows = [
+  { n: 'Notion', edge: 'Plain markdown on your own server, and agents get a real read/write API — not a closed block store with a chat sidebar bolted on.', better: 'Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.' },
+  { n: 'Confluence', edge: 'One binary you run yourself in minutes — no enterprise install, no per-seat pricing, your data on your disk.', better: 'Jira integration, granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.' },
+  { n: 'Obsidian', edge: 'Built for a team: live multiplayer, a shared server, and an agent API — not a single-player vault you sync by hand.', better: 'Local-first single-user is its whole point; the plugin ecosystem and graph view are unmatched. Solo? Hard to beat.' },
+  { n: 'A git repo of markdown', edge: 'Live WYSIWYG editing, instant full-text search, comments, sharing, and an agent API — over the same markdown, no PR to read a doc.', better: 'Pure version control, free, zero infra. If you just want files in a repo, you already have one.' },
+  { n: 'Outline', edge: 'A built-in MCP server makes agents first-class, on canonical markdown in a single binary — no Postgres, no Redis, no separate search.', better: 'Mature and polished, with real Slack integration and a track record tela doesn’t have yet. The closest finished version of this.' },
+];
+---
+<section id="compare" class="section">
+  <div class="section-head reveal-up">
+    <p class="kicker"><span class="kicker-dot"></span>Compare</p>
+    <h2 class="h2">How does tela compare?</h2>
+    <p class="lede">Good tools, all of them. Here's where tela differs — and the one thing each still does better.</p>
+  </div>
+
+  <div class="cmp-wrap reveal-up">
+    <table class="cmp">
+      <thead>
+        <tr>
+          <th scope="col" class="col-name">Versus</th>
+          <th scope="col" class="col-edge">Where tela wins</th>
+          <th scope="col" class="col-better">What it still does better</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr>
+            <th scope="row" class="cmp-name">{r.n}</th>
+            <td class="cmp-edge" data-label="Where tela wins">
+              <svg class="tick" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>{r.edge}</span>
+            </td>
+            <td class="cmp-better" data-label="It still does better">{r.better}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="synth reveal-up">
+    None of them put all of it in one place: an agent-native MCP server, markdown you actually
+    own, live multiplayer, real full-text search — in a single binary you run yourself.
+    <strong>That combination is tela.</strong>
+  </p>
+</section>
+
+<style>
+  .cmp-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .cmp {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+  }
+  .cmp thead th {
+    text-align: left;
+    padding: 0.85rem 1.1rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+    background: var(--surface-sunk);
+    border-bottom: 1px solid var(--border);
+    vertical-align: bottom;
+  }
+  .cmp thead .col-edge { color: var(--brand); }
+  .cmp thead .col-name,
+  .cmp thead .col-better { color: var(--fg-faint); }
+
+  .cmp tbody tr { border-bottom: 1px solid var(--border); }
+  .cmp tbody tr:last-child { border-bottom: 0; }
+  .cmp td,
+  .cmp tbody th { padding: 1rem 1.1rem; vertical-align: top; text-align: left; }
+
+  .cmp-name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--text-base);
+    color: var(--fg);
+    width: 18%;
+    min-width: 8rem;
+  }
+  .cmp-edge {
+    color: var(--fg);
+    width: 45%;
+    background: var(--brand-wash);
+    border-inline: 1px solid var(--pill-border);
+  }
+  .cmp-edge span { display: inline; }
+  .cmp-edge .tick {
+    color: var(--brand);
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: 0.35rem;
+  }
+  .cmp-better { color: var(--fg-faint); width: 37%; }
+
+  .synth {
+    margin-top: 1.75rem;
+    max-width: 64ch;
+    margin-inline: auto;
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    line-height: var(--leading-snug);
+    color: var(--fg-soft);
+    letter-spacing: var(--tracking-tight);
+  }
+  .synth strong { color: var(--fg); font-weight: 600; }
+
+  /* ── Mobile: stack each row into a labelled block ─────────────────────── */
+  @media (max-width: 720px) {
+    .cmp-wrap { border: 0; background: transparent; overflow: visible; }
+    .cmp thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .cmp, .cmp tbody, .cmp tr, .cmp td, .cmp tbody th { display: block; width: auto; }
+    .cmp tr {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      margin-bottom: 0.85rem;
+      overflow: hidden;
+    }
+    .cmp-name {
+      font-size: var(--text-lg);
+      padding: 0.9rem 1.1rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      min-width: 0;
+    }
+    .cmp-edge, .cmp-better { border-inline: 0; }
+    .cmp td::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 0.3rem;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .cmp-edge::before { color: var(--brand); }
+    .cmp-better::before { color: var(--fg-faint); }
+  }
+</style>

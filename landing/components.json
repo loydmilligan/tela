@@ -1,0 +1,29 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "//": "tela landing component config. Premium registries below are pulled via the shadcn MCP / CLI. Each registry-item carries its own cssVars — after adding, reconcile tokens into src/styles/tokens.css (the single source of truth). Astro renders React/TSX items as islands (client:*); @astrojs/react is wired.",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/tokens.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "registries": {
+    "@magicui": "https://magicui.design/r/{name}.json",
+    "@aceternity": "https://ui.aceternity.com/registry/{name}.json",
+    "@origin": "https://originui.com/r/{name}.json",
+    "@cult": "https://cult-ui.com/r/{name}.json",
+    "@reactbits": "https://reactbits.dev/r/{name}.json"
+  }
+}

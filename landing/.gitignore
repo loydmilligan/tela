@@ -1,0 +1,19 @@
+# build output
+dist/
+.astro/
+
+# deps
+node_modules/
+
+# gate artifacts
+.gate-report/
+.gate-results/
+.lighthouseci/
+playwright-report/
+test-results/
+
+# env / os
+.env
+.env.*
+.DS_Store
+tooling/shots/

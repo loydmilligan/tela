@@ -1,0 +1,203 @@
+---
+import WovenBackdrop from './WovenBackdrop.astro';
+import EditorMock from './EditorMock.astro';
+---
+
+<section class="hero">
+  <WovenBackdrop glow="62% -6%" />
+
+  <div class="inner">
+    <div class="copy">
+      <p class="eyebrow reveal">
+        <span class="dot"></span>
+        Markdown-native · self-hosted · MCP built in
+      </p>
+
+      <h1 class="headline reveal">
+        The wiki your<br />
+        agents can <span class="ink">write to.</span>
+      </h1>
+
+      <p class="sub reveal">
+        A self-hostable, markdown-native team wiki with a built-in MCP server — agents read,
+        write, and search alongside the team. Live multiplayer, instant search, one binary.
+        Your data, your server.
+      </p>
+
+      <div class="ctas reveal">
+        <a href="#self-host" class="btn-primary">
+          Self-host it
+          <span class="arr" aria-hidden="true">→</span>
+        </a>
+        <a href="https://tela.cagdas.io/login" class="btn-ghost" target="_blank" rel="noopener">
+          Try the live instance
+        </a>
+      </div>
+
+      <p class="proof reveal">
+        <code>docker compose up</code> · one binary + SQLite · no Postgres, no SaaS
+      </p>
+    </div>
+
+    <div class="art reveal">
+      <div class="art-float">
+        <span class="agent-chip">
+          <span class="ac-dot"></span>
+          agent committed <strong>incident-response</strong>
+        </span>
+      </div>
+      <EditorMock class="hero-editor" />
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+  .inner {
+    max-width: var(--col-max);
+    margin-inline: auto;
+    padding: 4.5rem var(--space-gutter) 5rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3rem;
+    align-items: center;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--pill-border);
+    border-radius: var(--radius-full);
+    background: var(--pill-bg);
+    color: var(--fg-soft);
+    font-size: var(--text-sm);
+    margin-bottom: 1.5rem;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--brand); }
+
+  .headline {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(2.5rem, 7vw, 4.25rem);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-display);
+    color: var(--fg);
+    margin: 0;
+  }
+  .headline .ink {
+    color: var(--brand);
+    position: relative;
+  }
+
+  .sub {
+    margin-top: 1.5rem;
+    max-width: var(--measure);
+    font-size: var(--text-lg);
+    line-height: var(--leading-normal);
+    color: var(--fg-soft);
+  }
+
+  .ctas {
+    margin-top: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+  }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 46px;
+    padding: 0 1.4rem;
+    border-radius: var(--radius-sm);
+    background: var(--cta-bg);
+    color: var(--cta-fg);
+    font-weight: 500;
+    font-size: var(--text-base);
+    box-shadow: var(--glow-brand);
+    transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  }
+  .btn-primary:hover { background: var(--cta-bg-hover); }
+  .btn-primary:active { transform: translateY(1px); }
+  .btn-primary .arr { transition: transform var(--dur) var(--ease-out); }
+  .btn-primary:hover .arr { transform: translateX(3px); }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    height: 46px;
+    padding: 0 1.25rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--cta-ghost-border);
+    color: var(--fg);
+    font-weight: 500;
+    font-size: var(--text-base);
+    transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+  }
+  .btn-ghost:hover { border-color: var(--brand); background: var(--surface); }
+
+  .proof {
+    margin-top: 1.6rem;
+    font-size: var(--text-sm);
+    color: var(--fg-faint);
+  }
+  .proof code {
+    font-family: var(--font-mono);
+    color: var(--fg-soft);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 0.1rem 0.4rem;
+  }
+
+  /* product art */
+  .art { position: relative; }
+  .art-float {
+    position: absolute;
+    z-index: 3;
+    right: 0.5rem;
+    top: -1.1rem;
+  }
+  .agent-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--pill-border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    font-size: var(--text-xs);
+    color: var(--fg-soft);
+  }
+  .agent-chip strong { color: var(--brand); font-weight: 600; }
+  .ac-dot {
+    width: 7px; height: 7px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+
+  @media (min-width: 980px) {
+    .inner { grid-template-columns: 1.04fr 0.96fr; gap: 3.5rem; padding-top: 6rem; padding-bottom: 6.5rem; }
+    .art { margin-right: -1rem; }
+  }
+
+  /* one orchestrated load reveal — compositor-only, reduced-motion-guarded */
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(14px); animation: rise 0.7s var(--ease-out) forwards; }
+    .copy .reveal:nth-child(1) { animation-delay: 0.02s; }
+    .copy .reveal:nth-child(2) { animation-delay: 0.10s; }
+    .copy .reveal:nth-child(3) { animation-delay: 0.18s; }
+    .copy .reveal:nth-child(4) { animation-delay: 0.26s; }
+    .copy .reveal:nth-child(5) { animation-delay: 0.34s; }
+    .art.reveal { animation-delay: 0.30s; }
+  }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+</style>

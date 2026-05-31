@@ -8,7 +8,8 @@ TELA_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo
 TELA_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 EXPORT_BUILD := TELA_VERSION=$(TELA_VERSION) TELA_COMMIT=$(TELA_COMMIT)
 
-.PHONY: up down logs build clean dev be-dev fe-dev storybook help test-mcp-integration
+.PHONY: up down logs build clean dev be-dev fe-dev storybook help test-mcp-integration \
+        landing-dev landing-build landing-gate landing-clean
 
 help:
 	@echo "tela — common targets"
@@ -22,8 +23,13 @@ help:
 	@echo "  make fe-dev     # run frontend in dev mode (vite)"
 	@echo "  make storybook  # run Storybook for the frontend"
 	@echo "  make test-mcp-integration  # live MCP <-> backend E2E (boots stack, runs tests, tears down)"
+	@echo "  make landing-dev    # run the marketing landing (Astro) dev server on :4321"
+	@echo "  make landing-build  # build the static landing into landing/dist/"
+	@echo "  make landing-gate   # run the landing production gates (a11y, tokens, motion, lighthouse)"
 
-up:
+# `up` builds the marketing landing first so the proxy's /srv/landing mount is
+# populated (Caddy serves it at the apex). The app images build via compose.
+up: landing-build
 	$(EXPORT_BUILD) $(COMPOSE) up -d --build
 
 down:
@@ -56,6 +62,21 @@ dev:
 
 storybook:
 	cd frontend && npm run storybook
+
+# ── Marketing landing (standalone Astro in landing/) ────────────────────────
+# Separate static build from the app (backend/ + frontend/). Deployed as static
+# files; the apex / serves this, the app keeps /login, /spaces, /share, etc.
+landing-dev:
+	cd landing && npm run dev
+
+landing-build:
+	cd landing && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci && npm run build
+
+landing-gate:
+	cd landing && npm run gate
+
+landing-clean:
+	rm -rf landing/dist landing/node_modules landing/.astro
 
 # M16.C.2 — live integration test for the MCP server against a real backend.
 # Boots the stack with -p tela-test (isolated volumes), seeds deterministic

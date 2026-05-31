@@ -1,0 +1,570 @@
+---
+// §3 — "Not an AI gimmick" + the visual feature bento, as ONE section. The
+// dismissal line leads straight into a bento of real, demonstrated features:
+// live multiplayer, instant full-text search, the link graph, canonical
+// markdown, version history, diagrams. Each cell is a token-driven visual, not
+// an icon. Planned features carry an honest "Planned" tag.
+const searchResults = [
+  { t: 'Deploy runbook', s: 'Engineering', sn: '…rebuild and <mark>deploy</mark> on :8780, then re-probe' },
+  { t: 'Incident response', s: 'Engineering', sn: 'page @on-call before <mark>deploy</mark>ing anyone else' },
+  { t: 'Release checklist', s: 'Product', sn: 'tag, <mark>deploy</mark>, verify /api/version matches' },
+  { t: 'Edge cache notes', s: 'Infra', sn: 'Cloudflare purges on every <mark>deploy</mark>' },
+];
+---
+<section id="features" class="bento-section">
+  <div class="bento-head reveal-up">
+    <p class="kicker"><span class="kicker-dot"></span>Features</p>
+    <h2 class="bento-title">
+      And it's not just<br /><span class="accent">“slap AI on it and call it a product.”</span>
+    </h2>
+    <p class="bento-sub">Here's what tela can do.</p>
+  </div>
+
+  <div class="bento">
+
+    <!-- ── Live multiplayer ─────────────────────────────────────────── -->
+    <article class="cell cell-collab reveal-up">
+      <div class="viz collab">
+        <div class="collab-top">
+          <span class="crumb">Engineering / Release checklist</span>
+          <span class="collab-live"><span class="dot"></span>3 editing</span>
+        </div>
+        <div class="collab-doc">
+          <p class="ln"><span class="h">Ship checklist</span></p>
+          <p class="ln">Tag the release, then <span class="sel">push the image and re-probe</span><span class="caret a"><span class="flag fa">Sam</span></span></p>
+          <p class="ln">Verify <code>/api/version</code><span class="cmt"> matches HEAD<span class="cmt-pin"></span></span></p>
+          <p class="ln">Purge the edge cache last<span class="caret b"><span class="flag fb">Lee</span></span></p>
+          <p class="ln muted">Roll back in one click if it drifts</p>
+        </div>
+        <div class="cmt-card" aria-hidden="true">
+          <span class="cmt-av">L</span><span class="cmt-txt"><b>Lee</b> does this auto-purge?</span>
+        </div>
+      </div>
+      <div class="cap">
+        <h3>Real-time multiplayer</h3>
+        <p>Live cursors and edits over Yjs. Comments anchor to the text — they don't drift when the page is edited.</p>
+      </div>
+    </article>
+
+    <!-- ── Instant full-text search ─────────────────────────────────── -->
+    <article class="cell cell-search reveal-up">
+      <div class="viz srch">
+        <div class="srch-bar">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <span class="q">deploy<span class="qcaret"></span></span>
+          <kbd>FTS5</kbd>
+        </div>
+        <ul class="srch-results">
+          {searchResults.map((r, i) => (
+            <li class:list={['srow', { active: i === 0 }]}>
+              <svg class="ic" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v5h5"/><path d="M5 3h9l5 5v13H5z"/></svg>
+              <span class="main">
+                <span class="rt">{r.t}<span class="sp">{r.s}</span></span>
+                <span class="sn" set:html={r.sn}></span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div class="srch-foot"><span>1,240 pages</span><span>· 3&nbsp;ms · no Elasticsearch</span></div>
+      </div>
+      <div class="cap">
+        <h3>Instant full-text search</h3>
+        <p>SQLite FTS5 over every title and body. No Elasticsearch, no second service to run.</p>
+      </div>
+    </article>
+
+    <!-- ── The link graph (planned) ─────────────────────────────────── -->
+    <article class="cell cell-graph reveal-up">
+      <span class="tag-planned">Planned</span>
+      <div class="viz graph">
+        <svg viewBox="0 0 360 210" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A knowledge graph of linked pages">
+          <g class="edges">
+            <line x1="180" y1="105" x2="80"  y2="48"/>
+            <line x1="180" y1="105" x2="300" y2="60"/>
+            <line x1="180" y1="105" x2="86"  y2="165"/>
+            <line x1="180" y1="105" x2="292" y2="158"/>
+            <line x1="180" y1="105" x2="180" y2="30"/>
+            <line class="dim" x1="80"  y1="48"  x2="180" y2="30"/>
+            <line class="dim" x1="300" y1="60"  x2="292" y2="158"/>
+            <line class="dim" x1="86"  y1="165" x2="292" y2="158"/>
+          </g>
+          <g class="nodes">
+            <circle class="n" cx="80"  cy="48"  r="6"/>
+            <circle class="n" cx="300" cy="60"  r="6"/>
+            <circle class="n" cx="86"  cy="165" r="6"/>
+            <circle class="n" cx="292" cy="158" r="6"/>
+            <circle class="n" cx="180" cy="30"  r="5"/>
+            <circle class="hub" cx="180" cy="105" r="11"/>
+          </g>
+          <g class="labels">
+            <text x="180" y="134">Incident response</text>
+            <text class="sm" x="80"  y="34">On-call</text>
+            <text class="sm" x="300" y="46">Runbook</text>
+            <text class="sm" x="86"  y="184">Postmortem</text>
+          </g>
+        </svg>
+      </div>
+      <div class="cap">
+        <h3>The link graph</h3>
+        <p>Backlinks exist on every page today. The graph that draws them is on the roadmap.</p>
+      </div>
+    </article>
+
+    <!-- ── Templates (planned) ──────────────────────────────────────── -->
+    <article class="cell cell-templates reveal-up">
+      <span class="tag-planned">Planned</span>
+      <div class="viz tmpl">
+        <div class="tmpl-bar">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          New page from template
+        </div>
+        <ul class="tmpl-list">
+          <li class="active"><span class="ti">RB</span>Runbook</li>
+          <li><span class="ti">RFC</span>Design RFC</li>
+          <li><span class="ti">PM</span>Postmortem</li>
+          <li><span class="ti">MTG</span>Meeting notes</li>
+        </ul>
+      </div>
+      <div class="cap">
+        <h3>Start from a template</h3>
+        <p>Scaffold runbooks, RFCs, and postmortems in a click. On the roadmap.</p>
+      </div>
+    </article>
+
+    <!-- ── Tasks roll-up (planned) ──────────────────────────────────── -->
+    <article class="cell cell-tasks reveal-up">
+      <span class="tag-planned">Planned</span>
+      <div class="viz tasks">
+        <div class="tasks-head"><b>12 open</b><span>· across 5 pages</span></div>
+        <ul class="tasklist">
+          <li class="done"><span class="cb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>Cut the v0.4 release<span class="pg">Release</span></li>
+          <li><span class="cb"></span>Purge the edge cache<span class="pg">Runbook</span></li>
+          <li><span class="cb"></span>Confirm on-call rotation<span class="pg">On-call</span></li>
+          <li class="done"><span class="cb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>Write the postmortem<span class="pg">Incident</span></li>
+        </ul>
+      </div>
+      <div class="cap">
+        <h3>Tasks that roll up</h3>
+        <p>Checkboxes anywhere in your markdown collect into one view. On the roadmap.</p>
+      </div>
+    </article>
+
+    <!-- ── Markdown, canonical ──────────────────────────────────────── -->
+    <article class="cell cell-md reveal-up">
+      <div class="viz mdviz">
+        <pre class="mdcode" tabindex="0" aria-label="canonical markdown source"><code><span class="k"># Incident response</span>
+
+When a service degrades, the
+<span class="b">**on-call engineer**</span> owns it.
+
+<span class="g">&gt; [!note]</span> Page @on-call first.
+
+<span class="c">`tela incident open`</span></code></pre>
+      </div>
+      <div class="cap">
+        <h3>Markdown all the way down</h3>
+        <p>Plain markdown — no block model, no lock-in. Grep it, diff it, export it.</p>
+      </div>
+    </article>
+
+    <!-- ── Version history ──────────────────────────────────────────── -->
+    <article class="cell cell-history reveal-up">
+      <div class="viz hist">
+        <ol class="timeline">
+          <li class="now"><span class="d"></span><span class="vmeta"><b>Now</b> · Sam</span><span class="restore">current</span></li>
+          <li><span class="d"></span><span class="vmeta">2h ago · Lee</span><span class="restore">Restore</span></li>
+          <li><span class="d"></span><span class="vmeta">Yesterday · Sam</span><span class="restore">Restore</span></li>
+          <li class="muted"><span class="d"></span><span class="vmeta">3 days ago · agent</span><span class="restore">Restore</span></li>
+        </ol>
+      </div>
+      <div class="cap">
+        <h3>History &amp; one-click revisions</h3>
+        <p>Every change auto-snapshots. Read any version, diff it, roll back.</p>
+      </div>
+    </article>
+
+    <!-- ── Diagrams ─────────────────────────────────────────────────── -->
+    <article class="cell cell-diagram reveal-up">
+      <div class="viz diag">
+        <svg viewBox="0 0 300 150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A flow diagram embedded in a page">
+          <defs>
+            <marker id="ah" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 6 3 0 6z" fill="currentColor"/></marker>
+          </defs>
+          <g class="flow">
+            <rect class="box" x="14"  y="58" width="74" height="34" rx="6"/>
+            <text x="51"  y="79">edit</text>
+            <rect class="box hl" x="113" y="58" width="74" height="34" rx="6"/>
+            <text x="150" y="79">save</text>
+            <rect class="box" x="212" y="20" width="74" height="34" rx="6"/>
+            <text x="249" y="41">render</text>
+            <rect class="box" x="212" y="96" width="74" height="34" rx="6"/>
+            <text x="249" y="117">commit</text>
+            <path class="arr" d="M88 75 H113" marker-end="url(#ah)"/>
+            <path class="arr" d="M187 70 C202 60 200 42 212 38" marker-end="url(#ah)"/>
+            <path class="arr" d="M187 80 C202 92 200 108 212 113" marker-end="url(#ah)"/>
+          </g>
+        </svg>
+      </div>
+      <div class="cap">
+        <h3>Diagrams inline</h3>
+        <p>Excalidraw renders in the page. Mermaid round-trips today, renders soon.</p>
+      </div>
+    </article>
+
+    <!-- ── Integrations banner (planned) ────────────────────────────── -->
+    <article class="cell cell-integrations reveal-up">
+      <span class="tag-planned">Planned</span>
+      <div class="viz integ">
+        <div class="integ-cards">
+          <div class="unfurl">
+            <span class="uf-ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2 22 12 12 22 2 12z" opacity="0.9"/></svg>
+            </span>
+            <span class="uf-main">
+              <span class="uf-t">PROJ-142 — Rate-limit the share API</span>
+              <span class="uf-m"><span class="uf-status">In Progress</span> · Sam</span>
+            </span>
+          </div>
+          <div class="unfurl">
+            <span class="uf-ic" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+            </span>
+            <span class="uf-main">
+              <span class="uf-t">#149 — https-only mira paste</span>
+              <span class="uf-m"><span class="uf-status merged">Merged</span> · zcag</span>
+            </span>
+          </div>
+        </div>
+        <div class="integ-chips">
+          <span class="ichip">Jira</span>
+          <span class="ichip">GitHub</span>
+          <span class="ichip">Slack</span>
+          <span class="ichip">Teams</span>
+        </div>
+      </div>
+      <div class="cap cap-wide">
+        <h3>Connects to your stack</h3>
+        <p>Paste a Jira issue, GitHub PR, or Figma link → it unfurls into a live card. Notify Slack or Teams when a page changes. On the roadmap.</p>
+      </div>
+    </article>
+
+    <!-- ── Portability banner (real) ────────────────────────────────── -->
+    <article class="cell cell-import reveal-up">
+      <div class="viz import">
+        <div class="imp-side imp-files">
+          <span class="imp-dir"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>/team-docs</span>
+          <span class="imp-f">runbook.md</span>
+          <span class="imp-f">rfc-012.md</span>
+          <span class="imp-f">on-call.md</span>
+        </div>
+        <svg class="imp-flow" viewBox="0 0 60 24" fill="none" stroke="var(--brand)" stroke-width="1.6" aria-hidden="true"><path d="M2 12h50" stroke-dasharray="4 4"/><path d="M48 6l8 6-8 6"/></svg>
+        <div class="imp-side imp-pages">
+          <span class="imp-p"><span class="pd"></span>Runbook</span>
+          <span class="imp-p"><span class="pd"></span>Design RFC</span>
+          <span class="imp-p"><span class="pd"></span>On-call</span>
+        </div>
+      </div>
+      <div class="cap cap-wide">
+        <h3>Bring your markdown — and take it back</h3>
+        <p>Import a whole directory; export any time. Plain files in, plain files out — leaving tela means copying files, not a migration.</p>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<style>
+  .bento-section {
+    max-width: var(--col-max);
+    margin-inline: auto;
+    padding: var(--section-y) var(--space-gutter);
+    scroll-margin-top: 5rem;
+  }
+  .bento-head { max-width: 50rem; margin-bottom: 2.5rem; }
+  .bento-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.85rem, 4.4vw, 3rem);
+    font-weight: 700;
+    letter-spacing: var(--tracking-display);
+    line-height: var(--leading-tight);
+    color: var(--fg);
+    /* wide enough that the quoted line sits on ONE line at desktop; it still
+       wraps naturally (no overflow) on narrow screens. */
+    max-width: 44ch;
+  }
+  .bento-title .accent { color: var(--brand); }
+  .bento-sub {
+    margin-top: 1.1rem;
+    font-size: var(--text-lg);
+    color: var(--fg-soft);
+    max-width: var(--measure);
+  }
+
+  /* ── bento grid ───────────────────────────────────────────────────── */
+  .bento {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    overflow: hidden;
+    min-height: 230px;
+  }
+  .viz {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    padding: 1rem 1.1rem;
+    overflow: hidden;
+  }
+  .cap {
+    padding: 0.9rem 1.2rem 1.2rem;
+    border-top: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface-sunk) 60%, var(--surface));
+  }
+  .cap h3 {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--fg);
+    letter-spacing: var(--tracking-tight);
+  }
+  .cap p { margin-top: 0.35rem; font-size: var(--text-sm); color: var(--fg-faint); line-height: var(--leading-normal); }
+
+  .tag-planned {
+    position: absolute;
+    top: 0.9rem; right: 0.9rem;
+    z-index: 3;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.18rem 0.45rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-xs);
+    color: var(--fg-faint);
+    background: var(--surface);
+  }
+
+  @media (min-width: 760px) {
+    .bento { grid-template-columns: repeat(6, 1fr); grid-auto-flow: row dense; }
+    .cell-collab    { grid-column: span 4; min-height: 290px; }
+    .cell-search    { grid-column: span 2; grid-row: span 2; }
+    .cell-graph     { grid-column: span 4; min-height: 250px; }
+    .cell-templates { grid-column: span 3; }
+    .cell-tasks     { grid-column: span 3; }
+    .cell-md        { grid-column: span 2; }
+    .cell-history   { grid-column: span 2; }
+    .cell-diagram   { grid-column: span 2; }
+    .cell-import,
+    .cell-integrations { grid-column: span 6; min-height: 0; flex-direction: row; align-items: stretch; }
+    .cell-import .viz,
+    .cell-integrations .viz { flex: 1.1; }
+    .cell-import .cap-wide,
+    .cell-integrations .cap-wide {
+      flex: 1; max-width: 48%;
+      border-top: 0; border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; justify-content: center;
+    }
+  }
+
+  /* ── integrations viz ─────────────────────────────────────────────── */
+  .integ { display: flex; flex-direction: column; gap: 0.7rem; justify-content: center; height: 100%; min-height: 130px; }
+  .integ-cards { display: flex; flex-direction: column; gap: 0.5rem; }
+  .unfurl {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-sunk);
+  }
+  .uf-ic { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: var(--radius-xs); background: var(--surface-hi); color: var(--fg-soft); }
+  .uf-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .uf-t { font-size: var(--text-sm); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .uf-m { font-size: var(--text-xs); color: var(--fg-faint); }
+  .uf-status { color: var(--accent); }
+  .uf-status.merged { color: var(--brand); }
+  .integ-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .ichip {
+    padding: 0.3rem 0.65rem; border: 1px solid var(--border-strong); border-radius: var(--radius-full);
+    font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-soft);
+  }
+
+  /* ── templates viz ────────────────────────────────────────────────── */
+  .tmpl { display: flex; flex-direction: column; gap: 0.7rem; }
+  .tmpl-bar {
+    display: inline-flex; align-items: center; gap: 0.4rem; width: fit-content;
+    padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-sunk); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint);
+  }
+  .tmpl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .tmpl-list li {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: var(--text-sm); color: var(--fg-soft);
+  }
+  .tmpl-list li.active { border-color: var(--brand); background: var(--brand-wash); color: var(--fg); }
+  .ti { font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 4px; border-radius: var(--radius-xs); background: var(--surface-sunk); color: var(--fg-soft); flex: none; }
+  .tmpl-list li.active .ti { background: var(--brand); color: var(--brand-fg); }
+
+  /* ── tasks viz ────────────────────────────────────────────────────── */
+  .tasks { display: flex; flex-direction: column; gap: 0.6rem; }
+  .tasks-head { font-size: var(--text-sm); color: var(--fg-faint); }
+  .tasks-head b { color: var(--fg); }
+  .tasks-head span { margin-left: 0.3rem; }
+  .tasklist { display: flex; flex-direction: column; gap: 0.4rem; }
+  .tasklist li { display: flex; align-items: center; gap: 0.55rem; font-size: var(--text-sm); color: var(--fg-soft); }
+  .cb { width: 15px; height: 15px; border-radius: var(--radius-xs); border: 1.5px solid var(--border-strong); display: grid; place-items: center; flex: none; color: var(--brand-fg); }
+  .tasklist li.done .cb { background: var(--brand); border-color: var(--brand); }
+  .tasklist li.done { color: var(--fg-faint); text-decoration: line-through; }
+  .pg { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint); }
+
+  /* ── import banner viz ────────────────────────────────────────────── */
+  .import { display: flex; align-items: center; justify-content: center; gap: 1.1rem; height: 100%; min-height: 130px; }
+  .imp-side { display: flex; flex-direction: column; gap: 0.35rem; }
+  .imp-dir { display: inline-flex; align-items: center; gap: 0.35rem; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-soft); }
+  .imp-f { padding-left: 1.1rem; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint); }
+  .imp-flow { width: 56px; flex: none; }
+  .imp-p { display: flex; align-items: center; gap: 0.45rem; font-size: var(--text-sm); color: var(--fg); }
+  .imp-p .pd { width: 7px; height: 7px; border-radius: 2px; background: var(--brand); flex: none; }
+
+  /* ── collab viz ───────────────────────────────────────────────────── */
+  .collab { display: flex; flex-direction: column; font-size: var(--text-sm); }
+  .collab-top {
+    display: flex; align-items: center;
+    padding-bottom: 0.7rem; margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .collab-top .crumb { font-size: var(--text-xs); color: var(--fg-faint); }
+  .collab-live {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 0.35rem;
+    font-size: var(--text-xs); color: var(--accent);
+  }
+  .collab-live .dot { width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--accent); }
+  .collab-doc { display: flex; flex-direction: column; gap: 0.4rem; color: var(--fg-soft); line-height: 1.5; }
+  .collab-doc .h { color: var(--fg); font-weight: 600; font-family: var(--font-display); }
+  .collab-doc code { font-family: var(--font-mono); font-size: 0.9em; color: var(--brand); }
+  .collab-doc .muted { color: var(--fg-faint); }
+  .collab-doc .sel { background: color-mix(in oklab, var(--accent) 24%, transparent); border-radius: 2px; padding: 0 1px; }
+
+  .caret { position: relative; display: inline-block; width: 2px; height: 1.05em; vertical-align: -2px; margin-left: 1px; }
+  .caret.a { background: var(--brand); }
+  .caret.b { background: var(--accent); }
+  .flag {
+    position: absolute; bottom: 100%; left: -1px;
+    font-size: 10px; line-height: 1; white-space: nowrap;
+    padding: 2px 4px; border-radius: 3px 3px 3px 0;
+    color: var(--brand-fg);
+  }
+  .flag.fa { background: var(--brand); }
+  .flag.fb { background: var(--accent); color: var(--accent-fg); }
+
+  .cmt { background: color-mix(in oklab, var(--brand) 16%, transparent); border-bottom: 1px dashed var(--brand); position: relative; }
+  .cmt-pin {
+    position: absolute; top: -3px; right: -7px;
+    width: 11px; height: 11px; border-radius: var(--radius-full) var(--radius-full) var(--radius-full) 0;
+    background: var(--brand);
+  }
+  .cmt-card {
+    position: absolute; right: 0.9rem; bottom: 0.9rem;
+    display: flex; align-items: center; gap: 0.5rem;
+    max-width: 62%;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--pill-border);
+    border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) 0;
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    font-size: var(--text-xs);
+  }
+  .cmt-av { width: 18px; height: 18px; border-radius: var(--radius-full); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 9px; font-weight: 700; flex: none; }
+  .cmt-txt { color: var(--fg-soft); }
+  .cmt-txt b { color: var(--fg); }
+
+  /* ── search viz ───────────────────────────────────────────────────── */
+  .srch { display: flex; flex-direction: column; height: 100%; }
+  .srch-bar {
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.6rem 0.7rem; margin: -0.3rem -0.3rem 0.6rem;
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    color: var(--fg-faint); background: var(--surface-sunk);
+  }
+  .srch-bar .q { color: var(--fg); }
+  .srch-bar .qcaret { display: inline-block; width: 2px; height: 1em; margin-left: 1px; vertical-align: -2px; background: var(--brand); animation: bk 1.1s steps(2) infinite; }
+  .srch-bar kbd { margin-left: auto; font-family: var(--font-mono); font-size: 10px; padding: 1px 5px; border: 1px solid var(--border); border-radius: var(--radius-xs); color: var(--brand); }
+  .srch-results { display: flex; flex-direction: column; gap: 1px; flex: 1; }
+  .srow { display: flex; gap: 0.55rem; padding: 0.5rem 0.55rem; border-radius: var(--radius-sm); }
+  .srow.active { background: var(--brand-wash); }
+  .srow .ic { color: var(--fg-faint); flex: none; margin-top: 2px; }
+  .srow.active .ic { color: var(--brand); }
+  .srow .main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .srow .rt { color: var(--fg); font-size: var(--text-sm); display: flex; align-items: baseline; gap: 0.5rem; }
+  .srow .sp { font-size: var(--text-xs); color: var(--fg-faint); }
+  .srow .sn { font-size: var(--text-xs); color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srow .sn :global(mark) { background: transparent; color: var(--brand); font-weight: 500; }
+  .srch-foot {
+    display: flex; justify-content: space-between; gap: 0.5rem;
+    margin: 0.6rem -0.3rem -0.3rem;
+    padding: 0.55rem 0.6rem; border-top: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint);
+  }
+
+  /* ── graph viz ────────────────────────────────────────────────────── */
+  .graph { display: grid; place-items: center; padding: 0.5rem; }
+  .graph svg { width: 100%; height: 100%; max-height: 210px; }
+  .graph .edges line { stroke: var(--border-strong); stroke-width: 1.4; }
+  .graph .edges line.dim { stroke: var(--border); }
+  .graph .nodes .n { fill: var(--surface-hi); stroke: var(--fg-faint); stroke-width: 1.4; }
+  .graph .nodes .hub {
+    fill: var(--brand); stroke: var(--brand-fg); stroke-width: 2;
+  }
+  .graph .labels text { fill: var(--fg); font-family: var(--font-display); font-size: 12px; font-weight: 600; text-anchor: middle; }
+  .graph .labels text.sm { fill: var(--fg-faint); font-family: var(--font-mono); font-size: 9.5px; font-weight: 400; }
+  @media (prefers-reduced-motion: no-preference) {
+    .graph .hub { animation: hubpulse 3.2s var(--ease-in-out) infinite; transform-box: fill-box; transform-origin: center; }
+    .graph .edges line:not(.dim) { stroke-dasharray: 4 4; animation: dash 6s linear infinite; }
+  }
+  @keyframes hubpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.78; } }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+
+  /* ── markdown viz ─────────────────────────────────────────────────── */
+  .mdviz { padding: 0; }
+  .mdcode {
+    margin: 0; height: 100%;
+    padding: 1rem 1.1rem;
+    font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.65;
+    color: var(--fg-soft); background: var(--surface-sunk); overflow: auto;
+  }
+  .mdcode .k { color: var(--brand); font-weight: 500; }
+  .mdcode .b { color: var(--fg); }
+  .mdcode .g { color: var(--accent); }
+  .mdcode .c { color: var(--code-string); }
+
+  /* ── history viz ──────────────────────────────────────────────────── */
+  .hist { display: flex; align-items: center; }
+  .timeline { position: relative; width: 100%; display: flex; flex-direction: column; gap: 0.55rem; padding-left: 0.4rem; }
+  .timeline::before { content: ''; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 1px; background: var(--border); }
+  .timeline li { position: relative; display: flex; align-items: center; gap: 0.65rem; padding-left: 1.2rem; font-size: var(--text-xs); color: var(--fg-soft); }
+  .timeline .d { position: absolute; left: 4px; width: 9px; height: 9px; border-radius: var(--radius-full); background: var(--surface-hi); border: 1.5px solid var(--fg-faint); }
+  .timeline .now .d { background: var(--brand); border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-wash); }
+  .timeline .vmeta b { color: var(--fg); }
+  .timeline .muted { color: var(--fg-faint); }
+  .timeline .restore { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--brand); border: 1px solid var(--pill-border); border-radius: var(--radius-xs); padding: 1px 6px; }
+  .timeline .now .restore { color: var(--fg-faint); border-color: var(--border); }
+
+  /* ── diagram viz ──────────────────────────────────────────────────── */
+  .diag { display: grid; place-items: center; padding: 0.4rem; color: var(--fg-faint); }
+  .diag svg { width: 100%; height: 100%; max-height: 150px; }
+  .diag .box { fill: var(--surface-sunk); stroke: var(--border-strong); stroke-width: 1.4; }
+  .diag .box.hl { fill: var(--brand-wash); stroke: var(--brand); }
+  .diag text { fill: var(--fg-soft); font-family: var(--font-mono); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+  .diag .arr { stroke: var(--fg-faint); stroke-width: 1.4; fill: none; }
+
+  @keyframes bk { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .qcaret { animation: none; }
+  }
+</style>

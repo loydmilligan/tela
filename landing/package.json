@@ -1,0 +1,42 @@
+{
+  "name": "tela-landing",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "description": "tela marketing landing — standalone Astro + Tailwind v4 (OKLCH tokens) + self-hosted Geist. Separate static build; backend/ + frontend/ untouched.",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "gate:tokens": "playwright test token-conformance && stylelint \"src/**/*.css\"",
+    "gate:a11y": "playwright test a11y",
+    "gate:motion": "playwright test reduced-motion",
+    "gate:lh": "lhci autorun --config=lighthouserc.cjs",
+    "gate:lh:showcase": "lhci autorun --config=lighthouserc.showcase.cjs",
+    "gate:structural": "npm run gate:tokens && npm run gate:a11y && npm run gate:motion",
+    "gate": "npm run gate:structural && npm run gate:lh",
+    "gate:report": "playwright show-report .gate-report"
+  },
+  "dependencies": {
+    "@astrojs/react": "^4.2.1",
+    "@tailwindcss/vite": "^4.3.0",
+    "astro": "^6.3.8",
+    "motion": "^12.6.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.3.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "@lhci/cli": "^0.15.1",
+    "@playwright/test": "^1.60.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "stylelint": "^17.12.0",
+    "stylelint-config-standard": "^40.0.0",
+    "stylelint-declaration-strict-value": "^1.11.1",
+    "typescript": "^5.8.0"
+  }
+}

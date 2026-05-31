@@ -1,0 +1,131 @@
+---
+import { Font } from 'astro:assets';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'tela — the team wiki your agents can write to',
+  description = 'A self-hostable, markdown-native team wiki with a built-in MCP server, so AI agents read, write and search alongside your team. Live multiplayer editing, instant full-text search, one binary.',
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Apply a saved theme before paint (no flash); absent → default DARK
+         (tela's primary register) via :root, OS-light honored in tokens.css. -->
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem('tela-theme');
+          if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+        } catch (e) {}
+        // Mark JS available BEFORE paint so .reveal-up can start hidden (no FOUC).
+        // Without JS the elements stay visible — content is never gated on script.
+        document.documentElement.classList.add('js');
+      })();
+    </script>
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={Astro.url.href} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta name="theme-color" content="#11121a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fbfbfe" media="(prefers-color-scheme: light)" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={Astro.url.href} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <script type="application/ld+json" is:inline set:html={JSON.stringify({
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'SoftwareApplication',
+          name: 'tela',
+          description: 'A self-hostable, markdown-native team wiki with a built-in MCP server, so AI agents read, write and search your docs as first-class teammates. Live multiplayer, SQLite full-text search, your data on your own server.',
+          applicationCategory: 'DeveloperApplication',
+          operatingSystem: 'Linux, macOS, Docker',
+          url: 'https://tela.cagdas.io',
+          isAccessibleForFree: true,
+          offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        },
+        { '@type': 'WebSite', name: 'tela', url: 'https://tela.cagdas.io' },
+        { '@type': 'Organization', name: 'tela', url: 'https://tela.cagdas.io', logo: 'https://tela.cagdas.io/favicon.svg' },
+      ],
+    })} />
+
+    <Font cssVariable="--af-display" preload />
+    <Font cssVariable="--af-body" preload />
+    <Font cssVariable="--af-mono" />
+
+    <style is:global>
+      @import '../styles/global.css';
+    </style>
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Skip to content</a>
+    <slot />
+
+    <script is:inline>
+      // Scroll reveals — one-shot IntersectionObserver. Adds .is-visible once and
+      // unobserves, so it can never get stuck mid-animation. Guarded by the CSS
+      // (html.js + no-preference); reduced-motion / no-JS show content at rest.
+      (function () {
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        var run = function () {
+          var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting) { e.target.classList.add('is-visible'); io.unobserve(e.target); }
+            });
+          }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+          document.querySelectorAll('.reveal-up').forEach(function (el) { io.observe(el); });
+        };
+        if (document.readyState !== 'loading') run();
+        else document.addEventListener('DOMContentLoaded', run);
+      })();
+
+      // Theme toggle — persists to localStorage; the no-flash script above reads
+      // it. Brief .theme-transitioning class crossfades chrome (global.css).
+      window.__telaToggleTheme = function () {
+        var el = document.documentElement;
+        var cur = el.dataset.theme
+          || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        var next = cur === 'dark' ? 'light' : 'dark';
+        el.classList.add('theme-transitioning');
+        el.dataset.theme = next;
+        try { localStorage.setItem('tela-theme', next); } catch (e) {}
+        setTimeout(function () { el.classList.remove('theme-transitioning'); }, 320);
+      };
+    </script>
+  </body>
+</html>
+
+<style>
+  .skip-link {
+    position: fixed;
+    left: 1rem;
+    top: -4rem;
+    z-index: 60;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--fg);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-pop);
+    transition: top var(--dur) var(--ease-out);
+  }
+  .skip-link:focus { top: 1rem; }
+</style>

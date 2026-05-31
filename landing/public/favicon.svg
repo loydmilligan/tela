@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="tela">
+  <!-- Rounded square in accent indigo -->
+  <rect width="256" height="256" rx="56" fill="#4f46e5"/>
+
+  <!--
+    Woven mark: two vertical + two horizontal strands, checkerboard over/under.
+    "tela" = fabric / canvas / cloth. The pattern is the brand.
+  -->
+  <g fill="#fbfaf6">
+    <!-- Vertical strands (drawn first → under by default) -->
+    <rect x="64"  y="40" width="32" height="176" rx="16"/>
+    <rect x="160" y="40" width="32" height="176" rx="16"/>
+
+    <!-- Horizontal strands (drawn after → over the verticals everywhere) -->
+    <rect x="40" y="64"  width="176" height="32" rx="16"/>
+    <rect x="40" y="160" width="176" height="32" rx="16"/>
+
+    <!--
+      Weave: restore vertical OVER horizontal at TL and BR.
+      Pattern reads:   V  H
+                       H  V
+    -->
+    <rect x="64"  y="64"  width="32" height="32"/>
+    <rect x="160" y="160" width="32" height="32"/>
+  </g>
+</svg>

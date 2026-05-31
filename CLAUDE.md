@@ -14,6 +14,7 @@ A self-hostable, markdown-native team wiki: Go + SQLite/FTS5 backend, React/TS f
 - `frontend/` — React 19 + Vite + TS + Tailwind v4 + Radix + Milkdown (`@milkdown/kit`) + TanStack Query + TanStack Router + Orama + cmdk + Lucide + Storybook. `src/{components,lib,routes,styles}` + `App.tsx`/`main.tsx`. State is TanStack Query (zustand is in package.json but **unused**).
 - `mcp/` — TypeScript MCP server, thin client over the REST API. Published as `tela-mcp` on npm. See `mcp/README.md`.
 - `deploy/` — docker-compose + `proxy/Caddyfile`. `.env` is gitignored (narrow line, not `*.env`); `.env.example` is committed.
+- `landing/` — standalone **marketing landing page** (Astro + Tailwind v4 + OKLCH tokens, self-hosted Geist). Separate static build from the app; `backend/`+`frontend/` are untouched. Locked contracts at repo root: `CONTENT.md` (copy), `DESIGN.md` (look), `ACCEPTANCE.md` (gates). Targets: `make landing-dev` / `landing-build` / `landing-gate`. Tokens in `landing/src/styles/tokens.css` are its own source of truth — never hardcode color/px (the token-conformance gate enforces it). See `landing/README.md`. **Deploy not wired yet:** apex `/` should serve `landing/dist/`; the app keeps `/login`, `/spaces`, `/share/*`, `/api/*` — Caddy route + `deploy-landing` target are TODO.
 
 ## Conventions
 

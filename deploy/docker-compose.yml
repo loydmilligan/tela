@@ -33,6 +33,9 @@ services:
       - "8780:80"
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Standalone marketing landing (Astro static). Built by `make landing-build`
+      # (run automatically by `make up`); Caddy serves it at the apex from here.
+      - ../landing/dist:/srv/landing:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

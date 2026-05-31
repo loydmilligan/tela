@@ -39,6 +39,27 @@
 		reverse_proxy frontend:80
 	}
 
+	# ── Marketing landing (standalone Astro static, served at the apex) ──────
+	# The landing (landing/dist, mounted read-only at /srv/landing) owns the
+	# apex "/" and its build assets under /_astro/*. Everything else falls
+	# through to the app SPA below. The app's own "/" route is CLIENT-SIDE only
+	# (TanStack Router redirects to the user's space in-browser), so a hard load
+	# of "/" lands on this marketing page while in-app navigation is unaffected.
+	# App build assets live under /assets/* (Vite), landing under /_astro/* —
+	# no collision. These handles MUST precede the catch-all (Caddy resolves
+	# handles in source order).
+	handle /_astro/* {
+		root * /srv/landing
+		file_server
+	}
+	@landing_apex path / /index.html
+	handle @landing_apex {
+		root * /srv/landing
+		rewrite * /index.html
+		file_server
+	}
+
+	# App SPA (everything not matched above: /login, /spaces/*, /settings, …).
 	handle {
 		reverse_proxy frontend:80
 	}

@@ -1,0 +1,349 @@
+/* ============================================================================
+   tela — design tokens · "Loom in the dark" (refined developer-tool, dark-first)
+   Single source of truth. OKLCH only. One knob: --brand-hue.
+   Three tiers:  primitive (raw) -> semantic (purpose) -> component (overrides).
+   Components reference SEMANTIC tokens (var(--color-*) / Tailwind token utils),
+   never raw hex. The token-conformance gate fails builds that violate this.
+
+   Brand rationale: --brand-hue 277 = indigo. tela's product accent is #4f46e5
+   (oklch ~0.51 0.23 277) — carried verbatim as the LIGHT brand so the marketing
+   site reads as the same product (favicon, app, tokens). The ramp is tuned for a
+   marketing-grade glow on dark without leaving the indigo family. Indigo is
+   RARE and EARNED: the canvas is near-black ink, the accent is the woven thread.
+   One secondary hue --accent-hue 200 (cold cyan-teal) stays nearly invisible:
+   rare link/info/"live"-dot state only — never a second brand color.
+
+   DARK is the primary/default canvas (engineer-credible, the product's home
+   register). LIGHT is a fully-defined alternate. Theme is driven by [data-theme]
+   to match tela's product (runtime switch, no rebuild); default (no attribute)
+   resolves to DARK via :root.
+
+   Contrast verified with culori (WCAG 2.1):
+     DARK   fg/bg 17.5 · fg-soft/bg 9.7 · fg-faint/bg 6.2 · fg-faint/sunk 5.4 ·
+            brand/bg 5.1 · brand-strong/bg 6.9 · cta-fg/cta-bg 5.8 · accent/bg 10.2
+     LIGHT  fg/bg 15.4 · fg-soft/bg 7.6 · fg-faint/bg 5.9 · fg-faint/sunk 5.3 ·
+            brand/bg 6.1 · brand-strong/bg 8.0 · cta-fg/cta-bg 6.1 · accent/bg 5.1
+   All ≥ 4.5 text / ≥ 3 UI floors.
+   ========================================================================== */
+
+:root {
+  /* ---- THE ONE KNOB ---------------------------------------------------- */
+  --brand-hue: 277;           /* indigo — tela's product accent (#4f46e5 family) */
+  --accent-hue: 200;          /* cold cyan-teal (rare: link / info / live-dot) */
+
+  /* ======================================================================
+     DARK · primitives (default canvas — near-black indigo-ink void)
+     ====================================================================== */
+  /* Ink ramp — page is a deep, slightly indigo-cool black (NOT pure #000,
+     NOT zinc). Surfaces step up in lightness for an elevation scale. */
+  --ink-000: oklch(0.160 0.018 var(--brand-hue));   /* page void */
+  --ink-100: oklch(0.205 0.020 var(--brand-hue));   /* raised card / tile */
+  --ink-200: oklch(0.235 0.022 var(--brand-hue));   /* code well / inset payload */
+  --ink-300: oklch(0.285 0.024 var(--brand-hue));   /* hover / active surface */
+
+  /* Text ramp — cool near-white down to readable meta */
+  --text-900: oklch(0.965 0.012 var(--brand-hue));  /* body / headings */
+  --text-700: oklch(0.780 0.016 var(--brand-hue));  /* secondary prose */
+  --text-500: oklch(0.660 0.020 var(--brand-hue));  /* captions, meta, line-nums */
+  --line-rule: oklch(0.300 0.020 var(--brand-hue)); /* hairline borders */
+  --line-rule-strong: oklch(0.360 0.022 var(--brand-hue));
+
+  /* Indigo ramp (dark) */
+  --indigo-text:   oklch(0.620 0.190 var(--brand-hue));  /* brand as text, safe */
+  --indigo-bright: oklch(0.700 0.200 var(--brand-hue));  /* hover / emphasis */
+  --indigo-fill:   oklch(0.520 0.220 var(--brand-hue));  /* CTA fill (white text) */
+  --indigo-fill-hi:oklch(0.560 0.225 var(--brand-hue));  /* CTA hover fill */
+  --indigo-wash:   oklch(0.300 0.080 var(--brand-hue));  /* faint highlight ground */
+  --indigo-thread: oklch(0.560 0.170 var(--brand-hue));  /* woven-grid lit thread */
+
+  /* Cyan accent (dark, rare) */
+  --cyan-accent: oklch(0.780 0.130 var(--accent-hue));
+
+  /* ---- SEMANTIC (purpose) · DARK -------------------------------------- */
+  --bg:           var(--ink-000);
+  --surface:      var(--ink-100);
+  --surface-sunk: var(--ink-200);
+  --surface-hi:   var(--ink-300);
+  --fg:           var(--text-900);
+  --fg-soft:      var(--text-700);
+  --fg-faint:     var(--text-500);
+  --border:       var(--line-rule);
+  --border-strong:var(--line-rule-strong);
+
+  --brand:        var(--indigo-text);
+  --brand-strong: var(--indigo-bright);
+  --brand-wash:   var(--indigo-wash);
+  --brand-fg:     oklch(0.990 0.010 var(--brand-hue));  /* text on indigo fill */
+
+  --accent:       var(--cyan-accent);   /* rare: link, info, live-dot */
+  --accent-fg:    oklch(0.180 0.020 var(--accent-hue));
+
+  /* signature woven-grid device */
+  --weave-thread: var(--indigo-thread);                       /* lit warp/weft */
+  --weave-ground: oklch(0.230 0.014 var(--brand-hue));        /* dim thread */
+  --weave-cell:   28px;                                       /* loom cell size */
+  --weave-line:   1px;                                        /* thread width */
+
+  /* ---- COMPONENT (role overrides; reference semantics) ---------------- */
+  --nav-bg:        oklch(0.160 0.018 var(--brand-hue) / 0.66);  /* glassy header */
+  --nav-border:    var(--border);
+  --pill-bg:       var(--brand-wash);
+  --pill-fg:       var(--brand-strong);
+  --pill-border:   oklch(0.560 0.170 var(--brand-hue) / 0.40);
+  --cta-bg:        var(--indigo-fill);
+  --cta-bg-hover:  var(--indigo-fill-hi);
+  --cta-fg:        var(--brand-fg);
+  --cta-ghost-border: var(--border-strong);
+  --code-bg:       var(--surface-sunk);
+  --code-fg:       var(--fg);
+  --code-token:    var(--indigo-text);   /* keyword / key highlight in code */
+  --code-string:   var(--cyan-accent);   /* string / value highlight */
+  --link:          var(--brand);
+  --selection-bg:  var(--indigo-wash);
+  --selection-fg:  var(--fg);
+  --live-dot:      var(--cyan-accent);
+
+  /* ---- SPACING · 4px grid (semantic rhythm) --------------------------- */
+  --space-gutter:  1.5rem;    /* 24 — mobile page gutter */
+  --measure:       66ch;      /* prose measure */
+  --measure-wide:  78ch;
+  --col-max:       75rem;     /* 1200 — outer content frame (dev-tool tight) */
+  --section-y:     7.5rem;    /* 120 — vertical rhythm between sections */
+
+  /* ---- RADIUS scale (deliberate, role-tied — crisp, NOT pill-everything) */
+  --radius-0:    0px;         /* the woven grid, rules, hairlines */
+  --radius-xs:   3px;         /* code chips, tool-name tags */
+  --radius-sm:   6px;         /* buttons, inputs, pills */
+  --radius-md:   10px;        /* cards, proof tiles, code blocks */
+  --radius-lg:   16px;        /* the product-UI screenshot frame */
+  --radius-full: 999px;       /* live-dot, status pips only */
+
+  /* ---- SHADOW · depth + earned indigo glow (NOT flat 0.1 black) -------- */
+  --shadow-card:
+    0 1px 2px oklch(0 0 0 / 0.40),
+    0 8px 24px oklch(0 0 0 / 0.36);
+  --shadow-pop:
+    0 1px 2px oklch(0 0 0 / 0.45),
+    0 12px 40px oklch(0 0 0 / 0.50);
+  --shadow-frame:                                   /* product screenshot */
+    0 2px 4px oklch(0 0 0 / 0.40),
+    0 24px 64px oklch(0 0 0 / 0.55);
+  --glow-brand:                                     /* rare: hero CTA / signature */
+    0 0 0 1px oklch(0.560 0.220 var(--brand-hue) / 0.35),
+    0 8px 32px oklch(0.520 0.220 var(--brand-hue) / 0.28);
+
+  /* ---- MOTION --------------------------------------------------------- */
+  --ease-out:   cubic-bezier(0.16, 1, 0.30, 1);    /* settle */
+  --ease-in-out:cubic-bezier(0.65, 0, 0.35, 1);    /* travel */
+  --dur-fast:   120ms;        /* hovers, focus rings */
+  --dur:        220ms;        /* default ui transition */
+  --dur-slow:   480ms;        /* section reveals */
+  --dur-weave:  3200ms;       /* signature-moment loom timeline budget */
+}
+
+/* ============================================================================
+   LIGHT · alternate canvas (cool paper, indigo carried at PRODUCT value).
+   Brand = #4f46e5 exactly (oklch 0.51 0.23 277) for product continuity.
+   ========================================================================== */
+:root[data-theme='light'] {
+  --ink-000: oklch(0.990 0.006 var(--brand-hue));   /* page */
+  --ink-100: oklch(0.975 0.010 var(--brand-hue));   /* raised */
+  --ink-200: oklch(0.955 0.012 var(--brand-hue));   /* code well */
+  --ink-300: oklch(0.935 0.014 var(--brand-hue));   /* hover surface */
+
+  --text-900: oklch(0.255 0.030 var(--brand-hue));
+  --text-700: oklch(0.440 0.030 var(--brand-hue));
+  --text-500: oklch(0.500 0.028 var(--brand-hue));
+  --line-rule: oklch(0.905 0.012 var(--brand-hue));
+  --line-rule-strong: oklch(0.855 0.014 var(--brand-hue));
+
+  --indigo-text:   oklch(0.510 0.230 var(--brand-hue));   /* = #4f46e5, product brand */
+  --indigo-bright: oklch(0.450 0.220 var(--brand-hue));
+  --indigo-fill:   oklch(0.510 0.230 var(--brand-hue));   /* CTA fill (white text) */
+  --indigo-fill-hi:oklch(0.450 0.220 var(--brand-hue));
+  --indigo-wash:   oklch(0.955 0.030 var(--brand-hue));
+  --indigo-thread: oklch(0.620 0.150 var(--brand-hue));
+
+  --cyan-accent: oklch(0.470 0.115 var(--accent-hue));
+
+  --brand-fg:  oklch(0.990 0.010 var(--brand-hue));
+  --accent-fg: oklch(0.990 0.010 var(--accent-hue));
+
+  --weave-ground: oklch(0.940 0.010 var(--brand-hue));
+  --weave-thread: var(--indigo-thread);
+
+  --nav-bg:    oklch(0.990 0.006 var(--brand-hue) / 0.70);
+  --pill-border: oklch(0.510 0.150 var(--brand-hue) / 0.30);
+
+  --shadow-card:
+    0 1px 2px oklch(0.255 0.030 var(--brand-hue) / 0.05),
+    0 8px 24px oklch(0.255 0.030 var(--brand-hue) / 0.08);
+  --shadow-pop:
+    0 1px 2px oklch(0.255 0.030 var(--brand-hue) / 0.06),
+    0 12px 40px oklch(0.255 0.030 var(--brand-hue) / 0.12);
+  --shadow-frame:
+    0 2px 4px oklch(0.255 0.030 var(--brand-hue) / 0.06),
+    0 24px 64px oklch(0.255 0.030 var(--brand-hue) / 0.14);
+  --glow-brand:
+    0 0 0 1px oklch(0.510 0.230 var(--brand-hue) / 0.20),
+    0 8px 32px oklch(0.510 0.230 var(--brand-hue) / 0.18);
+}
+
+/* Optional: follow OS preference when no explicit [data-theme] is set.
+   Default :root is already DARK, so we only need to flip to LIGHT for users
+   who prefer light AND haven't forced a theme. Re-assert the LIGHT primitives. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --ink-000: oklch(0.990 0.006 var(--brand-hue));
+    --ink-100: oklch(0.975 0.010 var(--brand-hue));
+    --ink-200: oklch(0.955 0.012 var(--brand-hue));
+    --ink-300: oklch(0.935 0.014 var(--brand-hue));
+    --text-900: oklch(0.255 0.030 var(--brand-hue));
+    --text-700: oklch(0.440 0.030 var(--brand-hue));
+    --text-500: oklch(0.500 0.028 var(--brand-hue));
+    --line-rule: oklch(0.905 0.012 var(--brand-hue));
+    --line-rule-strong: oklch(0.855 0.014 var(--brand-hue));
+    --indigo-text:   oklch(0.510 0.230 var(--brand-hue));
+    --indigo-bright: oklch(0.450 0.220 var(--brand-hue));
+    --indigo-fill:   oklch(0.510 0.230 var(--brand-hue));
+    --indigo-fill-hi:oklch(0.450 0.220 var(--brand-hue));
+    --indigo-wash:   oklch(0.955 0.030 var(--brand-hue));
+    --indigo-thread: oklch(0.620 0.150 var(--brand-hue));
+    --cyan-accent: oklch(0.470 0.115 var(--accent-hue));
+    --brand-fg:  oklch(0.990 0.010 var(--brand-hue));
+    --accent-fg: oklch(0.990 0.010 var(--accent-hue));
+    --weave-ground: oklch(0.940 0.010 var(--brand-hue));
+    --nav-bg:    oklch(0.990 0.006 var(--brand-hue) / 0.70);
+    --pill-border: oklch(0.510 0.150 var(--brand-hue) / 0.30);
+    --shadow-card:
+      0 1px 2px oklch(0.255 0.030 var(--brand-hue) / 0.05),
+      0 8px 24px oklch(0.255 0.030 var(--brand-hue) / 0.08);
+    --shadow-pop:
+      0 1px 2px oklch(0.255 0.030 var(--brand-hue) / 0.06),
+      0 12px 40px oklch(0.255 0.030 var(--brand-hue) / 0.12);
+    --shadow-frame:
+      0 2px 4px oklch(0.255 0.030 var(--brand-hue) / 0.06),
+      0 24px 64px oklch(0.255 0.030 var(--brand-hue) / 0.14);
+    --glow-brand:
+      0 0 0 1px oklch(0.510 0.230 var(--brand-hue) / 0.20),
+      0 8px 32px oklch(0.510 0.230 var(--brand-hue) / 0.18);
+  }
+}
+
+/* ============================================================================
+   EXPOSE TO TAILWIND v4 — @theme maps semantic tokens to utilities.
+   Use: bg-bg text-fg border-border text-brand bg-surface  (token utilities),
+   font-display / font-body / font-mono, text-3xl … from the scale, etc.
+   @theme must follow `@import "tailwindcss"` (handled by global.css order).
+   ========================================================================== */
+@theme {
+  /* color utilities */
+  --color-bg:            var(--bg);
+  --color-surface:       var(--surface);
+  --color-surface-sunk:  var(--surface-sunk);
+  --color-surface-hi:    var(--surface-hi);
+  --color-fg:            var(--fg);
+  --color-fg-soft:       var(--fg-soft);
+  --color-fg-faint:      var(--fg-faint);
+  --color-border:        var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-brand:         var(--brand);
+  --color-brand-strong:  var(--brand-strong);
+  --color-brand-wash:    var(--brand-wash);
+  --color-brand-fg:      var(--brand-fg);
+  --color-accent:        var(--accent);
+  --color-accent-fg:     var(--accent-fg);
+  --color-weave-thread:  var(--weave-thread);
+  --color-weave-ground:  var(--weave-ground);
+
+  /* type families — refined dev-tool pairing.
+     Body: GEIST SANS — Vercel's grotesk, sharper closed apertures + tighter
+     rhythm than Inter; reads engineer-credible and is NOT the product's Inter
+     (deliberate marketing distinction) nor a banned default. Display reuses the
+     same family at heavy weight + tight tracking (Linear/Vercel do this) — no
+     editorial serif, per the brief. Mono: GEIST MONO — load-bearing (code blocks
+     are first-class), matches the body family's design for seamless code-in-prose
+     and sits in the same metrics as the .mcp.json payload. Self-hosted via Astro
+     Fonts API; literal fallbacks apply only if the Astro var is undefined. */
+  --font-display: var(--af-display, "Geist", ui-sans-serif, system-ui, sans-serif);
+  --font-body:    var(--af-body,    "Geist", ui-sans-serif, system-ui, sans-serif);
+  --font-mono:    var(--af-mono,    "Geist Mono", ui-monospace, "SF Mono", monospace);
+
+  /* 4px spacing grid */
+  --spacing: 0.25rem;
+
+  /* modular type scale — ~1.25 with intentional ≥3× jumps to display.
+     base 16px (dev-tool density, not editorial 18). Hero display lands 4–5rem. */
+  --text-xs:    0.75rem;    /* 12 — mono kicker / line numbers */
+  --text-sm:    0.875rem;   /* 14 — meta, captions, code */
+  --text-base:  1rem;       /* 16 — body prose */
+  --text-lg:    1.1875rem;  /* 19 — lead / subhead */
+  --text-xl:    1.5rem;     /* 24 — H3 */
+  --text-2xl:   1.875rem;   /* 30 — H2 small */
+  --text-3xl:   2.5rem;     /* 40 — H2 / section heads */
+  --text-4xl:   3.5rem;     /* 56 — display */
+  --text-5xl:   4.5rem;     /* 72 — hero display */
+
+  /* line-heights */
+  --leading-tight:  1.04;   /* hero display */
+  --leading-snug:   1.14;   /* headings */
+  --leading-normal: 1.6;    /* prose */
+  --leading-code:   1.55;   /* code blocks */
+
+  /* tracking */
+  --tracking-display: -0.025em;   /* tight grotesk display */
+  --tracking-tight:   -0.012em;   /* headings */
+  --tracking-kicker:  0.16em;     /* mono uppercase eyebrows */
+
+  /* radius scale */
+  --radius-xs:   3px;
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-full: 999px;
+
+  /* motion */
+  --ease-out:    cubic-bezier(0.16, 1, 0.30, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --default-transition-duration: 220ms;
+}
+
+/* ============================================================================
+   Base layer — token-driven polish only.
+   ========================================================================== */
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    color-scheme: dark light;
+  }
+
+  ::selection { background: var(--selection-bg); color: var(--selection-fg); }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    text-wrap: balance;
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--leading-snug);
+  }
+  p { text-wrap: pretty; }
+
+  a { color: var(--link); text-underline-offset: 0.18em; }
+
+  code, pre, kbd { font-family: var(--font-mono); }
+
+  /* respect reduced motion globally; the signature weave re-checks too */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
