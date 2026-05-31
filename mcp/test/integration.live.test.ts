@@ -322,7 +322,7 @@ describe("MCP <-> backend live integration", () => {
     }
   });
 
-  it("tools/list exposes all 11 tools", async () => {
+  it("tools/list exposes all 16 tools", async () => {
     const res = await call("tools/list", {});
     expect(res.error).toBeUndefined();
     const tools = (res.result as { tools: Array<{ name: string }> }).tools;
@@ -331,15 +331,20 @@ describe("MCP <-> backend live integration", () => {
       [
         "add_comment",
         "create_page",
+        "create_space",
         "delete_page",
+        "delete_space",
         "get_page",
         "import_markdown",
+        "import_mira",
         "list_backlinks",
         "list_pages",
         "list_spaces",
         "search",
         "search_bodies",
+        "submit_feedback",
         "update_page",
+        "update_space",
       ].sort(),
     );
   });
