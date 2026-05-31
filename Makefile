@@ -29,8 +29,15 @@ help:
 
 # `up` builds the marketing landing first so the proxy's /srv/landing mount is
 # populated (Caddy serves it at the apex). The app images build via compose.
+#
+# The proxy runs an unbuilt caddy image with a single-file Caddyfile bind mount;
+# compose won't recreate it on a Caddyfile-only change, and a single-file mount
+# pins the OLD inode after a `git pull` rewrites the file — so Caddy keeps the
+# stale config. Force-recreate the proxy so it re-mounts the current Caddyfile
+# (and the freshly built landing/dist).
 up: landing-build
 	$(EXPORT_BUILD) $(COMPOSE) up -d --build
+	$(COMPOSE) up -d --force-recreate proxy
 
 down:
 	$(COMPOSE) down
