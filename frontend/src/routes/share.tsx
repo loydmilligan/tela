@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { ShareError, useShareRoot, useSharePage, useShareTree } from '../lib/queries/share'
 import { ShareLayout } from '../components/app/ShareLayout'
-import { ShareReader } from '../components/app/ShareReader'
+import { ShareReaderView } from '../components/app/ShareReader'
 import { SharePasswordScreen } from '../components/app/SharePasswordScreen'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
 import { Card, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -113,15 +113,15 @@ export function ShareRootRoute() {
   if (!data) return <ShareLoading />
 
   return (
-    <ShareLayout token={token} share={data.share}>
-      <ShareReader
-        token={token}
-        pageId={data.page.id}
-        pageTitle={data.page.title}
-        pageBody={data.page.body}
-        inScopePageIds={inScope}
-      />
-    </ShareLayout>
+    <ShareReaderView
+      token={token}
+      share={data.share}
+      pageId={data.page.id}
+      pageTitle={data.page.title}
+      pageBody={data.page.body}
+      updatedAt={data.page.updated_at}
+      inScopePageIds={inScope}
+    />
   )
 }
 
@@ -212,14 +212,14 @@ export function ShareDescendantRoute() {
   }
 
   return (
-    <ShareLayout token={token} share={rootData.share}>
-      <ShareReader
-        token={token}
-        pageId={pageData.page.id}
-        pageTitle={pageData.page.title}
-        pageBody={pageData.page.body}
-        inScopePageIds={inScope}
-      />
-    </ShareLayout>
+    <ShareReaderView
+      token={token}
+      share={rootData.share}
+      pageId={pageData.page.id}
+      pageTitle={pageData.page.title}
+      pageBody={pageData.page.body}
+      updatedAt={pageData.page.updated_at}
+      inScopePageIds={inScope}
+    />
   )
 }

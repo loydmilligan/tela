@@ -92,10 +92,20 @@
     flex-shrink: 0;
   }
 
+  /* Body row — holds the optional left rail (share subtree nav) beside the
+     scroll context. A single flex child (no sidebar) is layout-equivalent to
+     the scroll container sitting directly under .tela-reader. */
+  .reader-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+
   /* Scroll container — the reader's own scroll context (TOC scroll-spy +
      progress read from it). */
   .reader-scroll {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;

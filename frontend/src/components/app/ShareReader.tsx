@@ -1,151 +1,81 @@
-import { Suspense, lazy, useEffect, useMemo, useRef } from 'react'
+import { useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { cn } from '../../lib/utils'
+import { useShareTree, type SharePublicMeta } from '../../lib/queries/share'
+import { Button } from '../ui/button'
+import { ReaderShell } from './ReaderShell'
+import { ShareSidebar } from './ShareLayout'
 
-// Inlined (not imported from milkdown-wikilink-decoration.ts) so Rollup doesn't
-// see the wikilink-decoration module as a shared dep of two lazy roots
-// (ShareReader + MilkdownEditor) — that split was producing a 320 KB
-// milkdown-wikilink-decoration-*.js chunk separate from milkdown-editor-*.js.
-// 5-line duplication is cheaper than the chunk split.
-function parseWikilinkPageId(href: string): number | null {
-  const prefix = 'tela://page/'
-  if (!href.startsWith(prefix)) return null
-  const tail = href.slice(prefix.length)
-  if (!/^\d+$/.test(tail)) return null
-  return Number(tail)
-}
-
-// Lazy-loaded — share-mode bundle should not bloat the main chunk for logged-in
-// users; MilkdownEditor's whole grammar/Yjs blob ships as the existing milkdown
-// chunk and only loads when someone actually opens a share link.
-const MilkdownEditor = lazy(() =>
-  import('./milkdown-editor').then((m) => ({ default: m.MilkdownEditor })),
-)
-
-const EDITOR_MIN_H = 'min-h-[calc(var(--space-8)*8)]'
-
-function EditorFallback() {
-  return (
-    <div
-      role="status"
-      aria-busy="true"
-      aria-label="Loading reader"
-      className={cn(
-        EDITOR_MIN_H,
-        'p-[var(--space-2)]',
-        'rounded-[var(--radius-sm)]',
-        'bg-[var(--surface-2)]',
-      )}
-    />
-  )
-}
-
-interface ShareReaderProps {
+interface ShareReaderViewProps {
   token: string
+  share: SharePublicMeta
+  pageId: number
   pageTitle: string
   pageBody: string
-  pageId: number
+  updatedAt: string
+  /** In-scope page ids — drives wikilink scoping and the subtree sidebar. */
   inScopePageIds: Set<number>
 }
 
-export function ShareReader({
+// Public share view, rendered through the shared reading-mode shell. Same
+// chrome-free reader as authenticated /read (TOC, typeface/size/theme controls,
+// print-to-PDF), with share-specific wiring: the top-bar leading slot is the
+// tela wordmark instead of a close button, the trailing slot offers Sign in,
+// wikilinks stay inside the share (in-scope hop, out-of-scope no-op), and a
+// multi-page share gets the in-scope subtree as the reader's left rail.
+export function ShareReaderView({
   token,
+  share,
+  pageId,
   pageTitle,
   pageBody,
-  pageId,
+  updatedAt,
   inScopePageIds,
-}: ShareReaderProps) {
+}: ShareReaderViewProps) {
   const navigate = useNavigate()
 
-  // Update document title on mount + per page change. No live updates needed
-  // in share-mode — pages.body and title are loaded once per route render.
-  useEffect(() => {
-    const previous = document.title
-    const t = pageTitle && pageTitle.length > 0 ? pageTitle : 'Shared page'
-    document.title = `${t} — tela`
-    return () => {
-      document.title = previous
-    }
-  }, [pageTitle])
+  // Subtree nav — only fetched/shown for descendant-inclusive shares with more
+  // than the root page. Same gating ShareLayout used.
+  const treeEnabled = share.include_descendants
+  const tree = useShareTree(token, treeEnabled)
+  const pages = tree.data?.pages ?? []
+  const showSidebar = treeEnabled && pages.length > 1
 
-  // Wikilink click interception. The decoration plugin paints two classes in
-  // share-mode:
-  //   - .tela-wikilink (in-scope) → navigate to /share/{token}/p/{id}
-  //   - .tela-wikilink--share-out-of-scope (out-of-scope) → preventDefault
-  // The link mark still emits an <a href="tela://page/N">; without this
-  // handler the browser would attempt to navigate to the dead scheme.
-  const wrapperRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    const el = wrapperRef.current
-    if (!el) return
-    function onClick(e: MouseEvent) {
-      const target = (e.target as HTMLElement | null)?.closest(
-        '.tela-wikilink, .tela-wikilink--share-out-of-scope',
-      )
-      if (!target) return
-      // Out-of-scope: kill the navigation; the link is visually plain text but
-      // the underlying <a> would otherwise attempt to follow `tela://page/N`.
-      if (target.classList.contains('tela-wikilink--share-out-of-scope')) {
-        e.preventDefault()
-        return
-      }
-      // In-scope: resolve the page id from the underlying link mark and
-      // navigate within share-mode. The descendant route serves the root id
-      // too (backend includes the share root in the subtree scope), so we
-      // don't need a special-case for it here.
-      const anchor = target.closest('a')
-      const href = anchor?.getAttribute('href') ?? ''
-      const id = parseWikilinkPageId(href)
-      if (id == null) return
-      e.preventDefault()
+  const onNavigateWikilink = useCallback(
+    (targetPageId: number) => {
+      // In-scope links route within share-mode; out-of-scope ones are painted
+      // as plain text by the decoration plugin and stay non-navigable here.
+      if (!inScopePageIds.has(targetPageId)) return
       void navigate({
         to: '/share/$token/p/$pageId',
-        params: { token, pageId: id },
+        params: { token, pageId: targetPageId },
       })
-    }
-    el.addEventListener('click', onClick)
-    return () => el.removeEventListener('click', onClick)
-  }, [navigate, token])
-
-  // Stable Set reference — passing a fresh Set each render would force the
-  // decoration plugin to rebuild on every parent re-render.
-  const aliveIds = useMemo(() => inScopePageIds, [inScopePageIds])
+    },
+    [navigate, token, inScopePageIds],
+  )
 
   return (
-    <div className="flex-1 flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[48rem] w-full self-center min-h-0">
-      <h1
-        className={cn(
-          'm-0 px-[var(--space-2)] py-[var(--space-2)]',
-          'text-[length:var(--text-3xl)] leading-[var(--leading-tight)] font-medium',
-          'text-[var(--text-primary)] font-[family-name:var(--font-sans)]',
-        )}
-      >
-        {pageTitle || 'Untitled'}
-      </h1>
-      <div ref={wrapperRef}>
-        <Suspense fallback={<EditorFallback />}>
-          <MilkdownEditor
-            key={`share-${pageId}`}
-            defaultValue={pageBody}
-            onChange={noop}
-            ariaLabel="Shared page body"
-            className={EDITOR_MIN_H}
-            aliveWikilinkIds={aliveIds}
-            collabPageId={null}
-            readOnly
-            wikilinkMode="share"
-            pageId={pageId}
-          />
-        </Suspense>
-      </div>
-    </div>
+    <ReaderShell
+      pageId={pageId}
+      title={pageTitle}
+      body={pageBody}
+      updatedAt={updatedAt}
+      wikilinkMode="share"
+      aliveWikilinkIds={inScopePageIds}
+      onNavigateWikilink={onNavigateWikilink}
+      sidebar={showSidebar ? <ShareSidebar token={token} pages={pages} /> : undefined}
+      topbarLeading={
+        <span className="font-[family-name:var(--font-sans)] text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">
+          tela
+        </span>
+      }
+      topbarTrailing={
+        /* Plain <a> rather than the router Link: a full page reload on sign-in
+           is intentional so the post-login app boots cleanly outside the
+           share-mode shell. */
+        <Button asChild variant="ghost" size="sm">
+          <a href="/login">Sign in</a>
+        </Button>
+      }
+    />
   )
-}
-
-function noop() {
-  // Share-mode is read-only — onChange is required by MilkdownEditor's
-  // typing but should never fire because the editable predicate is gated by
-  // readOnly. Kept as a noop in case Milkdown's listener fires once on mount
-  // before the predicate is read (it would carry the same markdown back so
-  // there's nothing meaningful to do with it).
 }
