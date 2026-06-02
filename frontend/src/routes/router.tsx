@@ -422,11 +422,21 @@ const readRoute = createRoute({
   component: lazyRouteComponent(() => import('./read'), 'ReadRoute'),
 })
 
+// #3 PDF print surface. Public child of rootRoute (NO ensureMe gate — the
+// signed print token is the authorization), loaded only by gotenberg's headless
+// Chromium during PDF export. Lazy so it never lands in the main chunk.
+const printRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/print/$token',
+  component: lazyRouteComponent(() => import('./print'), 'PrintRoute'),
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   shareRootRoute,
   shareDescendantRoute,
   readRoute,
+  printRoute,
   appLayoutRoute.addChildren([
     indexRoute,
     settingsRoute,

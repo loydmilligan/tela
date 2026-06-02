@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Printer, Type } from 'lucide-react'
+import { Type } from 'lucide-react'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 import {
@@ -115,6 +115,18 @@ export interface ReaderShellProps {
   sidebar?: ReactNode
   /** Bound to Escape when provided (read mode → back to editor). */
   onEscape?: () => void
+  /** Optional source line in the cover meta (e.g. the canonical/share URL).
+   * Shown in print/PDF and share contexts so an exported doc reads as published. */
+  sourceLabel?: string
+}
+
+// Set on the window once the reader has painted (fonts ready + a short settle so
+// async mermaid/katex/diagrams land). gotenberg's PDF export waits on this flag
+// before capturing — see backend renderPDF (waitForExpression).
+declare global {
+  interface Window {
+    __telaPdfReady?: boolean
+  }
 }
 
 // The shared reading surface: chrome-free, full-bleed, read-only page render
@@ -133,6 +145,7 @@ export function ReaderShell({
   topbarTrailing,
   sidebar,
   onEscape,
+  sourceLabel,
 }: ReaderShellProps) {
   // Preferences — text size + typeface, persisted; theme is global.
   const [size, setSize] = useState<ReaderSize>(() =>
@@ -196,6 +209,14 @@ export function ReaderShell({
       })
       headingsRef.current = els.filter((el) => el.id && el.textContent?.trim())
       setToc(entries)
+      // PDF export readiness signal (gotenberg waits on this). Wait for fonts +
+      // a short settle so async mermaid/katex/diagram paints land in the capture.
+      const ready = () =>
+        window.setTimeout(() => {
+          window.__telaPdfReady = true
+        }, 400)
+      if (document.fonts?.ready) void document.fonts.ready.finally(ready)
+      else ready()
     })
   }, [])
 
@@ -345,18 +366,6 @@ export function ReaderShell({
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label="Print or save as PDF"
-            onClick={() => window.print()}
-            className="h-[var(--space-8)] px-[var(--space-3)]"
-          >
-            <Printer width={16} height={16} />
-            <span>Print</span>
-          </Button>
         </div>
       </header>
 
@@ -395,6 +404,12 @@ export function ReaderShell({
                 <span>{minutes} min read</span>
                 <span className="reader-meta-dot" aria-hidden />
                 <span>Updated {relativeTimeFromSqlite(updatedAt)}</span>
+                {sourceLabel ? (
+                  <>
+                    <span className="reader-meta-dot" aria-hidden />
+                    <span className="reader-meta-source">{sourceLabel}</span>
+                  </>
+                ) : null}
               </div>
               <Suspense fallback={<ReaderBodyFallback />}>
                 <MilkdownEditor

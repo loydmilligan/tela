@@ -29,6 +29,22 @@
 		reverse_proxy backend:8080
 	}
 
+	# #3 ".pdf on a share URL" trick → server-rendered PDF. These MUST precede the
+	# /share/* OG/SPA handlers below so the pretty URL lands on the backend, which
+	# rewrites it to the public /api/share/{token}/pdf endpoint (descendant pages
+	# carry the page id as ?p=). The backend renders on demand + sends no-store, so
+	# Cloudflare never caches a stale .pdf after an edit.
+	@share_pdf_page path_regexp sharepdfpage ^/share/([^/]+)/p/([^/]+)\.pdf$
+	handle @share_pdf_page {
+		rewrite * /api/share/{re.sharepdfpage.1}/pdf?p={re.sharepdfpage.2}
+		reverse_proxy backend:8080
+	}
+	@share_pdf path_regexp sharepdf ^/share/([^/]+)\.pdf$
+	handle @share_pdf {
+		rewrite * /api/share/{re.sharepdf.1}/pdf
+		reverse_proxy backend:8080
+	}
+
 	# M15.5 PublicShare OG bot-gate: bot UAs hitting /share/* go to the backend
 	# (writes an OG envelope); real browsers fall through to the frontend SPA
 	# (M15.1 share-mode UI). The named matcher must precede the catch-all

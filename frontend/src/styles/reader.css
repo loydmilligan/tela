@@ -167,6 +167,12 @@
     border-radius: 50%;
     background: var(--border-strong);
   }
+  .reader-meta-source {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 22rem;
+  }
 
   /* Prose elevation. Override the .tela-milkdown editor scale for reading:
      bigger optical size, generous leading, em-relative headings so one knob
@@ -326,18 +332,26 @@
     }
   }
 
-  /* Print — the cheap, real "Save as PDF". Strip all chrome, drop to a single
-     full-width article, force a light palette so a dark-theme reader still
-     prints clean black-on-white. */
+  /* Print — used by the browser's Save-as-PDF AND by gotenberg's server-side
+     PDF export (#3), which renders this very reader with emulatedMediaType=print.
+     Strip all chrome, force a light palette so a dark-theme reader prints clean,
+     pin a consistent document body size, keep a comfortable centered measure
+     (never full page width), and avoid fracturing atomic blocks across pages. */
   @media print {
     .reader-progress,
     .reader-topbar,
     .reader-toc {
       display: none !important;
     }
+    /* Only the article column prints — hide the share subtree rail. */
+    .reader-body > :not(.reader-scroll) {
+      display: none !important;
+    }
     .tela-reader {
       height: auto;
       color-scheme: light;
+      /* Consistent document body size regardless of the on-screen size pref. */
+      --reading-font-size: 11pt;
       /* Force the light palette regardless of the active theme. */
       --surface-1: #ffffff;
       --surface-2: #f7f7f8;
@@ -345,6 +359,9 @@
       --text-muted: #5b5b66;
       --border-subtle: #e4e4e9;
       --border-strong: #c8c8d0;
+    }
+    .reader-body {
+      display: block;
     }
     .reader-scroll {
       overflow: visible;
@@ -354,8 +371,29 @@
       max-width: none;
       padding: 0;
     }
+    /* Keep the ~76-char measure, centred — never the full page width. */
     .reader-article {
-      max-width: none;
+      max-width: var(--reading-measure);
+      margin: 0 auto;
+    }
+    /* Don't strand a heading at the foot of a page or split atomic blocks. */
+    .reader-article h1,
+    .reader-article h2,
+    .reader-article h3,
+    .reader-article h4 {
+      break-after: avoid;
+    }
+    .tela-reader .tela-milkdown .ProseMirror pre,
+    .tela-reader .tela-milkdown .ProseMirror table,
+    .tela-reader .tela-milkdown .ProseMirror blockquote,
+    .tela-reader .tela-milkdown .ProseMirror img,
+    .tela-reader .tela-callout,
+    .tela-reader .tela-excalidraw {
+      break-inside: avoid;
+    }
+    .tela-reader .tela-milkdown .ProseMirror p {
+      orphans: 3;
+      widows: 3;
     }
   }
 }

@@ -69,6 +69,7 @@ import { Input } from '../ui/input'
 import { SaveIndicator, type SaveStatus } from '../ui/save-indicator'
 import { cn } from '../../lib/utils'
 import { BacklinksSection } from './BacklinksSection'
+import { DownloadPdfButton } from './DownloadPdfButton'
 
 // Milkdown is the largest dependency in the app (~700 KB raw). Lazy-load it so
 // non-editor routes (sidebar, spaces list, command palette) don't pay for it
@@ -609,6 +610,10 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                   <span>Read</span>
                 </Link>
               </Button>
+              <DownloadPdfButton
+                url={`/api/pages/${page.id}/pdf`}
+                label="Export PDF"
+              />
               {roleResolved && !isViewer ? (
                 <Button
                   asChild

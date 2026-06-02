@@ -14,10 +14,26 @@ services:
       TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
       TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}
       TELA_API_KEY_SECRET:  ${TELA_API_KEY_SECRET}
+      # #3 PDF export. The backend POSTs to gotenberg, which renders the reader
+      # via the INTERNAL proxy origin (never the CF-fronted public URL) so PDF
+      # generation skips the CDN entirely.
+      TELA_GOTENBERG_URL:        ${TELA_GOTENBERG_URL:-http://gotenberg:3000}
+      TELA_PDF_RENDER_BASE_URL:  ${TELA_PDF_RENDER_BASE_URL:-http://proxy}
     expose:
       - "8080"
     volumes:
       - tela-data:/data
+    depends_on:
+      - gotenberg
+    restart: unless-stopped
+
+  # #3 PDF export engine — headless-Chromium HTML→PDF. Internal only (no
+  # published port); reached by the backend at http://gotenberg:3000 and renders
+  # the reader by loading http://proxy/print|share/… on the compose network.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    expose:
+      - "3000"
     restart: unless-stopped
 
   frontend:

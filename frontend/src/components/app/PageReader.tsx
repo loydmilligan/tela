@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useAllPages, usePage } from '../../lib/queries/pages'
 import { Button } from '../ui/button'
+import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
 
 interface PageReaderProps {
@@ -93,6 +94,7 @@ function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewP
       aliveWikilinkIds={aliveIds}
       onNavigateWikilink={onNavigateWikilink}
       onEscape={onEscape}
+      topbarTrailing={<DownloadPdfButton url={`/api/pages/${pageId}/pdf`} />}
       topbarLeading={
         <Button
           asChild

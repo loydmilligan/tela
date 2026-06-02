@@ -69,6 +69,15 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/pages/{id}/move", srv.MovePage)
 	mux.HandleFunc("GET /api/pages/{id}/backlinks", srv.Backlinks)
 
+	// #3 PDF export. Session-authed: renders the caller's own page to PDF via
+	// gotenberg (which loads the /print/{token} reader). The public token-data
+	// endpoint below is what gotenberg's headless Chromium fetches; it MUST be
+	// on auth.IsPublicPath (/api/print/) so the session middleware skips it. The
+	// page id lives inside the signed token, not the path, which keeps the
+	// public branch a clean HasPrefix.
+	mux.HandleFunc("GET /api/pages/{id}/pdf", srv.ExportPagePDF)
+	mux.HandleFunc("GET /api/print/{token}", srv.GetPrintPage)
+
 	mux.HandleFunc("GET /api/pages/{id}/comments", srv.ListComments)
 	mux.HandleFunc("POST /api/pages/{id}/comments", srv.CreateComment)
 	mux.HandleFunc("PATCH /api/comments/{id}", srv.PatchComment)
@@ -97,6 +106,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/share/{token}/auth", srv.PublicShareAuth)
 	mux.HandleFunc("GET /api/share/{token}/page/{page_id}", srv.GetPublicSharePage)
 	mux.HandleFunc("GET /api/share/{token}/tree", srv.GetPublicShareTree)
+	// #3 ".pdf on a share URL" trick. Caddy rewrites /share/<tok>.pdf →
+	// /api/share/{token}/pdf (and the descendant /p/<id>.pdf → ?p=<id>). Public
+	// via the /api/share/ prefix; the handler validates the share token + scope.
+	mux.HandleFunc("GET /api/share/{token}/pdf", srv.ExportSharePDF)
 
 	// M17.A.1 Feedback submit-only channel. Session OR bearer (any scope —
 	// the bearer carve-out lives in auth.scopeAllowsRequest so the MCP

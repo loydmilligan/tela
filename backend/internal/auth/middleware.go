@@ -202,6 +202,12 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/diagrams/") {
 		return true
 	}
+	// #3 PDF export: gotenberg's headless Chromium fetches /api/print/{token}
+	// (page id encoded in the signed token) with no session. The handler
+	// validates the short-lived HMAC token itself.
+	if strings.HasPrefix(p, "/api/print/") {
+		return true
+	}
 	if strings.HasPrefix(p, "/share/") {
 		return true
 	}

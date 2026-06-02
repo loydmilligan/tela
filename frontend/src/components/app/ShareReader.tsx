@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useShareTree, type SharePublicMeta } from '../../lib/queries/share'
 import { Button } from '../ui/button'
+import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
 import { ShareSidebar } from './ShareLayout'
 
@@ -75,13 +76,19 @@ export function ShareReaderView({
           tela
         </a>
       }
+      sourceLabel={`${window.location.host}${window.location.pathname}`}
       topbarTrailing={
-        /* Plain <a> rather than the router Link: a full page reload on sign-in
-           is intentional so the post-login app boots cleanly outside the
-           share-mode shell. */
-        <Button asChild variant="ghost" size="sm">
-          <a href="/login">Sign in</a>
-        </Button>
+        <>
+          {/* The ".pdf on a share URL" trick: append .pdf to the page the
+              viewer is on. credentials are irrelevant for a public share. */}
+          <DownloadPdfButton url={`${window.location.pathname}.pdf`} />
+          {/* Plain <a> rather than the router Link: a full page reload on sign-in
+              is intentional so the post-login app boots cleanly outside the
+              share-mode shell. */}
+          <Button asChild variant="ghost" size="sm">
+            <a href="/login">Sign in</a>
+          </Button>
+        </>
       }
     />
   )
