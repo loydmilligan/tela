@@ -27,7 +27,7 @@
        consumer. The reader column measure + base leading; per-size font
        scaling is applied via [data-reading-size] in reader.css. ~44rem holds
        ~68–72 characters at the medium step — the classic readable measure. */
-    --reading-measure: 44rem;
+    --reading-measure: 45rem;
     --reading-leading: 1.75;
     --reading-leading-tight: 1.3;
 

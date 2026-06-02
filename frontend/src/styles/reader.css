@@ -10,9 +10,15 @@
    children are sized in `em` relative to the article font-size. */
 @layer components {
   .tela-reader {
-    /* Medium (default). [data-reading-size] overrides below. */
-    --reading-font-size: 1.1875rem;
+    /* Medium (default) = 17px — a gentle bump over the editor's 16px without
+       tipping into editorial sizing. [data-reading-size] overrides below;
+       "Small" returns to the app's native 16px, "Large" is 20px. */
+    --reading-font-size: 1.0625rem;
     --reading-font-family: var(--font-sans);
+    /* Measure tracks the font size so line length stays ~75 characters at
+       every size step (the metric that actually governs readability) instead
+       of ballooning when the text shrinks. ~38em ≈ 75ch for this sans. */
+    --reading-measure: calc(var(--reading-font-size) * 38);
 
     display: flex;
     flex-direction: column;
@@ -22,10 +28,10 @@
     color: var(--text-primary);
   }
   .tela-reader[data-reading-size='s'] {
-    --reading-font-size: 1.0625rem;
+    --reading-font-size: 1rem;
   }
   .tela-reader[data-reading-size='l'] {
-    --reading-font-size: 1.3125rem;
+    --reading-font-size: 1.25rem;
   }
   .tela-reader[data-reading-font='serif'] {
     --reading-font-family: var(--font-serif);
@@ -97,17 +103,20 @@
 
   /* Centered layout. Single column by default; on wide viewports a sticky TOC
      rail joins to the left and the [rail | article] pair is centered. */
+  /* Single column by default. On wide viewports a symmetric 3-column track
+     [gutter | measure | gutter] keeps the article dead-centre in the viewport;
+     the TOC lives in the left gutter (so it never shoves the column off-axis)
+     and the right gutter mirrors it. */
   .reader-grid {
     margin: 0 auto;
-    max-width: 76rem;
+    max-width: 88rem;
     padding: var(--space-8) var(--space-6) calc(var(--space-8) * 3);
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
   @media (min-width: 80rem) {
     .reader-grid {
-      grid-template-columns: 15rem minmax(0, var(--reading-measure));
-      justify-content: center;
+      grid-template-columns: 1fr minmax(0, var(--reading-measure)) 1fr;
       column-gap: var(--space-8);
       align-items: start;
     }
@@ -213,6 +222,11 @@
   @media (min-width: 80rem) {
     .reader-toc {
       display: block;
+      /* Left gutter, hugging the article's left edge. */
+      grid-column: 1;
+      justify-self: end;
+      width: 100%;
+      max-width: 16rem;
       position: sticky;
       top: var(--space-8);
       max-height: calc(100dvh - var(--space-8) * 2);
