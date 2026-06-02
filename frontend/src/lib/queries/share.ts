@@ -51,6 +51,9 @@ export interface SharePublicMeta {
   include_descendants: boolean
   has_password: boolean
   expires_at: string | null
+  // #3 — canonical public base (e.g. https://tela.cagdas.io), server-provided
+  // so the PDF cover source is right even when rendered from the internal origin.
+  source_url: string
 }
 
 export interface ShareRootResponse {

@@ -80,6 +80,11 @@ type shareLinkPublicDTO struct {
 	IncludeDescendants bool    `json:"include_descendants"`
 	HasPassword        bool    `json:"has_password"`
 	ExpiresAt          *string `json:"expires_at"`
+	// #3 — canonical public base (e.g. https://tela.cagdas.io). The share
+	// reader shows it in the cover meta; it must come from the server, not
+	// window.location, because the PDF export renders the reader from an
+	// internal origin (where window.location.host would read "proxy").
+	SourceURL string `json:"source_url"`
 }
 
 // sharePageDTO is the minimal page payload returned through public endpoints.
@@ -921,6 +926,7 @@ func (s *Server) GetPublicShare(w http.ResponseWriter, r *http.Request) {
 			IncludeDescendants: share.IncludeDescendants,
 			HasPassword:        share.PasswordHash.Valid,
 			ExpiresAt:          nullableString(share.ExpiresAt),
+			SourceURL:          publicBaseURL(),
 		},
 		"page": sharePageDTO{
 			ID:        page.ID,

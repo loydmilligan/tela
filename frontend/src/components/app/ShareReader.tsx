@@ -76,7 +76,7 @@ export function ShareReaderView({
           tela
         </a>
       }
-      sourceLabel={`${window.location.host}${window.location.pathname}`}
+      sourceLabel={share.source_url.replace(/^https?:\/\//, '')}
       topbarTrailing={
         <>
           {/* The ".pdf on a share URL" trick: append .pdf to the page the
