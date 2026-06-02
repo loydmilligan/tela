@@ -349,16 +349,28 @@
     }
     .tela-reader {
       height: auto;
-      color-scheme: light;
       /* Consistent document body size regardless of the on-screen size pref. */
       --reading-font-size: 11pt;
-      /* Force the light palette regardless of the active theme. */
+    }
+    /* Default (browser Save-as-PDF, or an export with no ?theme=): force a clean
+       light palette regardless of the active on-screen theme. */
+    html:not([data-pdf-themed]) {
+      background: #ffffff;
+    }
+    html:not([data-pdf-themed]) .tela-reader {
+      color-scheme: light;
       --surface-1: #ffffff;
       --surface-2: #f7f7f8;
       --text-primary: #16161a;
       --text-muted: #5b5b66;
       --border-subtle: #e4e4e9;
       --border-strong: #c8c8d0;
+    }
+    /* #3 — an explicitly-themed PDF (?theme=dark|warm|light sets data-pdf-themed)
+       keeps the chosen palette; paint the page canvas to match so the whole sheet
+       reads as one surface (printBackground is on in the gotenberg request). */
+    html[data-pdf-themed] {
+      background: var(--surface-1);
     }
     .reader-body {
       display: block;

@@ -613,6 +613,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
               <DownloadPdfButton
                 url={`/api/pages/${page.id}/pdf`}
                 label="Export PDF"
+                themed
               />
               {roleResolved && !isViewer ? (
                 <Button

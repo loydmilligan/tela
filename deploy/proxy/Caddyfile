@@ -36,7 +36,8 @@
 	# Cloudflare never caches a stale .pdf after an edit.
 	@share_pdf_page path_regexp sharepdfpage ^/share/([^/]+)/p/([^/]+)\.pdf$
 	handle @share_pdf_page {
-		rewrite * /api/share/{re.sharepdfpage.1}/pdf?p={re.sharepdfpage.2}
+		# Append the original query (e.g. ?theme=dark) after the injected ?p=.
+		rewrite * /api/share/{re.sharepdfpage.1}/pdf?p={re.sharepdfpage.2}&{query}
 		reverse_proxy backend:8080
 	}
 	@share_pdf path_regexp sharepdf ^/share/([^/]+)\.pdf$

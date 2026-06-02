@@ -40,6 +40,25 @@ export function subscribeToTheme(cb: (next: ThemeName) => void): () => void {
   return () => window.removeEventListener(THEME_CHANGE_EVENT, handler)
 }
 
+// #3 PDF export — apply a theme passed via ?theme= on the reader URL gotenberg
+// loads (/print, /share). Sets data-theme so the chosen palette renders, plus a
+// data-pdf-themed marker that opts the page out of the print-CSS forced-light
+// default. No-op (keeps the viewer's own theme) when the param is absent/invalid,
+// so it's safe to call on the human-facing share view too. Returns the applied
+// theme, or null when nothing was applied.
+export function applyPdfThemeParam(): ThemeName | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = new URLSearchParams(window.location.search).get('theme')
+    if (!isThemeName(value)) return null
+    document.documentElement.setAttribute('data-theme', value)
+    document.documentElement.setAttribute('data-pdf-themed', '')
+    return value
+  } catch {
+    return null
+  }
+}
+
 export function initTheme(): void {
   let stored: string | null
   try {

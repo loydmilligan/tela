@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { ReaderShell } from '../components/app/ReaderShell'
+import { applyPdfThemeParam } from '../lib/theme'
 
 // PDF print surface (#3). gotenberg's headless Chromium loads /print/<token>;
 // this route fetches the one page the signed token authorizes and renders it
@@ -27,6 +28,9 @@ async function fetchPrintPage(token: string): Promise<PrintPage> {
 
 export function PrintRoute() {
   const { token } = useParams({ from: '/print/$token' })
+  // Apply ?theme= synchronously on first render (before paint) so gotenberg
+  // captures the requested theme. useState initialiser runs exactly once.
+  useState(() => applyPdfThemeParam())
   const query = useQuery({
     queryKey: ['print', token],
     queryFn: () => fetchPrintPage(token),

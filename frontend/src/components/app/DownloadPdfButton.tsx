@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { FileDown, Loader2 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
+import { getTheme } from '../../lib/theme'
 
 interface DownloadPdfButtonProps {
   /** Endpoint that streams the PDF (authed /api/pages/{id}/pdf or a /share/…/.pdf URL). */
@@ -9,6 +10,9 @@ interface DownloadPdfButtonProps {
   label?: string
   fallbackName?: string
   className?: string
+  /** Append the *current* theme (?theme=…) at click time so the PDF matches the
+   * user's selected theme — read live, not baked in at render. */
+  themed?: boolean
 }
 
 // Fetches a server-rendered PDF and triggers a download, showing a pending
@@ -20,6 +24,7 @@ export function DownloadPdfButton({
   label = 'Download PDF',
   fallbackName = 'page.pdf',
   className,
+  themed = false,
 }: DownloadPdfButtonProps) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -29,7 +34,10 @@ export function DownloadPdfButton({
     setBusy(true)
     setFailed(false)
     try {
-      const res = await fetch(url, { credentials: 'include' })
+      const target = themed
+        ? url + (url.includes('?') ? '&' : '?') + 'theme=' + getTheme()
+        : url
+      const res = await fetch(target, { credentials: 'include' })
       if (!res.ok) throw new Error(`pdf ${res.status}`)
       const blob = await res.blob()
       const cd = res.headers.get('Content-Disposition') ?? ''

@@ -1,5 +1,6 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { applyPdfThemeParam } from '../../lib/theme'
 import { useShareTree, type SharePublicMeta } from '../../lib/queries/share'
 import { Button } from '../ui/button'
 import { DownloadPdfButton } from './DownloadPdfButton'
@@ -33,6 +34,9 @@ export function ShareReaderView({
   inScopePageIds,
 }: ShareReaderViewProps) {
   const navigate = useNavigate()
+  // When gotenberg loads /share/<tok>?theme=dark for a PDF, apply it (once,
+  // pre-paint). No-op for human viewers (no ?theme=), so their theme is kept.
+  useState(() => applyPdfThemeParam())
 
   // Subtree nav — only fetched/shown for descendant-inclusive shares with more
   // than the root page. Same gating ShareLayout used.
@@ -81,7 +85,7 @@ export function ShareReaderView({
         <>
           {/* The ".pdf on a share URL" trick: append .pdf to the page the
               viewer is on. credentials are irrelevant for a public share. */}
-          <DownloadPdfButton url={`${window.location.pathname}.pdf`} />
+          <DownloadPdfButton url={`${window.location.pathname}.pdf`} themed />
           {/* Plain <a> rather than the router Link: a full page reload on sign-in
               is intentional so the post-login app boots cleanly outside the
               share-mode shell. */}

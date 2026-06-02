@@ -125,7 +125,7 @@ func (s *Server) ExportPagePDF(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
 		return
 	}
-	url := pdfRenderBaseURL() + "/print/" + s.mintPrintToken(id)
+	url := pdfRenderBaseURL() + "/print/" + s.mintPrintToken(id) + themeQuery(r)
 	s.streamPDF(w, r, url, p.Title)
 }
 
@@ -199,6 +199,7 @@ func (s *Server) ExportSharePDF(w http.ResponseWriter, r *http.Request) {
 	if target != share.PageID {
 		url += "/p/" + strconv.FormatInt(target, 10)
 	}
+	url += themeQuery(r)
 	title := ""
 	if p, err := selectPageByID(r.Context(), s.DB, target); err == nil {
 		title = p.Title
@@ -317,6 +318,18 @@ func pdfFilename(title string) string {
 		slug = strings.Trim(slug[:80], "-")
 	}
 	return slug + ".pdf"
+}
+
+// themeQuery validates a caller-supplied ?theme= and returns it as a query
+// string to append to the reader URL gotenberg loads (so the PDF renders in the
+// chosen theme). Empty/unknown → "" (the reader's default light). Only the three
+// real themes are allowed — the value is reflected into a URL, so it's bounded.
+func themeQuery(r *http.Request) string {
+	switch r.URL.Query().Get("theme") {
+	case "light", "dark", "warm":
+		return "?theme=" + r.URL.Query().Get("theme")
+	}
+	return ""
 }
 
 // noStore marks a response uncacheable by both the browser and Cloudflare so an

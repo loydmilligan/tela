@@ -94,7 +94,7 @@ function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewP
       aliveWikilinkIds={aliveIds}
       onNavigateWikilink={onNavigateWikilink}
       onEscape={onEscape}
-      topbarTrailing={<DownloadPdfButton url={`/api/pages/${pageId}/pdf`} />}
+      topbarTrailing={<DownloadPdfButton url={`/api/pages/${pageId}/pdf`} themed />}
       topbarLeading={
         <Button
           asChild
