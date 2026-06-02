@@ -64,9 +64,16 @@ export function ShareReaderView({
       onNavigateWikilink={onNavigateWikilink}
       sidebar={showSidebar ? <ShareSidebar token={token} pages={pages} /> : undefined}
       topbarLeading={
-        <span className="font-[family-name:var(--font-sans)] text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">
+        /* Wordmark → apex marketing landing. Plain <a> (full nav) for the same
+           reason as Sign in below: share-mode escapes the SPA rather than
+           client-routing into an authed/app surface. */
+        <a
+          href="/"
+          aria-label="tela home"
+          className="inline-block rounded-[var(--radius-xs)] font-[family-name:var(--font-sans)] text-[length:var(--text-base)] font-medium text-[var(--text-primary)] no-underline transition-opacity duration-[var(--duration-fast)] hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        >
           tela
-        </span>
+        </a>
       }
       topbarTrailing={
         /* Plain <a> rather than the router Link: a full page reload on sign-in
