@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronUp, Link2, LogOut, Settings } from 'lucide-react'
+import { ChevronUp, Globe, Link2, LogOut, Settings } from 'lucide-react'
 import { useLogout, useMe } from '../../lib/queries/auth'
 import { Button } from '../ui/button'
 import {
@@ -63,6 +63,19 @@ export function UserMenu() {
             <Settings width={14} height={14} /> Settings
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault()
+              // Hard navigation, NOT router.navigate: "/" is owned by the
+              // static landing (served by Caddy), not a TanStack route. The
+              // ?home=1 hatch tells Caddy to serve the landing even though we
+              // carry a session cookie — a client-side navigate would instead
+              // resolve "/" in-app and bounce straight back to the space.
+              window.location.assign('/?home=1')
+            }}
+          >
+            <Globe width={14} height={14} /> Landing page
+          </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={(e) => {
               e.preventDefault()

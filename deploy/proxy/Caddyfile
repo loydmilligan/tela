@@ -65,6 +65,27 @@
 		reverse_proxy frontend:80
 	}
 
+	# ── Returning user: hard load of "/" → app, not the landing ─────────────
+	# A user who types the bare domain while signed in should land in the app,
+	# not the marketing page. Caddy can't VALIDATE the tela_session cookie
+	# (HMAC + HttpOnly — the backend owns that), but it doesn't need to: mere
+	# presence means "has a session, route to the app", and the SPA's "/" route
+	# resolves it for real — live session → redirect to the user's space, dead
+	# session → /api/spaces 401 → /login. Logged-out visitors carry no cookie
+	# (logout sets Max-Age=-1, so the browser drops it) → they fall through to
+	# the landing below, which therefore stays the default AND indexable (search
+	# crawlers never carry a session). Escape hatch: /?home=1 always shows the
+	# landing, even when signed in (the app links here from the user menu).
+	@root_app {
+		path /
+		header_regexp Cookie "(?:^|;\s*)tela_session=[^;]"
+		not query home=1
+	}
+	handle @root_app {
+		header X-Robots-Tag "noindex"
+		reverse_proxy frontend:80
+	}
+
 	# ── Marketing landing (standalone Astro static) + app SPA ───────────────
 	# The landing build (landing/dist, mounted read-only at /srv/landing) owns
 	# the apex "/", its /_astro/* assets, AND the SEO/root files it ships
@@ -73,8 +94,8 @@
 	# Any path that exists as a file in /srv/landing is served from the landing
 	# and stays indexable; everything else (/login, /spaces/*, /settings, the
 	# app's Vite /assets/*, …) falls through to the app SPA and is noindex'd.
-	# The app's own "/" route is CLIENT-SIDE only (TanStack Router redirects to
-	# the user's space in-browser), so only a hard load of "/" hits the landing.
+	# A cookieless (logged-out) hard load of "/" lands here; a session-bearing
+	# one is captured by @root_app above and routed to the app instead.
 	handle {
 		root * /srv/landing
 
