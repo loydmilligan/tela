@@ -31,10 +31,19 @@ type pageUpdateRequest struct {
 }
 
 // pageNode mirrors models.Page (promoted via embedding) plus a children slice
-// so the tree endpoint can return a nested structure.
+// so the tree endpoint can return a nested structure. Exposure is the resolved
+// public-link visibility (see exposure.go) so the sidebar can render markers.
 type pageNode struct {
 	models.Page
-	Children []*pageNode `json:"children"`
+	Exposure *pageExposure `json:"exposure"`
+	Children []*pageNode   `json:"children"`
+}
+
+// pageWithExposure is the flat-list row enriched with resolved exposure, used
+// by the non-tree ListPages branch so lazy-loaded children carry their state.
+type pageWithExposure struct {
+	models.Page
+	Exposure *pageExposure `json:"exposure"`
 }
 
 // pageListItem is the flat cross-space row returned by ListAllPages — no
@@ -123,7 +132,18 @@ func (s *Server) ListPages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "iterate pages failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pages": pages})
+
+	exposures, err := resolveSpaceExposures(r.Context(), s.DB, spaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "resolve exposures failed")
+		return
+	}
+	out := make([]pageWithExposure, 0, len(pages))
+	for _, p := range pages {
+		e := exposures[p.ID]
+		out = append(out, pageWithExposure{Page: p, Exposure: &e})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pages": out})
 }
 
 // ListAllPages returns every page in every space the caller is a member of
@@ -347,7 +367,12 @@ func (s *Server) GetPage(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"page": p})
+	exp, err := resolvePageExposure(r.Context(), s.DB, p.ID, p.SpaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "resolve exposure failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"page": p, "exposure": exp})
 }
 
 func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
@@ -800,6 +825,22 @@ func buildPageTree(ctx context.Context, db *sql.DB, spaceID int64) ([]*pageNode,
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	// Resolve exposure off the already-loaded nodes (build the parent map in
+	// memory; only the active-share lookup hits the DB).
+	parentMap := make(map[int64]*int64, len(all))
+	for _, n := range all {
+		parentMap[n.ID] = n.ParentID
+	}
+	shares, err := loadActiveShareFacts(ctx, db, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	exposures := resolveExposures(parentMap, shares)
+	for _, n := range all {
+		e := exposures[n.ID]
+		n.Exposure = &e
 	}
 
 	roots := []*pageNode{}

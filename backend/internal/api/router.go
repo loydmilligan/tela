@@ -95,6 +95,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// space. Soft-delete via revoked_at so the audit trail survives revocation.
 	mux.HandleFunc("POST /api/pages/{id}/shares", srv.CreateShareLink)
 	mux.HandleFunc("GET /api/pages/{id}/shares", srv.ListShareLinks)
+	// Cross-space audit: every active share link the caller can see, in one
+	// place. Distinct pattern from the {share_id} routes below (no wildcard).
+	mux.HandleFunc("GET /api/shares", srv.ListAllShares)
 	mux.HandleFunc("PATCH /api/shares/{share_id}", srv.PatchShareLink)
 	mux.HandleFunc("DELETE /api/shares/{share_id}", srv.DeleteShareLink)
 

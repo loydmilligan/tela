@@ -374,6 +374,78 @@ func selectShareLinkByToken(ctx context.Context, q *sql.DB, token string) (share
 	return scanShareLink(row)
 }
 
+// shareAuditItem is one row of the cross-space audit view (GET /api/shares):
+// the management envelope plus the page/space context a list needs to render.
+type shareAuditItem struct {
+	shareLinkDTO
+	SpaceID   int64  `json:"space_id"`
+	SpaceName string `json:"space_name"`
+	PageTitle string `json:"page_title"`
+}
+
+// ListAllShares — GET /api/shares. Every active (non-revoked) share link across
+// the spaces the caller is a member of, with page + space context. Powers the
+// "Shared" audit view: one place to see everything currently reachable by link
+// instead of opening each page's manager. A bearer key restricted to one space
+// sees only that space's shares (same ceiling as ListAllPages).
+func (s *Server) ListAllShares(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	query := `
+		SELECT sl.id, sl.token, sl.page_id, sl.include_descendants, sl.password_hash,
+		       sl.created_by, sl.created_at, sl.expires_at, sl.revoked_at,
+		       p.space_id, sp.name, p.title
+		  FROM share_links sl
+		  JOIN pages p ON p.id = sl.page_id
+		  JOIN spaces sp ON sp.id = p.space_id
+		  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+		 WHERE sl.revoked_at IS NULL`
+	args := []any{u.ID}
+	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
+		query += ` AND p.space_id = ?`
+		args = append(args, *k.SpaceID)
+	}
+	query += ` ORDER BY sp.name ASC, p.title ASC, sl.created_at ASC`
+
+	rows, err := s.DB.QueryContext(r.Context(), query, args...)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "list shares failed")
+		return
+	}
+	defer rows.Close()
+
+	items := []shareAuditItem{}
+	for rows.Next() {
+		var (
+			sl          shareLink
+			includeDesc int
+			spaceID     int64
+			spaceName   string
+			pageTitle   string
+		)
+		if err := rows.Scan(&sl.ID, &sl.Token, &sl.PageID, &includeDesc, &sl.PasswordHash,
+			&sl.CreatedBy, &sl.CreatedAt, &sl.ExpiresAt, &sl.RevokedAt,
+			&spaceID, &spaceName, &pageTitle); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "scan share row failed")
+			return
+		}
+		sl.IncludeDescendants = includeDesc != 0
+		items = append(items, shareAuditItem{
+			shareLinkDTO: shareLinkToDTO(&sl),
+			SpaceID:      spaceID,
+			SpaceName:    spaceName,
+			PageTitle:    pageTitle,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "iterate shares failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"shares": items})
+}
+
 // shareLinkActive reports whether a share is currently usable — exists, not
 // revoked, not expired. The three failure modes return identical responses to
 // public callers, so the helper collapses them into one bool.
