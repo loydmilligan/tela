@@ -97,7 +97,10 @@ const appLayoutRoute = createRoute({
             </h1>
             <ThemeSwitcher />
           </header>
-          <main className="flex-1 flex flex-col overflow-y-auto overscroll-contain min-h-0">
+          <main
+            data-page-scroll
+            className="flex-1 flex flex-col overflow-y-auto overscroll-contain min-h-0"
+          >
             <Outlet />
           </main>
         </div>

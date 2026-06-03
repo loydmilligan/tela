@@ -491,6 +491,16 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
     })
   }, [provider, me.data])
 
+  // Always open a page scrolled to the top. Without this, the content scroller
+  // can retain a previous scroll position on refresh / sidebar navigation, so
+  // the page title isn't visible on open. Runs once per page (PageEditor
+  // remounts on page.id via its key).
+  useEffect(() => {
+    document
+      .querySelector('[data-page-scroll]')
+      ?.scrollTo({ top: 0, left: 0 })
+  }, [page.id])
+
   // Alive-page-ids snapshot powers M5.2d broken-wikilink rendering. `null` is
   // the "don't know yet" state — the editor's decoration plugin keeps every
   // wikilink in the alive style until the query lands, so first-paint never
