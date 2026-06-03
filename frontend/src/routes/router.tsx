@@ -357,39 +357,11 @@ const pageRoute = createRoute({
     // the detail and clears the key on 404.
     writeLastPage({ spaceId: params.spaceId, pageId: params.pageId })
   },
-  // Reads params loosely so the same view serves the slugged route below;
-  // PageView canonicalises the slug itself.
   component: function PageRouteComponent() {
-    const params = useParams({ strict: false }) as {
-      spaceId: number
-      pageId: number
-    }
-    return <PageView spaceId={params.spaceId} pageId={params.pageId} />
-  },
-})
-
-// Confluence-style cosmetic-slug variant: /spaces/{id}/pages/{id}/{slug}. The
-// slug is decorative — PageView reads the id and ignores/replaces the slug. The
-// static `history` sibling out-ranks this dynamic segment, so it doesn't shadow
-// pages/$pageId/history.
-const pageSlugRoute = createRoute({
-  getParentRoute: () => spaceRoute,
-  path: 'pages/$pageId/$slug',
-  parseParams: (raw) => ({ pageId: Number(raw.pageId), slug: raw.slug }),
-  stringifyParams: (params) => ({
-    pageId: String(params.pageId),
-    slug: String(params.slug),
-  }),
-  validateSearch: validatePageSearch,
-  beforeLoad: ({ params }) => {
-    writeLastPage({ spaceId: params.spaceId, pageId: params.pageId })
-  },
-  component: function PageSlugRouteComponent() {
-    const params = useParams({ strict: false }) as {
-      spaceId: number
-      pageId: number
-    }
-    return <PageView spaceId={params.spaceId} pageId={params.pageId} />
+    const { spaceId, pageId } = useParams({
+      from: '/_app/spaces/$spaceId/pages/$pageId',
+    })
+    return <PageView spaceId={spaceId} pageId={pageId} />
   },
 })
 
@@ -492,12 +464,7 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     sharedRoute,
     searchRoute,
-    spaceRoute.addChildren([
-      spaceIndexRoute,
-      pageRoute,
-      pageSlugRoute,
-      pageHistoryRoute,
-    ]),
+    spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
   ]),
 ])
 

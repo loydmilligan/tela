@@ -39,7 +39,6 @@ import { Input } from '../ui/input'
 import { VisibilityBadge } from '../ui/visibility-badge'
 import { MovePageDialog } from './move-page-dialog'
 import { cn } from '../../lib/utils'
-import { pageSlug } from '../../lib/slug'
 
 const UNTITLED_TITLE = 'Untitled'
 
@@ -308,22 +307,12 @@ function PageNode({
         <button
           type="button"
           aria-current={active ? 'page' : undefined}
-          onClick={() => {
-            // Navigate straight to the slugged URL so the address bar is pretty
-            // without waiting for PageView to canonicalise.
-            const slug = pageSlug(node.title)
-            void navigate(
-              slug
-                ? {
-                    to: '/spaces/$spaceId/pages/$pageId/$slug',
-                    params: { spaceId, pageId: node.id, slug },
-                  }
-                : {
-                    to: '/spaces/$spaceId/pages/$pageId',
-                    params: { spaceId, pageId: node.id },
-                  },
-            )
-          }}
+          onClick={() =>
+            void navigate({
+              to: '/spaces/$spaceId/pages/$pageId',
+              params: { spaceId, pageId: node.id },
+            })
+          }
           className={cn(
             'flex-1 min-w-0 text-left',
             'py-[var(--space-2)]',

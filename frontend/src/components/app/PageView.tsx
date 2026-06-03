@@ -123,34 +123,11 @@ interface PageViewProps {
 export function PageView({ spaceId, pageId }: PageViewProps) {
   const page = usePage(pageId)
   const navigate = useNavigate()
-  // Route-agnostic: PageView renders under both /pages/$pageId and the slugged
-  // /pages/$pageId/$slug, so read search loosely rather than pinning `from`.
-  const search = useSearch({ strict: false }) as { draft?: number }
-  // M9.3 — soft-draft mode is opted into via `?draft=$revId`.
-  const draftRevId = typeof search.draft === 'number' ? search.draft : undefined
-
-  // Confluence-style canonical URL: keep the address bar at /pages/{id}/{slug}
-  // (or bare /pages/{id} when the title yields no slug), refreshing on rename.
-  // We use history.replaceState rather than the router so a slug change never
-  // re-matches routes — navigating bare↔slug would swap route components and
-  // remount the editor, stealing focus mid-rename. The id is canonical, so the
-  // router still resolves whatever URL it actually matched; this only prettifies
-  // the address bar. (No popstate is fired, so TanStack ignores it.)
-  const persistedTitle = page.data?.title ?? ''
-  const inThisSpace = page.data?.space_id === spaceId
-  useEffect(() => {
-    if (!page.data || !inThisSpace) return
-    const slug = pageSlug(persistedTitle)
-    const base = `/spaces/${spaceId}/pages/${pageId}`
-    const desiredPath = slug ? `${base}/${slug}` : base
-    if (window.location.pathname !== desiredPath) {
-      window.history.replaceState(
-        window.history.state,
-        '',
-        desiredPath + window.location.search + window.location.hash,
-      )
-    }
-  }, [page.data, inThisSpace, persistedTitle, spaceId, pageId])
+  // M9.3 — soft-draft mode is opted into via `?draft=$revId`. The param is
+  // typed by the route's validateSearch in router.tsx.
+  const { draft: draftRevId } = useSearch({
+    from: '/_app/spaces/$spaceId/pages/$pageId',
+  })
 
   // 404 / wrong-space handling
   if (page.isError) {
