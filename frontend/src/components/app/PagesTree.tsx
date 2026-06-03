@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { Input } from '../ui/input'
+import { VisibilityBadge } from '../ui/visibility-badge'
 import { MovePageDialog } from './move-page-dialog'
 import { cn } from '../../lib/utils'
 
@@ -312,6 +313,18 @@ function PageNode({
             <span className="text-[var(--text-muted)]">{UNTITLED_TITLE}</span>
           )}
         </button>
+
+        {/* Exposure marker — only on pages reachable by link, so the tree stays
+            quiet and the icon flags exactly what's exposed (markers on by
+            default per docs/visibility-model.md). */}
+        {node.exposure && node.exposure.state !== 'private' ? (
+          <VisibilityBadge
+            state={node.exposure.state}
+            inherited={node.exposure.inherited}
+            compact
+            className="mr-[var(--space-1)]"
+          />
+        ) : null}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -15,7 +15,6 @@ import {
   History,
   MessageSquare,
   Plus,
-  Share2,
   Trash2,
 } from 'lucide-react'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -67,6 +66,7 @@ import {
 } from '../ui/dialog'
 import { Input } from '../ui/input'
 import { SaveIndicator, type SaveStatus } from '../ui/save-indicator'
+import { VisibilityBadge } from '../ui/visibility-badge'
 import { cn } from '../../lib/utils'
 import { BacklinksSection } from './BacklinksSection'
 import { DownloadPdfButton } from './DownloadPdfButton'
@@ -649,18 +649,31 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                   )}
                 </Button>
               ) : null}
+              {/* Visibility pill — the ambient exposure indicator. Shown to
+                  every member (viewers included) so anyone can tell at a glance
+                  whether the page is exposed; editors click it to open the
+                  share manager, viewers see it as a static status chip. */}
               {roleResolved && !isViewer ? (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  aria-label="Share"
+                  aria-label="Manage sharing"
                   onClick={() => setShareOpen(true)}
-                  className="h-[var(--space-8)] px-[var(--space-3)]"
+                  className="h-[var(--space-8)] px-[var(--space-2)]"
                 >
-                  <Share2 width={16} height={16} />
-                  <span>Share</span>
+                  <VisibilityBadge
+                    state={page.exposure?.state ?? 'private'}
+                    inherited={page.exposure?.inherited ?? false}
+                  />
                 </Button>
+              ) : null}
+              {roleResolved && isViewer ? (
+                <VisibilityBadge
+                  state={page.exposure?.state ?? 'private'}
+                  inherited={page.exposure?.inherited ?? false}
+                  className="ml-[var(--space-1)]"
+                />
               ) : null}
               <Button
                 type="button"

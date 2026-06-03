@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
+import { pageKeys } from './pages'
 import type { ApiErrorBody } from '../types'
 
 // Public token-scoped queries for /share/{token} routes. Bypasses the `api()`
@@ -21,6 +22,16 @@ export const shareKeys = {
   // Management list of shares for a given page (editor+ session). Distinct
   // from the public token-scoped keys above so the two caches don't collide.
   list: (pageId: number) => [...shareKeys.all, 'list', pageId] as const,
+  // Cross-space audit list (GET /api/shares) powering the "Shared" view.
+  audit: () => [...shareKeys.all, 'audit'] as const,
+}
+
+// shareAuditItem mirrors the backend audit DTO: a ShareDTO plus page + space
+// context. Powers the cross-space "Shared" view.
+export interface ShareAuditItem extends ShareDTO {
+  space_id: number
+  space_name: string
+  page_title: string
 }
 
 // Management envelope — mirrors backend `shareLinkDTO` exactly. `url` is the
@@ -233,6 +244,31 @@ export function useSharesForPage(pageId: number) {
   })
 }
 
+// useAllShares backs the cross-space "Shared" audit view: every active share
+// link the caller can see, in one list.
+export function useAllShares() {
+  return useQuery({
+    queryKey: shareKeys.audit(),
+    queryFn: async () => {
+      const { shares } = await api<{ shares: ShareAuditItem[] }>('/api/shares')
+      return shares
+    },
+    staleTime: 5_000,
+  })
+}
+
+// invalidateSharingViews refreshes everything a share mutation can change: the
+// per-page management list, the cross-space audit list, and the page caches
+// (detail + tree) that carry the resolved exposure the badges/sidebar render.
+function invalidateSharingViews(
+  qc: ReturnType<typeof useQueryClient>,
+  pageId: number,
+) {
+  void qc.invalidateQueries({ queryKey: shareKeys.list(pageId) })
+  void qc.invalidateQueries({ queryKey: shareKeys.audit() })
+  void qc.invalidateQueries({ queryKey: pageKeys.all })
+}
+
 export interface CreateShareInput {
   include_descendants: boolean
   password?: string
@@ -255,7 +291,7 @@ export function useCreateShare(pageId: number) {
       return share
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: shareKeys.list(pageId) })
+      invalidateSharingViews(qc, pageId)
     },
   })
 }
@@ -286,7 +322,7 @@ export function useUpdateShare() {
       return share
     },
     onSuccess: (_share, vars) => {
-      void qc.invalidateQueries({ queryKey: shareKeys.list(vars.pageId) })
+      invalidateSharingViews(qc, vars.pageId)
     },
   })
 }
@@ -303,7 +339,7 @@ export function useRevokeShare() {
       await api<void>(`/api/shares/${id}`, { method: 'DELETE' })
     },
     onSuccess: (_void, vars) => {
-      void qc.invalidateQueries({ queryKey: shareKeys.list(vars.pageId) })
+      invalidateSharingViews(qc, vars.pageId)
     },
   })
 }

@@ -211,6 +211,17 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+// Cross-space "Shared" audit view (docs/visibility-model.md). Lazy so its
+// share-audit query + row chrome stay off the main chunk until visited.
+const sharedRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/shared',
+  component: lazyRouteComponent(
+    () => import('../components/app/SharedView'),
+    'SharedRoute',
+  ),
+})
+
 // M10.2 — dedicated full-page body-fuzzy search. Hosts the same Orama indexes
 // the palette tier-3 uses, but with filters (space, updated-since) and a
 // top-50 result list. Lazy-loaded so the bundle (and its bodyExcerpt /
@@ -440,6 +451,7 @@ const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([
     indexRoute,
     settingsRoute,
+    sharedRoute,
     searchRoute,
     spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
   ]),

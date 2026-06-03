@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronUp, LogOut, Settings } from 'lucide-react'
+import { ChevronUp, Link2, LogOut, Settings } from 'lucide-react'
 import { useLogout, useMe } from '../../lib/queries/auth'
 import { Button } from '../ui/button'
 import {
@@ -46,6 +46,14 @@ export function UserMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" className="min-w-[14rem]">
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault()
+              void navigate({ to: '/shared' })
+            }}
+          >
+            <Link2 width={14} height={14} /> Shared
+          </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={(e) => {
               e.preventDefault()

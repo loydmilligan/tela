@@ -7,6 +7,7 @@ import type {
   CreatePageInput,
   MovePageInput,
   Page,
+  PageExposure,
   PageListItem,
   PageTreeNode,
   UpdatePageInput,
@@ -126,8 +127,13 @@ export function usePage(id: number | null | undefined) {
   return useQuery({
     queryKey: id != null ? pageKeys.detail(id) : pageKeys.detail(-1),
     queryFn: async () => {
-      const { page } = await api<{ page: Page }>(`/api/pages/${id}`)
-      return page
+      // GET returns exposure as a sibling (models.Page can't carry it); fold it
+      // onto the page object so consumers read `page.exposure` uniformly with
+      // the tree/list rows.
+      const { page, exposure } = await api<{ page: Page; exposure?: PageExposure }>(
+        `/api/pages/${id}`,
+      )
+      return { ...page, exposure: exposure ?? null }
     },
     enabled: id != null,
   })

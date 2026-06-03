@@ -11,6 +11,19 @@ export interface Space {
   updated_at: string
 }
 
+// Resolved public-link exposure of a page (backend exposure.go). Read-only,
+// derived from active share links — pages have no stored visibility. "private"
+// = space members only (the resting state); "public"/"password" = reachable by
+// an open / password-protected link. `inherited` = exposure comes only from an
+// ancestor's include-descendants share. See docs/visibility-model.md.
+export type ExposureState = 'private' | 'public' | 'password'
+
+export interface PageExposure {
+  state: ExposureState
+  inherited: boolean
+  expires_at: string | null
+}
+
 export interface Page {
   id: number
   space_id: number
@@ -20,6 +33,10 @@ export interface Page {
   position: number
   created_at: string
   updated_at: string
+  // Present on tree (`?tree=1`) and flat list rows, and attached by `usePage`
+  // from the GET /api/pages/{id} sibling field. Optional so older cached rows
+  // and optimistic nodes stay valid.
+  exposure?: PageExposure | null
 }
 
 export interface PageTreeNode extends Page {
