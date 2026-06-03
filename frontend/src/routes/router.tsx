@@ -334,21 +334,22 @@ const spaceIndexRoute = createRoute({
   },
 })
 
+// M9.3 — soft-draft restore. `?draft=$revId` opens the page in draft mode,
+// seeded from that revision's body. Shared by the bare and slugged page routes
+// so `?draft=` survives canonicalisation between them.
+function validatePageSearch(search: Record<string, unknown>): { draft?: number } {
+  const raw = search.draft
+  if (raw == null) return {}
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(n) && n > 0 ? { draft: n } : {}
+}
+
 const pageRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: 'pages/$pageId',
   parseParams: (raw) => ({ pageId: Number(raw.pageId) }),
   stringifyParams: (params) => ({ pageId: String(params.pageId) }),
-  // M9.3 — soft-draft restore. `?draft=$revId` opens the page in draft mode,
-  // seeded from that revision's body. Owner-only enforcement lives in
-  // PageView (this just types + parses the param so consumers can read it
-  // via useSearch without manually pulling from window.location).
-  validateSearch: (search: Record<string, unknown>): { draft?: number } => {
-    const raw = search.draft
-    if (raw == null) return {}
-    const n = typeof raw === 'number' ? raw : Number(raw)
-    return Number.isFinite(n) && n > 0 ? { draft: n } : {}
-  },
+  validateSearch: validatePageSearch,
   beforeLoad: ({ params }) => {
     // Remember the last-viewed page so a future cold mount can restore it. We
     // write eagerly here (rather than only on a successful detail fetch) so
@@ -356,11 +357,39 @@ const pageRoute = createRoute({
     // the detail and clears the key on 404.
     writeLastPage({ spaceId: params.spaceId, pageId: params.pageId })
   },
+  // Reads params loosely so the same view serves the slugged route below;
+  // PageView canonicalises the slug itself.
   component: function PageRouteComponent() {
-    const { spaceId, pageId } = useParams({
-      from: '/_app/spaces/$spaceId/pages/$pageId',
-    })
-    return <PageView spaceId={spaceId} pageId={pageId} />
+    const params = useParams({ strict: false }) as {
+      spaceId: number
+      pageId: number
+    }
+    return <PageView spaceId={params.spaceId} pageId={params.pageId} />
+  },
+})
+
+// Confluence-style cosmetic-slug variant: /spaces/{id}/pages/{id}/{slug}. The
+// slug is decorative — PageView reads the id and ignores/replaces the slug. The
+// static `history` sibling out-ranks this dynamic segment, so it doesn't shadow
+// pages/$pageId/history.
+const pageSlugRoute = createRoute({
+  getParentRoute: () => spaceRoute,
+  path: 'pages/$pageId/$slug',
+  parseParams: (raw) => ({ pageId: Number(raw.pageId), slug: raw.slug }),
+  stringifyParams: (params) => ({
+    pageId: String(params.pageId),
+    slug: String(params.slug),
+  }),
+  validateSearch: validatePageSearch,
+  beforeLoad: ({ params }) => {
+    writeLastPage({ spaceId: params.spaceId, pageId: params.pageId })
+  },
+  component: function PageSlugRouteComponent() {
+    const params = useParams({ strict: false }) as {
+      spaceId: number
+      pageId: number
+    }
+    return <PageView spaceId={params.spaceId} pageId={params.pageId} />
   },
 })
 
@@ -390,6 +419,15 @@ const shareRootRoute = createRoute({
     () => import('./share'),
     'ShareRootRoute',
   ),
+})
+
+// Cosmetic-slug variant of the share root: /share/{token}/{slug}. The token is
+// canonical; the slug is ignored (ShareRootRoute reads it loosely and
+// canonicalises). The static `/p/$pageId` descendant route out-ranks this.
+const shareSlugRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/share/$token/$slug',
+  component: lazyRouteComponent(() => import('./share'), 'ShareRootRoute'),
 })
 
 const shareDescendantRoute = createRoute({
@@ -445,6 +483,7 @@ const printRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   shareRootRoute,
+  shareSlugRoute,
   shareDescendantRoute,
   readRoute,
   printRoute,
@@ -453,7 +492,12 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     sharedRoute,
     searchRoute,
-    spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
+    spaceRoute.addChildren([
+      spaceIndexRoute,
+      pageRoute,
+      pageSlugRoute,
+      pageHistoryRoute,
+    ]),
   ]),
 ])
 

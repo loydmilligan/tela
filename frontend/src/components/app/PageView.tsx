@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   BookOpen,
   ChevronRight,
@@ -20,6 +20,7 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { ApiError } from '../../lib/api'
 import { pushRecentPage } from '../../lib/recentPages'
+import { pageSlug } from '../../lib/slug'
 import type { TelaProvider } from '../../lib/collab/tela-provider'
 import { captureAnchor, type CommentAnchor } from '../../lib/comments/anchor'
 import { scrollAndFlashPanelThread } from '../../lib/comments/coordination'
@@ -114,13 +115,40 @@ interface PageViewProps {
 export function PageView({ spaceId, pageId }: PageViewProps) {
   const page = usePage(pageId)
   const navigate = useNavigate()
-  // M9.3 — soft-draft mode is opted into via `?draft=$revId`. Owner-only
-  // semantics are enforced inside PageEditor (we still need `me` + members
-  // to know who the viewer is). The param is typed by the route's
-  // validateSearch in router.tsx.
-  const { draft: draftRevId } = useSearch({
-    from: '/_app/spaces/$spaceId/pages/$pageId',
-  })
+  // Route-agnostic reads: PageView renders under both /pages/$pageId and the
+  // slugged /pages/$pageId/$slug, so we can't pin `from` to one route.
+  const params = useParams({ strict: false }) as { slug?: string }
+  const search = useSearch({ strict: false }) as { draft?: number }
+  // M9.3 — soft-draft mode is opted into via `?draft=$revId`.
+  const draftRevId = typeof search.draft === 'number' ? search.draft : undefined
+
+  // Confluence-style canonical URL: once the persisted title is known, replace
+  // the address bar with /pages/{id}/{slug} (or bare /pages/{id} when the title
+  // yields no slug). Keyed on the saved title, so it also updates on rename.
+  // The page id is canonical, so a stale/absent slug always still resolved.
+  const currentSlug = typeof params.slug === 'string' ? params.slug : ''
+  const persistedTitle = page.data?.title ?? ''
+  const inThisSpace = page.data?.space_id === spaceId
+  useEffect(() => {
+    if (!page.data || !inThisSpace) return
+    const desired = pageSlug(persistedTitle)
+    if (desired === currentSlug) return
+    if (desired) {
+      void navigate({
+        to: '/spaces/$spaceId/pages/$pageId/$slug',
+        params: { spaceId, pageId, slug: desired },
+        replace: true,
+        search: (prev) => prev,
+      })
+    } else if (currentSlug) {
+      void navigate({
+        to: '/spaces/$spaceId/pages/$pageId',
+        params: { spaceId, pageId },
+        replace: true,
+        search: (prev) => prev,
+      })
+    }
+  }, [page.data, inThisSpace, persistedTitle, currentSlug, spaceId, pageId, navigate])
 
   // 404 / wrong-space handling
   if (page.isError) {
