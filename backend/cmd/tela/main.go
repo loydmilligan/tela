@@ -61,6 +61,13 @@ func main() {
 		}
 	}
 
+	// Every user gets a private, one-member personal space as their default
+	// writing home (docs/visibility-model.md). Backfills the bootstrap admin
+	// and any pre-existing users; non-fatal so a hiccup never blocks boot.
+	if err := api.EnsurePersonalSpacesForAll(context.Background(), d); err != nil {
+		log.Printf("personal space backfill: %v", err)
+	}
+
 	// rootCtx is cancelled on SIGINT/SIGTERM. Threaded into StartAuditGC so
 	// the ticker loop exits cleanly on shutdown; used as the trigger for
 	// HTTP and AuditWriter teardown below.

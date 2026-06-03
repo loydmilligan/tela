@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -119,6 +120,12 @@ func (s *Server) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "create user: last insert id failed")
 		return
+	}
+	// Provision the new user's personal space (best-effort: the user already
+	// exists, so a provisioning hiccup shouldn't fail the create — the startup
+	// backfill will catch it on next boot).
+	if _, err := EnsurePersonalSpace(ctx, s.DB, id, username); err != nil {
+		log.Printf("personal space for new user %d (%s): %v", id, username, err)
 	}
 	dto, err := selectAdminUserByID(ctx, s.DB, id)
 	if err != nil {

@@ -1,7 +1,8 @@
 # tela — Visibility & Sharing model (design note)
 
-> Status: **accepted** (2026-06-03). Indicators shipped; personal-space
-> provisioning is the remaining piece.
+> Status: **shipped** (2026-06-03) — exposure model, indicators, audit view,
+> and personal-space provisioning are all in. Remaining items are the explicit
+> "Deferred" list below.
 > Supersedes the implicit, three-mechanism status quo described below.
 
 ## Why
@@ -80,10 +81,13 @@ one-member space — so that space must be **effortless and always there**, or w
 re-created capture friction. Today bootstrap creates no space at all
 (`auth/bootstrap.go`).
 
-Plan: every user gets a personal space provisioned (e.g. on first login / at bootstrap)
-— one member, themselves, owner — as the default landing for "jot a thought." Exact
-trigger TBD in the build, but the principle is locked: **personal capture is one click,
-not "create space → set membership → create page."**
+Shipped: migration `0014_personal_spaces.sql` adds `spaces.personal_user_id`
+(partial-unique). `api.EnsurePersonalSpace` idempotently creates a private,
+one-member "Personal" space (owner = the user); it runs when the admin creates a
+user and is backfilled for everyone (incl. the bootstrap admin) at startup via
+`EnsurePersonalSpacesForAll` from `main.go`. "Ensure if missing", so a deleted
+personal space returns on next boot — fine for a default home. **Personal
+capture is now one click, not "create space → set membership → create page."**
 
 ## Implementation sketch (no core migration)
 
@@ -103,7 +107,8 @@ not "create space → set membership → create page."**
   excerpt / image for non-shared pages), or fold it into a real Published state. Agreed
   to handle after this lands; not a blocker.
 - **Published state** (🌐 clean indexed URL, no token).
-- **Personal-space provisioning trigger** — decided during the build.
+- **Personal-space UI polish** — label/pin the personal space in the spaces list
+  ("just you"); the space itself is provisioned, this is only affordance.
 
 ## Resolved (2026-06-03)
 
