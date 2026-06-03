@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, memo, useEffect, useRef, useState } from 'react'
 import {
   Editor,
   defaultValueCtx,
@@ -604,8 +604,14 @@ function MilkdownEditorInner({
       .use(miraPasteRequestCtx),
   )
 
+  // Autofocus the body ONCE on first ready — never again. `get` from useEditor
+  // isn't referentially stable, so without this guard the effect re-ran on
+  // every re-render (e.g. each keystroke in the page-title input) and yanked
+  // focus from the title back into the editor after a single character.
+  const didAutoFocusRef = useRef(false)
   useEffect(() => {
-    if (loading || !autoFocus) return
+    if (loading || !autoFocus || didAutoFocusRef.current) return
+    didAutoFocusRef.current = true
     const editor = get()
     editor?.action((ctx) => {
       ctx.get(editorViewCtx).focus()
@@ -810,7 +816,14 @@ function MilkdownEditorInner({
   )
 }
 
-export function MilkdownEditor(props: MilkdownEditorProps) {
+// memo so an unrelated parent re-render (e.g. typing the page title) with stable
+// props doesn't re-render the editor subtree. The prosemirror-adapter renders
+// node views via flushSync; re-rendering it during the title input's update
+// cycle fired flushSync mid-lifecycle and stole the title's focus after one
+// keystroke. Props from PageView are referentially stable (useCallback/useMemo).
+export const MilkdownEditor = memo(function MilkdownEditor(
+  props: MilkdownEditorProps,
+) {
   return (
     <MilkdownProvider>
       <ProsemirrorAdapterProvider>
@@ -818,4 +831,4 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       </ProsemirrorAdapterProvider>
     </MilkdownProvider>
   )
-}
+})

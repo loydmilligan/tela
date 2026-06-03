@@ -450,8 +450,15 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
   // enabled — see milkdown-editor.tsx commentsEnabled doc: the editor
   // builder closure captures the prop ONCE at build time, so undefined-now
   // would never upgrade to plugin-mounted when the query later returns.
-  const commentThreadsForEditor =
-    roleResolved && !isViewer ? (commentsForHeader.data ?? []) : undefined
+  // Memoized so its identity is stable across unrelated re-renders (e.g. typing
+  // the title) — otherwise a fresh [] every render defeats MilkdownEditor's
+  // React.memo and the editor re-renders on each keystroke (triggering a
+  // flushSync storm from the prosemirror-adapter that steals title focus).
+  const commentThreadsForEditor = useMemo(
+    () =>
+      roleResolved && !isViewer ? (commentsForHeader.data ?? []) : undefined,
+    [roleResolved, isViewer, commentsForHeader.data],
+  )
 
   // M7.4 — collab provider, lifted into PageView so the header
   // <PresenceAvatars /> and the local-awareness user-state seeding share
