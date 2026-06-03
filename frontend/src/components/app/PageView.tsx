@@ -10,12 +10,14 @@ import {
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   BookOpen,
-  Check,
   ChevronRight,
+  FileDown,
   FileText,
+  Hash,
   History,
   Link2,
   MessageSquare,
+  MoreHorizontal,
   Plus,
   Trash2,
 } from 'lucide-react'
@@ -74,11 +76,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { cn } from '../../lib/utils'
 import { BacklinksSection } from './BacklinksSection'
-import { DownloadPdfButton } from './DownloadPdfButton'
+import { usePdfDownload } from './use-pdf-download'
 
 // Milkdown is the largest dependency in the app (~700 KB raw). Lazy-load it so
 // non-editor routes (sidebar, spaces list, command palette) don't pay for it
@@ -156,26 +159,35 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
   )
 }
 
-// CopyLinkMenu — grabs a link to the current page: the pretty permalink
-// (/p/{id}/{slug}) or the bare short link (/p/{id}, tela's tiny-link
-// equivalent). Both resolve via the canonical id and survive rename. Built off
-// window.location.origin so the copied host matches where the user is browsing.
-function CopyLinkMenu({ pageId, title }: { pageId: number; title: string }) {
-  const [copied, setCopied] = useState(false)
+// PageActionsMenu — the header "•••" overflow. Keeps the bar to its frequent
+// actions (Comments, Share) and tucks the rest here, Confluence-style. "Copy
+// link" is the primary, obvious action (pretty /p/{id}/{slug}); "Copy short
+// link" (bare /p/{id}) is present but deliberately demoted so people don't grab
+// the opaque one by default. Links are built off window.location.origin and
+// resolve via the canonical id, surviving rename.
+function PageActionsMenu({
+  spaceId,
+  pageId,
+  title,
+  isViewer,
+  onDelete,
+}: {
+  spaceId: number
+  pageId: number
+  title: string
+  isViewer: boolean
+  onDelete: () => void
+}) {
+  const navigate = useNavigate()
+  const { download: downloadPdf } = usePdfDownload(`/api/pages/${pageId}/pdf`, {
+    themed: true,
+  })
   const origin = window.location.origin
   const slug = pageSlug(title)
   const pretty = slug ? `${origin}/p/${pageId}/${slug}` : `${origin}/p/${pageId}`
   const short = `${origin}/p/${pageId}`
-
-  async function copy(url: string) {
-    if (!navigator.clipboard?.writeText) return
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // best-effort
-    }
+  const copy = (url: string) => {
+    void navigator.clipboard?.writeText?.(url)
   }
 
   return (
@@ -185,24 +197,56 @@ function CopyLinkMenu({ pageId, title }: { pageId: number; title: string }) {
           type="button"
           variant="ghost"
           size="sm"
-          aria-label="Copy link to page"
-          className="h-[var(--space-8)] px-[var(--space-3)]"
+          aria-label="More actions"
+          className="h-[var(--space-8)] w-[var(--space-8)] p-0"
         >
-          {copied ? (
-            <Check width={16} height={16} />
-          ) : (
-            <Link2 width={16} height={16} />
-          )}
-          <span>{copied ? 'Copied!' : 'Copy link'}</span>
+          <MoreHorizontal width={16} height={16} />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => void copy(pretty)}>
-          Copy link
+      <DropdownMenuContent align="end" className="min-w-[12rem]">
+        <DropdownMenuItem onSelect={() => copy(pretty)}>
+          <Link2 width={14} height={14} /> Copy link
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void copy(short)}>
-          Copy short link
+        <DropdownMenuItem
+          onSelect={() => copy(short)}
+          className="text-[var(--text-muted)]"
+        >
+          <Hash width={14} height={14} /> Copy short link
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() =>
+            void navigate({
+              to: '/read/$spaceId/$pageId',
+              params: { spaceId, pageId },
+            })
+          }
+        >
+          <BookOpen width={14} height={14} /> Read mode
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void downloadPdf()}>
+          <FileDown width={14} height={14} /> Export PDF
+        </DropdownMenuItem>
+        {!isViewer ? (
+          <DropdownMenuItem
+            onSelect={() =>
+              void navigate({
+                to: '/spaces/$spaceId/pages/$pageId/history',
+                params: { spaceId, pageId },
+              })
+            }
+          >
+            <History width={14} height={14} /> Version history
+          </DropdownMenuItem>
+        ) : null}
+        {!isViewer ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem destructive onSelect={onDelete}>
+              <Trash2 width={14} height={14} /> Delete page
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -654,43 +698,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
             <>
               <PresenceAvatars awareness={provider?.awareness ?? null} />
               <SaveIndicator status={status} />
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                aria-label="Read"
-                className="h-[var(--space-8)] px-[var(--space-3)]"
-              >
-                <Link
-                  to="/read/$spaceId/$pageId"
-                  params={{ spaceId, pageId: page.id }}
-                >
-                  <BookOpen width={16} height={16} />
-                  <span>Read</span>
-                </Link>
-              </Button>
-              <DownloadPdfButton
-                url={`/api/pages/${page.id}/pdf`}
-                label="Export PDF"
-                themed
-              />
-              {roleResolved && !isViewer ? (
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  aria-label="History"
-                  className="h-[var(--space-8)] px-[var(--space-3)]"
-                >
-                  <Link
-                    to="/spaces/$spaceId/pages/$pageId/history"
-                    params={{ spaceId, pageId: page.id }}
-                  >
-                    <History width={16} height={16} />
-                    <span>History</span>
-                  </Link>
-                </Button>
-              ) : null}
+              {/* Frequent actions stay on the bar; the rest live in the "•••"
+                  menu (PageActionsMenu) to keep the header uncluttered. */}
               {roleResolved && !isViewer ? (
                 <Button
                   type="button"
@@ -708,15 +717,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                   )}
                 </Button>
               ) : null}
-              {/* Visibility pill — the ambient exposure indicator. Shown to
-                  every member (viewers included) so anyone can tell at a glance
-                  whether the page is exposed; editors click it to open the
-                  share manager, viewers see it as a static status chip. */}
-              {/* Copy link to this page — pretty /p/{id}/{slug} or the bare
-                  /p/{id} short link. Available to every member. */}
-              {roleResolved ? (
-                <CopyLinkMenu pageId={page.id} title={page.title} />
-              ) : null}
+              {/* Visibility pill — ambient exposure indicator; editors click to
+                  manage sharing, viewers see a static status chip. */}
               {roleResolved && !isViewer ? (
                 <Button
                   type="button"
@@ -739,16 +741,15 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                   className="ml-[var(--space-1)]"
                 />
               ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label="Delete page"
-                onClick={() => setDeleteOpen(true)}
-                className="h-[var(--space-8)] w-[var(--space-8)] p-0 hover:text-[var(--danger)]"
-              >
-                <Trash2 width={16} height={16} />
-              </Button>
+              {roleResolved ? (
+                <PageActionsMenu
+                  spaceId={spaceId}
+                  pageId={page.id}
+                  title={page.title}
+                  isViewer={isViewer}
+                  onDelete={() => setDeleteOpen(true)}
+                />
+              ) : null}
             </>
           )}
         </div>
