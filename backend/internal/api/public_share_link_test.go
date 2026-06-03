@@ -140,8 +140,9 @@ func TestPublicShareLink_BotGate(t *testing.T) {
 		if !strings.Contains(body, `<meta property="og:title" content="Root Page — Engineering"`) {
 			t.Fatalf("missing og:title for root page; body=%s", body)
 		}
-		if !strings.Contains(body, `<meta property="og:url" content="/share/tok-no-pw-no-desc"`) {
-			t.Fatalf("og:url should end in /share/{token}; body=%s", body)
+		// og:url carries the cosmetic slug ("Root Page" → "root-page").
+		if !strings.Contains(body, `<meta property="og:url" content="/share/tok-no-pw-no-desc/root-page"`) {
+			t.Fatalf("og:url should be /share/{token}/{slug}; body=%s", body)
 		}
 		if !strings.Contains(body, fmt.Sprintf(`/p/%d/og.png`, rootID)) {
 			t.Fatalf("og:image should reference /p/{root}/og.png; body=%s", body)

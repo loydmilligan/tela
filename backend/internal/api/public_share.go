@@ -96,8 +96,10 @@ func publicBaseURL() string {
 // path bypasses the SPA. og:url here is the /p/{id} permalink; the share
 // surface (M15.5) reuses writeOGHTMLWithURL with /share/{token}.
 func writeOGHTML(w http.ResponseWriter, pageID int64, title, body, spaceName string) {
+	// Canonical permalink carries the cosmetic slug (/p/{id}/{slug}); the id is
+	// still what resolves, so a stale slug never breaks.
 	writeOGHTMLWithURL(w, pageID, title, body, spaceName,
-		fmt.Sprintf("%s/p/%d", publicBaseURL(), pageID))
+		publicBaseURL()+pagePermalinkPath(pageID, title))
 }
 
 func writeNotFoundHTML(w http.ResponseWriter) {

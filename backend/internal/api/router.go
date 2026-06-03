@@ -186,5 +186,8 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// means a misconfigured Caddy block 404s real browsers instead of
 	// serving the OG envelope in place of the SPA.
 	mux.HandleFunc("GET /share/{token}", srv.HandlePublicShareLink)
+	// Cosmetic-slug variant (/share/{token}/{slug}) — the slug is ignored; the
+	// token is canonical. Distinct from the 4-segment descendant pattern below.
+	mux.HandleFunc("GET /share/{token}/{slug}", srv.HandlePublicShareLink)
 	mux.HandleFunc("GET /share/{token}/p/{page_id}", srv.HandlePublicShareLinkPage)
 }

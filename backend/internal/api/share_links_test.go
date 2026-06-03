@@ -188,8 +188,9 @@ func TestShareLinks_Create_Success(t *testing.T) {
 	if sh.RevokedAt != nil {
 		t.Fatalf("revoked_at=%v want nil", *sh.RevokedAt)
 	}
-	if !strings.HasSuffix(sh.URL, "/share/"+sh.Token) {
-		t.Fatalf("url=%q does not end with /share/{token}", sh.URL)
+	// The cosmetic page slug ("Root" → "root") is appended to the share URL.
+	if !strings.HasSuffix(sh.URL, "/share/"+sh.Token+"/root") {
+		t.Fatalf("url=%q should end with /share/{token}/root", sh.URL)
 	}
 }
 

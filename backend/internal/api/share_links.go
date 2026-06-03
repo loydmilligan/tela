@@ -305,15 +305,20 @@ func clientIPForRateLimit(r *http.Request) string {
 	return normalizeIPForBucket(r.RemoteAddr)
 }
 
-// shareURLFor produces the absolute https URL the FE serves for a share token.
+// shareURLFor produces the absolute https URL the FE serves for a share token,
+// with the page's cosmetic slug appended (/share/{token}/{slug}) when present.
 // Pulled from TELA_PUBLIC_BASE_URL with a localhost fallback so dev still
 // returns a complete URL on share creation.
-func shareURLFor(token string) string {
+func shareURLFor(token, slug string) string {
 	base := strings.TrimRight(os.Getenv("TELA_PUBLIC_BASE_URL"), "/")
 	if base == "" {
 		base = "http://localhost:8780"
 	}
-	return base + "/share/" + token
+	url := base + "/share/" + token
+	if slug != "" {
+		url += "/" + slug
+	}
+	return url
 }
 
 // nullableString returns *string for a sql.NullString — JSON null when absent,
@@ -327,8 +332,9 @@ func nullableString(ns sql.NullString) *string {
 }
 
 // shareLinkToDTO assembles the management envelope. Never includes the
-// password_hash; has_password reports the hash's presence.
-func shareLinkToDTO(s *shareLink) shareLinkDTO {
+// password_hash; has_password reports the hash's presence. pageTitle feeds the
+// cosmetic slug in the share URL — pass the live page title.
+func shareLinkToDTO(s *shareLink, pageTitle string) shareLinkDTO {
 	return shareLinkDTO{
 		ID:                 s.ID,
 		Token:              s.Token,
@@ -339,7 +345,7 @@ func shareLinkToDTO(s *shareLink) shareLinkDTO {
 		CreatedAt:          s.CreatedAt,
 		ExpiresAt:          nullableString(s.ExpiresAt),
 		RevokedAt:          nullableString(s.RevokedAt),
-		URL:                shareURLFor(s.Token),
+		URL:                shareURLFor(s.Token, pageSlug(pageTitle)),
 	}
 }
 
@@ -433,7 +439,7 @@ func (s *Server) ListAllShares(w http.ResponseWriter, r *http.Request) {
 		}
 		sl.IncludeDescendants = includeDesc != 0
 		items = append(items, shareAuditItem{
-			shareLinkDTO: shareLinkToDTO(&sl),
+			shareLinkDTO: shareLinkToDTO(&sl, pageTitle),
 			SpaceID:      spaceID,
 			SpaceName:    spaceName,
 			PageTitle:    pageTitle,
@@ -598,7 +604,7 @@ func (s *Server) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"share": shareLinkToDTO(&created)})
+	writeJSON(w, http.StatusCreated, map[string]any{"share": shareLinkToDTO(&created, page.Title)})
 }
 
 // ListShareLinks — GET /api/pages/{id}/shares. Editor+ on the page's space.
@@ -664,7 +670,7 @@ func (s *Server) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal", "scan share row failed")
 			return
 		}
-		out = append(out, shareLinkToDTO(&sh))
+		out = append(out, shareLinkToDTO(&sh, page.Title))
 	}
 	if err := rows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "iterate shares failed")
@@ -853,7 +859,7 @@ func (s *Server) PatchShareLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"share": shareLinkToDTO(&updated)})
+	writeJSON(w, http.StatusOK, map[string]any{"share": shareLinkToDTO(&updated, page.Title)})
 }
 
 // DeleteShareLink — DELETE /api/shares/{share_id}. Editor+. Soft-deletes by

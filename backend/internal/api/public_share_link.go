@@ -49,7 +49,7 @@ func (s *Server) HandlePublicShareLink(w http.ResponseWriter, r *http.Request) {
 		writeLockedShareOGHTML(w, share.Token)
 		return
 	}
-	s.writeShareOGHTML(w, &share, share.PageID, shareRootURL(share.Token))
+	s.writeShareOGHTML(w, &share, share.PageID, shareRootURL(share.Token), true)
 }
 
 // HandlePublicShareLinkPage — GET /share/{token}/p/{page_id}. Same gate as the
@@ -103,7 +103,7 @@ func (s *Server) HandlePublicShareLinkPage(w http.ResponseWriter, r *http.Reques
 		writeLockedShareOGHTML(w, share.Token)
 		return
 	}
-	s.writeShareOGHTML(w, &share, pageID, shareDescendantURL(share.Token, pageID))
+	s.writeShareOGHTML(w, &share, pageID, shareDescendantURL(share.Token, pageID), false)
 }
 
 // parseShareLinkPageID parses the {page_id} path value as a positive int64,
@@ -136,7 +136,7 @@ func shareDescendantURL(token string, pageID int64) string {
 // reuses the existing /p/{page_id}/og.png renderer (already public, no auth);
 // only the og:url differs from the /p/{id} flavour, so this routes through
 // writeOGHTMLWithURL.
-func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID int64, pageURL string) {
+func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID int64, pageURL string, withSlug bool) {
 	var (
 		title     string
 		body      string
@@ -155,6 +155,13 @@ func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID in
 	if err != nil {
 		writeInternalHTML(w)
 		return
+	}
+	// Append the cosmetic slug to the share-root URL (/share/{token}/{slug}).
+	// Only the root carries it — the descendant URL is already id-scoped.
+	if withSlug {
+		if sl := pageSlug(title); sl != "" {
+			pageURL += "/" + sl
+		}
 	}
 	writeOGHTMLWithURL(w, pageID, title, body, spaceName, pageURL)
 }
