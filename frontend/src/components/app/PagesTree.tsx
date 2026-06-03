@@ -291,6 +291,19 @@ function PageNode({
           />
         )}
 
+        {/* Exposure marker — fixed left slot (always reserved) so titles align
+            and the icons form a vertical line down the gutter. Only exposed
+            pages render an icon; private pages leave the slot empty. */}
+        <span className="inline-flex items-center justify-center w-[var(--space-4)] shrink-0">
+          {node.exposure && node.exposure.state !== 'private' ? (
+            <VisibilityBadge
+              state={node.exposure.state}
+              inherited={node.exposure.inherited}
+              compact
+            />
+          ) : null}
+        </span>
+
         <button
           type="button"
           aria-current={active ? 'page' : undefined}
@@ -313,18 +326,6 @@ function PageNode({
             <span className="text-[var(--text-muted)]">{UNTITLED_TITLE}</span>
           )}
         </button>
-
-        {/* Exposure marker — only on pages reachable by link, so the tree stays
-            quiet and the icon flags exactly what's exposed (markers on by
-            default per docs/visibility-model.md). */}
-        {node.exposure && node.exposure.state !== 'private' ? (
-          <VisibilityBadge
-            state={node.exposure.state}
-            inherited={node.exposure.inherited}
-            compact
-            className="mr-[var(--space-1)]"
-          />
-        ) : null}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
