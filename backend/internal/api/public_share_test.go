@@ -174,15 +174,18 @@ func TestPublicShare_XSSGuards(t *testing.T) {
 	}
 }
 
-// TestPublicShare_DescriptionTruncationAndStrip pins the description-trim and
-// markdown-strip contract. The truncation should be rune-aware so emoji /
-// CJK titles don't split mid-codepoint.
-func TestPublicShare_DescriptionTruncationAndStrip(t *testing.T) {
+// TestPublicShare_DescriptionIsTitleOnly pins the interim privacy contract
+// (docs/visibility-model.md): the /p/{id} OG envelope must NOT carry a body
+// excerpt — it's crawler-reachable for any page with no auth or share link, so
+// og:description is the page title only, never page content. stripMarkdownToText
+// stays unit-tested below for the future share-gated rich description.
+func TestPublicShare_DescriptionIsTitleOnly(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
 	space := seedSpace(t, d, "Engineering", "engineering", admin)
 
-	// 500-character body of 'a' → og:description = first 200 runes + ellipsis.
+	// A long body that, under the old behaviour, would have leaked as a 200-char
+	// excerpt. It must NOT appear in the envelope now.
 	longBody := strings.Repeat("a", 500)
 	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
 	                    VALUES (?, NULL, 'Long', ?, 0)`, space, longBody)
@@ -191,8 +194,8 @@ func TestPublicShare_DescriptionTruncationAndStrip(t *testing.T) {
 	}
 	longID, _ := res.LastInsertId()
 
-	// Markdown-strip body: heading + code fence + link → only `H1 link` should
-	// appear in the description excerpt.
+	// A markdown body whose stripped text ("H1 link") used to surface in the
+	// description — must no longer appear.
 	mdBody := "# H1\n\n```js\ncode\n```\n[link](https://x)"
 	res, err = d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
 	                    VALUES (?, NULL, 'MD', ?, 1)`, space, mdBody)
@@ -215,22 +218,22 @@ func TestPublicShare_DescriptionTruncationAndStrip(t *testing.T) {
 	}
 
 	longResp := get(longID)
-	// Description should contain exactly 200 'a' runes followed by the
-	// ellipsis horizontal-ellipsis (…).
-	wantDesc := strings.Repeat("a", 200) + "…"
-	if !strings.Contains(longResp, fmt.Sprintf(`<meta property="og:description" content="%s"`, wantDesc)) {
-		t.Fatalf("long body description not 200a+ellipsis:\n%s", longResp)
+	if !strings.Contains(longResp, `<meta property="og:description" content="Long"`) {
+		t.Fatalf("description should be the title 'Long', got:\n%s", longResp)
+	}
+	// The body excerpt must not have leaked into the envelope at all.
+	if strings.Contains(longResp, strings.Repeat("a", 50)) {
+		t.Fatalf("body content leaked into /p/ envelope:\n%s", longResp)
 	}
 
 	mdResp := get(mdID)
-	if !strings.Contains(mdResp, `<meta property="og:description" content="H1 link"`) {
-		t.Fatalf("markdown-strip wrong: want og:description='H1 link', got:\n%s", mdResp)
+	if !strings.Contains(mdResp, `<meta property="og:description" content="MD"`) {
+		t.Fatalf("description should be the title 'MD', got:\n%s", mdResp)
 	}
-	if strings.Contains(mdResp, "code") {
-		t.Fatalf("markdown-strip leaked code-fence content into excerpt:\n%s", mdResp)
-	}
-	if strings.Contains(mdResp, "# H1") {
-		t.Fatalf("markdown-strip left heading marker in excerpt:\n%s", mdResp)
+	for _, leak := range []string{"H1 link", "code", "# H1"} {
+		if strings.Contains(mdResp, leak) {
+			t.Fatalf("body content %q leaked into /p/ envelope:\n%s", leak, mdResp)
+		}
 	}
 }
 

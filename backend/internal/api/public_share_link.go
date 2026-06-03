@@ -165,8 +165,15 @@ func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID in
 // /p/{page_id}/og.png — it's public and the renderer is keyed only on page id.
 func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceName, pageURL string) {
 	ogTitle := runeTruncate(title+" — "+spaceName, 100)
-	plain := stripMarkdownToText(body)
-	ogDesc := runeTruncate(plain, 200)
+	// Interim privacy fix (docs/visibility-model.md): /p/{id} emits this OG
+	// envelope for ANY page to crawlers — no auth, no share link required — so a
+	// body excerpt in og:description leaks private page content. Use the title
+	// as the description instead (matches the title-only OG image card).
+	// TODO: restore the rich body excerpt, but only for pages that have an
+	// active public share link.
+	//   plain := stripMarkdownToText(body)
+	//   ogDesc := runeTruncate(plain, 200)
+	ogDesc := runeTruncate(title, 200)
 
 	imageURL := fmt.Sprintf("%s/p/%d/og.png", publicBaseURL(), pageID)
 
