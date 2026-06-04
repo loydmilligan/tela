@@ -43,6 +43,10 @@ here is that board number, so anything is easy to cross-reference back.
 
 - **#45 — Audit log (incl. agents)** — who did what, when — humans and agents alike. _(Confluence, Notion)_
 - **#46 — Per-page view counts & trends** — reads per page; popular vs. dead pages. _(Confluence, GitBook)_
+- **#47 — Polish transactional emails (visual)** — the verify/reset emails (`internal/mailer/templates.go`)
+  are functional inline-hex HTML, deliberately minimal. Make them a proper branded visual: logo/wordmark
+  lockup, refined type + spacing, light/dark-aware, tested across clients (Gmail/Apple/Outlook). Email can't
+  use the OKLCH tokens, so translate the palette to an email-safe set. _(Cagdas — post-launch polish)_
 - **#49 — SSO / OIDC / SCIM** — external identity + provisioning (unlocks larger self-host teams). _(enterprise)_
 
 ## Automation & integrations
