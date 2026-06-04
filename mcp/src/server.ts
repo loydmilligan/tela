@@ -19,6 +19,7 @@ import { listPages, listPagesInputSchema } from "./tools/list-pages.js";
 import { getPage, getPageInputSchema } from "./tools/get-page.js";
 import { search, searchInputSchema } from "./tools/search.js";
 import { searchBodies, searchBodiesInputSchema } from "./tools/search-bodies.js";
+import { semanticSearch, semanticSearchInputSchema } from "./tools/semantic-search.js";
 import { listBacklinks, listBacklinksInputSchema } from "./tools/list-backlinks.js";
 import { createPage, createPageInputSchema } from "./tools/create-page.js";
 import { updatePage, updatePageInputSchema } from "./tools/update-page.js";
@@ -157,6 +158,22 @@ export function buildServer(client: TelaClient, version: string): McpServer {
     async (args) => {
       try {
         return ok(await searchBodies(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "semantic_search",
+    {
+      description:
+        "Meaning-aware chunk search (hybrid: embeddings + BM25, RRF-fused). Returns ranked page sections with heading_path for citation and page_id to re-fetch via get_page. Best for conceptual/natural-language questions where keywords won't match. Omit space_id to search all accessible spaces.",
+      inputSchema: semanticSearchInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await semanticSearch(client, args));
       } catch (err) {
         return fail(err);
       }
