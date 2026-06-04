@@ -17,6 +17,7 @@ import { insertTableCommand } from '@milkdown/kit/preset/gfm'
 import { COLLAPSIBLE_DEFAULT_SUMMARY } from './milkdown-collapsibles'
 import { insertExcalidraw } from './milkdown-excalidraw'
 import { insertTaskList } from './milkdown-task-list'
+import { insertMathBlock } from './milkdown-math'
 
 export const slashPlugin = slashFactory('tela-slash')
 
@@ -113,6 +114,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     keywords: ['table', 'grid'],
     run: (ctx) =>
       ctx.get(commandsCtx).call(insertTableCommand.key, { row: 3, col: 2 }),
+  },
+  {
+    id: 'equation',
+    label: 'Equation',
+    hint: 'Block math (LaTeX)',
+    keywords: ['math', 'equation', 'latex', 'katex', 'formula', 'tex'],
+    run: insertMathBlock,
   },
 ]
 

@@ -40,6 +40,14 @@ import { slashPlugin, SlashView } from './milkdown-slash'
 import { bubblePlugin, BubbleToolbarView } from './milkdown-bubble-toolbar'
 import { BlockHandleView } from './milkdown-block-handle'
 import { taskCheckboxPlugin } from './milkdown-task-list'
+import {
+  mathBlockInputRule,
+  mathBlockSchema,
+  mathInlineInputRule,
+  mathInlineSchema,
+  mathNodeViews,
+  mathRemarkPlugin,
+} from './milkdown-math'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
   calloutInputRule,
@@ -568,6 +576,15 @@ function MilkdownEditorInner({
       // Block drag-handle service (the gutter view is mounted as a PM plugin
       // view in the config block above). Self-gates on view.editable.
       .use(block)
+      // Math / LaTeX: remark-math parse + `$inline$` / `$$block$$` schemas +
+      // KaTeX nodeView (click-to-edit) + autoformat input rules. See
+      // milkdown-math.ts. KaTeX stylesheet imported in main.tsx.
+      .use(mathRemarkPlugin)
+      .use(mathInlineSchema)
+      .use(mathBlockSchema)
+      .use(mathNodeViews)
+      .use(mathInlineInputRule)
+      .use(mathBlockInputRule)
       .use(history)
       .use(clipboard)
       .use(listener)

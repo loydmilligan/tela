@@ -720,6 +720,46 @@
     min-width: 18rem;
   }
 
+  /* Math / LaTeX nodes. KaTeX supplies the glyph styling via its own
+     stylesheet (imported in main.tsx); these rules handle block layout, the
+     click-to-edit field, and the empty-equation placeholder. */
+  .tela-milkdown .ProseMirror .tela-math-block {
+    display: block;
+    margin: var(--space-3) 0;
+    text-align: center;
+    overflow-x: auto;
+  }
+  .tela-milkdown .ProseMirror .tela-math-inline {
+    cursor: pointer;
+  }
+  .tela-milkdown .ProseMirror .tela-math-empty {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-style: italic;
+  }
+  .tela-math-input {
+    width: 100%;
+    min-width: 8rem;
+    box-sizing: border-box;
+    padding: var(--space-1) var(--space-2);
+    background: var(--surface-2);
+    color: var(--text-primary);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    resize: vertical;
+  }
+  span.tela-math-input {
+    width: auto;
+  }
+  .tela-math-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
   /* Block drag-handle gutter. BlockProvider positions this (fixed strategy)
      to the left of the hovered block and makes it a drag source; data-show
      toggles visibility. Two compact, muted icon buttons (+ / grip). */
