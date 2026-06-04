@@ -797,6 +797,20 @@
   .tela-block-menu-item:hover {
     background: var(--surface-2);
   }
+  .tela-block-menu-label {
+    padding: var(--space-1) var(--space-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .tela-block-menu-sep {
+    height: 1px;
+    margin: var(--space-1) 0;
+    background: var(--border-subtle);
+  }
 
   /* M18.B.2 — mira paste-hook popover. Positioned via JS (left/top set as
      inline styles by the React component); the slash menu and this popover

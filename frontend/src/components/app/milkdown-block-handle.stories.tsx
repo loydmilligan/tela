@@ -1,5 +1,18 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Copy, GripVertical, Plus, Trash2 } from 'lucide-react'
+import {
+  Code,
+  Copy,
+  GripVertical,
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  Plus,
+  Quote,
+  Trash2,
+  Type,
+} from 'lucide-react'
 
 // Visual reference for the block-handle gutter + action menu. The live
 // component (BlockHandleView) needs a Milkdown editor + BlockProvider for
@@ -41,10 +54,34 @@ export const Gutter: Story = {
   ),
 }
 
+const TURN_INTO = [
+  { label: 'Text', Icon: Type },
+  { label: 'Heading 1', Icon: Heading1 },
+  { label: 'Heading 2', Icon: Heading2 },
+  { label: 'Heading 3', Icon: Heading3 },
+  { label: 'Bulleted list', Icon: List },
+  { label: 'Numbered list', Icon: ListOrdered },
+  { label: 'Quote', Icon: Quote },
+  { label: 'Code block', Icon: Code },
+]
+
 export const ActionMenu: Story = {
-  name: 'Block-action menu',
+  name: 'Block-action menu (with Turn into)',
   render: () => (
     <div className="tela-block-menu" role="menu" style={{ position: 'static' }}>
+      <div className="tela-block-menu-label">Turn into</div>
+      {TURN_INTO.map(({ label, Icon }) => (
+        <button
+          key={label}
+          type="button"
+          role="menuitem"
+          className="tela-block-menu-item"
+        >
+          <Icon size="1em" aria-hidden />
+          <span>{label}</span>
+        </button>
+      ))}
+      <div className="tela-block-menu-sep" role="separator" />
       <button type="button" role="menuitem" className="tela-block-menu-item">
         <Copy size="1em" aria-hidden />
         <span>Duplicate</span>
