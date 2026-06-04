@@ -118,7 +118,8 @@ export function buildServer(client: TelaClient, version: string): McpServer {
   server.registerTool(
     "get_page",
     {
-      description: "Fetch a page (full markdown body + metadata) by numeric id.",
+      description:
+        "Fetch a page (full markdown body + metadata) by numeric id. Includes `url`, the human-shareable in-app link.",
       inputSchema: getPageInputSchema,
     },
     async (args) => {
@@ -182,7 +183,7 @@ export function buildServer(client: TelaClient, version: string): McpServer {
     "create_page",
     {
       description:
-        "Create a new page. Requires write scope on the API key (or admin); editor/owner on the target space. Returns the created page row.",
+        "Create a new page. Requires write scope on the API key (or admin); editor/owner on the target space. Returns the created page row, including `url` (the human-shareable in-app link).",
       inputSchema: createPageInputSchema,
     },
     async (args) => {
@@ -198,7 +199,7 @@ export function buildServer(client: TelaClient, version: string): McpServer {
     "update_page",
     {
       description:
-        "Update title and/or body of an existing page. At least one of title, body must be provided. Snapshots a revision when content changes.",
+        "Update title and/or body of an existing page. At least one of title, body must be provided. Snapshots a revision when content changes. Returns the updated page row, including `url` (the human-shareable in-app link).",
       inputSchema: updatePageInputSchema,
     },
     async (args) => {
@@ -354,7 +355,14 @@ async function main(): Promise<void> {
   }
 
   const version = readPackageVersion();
-  const client = new TelaClient({ baseUrl, apiKey });
+  // TELA_PUBLIC_URL is the origin users browse; falls back to TELA_BASE_URL
+  // (correct when the backend is reached at its public URL). Used to emit
+  // human-shareable page `url` fields.
+  const client = new TelaClient({
+    baseUrl,
+    apiKey,
+    publicBaseUrl: process.env.TELA_PUBLIC_URL,
+  });
 
   // Fire-and-forget probe. Advisory only — never blocks tool calls.
   void runVersionCheck({ baseUrl, builtAgainst: version });

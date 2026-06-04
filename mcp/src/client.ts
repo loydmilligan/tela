@@ -24,6 +24,10 @@ export interface TelaClientOptions {
   apiKey: string;
   fetchImpl?: typeof fetch;
   retryDelayMs?: number;
+  // Public origin users browse, used to build human-shareable page links.
+  // Defaults to baseUrl when unset (fine when the backend is reached at its
+  // public URL; set TELA_PUBLIC_URL when the API is behind an internal host).
+  publicBaseUrl?: string;
 }
 
 export class TelaClient {
@@ -31,12 +35,15 @@ export class TelaClient {
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
   private readonly retryDelayMs: number;
+  // Public, no trailing slash. Read by tools to emit page `url` fields.
+  readonly publicBaseUrl: string;
 
   constructor(opts: TelaClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.apiKey = opts.apiKey;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.retryDelayMs = opts.retryDelayMs ?? 250;
+    this.publicBaseUrl = (opts.publicBaseUrl ?? opts.baseUrl).replace(/\/+$/, "");
   }
 
   async getJSON<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {

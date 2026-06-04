@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TelaClient } from "../client.js";
+import { pageUrl } from "../slug.js";
 
 export const updatePageInputSchema = {
   id: z.number().int().positive().describe("Numeric Tela page id."),
@@ -28,7 +29,7 @@ interface UpdatePageResponse {
 export async function updatePage(
   client: TelaClient,
   args: UpdatePageArgs,
-): Promise<{ page: PageRow }> {
+): Promise<{ page: PageRow & { url: string } }> {
   if (args.title === undefined && args.body === undefined) {
     throw new Error("at least one of title, body must be provided");
   }
@@ -36,5 +37,7 @@ export async function updatePage(
   if (args.title !== undefined) body.title = args.title;
   if (args.body !== undefined) body.body = args.body;
   const res = await client.patchJSON<UpdatePageResponse>(`/api/pages/${args.id}`, body);
-  return { page: res.page };
+  const p = res.page;
+  const url = pageUrl(client.publicBaseUrl, p.space_id, p.id, p.title);
+  return { page: { ...p, url } };
 }

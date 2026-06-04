@@ -37,8 +37,11 @@ Required env vars:
 |-----------------|------------------------------------------------------------------------------------|
 | `TELA_BASE_URL` | Origin of the Tela instance, e.g. `https://tela.cagdas.io` or `http://localhost:8780`. No trailing slash needed. |
 | `TELA_API_KEY`  | Personal access token. Format `tela_pat_<43 base64url chars>`. Create one in **Settings → API Keys** (instance-admin only in v0). |
+| `TELA_PUBLIC_URL` | *Optional.* Public origin users browse, used to build the `url` field on page tool results. Defaults to `TELA_BASE_URL` — only set it when the API is reached at an internal host that differs from the public one. |
 
-Both must be set at spawn time. If either is missing the server logs to stderr and exits non-zero before the MCP handshake.
+`TELA_BASE_URL` and `TELA_API_KEY` must be set at spawn time. If either is missing the server logs to stderr and exits non-zero before the MCP handshake.
+
+Page tools (`get_page`, `create_page`, `update_page`) return a `url` field — the human-shareable in-app link `{TELA_PUBLIC_URL}/spaces/{spaceId}/pages/{pageId}/{slug}` (the slug is cosmetic; the id resolves the page).
 
 A `tela://page/{id}` resource template is also registered, matching the wikilink scheme Tela writes into markdown bodies — resource @-mentions in your host round-trip with the ids the agent reads out of page bodies.
 

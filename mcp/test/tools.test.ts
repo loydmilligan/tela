@@ -86,6 +86,7 @@ describe("get_page", () => {
       parent_id: 1,
       created_at: "2026-05-20 10:00:00",
       updated_at: "2026-05-20 11:00:00",
+      url: "http://test.local/spaces/4/pages/24/mira",
     });
     expect(requests[0].url).toBe("http://test.local/api/pages/24");
   });

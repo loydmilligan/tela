@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TelaClient } from "../client.js";
+import { pageUrl } from "../slug.js";
 
 export const createPageInputSchema = {
   space_id: z.number().int().positive().describe("Numeric Tela space id."),
@@ -34,7 +35,7 @@ interface CreatePageResponse {
 export async function createPage(
   client: TelaClient,
   args: CreatePageArgs,
-): Promise<{ page: PageRow }> {
+): Promise<{ page: PageRow & { url: string } }> {
   const body: Record<string, unknown> = {
     space_id: args.space_id,
     title: args.title,
@@ -42,5 +43,7 @@ export async function createPage(
   };
   if (args.parent_id !== undefined) body.parent_id = args.parent_id;
   const res = await client.postJSON<CreatePageResponse>("/api/pages", body);
-  return { page: res.page };
+  const p = res.page;
+  const url = pageUrl(client.publicBaseUrl, p.space_id, p.id, p.title);
+  return { page: { ...p, url } };
 }

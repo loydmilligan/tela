@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TelaClient } from "../client.js";
+import { pageUrl } from "../slug.js";
 
 export const getPageInputSchema = {
   id: z.number().int().positive().describe("Numeric Tela page id."),
@@ -22,7 +23,10 @@ interface GetPageResponse {
   page: PageFull;
 }
 
-export async function getPage(client: TelaClient, args: GetPageArgs): Promise<PageFull> {
+export async function getPage(
+  client: TelaClient,
+  args: GetPageArgs,
+): Promise<PageFull & { url: string }> {
   const res = await client.getJSON<GetPageResponse>(`/api/pages/${args.id}`);
   const p = res.page;
   return {
@@ -33,5 +37,6 @@ export async function getPage(client: TelaClient, args: GetPageArgs): Promise<Pa
     parent_id: p.parent_id,
     created_at: p.created_at,
     updated_at: p.updated_at,
+    url: pageUrl(client.publicBaseUrl, p.space_id, p.id, p.title),
   };
 }

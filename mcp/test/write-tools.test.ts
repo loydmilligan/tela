@@ -34,6 +34,7 @@ describe("create_page", () => {
       body: "hello",
     });
     expect(out.page.id).toBe(99);
+    expect(out.page.url).toBe("http://test.local/spaces/4/pages/99/created");
     expect(requests).toHaveLength(1);
     expect(requests[0].method).toBe("POST");
     expect(requests[0].url).toBe("http://test.local/api/pages");
@@ -82,7 +83,8 @@ describe("update_page", () => {
         },
       },
     });
-    await updatePage(client, { id: 24, title: "New" });
+    const out = await updatePage(client, { id: 24, title: "New" });
+    expect(out.page.url).toBe("http://test.local/spaces/4/pages/24/new");
     expect(requests[0].method).toBe("PATCH");
     expect(requests[0].url).toBe("http://test.local/api/pages/24");
     expect(JSON.parse(requests[0].body as string)).toEqual({ title: "New" });
