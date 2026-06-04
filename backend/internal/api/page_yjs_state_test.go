@@ -38,7 +38,7 @@ func TestGetPageYjsState(t *testing.T) {
 	// Snapshot at seq 5, plus tail updates at 5,6,7 (5 overlaps snapshot — kept
 	// as the idempotent safety buffer).
 	if _, err := d.ExecContext(context.Background(),
-		`INSERT INTO page_yjs_snapshots (page_id, seq, state) VALUES (?, 5, ?)`,
+		`INSERT INTO page_yjs_snapshots (page_id, seq, state) VALUES ($1, 5, $2)`,
 		pid, []byte("SNAPSHOT")); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestGetPageYjsState(t *testing.T) {
 		b   string
 	}{{5, "u5"}, {6, "u6"}, {7, "u7"}} {
 		if _, err := d.ExecContext(context.Background(),
-			`INSERT INTO page_yjs_updates (page_id, seq, payload) VALUES (?, ?, ?)`,
+			`INSERT INTO page_yjs_updates (page_id, seq, payload) VALUES ($1, $2, $3)`,
 			pid, u.seq, []byte(u.b)); err != nil {
 			t.Fatal(err)
 		}

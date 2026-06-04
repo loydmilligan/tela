@@ -100,7 +100,7 @@ func (s *Server) ListPages(w http.ResponseWriter, r *http.Request) {
 	case !parentIDPresent || parentIDStr == "" || parentIDStr == "null":
 		rows, err = s.DB.QueryContext(r.Context(),
 			`SELECT id, space_id, parent_id, title, body, position, created_at, updated_at
-			 FROM pages WHERE space_id = ? AND parent_id IS NULL
+			 FROM pages WHERE space_id = $1 AND parent_id IS NULL
 			 ORDER BY position ASC, id ASC`, spaceID)
 	default:
 		parentID, perr := strconv.ParseInt(parentIDStr, 10, 64)
@@ -110,7 +110,7 @@ func (s *Server) ListPages(w http.ResponseWriter, r *http.Request) {
 		}
 		rows, err = s.DB.QueryContext(r.Context(),
 			`SELECT id, space_id, parent_id, title, body, position, created_at, updated_at
-			 FROM pages WHERE space_id = ? AND parent_id = ?
+			 FROM pages WHERE space_id = $1 AND parent_id = $2
 			 ORDER BY position ASC, id ASC`, spaceID, parentID)
 	}
 	if err != nil {
@@ -168,15 +168,15 @@ func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
 			SELECT p.id, p.space_id, s.name, p.title
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
-			 WHERE p.space_id = ?
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+			 WHERE p.space_id = $2
 			 ORDER BY s.name ASC, p.title ASC`, u.ID, *k.SpaceID)
 	} else {
 		rows, err = s.DB.QueryContext(r.Context(), `
 			SELECT p.id, p.space_id, s.name, p.title
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
 			 ORDER BY s.name ASC, p.title ASC`, u.ID)
 	}
 	if err != nil {
@@ -288,7 +288,7 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 	if req.ParentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = ?`, *req.ParentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1`, *req.ParentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, "parent_not_found", "parent page does not exist")
 			return
@@ -306,10 +306,10 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 	var maxPos sql.NullInt64
 	if req.ParentID == nil {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = ? AND parent_id IS NULL`, req.SpaceID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL`, req.SpaceID).Scan(&maxPos)
 	} else {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = ? AND parent_id = ?`, req.SpaceID, *req.ParentID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, req.SpaceID, *req.ParentID).Scan(&maxPos)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "compute position failed")
@@ -320,16 +320,11 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 		position = maxPos.Int64 + 1
 	}
 
-	res, err := tx.ExecContext(ctx,
-		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES (?, ?, ?, ?, ?)`,
-		req.SpaceID, nullableInt64(req.ParentID), title, req.Body, position)
-	if err != nil {
+	var id int64
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		req.SpaceID, nullableInt64(req.ParentID), title, req.Body, position).Scan(&id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "create page failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create page: last insert id failed")
 		return
 	}
 	if err := syncPageLinks(ctx, tx, id, req.Body); err != nil {
@@ -407,14 +402,14 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_title", "title exceeds 500 characters")
 			return
 		}
-		sets = append(sets, "title = ?")
 		args = append(args, title)
+		sets = append(sets, "title = $"+strconv.Itoa(len(args)))
 	}
 	if req.Body != nil {
-		sets = append(sets, "body = ?")
 		args = append(args, *req.Body)
+		sets = append(sets, "body = $"+strconv.Itoa(len(args)))
 	}
-	sets = append(sets, "updated_at = datetime('now')")
+	sets = append(sets, "updated_at = tela_now()")
 	args = append(args, id)
 
 	ctx := r.Context()
@@ -453,7 +448,7 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stmt := "UPDATE pages SET " + strings.Join(sets, ", ") + " WHERE id = ?"
+	stmt := "UPDATE pages SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(len(args))
 	res, err := tx.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update page failed")
@@ -544,13 +539,13 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 	// from other pages still render with a usable label after deletion.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE page_links
-		   SET last_known_title = COALESCE((SELECT title FROM pages WHERE id = ?), last_known_title)
-		 WHERE target_id = ?`, id, id); err != nil {
+		   SET last_known_title = COALESCE((SELECT title FROM pages WHERE id = $1), last_known_title)
+		 WHERE target_id = $2`, id, id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "cache page_links titles failed")
 		return
 	}
 
-	res, err := tx.ExecContext(ctx, `DELETE FROM pages WHERE id = ?`, id)
+	res, err := tx.ExecContext(ctx, `DELETE FROM pages WHERE id = $1`, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete page failed")
 		return
@@ -567,7 +562,7 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 
 	// Explicitly clear outgoing rows for the deleted source — no FK / no
 	// triggers; nothing else would remove them.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = ?`, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = $1`, id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete page_links source rows failed")
 		return
 	}
@@ -713,7 +708,7 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 	if targetParentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = ?`, *targetParentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1`, *targetParentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, "parent_not_found", "parent page does not exist")
 			return
@@ -754,7 +749,7 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 	finalList = append(finalList, newSiblingIDs[insertAt:]...)
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE pages SET space_id = ?, parent_id = ?, updated_at = datetime('now') WHERE id = ?`,
+		`UPDATE pages SET space_id = $1, parent_id = $2, updated_at = tela_now() WHERE id = $3`,
 		targetSpaceID, nullableInt64(targetParentID), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "move page failed")
 		return
@@ -769,7 +764,7 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 
 	for i, sid := range finalList {
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE pages SET position = ? WHERE id = ?`, int64(i), sid); err != nil {
+			`UPDATE pages SET position = $1 WHERE id = $2`, int64(i), sid); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "renumber new siblings failed")
 			return
 		}
@@ -783,7 +778,7 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 		}
 		for i, sid := range oldSiblingIDs {
 			if _, err := tx.ExecContext(ctx,
-				`UPDATE pages SET position = ? WHERE id = ?`, int64(i), sid); err != nil {
+				`UPDATE pages SET position = $1 WHERE id = $2`, int64(i), sid); err != nil {
 				writeError(w, http.StatusInternalServerError, "internal", "renumber old siblings failed")
 				return
 			}
@@ -805,7 +800,7 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 func buildPageTree(ctx context.Context, db *sql.DB, spaceID int64) ([]*pageNode, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, space_id, parent_id, title, body, position, created_at, updated_at
-		 FROM pages WHERE space_id = ?
+		 FROM pages WHERE space_id = $1
 		 ORDER BY position ASC, id ASC`, spaceID)
 	if err != nil {
 		return nil, err
@@ -859,14 +854,14 @@ func buildPageTree(ctx context.Context, db *sql.DB, spaceID int64) ([]*pageNode,
 func selectPageByID(ctx context.Context, db *sql.DB, id int64) (models.Page, error) {
 	row := db.QueryRowContext(ctx,
 		`SELECT id, space_id, parent_id, title, body, position, created_at, updated_at
-		 FROM pages WHERE id = ?`, id)
+		 FROM pages WHERE id = $1`, id)
 	return scanPageFromRow(row)
 }
 
 func selectPageByIDTx(ctx context.Context, tx *sql.Tx, id int64) (models.Page, error) {
 	row := tx.QueryRowContext(ctx,
 		`SELECT id, space_id, parent_id, title, body, position, created_at, updated_at
-		 FROM pages WHERE id = ?`, id)
+		 FROM pages WHERE id = $1`, id)
 	return scanPageFromRow(row)
 }
 
@@ -897,12 +892,12 @@ func scanPageInto(r rowScanner) (models.Page, error) {
 
 func verifySpaceExists(ctx context.Context, db *sql.DB, id int64) error {
 	var x int
-	return db.QueryRowContext(ctx, `SELECT 1 FROM spaces WHERE id = ?`, id).Scan(&x)
+	return db.QueryRowContext(ctx, `SELECT 1 FROM spaces WHERE id = $1`, id).Scan(&x)
 }
 
 func verifySpaceExistsTx(ctx context.Context, tx *sql.Tx, id int64) error {
 	var x int
-	return tx.QueryRowContext(ctx, `SELECT 1 FROM spaces WHERE id = ?`, id).Scan(&x)
+	return tx.QueryRowContext(ctx, `SELECT 1 FROM spaces WHERE id = $1`, id).Scan(&x)
 }
 
 func siblingIDsExcluding(ctx context.Context, tx *sql.Tx, spaceID int64, parentID *int64, excludeID int64) ([]int64, error) {
@@ -910,11 +905,11 @@ func siblingIDsExcluding(ctx context.Context, tx *sql.Tx, spaceID int64, parentI
 	var err error
 	if parentID == nil {
 		rows, err = tx.QueryContext(ctx,
-			`SELECT id FROM pages WHERE space_id = ? AND parent_id IS NULL AND id != ?
+			`SELECT id FROM pages WHERE space_id = $1 AND parent_id IS NULL AND id != $2
 			 ORDER BY position ASC, id ASC`, spaceID, excludeID)
 	} else {
 		rows, err = tx.QueryContext(ctx,
-			`SELECT id FROM pages WHERE space_id = ? AND parent_id = ? AND id != ?
+			`SELECT id FROM pages WHERE space_id = $1 AND parent_id = $2 AND id != $3
 			 ORDER BY position ASC, id ASC`, spaceID, *parentID, excludeID)
 	}
 	if err != nil {
@@ -942,7 +937,7 @@ func wouldCreateCycle(ctx context.Context, tx *sql.Tx, movingID, newParentID int
 			return true, nil
 		}
 		var pid sql.NullInt64
-		err := tx.QueryRowContext(ctx, `SELECT parent_id FROM pages WHERE id = ?`, cursor).Scan(&pid)
+		err := tx.QueryRowContext(ctx, `SELECT parent_id FROM pages WHERE id = $1`, cursor).Scan(&pid)
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -964,7 +959,7 @@ func updateDescendantsSpaceID(ctx context.Context, tx *sql.Tx, rootID, newSpaceI
 		placeholders := make([]string, len(frontier))
 		args := make([]any, len(frontier))
 		for i, fid := range frontier {
-			placeholders[i] = "?"
+			placeholders[i] = "$" + strconv.Itoa(i+1)
 			args[i] = fid
 		}
 		q := fmt.Sprintf(`SELECT id FROM pages WHERE parent_id IN (%s)`, strings.Join(placeholders, ","))
@@ -992,10 +987,10 @@ func updateDescendantsSpaceID(ctx context.Context, tx *sql.Tx, rootID, newSpaceI
 		updArgs := make([]any, 0, len(next)+1)
 		updArgs = append(updArgs, newSpaceID)
 		for i, nid := range next {
-			updPlaceholders[i] = "?"
+			updPlaceholders[i] = "$" + strconv.Itoa(i+2)
 			updArgs = append(updArgs, nid)
 		}
-		upd := fmt.Sprintf(`UPDATE pages SET space_id = ? WHERE id IN (%s)`, strings.Join(updPlaceholders, ","))
+		upd := fmt.Sprintf(`UPDATE pages SET space_id = $1 WHERE id IN (%s)`, strings.Join(updPlaceholders, ","))
 		if _, err := tx.ExecContext(ctx, upd, updArgs...); err != nil {
 			return err
 		}
@@ -1055,7 +1050,7 @@ func parseWikiLinks(body string) []int64 {
 // when the target does not exist — that's how a freshly broken link is
 // recorded.
 func syncPageLinks(ctx context.Context, tx *sql.Tx, sourceID int64, body string) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = ?`, sourceID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = $1`, sourceID); err != nil {
 		return fmt.Errorf("delete outgoing page_links: %w", err)
 	}
 	targets := parseWikiLinks(body)
@@ -1069,11 +1064,12 @@ func syncPageLinks(ctx context.Context, tx *sql.Tx, sourceID int64, body string)
 			continue
 		}
 		var title sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT title FROM pages WHERE id = ?`, tid).Scan(&title)
+		err := tx.QueryRowContext(ctx, `SELECT title FROM pages WHERE id = $1`, tid).Scan(&title)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("lookup target title: %w", err)
 		}
-		placeholders = append(placeholders, "(?, ?, ?)")
+		n := len(args)
+		placeholders = append(placeholders, fmt.Sprintf("($%d, $%d, $%d)", n+1, n+2, n+3))
 		args = append(args, sourceID, tid, title.String)
 	}
 	if len(placeholders) == 0 {

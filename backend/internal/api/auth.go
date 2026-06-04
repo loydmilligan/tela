@@ -63,7 +63,7 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 	err := s.DB.QueryRowContext(ctx, `
 		SELECT id, username, email, email_verified_at, password_hash, is_instance_admin
 		  FROM users
-		 WHERE (username = ? OR email = ?) AND is_active = 1`,
+		 WHERE (username = $1 OR email = $2) AND is_active = 1`,
 		identifier, normalizeEmail(identifier),
 	).Scan(&userID, &username, &email, &emailVerified, &hash, &isAdmin)
 

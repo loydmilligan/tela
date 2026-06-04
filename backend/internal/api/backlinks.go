@@ -41,7 +41,7 @@ func (s *Server) Backlinks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var targetSpaceID int64
-	err := s.DB.QueryRowContext(r.Context(), `SELECT space_id FROM pages WHERE id = ?`, id).Scan(&targetSpaceID)
+	err := s.DB.QueryRowContext(r.Context(), `SELECT space_id FROM pages WHERE id = $1`, id).Scan(&targetSpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Collapse missing-page to 403 so non-members cannot tell
 		// "exists in another space" from "truly gone".
@@ -61,8 +61,8 @@ func (s *Server) Backlinks(w http.ResponseWriter, r *http.Request) {
 		  FROM page_links l
 		  JOIN pages p ON p.id = l.source_id
 		  JOIN spaces s ON s.id = p.space_id
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
-		 WHERE l.target_id = ?
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+		 WHERE l.target_id = $2
 		 ORDER BY s.name ASC, p.title ASC`, u.ID, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list backlinks failed")

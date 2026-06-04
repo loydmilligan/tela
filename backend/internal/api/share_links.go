@@ -33,13 +33,13 @@ import (
 // gate on /share/{token} and the FE share-mode UI ship in later M15 slices.
 
 const (
-	shareTokenBytes   = 32              // → 43-char base64.RawURLEncoding token
-	shareSecretBytes  = 32              // HMAC-SHA256 key length
-	shareTokenRetries = 3               // INSERT retries on UNIQUE collision
-	shareRateLimit    = 5               // password attempts per (token, IP)
-	shareRateWindow   = time.Minute     // rolling window for the limiter
-	shareSubtreeDepth = 50              // recursive-CTE depth cap
-	sqliteDatetime    = "2006-01-02 15:04:05"
+	shareTokenBytes   = 32                    // → 43-char base64.RawURLEncoding token
+	shareSecretBytes  = 32                    // HMAC-SHA256 key length
+	shareTokenRetries = 3                     // INSERT retries on UNIQUE collision
+	shareRateLimit    = 5                     // password attempts per (token, IP)
+	shareRateWindow   = time.Minute           // rolling window for the limiter
+	shareSubtreeDepth = 50                    // recursive-CTE depth cap
+	tsLayout          = "2006-01-02 15:04:05" // canonical 'YYYY-MM-DD HH:MM:SS' wire format
 )
 
 // shareLink mirrors a row in share_links. PasswordHash / ExpiresAt / RevokedAt
@@ -366,17 +366,17 @@ func scanShareLink(r rowScanner) (shareLink, error) {
 }
 
 func selectShareLinkByID(ctx context.Context, q *sql.DB, id int64) (shareLink, error) {
-	row := q.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE id = ?`, id)
+	row := q.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE id = $1`, id)
 	return scanShareLink(row)
 }
 
 func selectShareLinkByIDTx(ctx context.Context, tx *sql.Tx, id int64) (shareLink, error) {
-	row := tx.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE id = ?`, id)
+	row := tx.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE id = $1`, id)
 	return scanShareLink(row)
 }
 
 func selectShareLinkByToken(ctx context.Context, q *sql.DB, token string) (shareLink, error) {
-	row := q.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE token = ?`, token)
+	row := q.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE token = $1`, token)
 	return scanShareLink(row)
 }
 
@@ -406,11 +406,11 @@ func (s *Server) ListAllShares(w http.ResponseWriter, r *http.Request) {
 		  FROM share_links sl
 		  JOIN pages p ON p.id = sl.page_id
 		  JOIN spaces sp ON sp.id = p.space_id
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
 		 WHERE sl.revoked_at IS NULL`
 	args := []any{u.ID}
 	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
-		query += ` AND p.space_id = ?`
+		query += ` AND p.space_id = $2`
 		args = append(args, *k.SpaceID)
 	}
 	query += ` ORDER BY sp.name ASC, p.title ASC, sl.created_at ASC`
@@ -460,7 +460,7 @@ func shareLinkActive(s *shareLink) bool {
 		return false
 	}
 	if s.ExpiresAt.Valid {
-		t, err := time.Parse(sqliteDatetime, s.ExpiresAt.String)
+		t, err := time.Parse(tsLayout, s.ExpiresAt.String)
 		if err == nil && !t.After(time.Now().UTC()) {
 			return false
 		}
@@ -469,16 +469,16 @@ func shareLinkActive(s *shareLink) bool {
 }
 
 // parseFutureExpires normalises a client-supplied expires_at: must match the
-// SQLite datetime format AND be strictly in the future.
+// canonical 'YYYY-MM-DD HH:MM:SS' format AND be strictly in the future.
 func parseFutureExpires(raw string) (string, error) {
-	t, err := time.Parse(sqliteDatetime, raw)
+	t, err := time.Parse(tsLayout, raw)
 	if err != nil {
 		return "", err
 	}
 	if !t.After(time.Now().UTC()) {
 		return "", errors.New("expires_at must be in the future")
 	}
-	return t.UTC().Format(sqliteDatetime), nil
+	return t.UTC().Format(tsLayout), nil
 }
 
 // CreateShareLink — POST /api/pages/{id}/shares. Editor+ on the page's space.
@@ -571,18 +571,13 @@ func (s *Server) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		if req.IncludeDescendants {
 			includeFlag = 1
 		}
-		res, ierr := tx.ExecContext(ctx, `
+		ierr := tx.QueryRowContext(ctx, `
 			INSERT INTO share_links
 			  (token, page_id, include_descendants, password_hash,
 			   created_by, created_at, expires_at)
-			VALUES (?, ?, ?, ?, ?, datetime('now'), ?)`,
-			token, pageID, includeFlag, passwordHash, u.ID, expiresArg)
+			VALUES ($1, $2, $3, $4, $5, tela_now(), $6) RETURNING id`,
+			token, pageID, includeFlag, passwordHash, u.ID, expiresArg).Scan(&insertedID)
 		if ierr == nil {
-			insertedID, err = res.LastInsertId()
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal", "insert last id failed")
-				return
-			}
 			break
 		}
 		if !strings.Contains(ierr.Error(), "UNIQUE") {
@@ -650,11 +645,11 @@ func (s *Server) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 	var rows *sql.Rows
 	if includeRevoked {
 		rows, err = s.DB.QueryContext(ctx, shareLinkSelectColumns+`
-			 WHERE page_id = ?
+			 WHERE page_id = $1
 			 ORDER BY id DESC`, pageID)
 	} else {
 		rows, err = s.DB.QueryContext(ctx, shareLinkSelectColumns+`
-			 WHERE page_id = ? AND revoked_at IS NULL
+			 WHERE page_id = $1 AND revoked_at IS NULL
 			 ORDER BY id DESC`, pageID)
 	}
 	if err != nil {
@@ -821,7 +816,7 @@ func (s *Server) PatchShareLink(w http.ResponseWriter, r *http.Request) {
 	sets := []string{}
 	args := []any{}
 	if setIncludeDescendants {
-		sets = append(sets, "include_descendants = ?")
+		sets = append(sets, "include_descendants = $"+strconv.Itoa(len(args)+1))
 		flag := 0
 		if newIncludeDescendants {
 			flag = 1
@@ -829,7 +824,7 @@ func (s *Server) PatchShareLink(w http.ResponseWriter, r *http.Request) {
 		args = append(args, flag)
 	}
 	if setPassword {
-		sets = append(sets, "password_hash = ?")
+		sets = append(sets, "password_hash = $"+strconv.Itoa(len(args)+1))
 		if clearPassword {
 			args = append(args, nil)
 		} else {
@@ -837,15 +832,15 @@ func (s *Server) PatchShareLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if setExpiresAt {
-		sets = append(sets, "expires_at = ?")
+		sets = append(sets, "expires_at = $"+strconv.Itoa(len(args)+1))
 		if clearExpiresAt {
 			args = append(args, nil)
 		} else {
 			args = append(args, newExpiresAt)
 		}
 	}
+	stmt := "UPDATE share_links SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(len(args)+1)
 	args = append(args, shareID)
-	stmt := "UPDATE share_links SET " + strings.Join(sets, ", ") + " WHERE id = ?"
 	if _, err := tx.ExecContext(ctx, stmt, args...); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update share failed")
 		return
@@ -923,7 +918,7 @@ func (s *Server) DeleteShareLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE share_links SET revoked_at = datetime('now') WHERE id = ?`, shareID); err != nil {
+		`UPDATE share_links SET revoked_at = tela_now() WHERE id = $1`, shareID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "revoke share failed")
 		return
 	}
@@ -1164,14 +1159,14 @@ func pageInShareSubtree(ctx context.Context, q *sql.DB, rootID, descendantID int
 	}
 	const query = `
 		WITH RECURSIVE scope(id, space_id, depth) AS (
-		  SELECT id, space_id, 0 FROM pages WHERE id = ?
+		  SELECT id, space_id, 0 FROM pages WHERE id = $1
 		  UNION ALL
 		  SELECT p.id, p.space_id, s.depth + 1
 		    FROM pages p
 		    JOIN scope s ON p.parent_id = s.id
-		   WHERE p.space_id = s.space_id AND s.depth < ?
+		   WHERE p.space_id = s.space_id AND s.depth < $2
 		)
-		SELECT 1 FROM scope WHERE id = ? LIMIT 1`
+		SELECT 1 FROM scope WHERE id = $3 LIMIT 1`
 	var x int
 	err := q.QueryRowContext(ctx, query, rootID, shareSubtreeDepth, descendantID).Scan(&x)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1191,7 +1186,7 @@ func shareSubtree(ctx context.Context, q *sql.DB, rootID int64, includeDescendan
 		var n sharePageNode
 		var parentID sql.NullInt64
 		row := q.QueryRowContext(ctx,
-			`SELECT id, title, parent_id, position FROM pages WHERE id = ?`, rootID)
+			`SELECT id, title, parent_id, position FROM pages WHERE id = $1`, rootID)
 		if err := row.Scan(&n.ID, &n.Title, &parentID, &n.Position); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return []sharePageNode{}, nil
@@ -1208,12 +1203,12 @@ func shareSubtree(ctx context.Context, q *sql.DB, rootID int64, includeDescendan
 	const query = `
 		WITH RECURSIVE scope(id, title, parent_id, position, space_id, depth) AS (
 		  SELECT id, title, parent_id, position, space_id, 0
-		    FROM pages WHERE id = ?
+		    FROM pages WHERE id = $1
 		  UNION ALL
 		  SELECT p.id, p.title, p.parent_id, p.position, p.space_id, s.depth + 1
 		    FROM pages p
 		    JOIN scope s ON p.parent_id = s.id
-		   WHERE p.space_id = s.space_id AND s.depth < ?
+		   WHERE p.space_id = s.space_id AND s.depth < $2
 		)
 		SELECT id, title, parent_id, position FROM scope
 		 ORDER BY position ASC, id ASC`

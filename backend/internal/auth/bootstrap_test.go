@@ -7,27 +7,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
 func newAuthTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	d, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open in-memory db: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return d
+	return testdb.New(t)
 }
 
 func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
-	if _, err := d.ExecContext(ctx, `INSERT INTO spaces(name, slug) VALUES (?,?), (?,?)`,
+	if _, err := d.ExecContext(ctx, `INSERT INTO spaces(name, slug) VALUES ($1,$2), ($3,$4)`,
 		"General", "general", "Engineering", "engineering"); err != nil {
 		t.Fatalf("seed spaces: %v", err)
 	}
@@ -61,14 +53,14 @@ func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 	}
 
 	var sm int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM space_members WHERE user_id=? AND role='owner'`, adminID).Scan(&sm); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM space_members WHERE user_id=$1 AND role='owner'`, adminID).Scan(&sm); err != nil {
 		t.Fatalf("count space_members: %v", err)
 	}
 	if sm != 2 {
 		t.Fatalf("admin owns %d spaces, want 2", sm)
 	}
 
-	ok, err := VerifyPassword(res1.GeneratedPassword, mustQueryString(t, d, `SELECT password_hash FROM users WHERE id=?`, adminID))
+	ok, err := VerifyPassword(res1.GeneratedPassword, mustQueryString(t, d, `SELECT password_hash FROM users WHERE id=$1`, adminID))
 	if err != nil {
 		t.Fatalf("verify generated password: %v", err)
 	}
@@ -109,7 +101,7 @@ func TestBootstrapAdmin_UsesEnvPasswordAndUsername(t *testing.T) {
 		t.Fatalf("GeneratedPassword=%q; want empty (env-provided)", res.GeneratedPassword)
 	}
 
-	hash := mustQueryString(t, d, `SELECT password_hash FROM users WHERE username=?`, username)
+	hash := mustQueryString(t, d, `SELECT password_hash FROM users WHERE username=$1`, username)
 	if !strings.HasPrefix(hash, argonPrefix) {
 		t.Fatalf("stored hash missing argon prefix: %q", hash)
 	}

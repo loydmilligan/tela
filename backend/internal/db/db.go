@@ -1,33 +1,44 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
+	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// Open opens (and creates if missing) a SQLite database at path, configured
-// for WAL journaling, enforced foreign keys, a 5s busy timeout, and BEGIN
-// IMMEDIATE for every transaction (_txlock=immediate). Using IMMEDIATE means
-// the busy handler covers writer contention up-front instead of failing on
-// DEFERRED-tx write-promotion, which is unrecoverable.
-func Open(path string) (*sql.DB, error) {
-	q := url.Values{}
-	q.Add("_pragma", "journal_mode(WAL)")
-	q.Add("_pragma", "foreign_keys(on)")
-	q.Add("_pragma", "busy_timeout(5000)")
-	q.Set("_txlock", "immediate")
-	dsn := fmt.Sprintf("file:%s?%s", path, q.Encode())
-
-	d, err := sql.Open("sqlite", dsn)
+// Open opens a connection pool to the PostgreSQL database named by dsn — a libpq
+// keyword string or a URL ("postgres://user:pass@host:5432/db?sslmode=disable"),
+// both accepted by the pgx stdlib driver.
+//
+// It pings with a short retry loop so the backend tolerates the gap between
+// Postgres accepting connections (what `pg_isready` / compose depends_on waits
+// on) and being ready to serve its first query — without it, a cold `make up`
+// can crash-loop the backend once before restart recovers it.
+func Open(dsn string) (*sql.DB, error) {
+	d, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite at %s: %w", path, err)
+		return nil, fmt.Errorf("open postgres: %w", err)
 	}
-	if err := d.Ping(); err != nil {
-		d.Close()
-		return nil, fmt.Errorf("ping sqlite at %s: %w", path, err)
+	// Modest pool: the backend is I/O-light per request and tests open many
+	// short-lived pools against one server, so we stay well under Postgres's
+	// default max_connections.
+	d.SetMaxOpenConns(10)
+	d.SetMaxIdleConns(5)
+	d.SetConnMaxIdleTime(5 * time.Minute)
+
+	var pingErr error
+	for i := 0; i < 30; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		pingErr = d.PingContext(ctx)
+		cancel()
+		if pingErr == nil {
+			return d, nil
+		}
+		time.Sleep(time.Second)
 	}
-	return d, nil
+	d.Close()
+	return nil, fmt.Errorf("ping postgres: %w", pingErr)
 }

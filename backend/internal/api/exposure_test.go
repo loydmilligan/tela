@@ -153,13 +153,13 @@ func TestListAllShares_ScopedToMembership(t *testing.T) {
 
 func seedPageRow(t *testing.T, d *sql.DB, spaceID int64, parentID *int64, title string) int64 {
 	t.Helper()
-	res, err := d.ExecContext(context.Background(),
-		`INSERT INTO pages (space_id, parent_id, title, body, position) VALUES (?, ?, ?, '', 0)`,
-		spaceID, nullableInt64(parentID), title)
+	var id int64
+	err := d.QueryRowContext(context.Background(),
+		`INSERT INTO pages (space_id, parent_id, title, body, position) VALUES ($1, $2, $3, '', 0) RETURNING id`,
+		spaceID, nullableInt64(parentID), title).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert page %q: %v", title, err)
 	}
-	id, _ := res.LastInsertId()
 	return id
 }
 
@@ -187,7 +187,7 @@ func seedShareRow(t *testing.T, d *sql.DB, pageID, createdBy int64, includeDesc,
 	}
 	if _, err := d.ExecContext(context.Background(),
 		`INSERT INTO share_links (token, page_id, include_descendants, password_hash, created_by, expires_at, revoked_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		token, pageID, inc, pw, createdBy, exp, rev); err != nil {
 		t.Fatalf("insert share_links: %v", err)
 	}

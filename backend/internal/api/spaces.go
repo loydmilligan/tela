@@ -7,9 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
-	sqlitedrv "modernc.org/sqlite"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/zcag/tela/backend/internal/models"
 )
@@ -18,12 +19,10 @@ const (
 	maxSpaceNameLen = 200
 	maxSpaceSlugLen = 100
 
-	// SQLITE_CONSTRAINT_UNIQUE — extended error code for UNIQUE violations.
-	sqliteConstraintUnique = 2067
-	// SQLITE_CONSTRAINT_PRIMARYKEY — extended error code for PK conflicts
-	// (covers composite PRIMARY KEY tables like space_members where a
-	// duplicate row trips PK rather than a separate UNIQUE index).
-	sqliteConstraintPrimaryKey = 1555
+	// pgUniqueViolation — Postgres SQLSTATE for a UNIQUE / PRIMARY KEY
+	// violation. 23505 covers both standalone unique indexes and composite-PK
+	// duplicates (e.g. space_members), which on SQLite were two distinct codes.
+	pgUniqueViolation = "23505"
 )
 
 var (
@@ -68,9 +67,9 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT s.id, s.name, s.slug, s.created_at, s.updated_at,
 		       (SELECT COUNT(DISTINCT user_id) FROM space_access a WHERE a.space_id = s.id) AS member_count,
-		       (s.personal_user_id IS NOT NULL) AS is_personal
+		       CASE WHEN s.personal_user_id IS NOT NULL THEN 1 ELSE 0 END AS is_personal
 		  FROM spaces s
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sa ON sa.space_id = s.id
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sa ON sa.space_id = s.id
 		 ORDER BY s.name ASC`, u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list spaces failed")
@@ -164,8 +163,9 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx,
-		`INSERT INTO spaces(name, slug) VALUES (?, ?)`, name, slug)
+	var id int64
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO spaces(name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "slug_conflict", "a space with that slug already exists")
@@ -174,13 +174,8 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "create space failed")
 		return
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create space: last insert id failed")
-		return
-	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO space_members(space_id, user_id, role) VALUES (?, ?, 'owner')`,
+		`INSERT INTO space_members(space_id, user_id, role) VALUES ($1, $2, 'owner')`,
 		id, u.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "assign space owner failed")
 		return
@@ -243,6 +238,7 @@ func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 
 	sets := make([]string, 0, 3)
 	args := make([]any, 0, 4)
+	argN := 0
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -254,7 +250,8 @@ func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_name", "name exceeds 200 characters")
 			return
 		}
-		sets = append(sets, "name = ?")
+		argN++
+		sets = append(sets, "name = $"+strconv.Itoa(argN))
 		args = append(args, name)
 	}
 	if req.Slug != nil {
@@ -271,13 +268,15 @@ func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_slug", "slug must be lowercase alphanumeric segments joined by '-'")
 			return
 		}
-		sets = append(sets, "slug = ?")
+		argN++
+		sets = append(sets, "slug = $"+strconv.Itoa(argN))
 		args = append(args, slug)
 	}
-	sets = append(sets, "updated_at = datetime('now')")
+	sets = append(sets, "updated_at = tela_now()")
+	argN++
 	args = append(args, id)
 
-	stmt := "UPDATE spaces SET " + strings.Join(sets, ", ") + " WHERE id = ?"
+	stmt := "UPDATE spaces SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(argN)
 	res, err := s.DB.ExecContext(r.Context(), stmt, args...)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
@@ -317,7 +316,7 @@ func (s *Server) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "forbidden", "owner role required")
 		return
 	}
-	res, err := s.DB.ExecContext(r.Context(), `DELETE FROM spaces WHERE id = ?`, id)
+	res, err := s.DB.ExecContext(r.Context(), `DELETE FROM spaces WHERE id = $1`, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete space failed")
 		return
@@ -344,7 +343,7 @@ func attachSpacePrincipals(ctx context.Context, db *sql.DB, byID map[int64]*spac
 	ph := make([]string, 0, len(byID))
 	for id := range byID {
 		ids = append(ids, id)
-		ph = append(ph, "?")
+		ph = append(ph, "$"+strconv.Itoa(len(ph)+1))
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT sg.space_id, sg.principal_kind, COALESCE(o.name, g.name)
@@ -376,7 +375,7 @@ func attachSpacePrincipals(ctx context.Context, db *sql.DB, byID map[int64]*spac
 func selectSpaceByID(ctx context.Context, db *sql.DB, id int64) (models.Space, error) {
 	var sp models.Space
 	err := db.QueryRowContext(ctx,
-		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = ?`, id,
+		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = $1`, id,
 	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.CreatedAt, &sp.UpdatedAt)
 	return sp, err
 }
@@ -384,7 +383,7 @@ func selectSpaceByID(ctx context.Context, db *sql.DB, id int64) (models.Space, e
 func selectSpaceByIDTx(ctx context.Context, tx *sql.Tx, id int64) (models.Space, error) {
 	var sp models.Space
 	err := tx.QueryRowContext(ctx,
-		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = ?`, id,
+		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = $1`, id,
 	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.CreatedAt, &sp.UpdatedAt)
 	return sp, err
 }
@@ -398,10 +397,6 @@ func normalizeSlug(s string) string {
 }
 
 func isUniqueConstraintErr(err error) bool {
-	var sqlErr *sqlitedrv.Error
-	if !errors.As(err, &sqlErr) {
-		return false
-	}
-	code := sqlErr.Code()
-	return code == sqliteConstraintUnique || code == sqliteConstraintPrimaryKey
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation
 }

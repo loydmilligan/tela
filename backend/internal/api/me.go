@@ -49,7 +49,7 @@ func (s *Server) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var hash string
 	if err := s.DB.QueryRowContext(ctx,
-		`SELECT password_hash FROM users WHERE id = ? AND is_active = 1`, u.ID).Scan(&hash); err != nil {
+		`SELECT password_hash FROM users WHERE id = $1 AND is_active = 1`, u.ID).Scan(&hash); err != nil {
 		// Middleware already validated the user is active; treat any miss as 401.
 		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
 		return
@@ -74,7 +74,7 @@ func (s *Server) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`,
+		`UPDATE users SET password_hash = $1, updated_at = tela_now() WHERE id = $2`,
 		newHash, u.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update password failed")
 		return
@@ -103,7 +103,7 @@ func (s *Server) ListMySessions(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT id, last_seen_at, expires_at, created_at, user_agent
 		  FROM sessions
-		 WHERE user_id = ?
+		 WHERE user_id = $1
 		 ORDER BY last_seen_at DESC`, u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list sessions failed")
@@ -151,7 +151,7 @@ func (s *Server) DeleteMySession(w http.ResponseWriter, r *http.Request) {
 
 	var owner int64
 	err := s.DB.QueryRowContext(r.Context(),
-		`SELECT user_id FROM sessions WHERE id = ?`, sessionID).Scan(&owner)
+		`SELECT user_id FROM sessions WHERE id = $1`, sessionID).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != u.ID) {
 		writeError(w, http.StatusNotFound, "not_found", "session not found")
 		return
@@ -162,7 +162,7 @@ func (s *Server) DeleteMySession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.DB.ExecContext(r.Context(),
-		`DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
+		`DELETE FROM sessions WHERE id = $1`, sessionID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete session failed")
 		return
 	}

@@ -24,7 +24,7 @@ func TestEnsurePersonalSpace_Idempotent(t *testing.T) {
 	// Exactly one personal space, named "Personal", owned by the user.
 	var count int
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM spaces WHERE personal_user_id = ?`, uid).Scan(&count); err != nil {
+		`SELECT COUNT(*) FROM spaces WHERE personal_user_id = $1`, uid).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
@@ -32,14 +32,14 @@ func TestEnsurePersonalSpace_Idempotent(t *testing.T) {
 	}
 	var name, role string
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT name FROM spaces WHERE id = ?`, id1).Scan(&name); err != nil {
+		`SELECT name FROM spaces WHERE id = $1`, id1).Scan(&name); err != nil {
 		t.Fatal(err)
 	}
 	if name != personalSpaceName {
 		t.Errorf("name = %q, want %q", name, personalSpaceName)
 	}
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT role FROM space_members WHERE space_id = ? AND user_id = ?`, id1, uid).Scan(&role); err != nil {
+		`SELECT role FROM space_members WHERE space_id = $1 AND user_id = $2`, id1, uid).Scan(&role); err != nil {
 		t.Fatalf("membership lookup: %v", err)
 	}
 	if role != roleOwner {
@@ -59,7 +59,7 @@ func TestEnsurePersonalSpace_UniqueSlugOnCollision(t *testing.T) {
 	}
 	var slug string
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT slug FROM spaces WHERE id = ?`, id).Scan(&slug); err != nil {
+		`SELECT slug FROM spaces WHERE id = $1`, id).Scan(&slug); err != nil {
 		t.Fatal(err)
 	}
 	if slug == "alice" {
@@ -84,7 +84,7 @@ func TestEnsurePersonalSpacesForAll_Backfill(t *testing.T) {
 	for _, uid := range []int64{a, b} {
 		var count int
 		if err := d.QueryRowContext(context.Background(),
-			`SELECT COUNT(*) FROM spaces WHERE personal_user_id = ?`, uid).Scan(&count); err != nil {
+			`SELECT COUNT(*) FROM spaces WHERE personal_user_id = $1`, uid).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
 		if count != 1 {
@@ -97,7 +97,7 @@ func TestEnsurePersonalSpacesForAll_SkipsInactive(t *testing.T) {
 	d := newAPITestDB(t)
 	uid := seedUser(t, d, "ghost", "pw", false)
 	if _, err := d.ExecContext(context.Background(),
-		`UPDATE users SET is_active = 0 WHERE id = ?`, uid); err != nil {
+		`UPDATE users SET is_active = 0 WHERE id = $1`, uid); err != nil {
 		t.Fatal(err)
 	}
 	if err := EnsurePersonalSpacesForAll(context.Background(), d); err != nil {
@@ -105,7 +105,7 @@ func TestEnsurePersonalSpacesForAll_SkipsInactive(t *testing.T) {
 	}
 	var count int
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM spaces WHERE personal_user_id = ?`, uid).Scan(&count); err != nil {
+		`SELECT COUNT(*) FROM spaces WHERE personal_user_id = $1`, uid).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {

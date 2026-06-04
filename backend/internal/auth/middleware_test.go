@@ -10,30 +10,30 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
 func TestIsPublicPath(t *testing.T) {
 	cases := map[string]bool{
-		"/api/health":           true,
-		"/api/version":          true, // M16.A.1.5 build-metadata probe (public)
-		"/api/auth/login":       true,
-		"/api/auth/logout":      true,
-		"/api/auth/me":          true,
-		"/api/auth/anything":    true,
-		"/api/share/abc123":     true, // M15.0 token-scoped public read API
-		"/share/abc123":         true, // M15.5 bot-UA-gated OG envelope
-		"/share/abc123/p/42":    true,
+		"/api/health":                  true,
+		"/api/version":                 true, // M16.A.1.5 build-metadata probe (public)
+		"/api/auth/login":              true,
+		"/api/auth/logout":             true,
+		"/api/auth/me":                 true,
+		"/api/auth/anything":           true,
+		"/api/share/abc123":            true, // M15.0 token-scoped public read API
+		"/share/abc123":                true, // M15.5 bot-UA-gated OG envelope
+		"/share/abc123/p/42":           true,
 		"/api/diagrams/123/abcdef.png": true, // M13.2 PNG sidecar (public, content-addressed)
 		"/api/images/123/abcdef.png":   true, // image sidecar (public, content-addressed)
-		"/api/spaces":           false,
-		"/api/pages/1":          false,
-		"/api/pages/1/backlink": false,
-		"/api/pages/1/diagrams": false, // M13.2 PUT lives on the session-gated /api/pages/* path
-		"/api/pages/1/images":   false, // POST lives on the session-gated /api/pages/* path
-		"/api/search":           false,
-		"/api/auth":             false, // no trailing slash — not under /api/auth/
-		"/share":                false, // no trailing slash — not under /share/
+		"/api/spaces":                  false,
+		"/api/pages/1":                 false,
+		"/api/pages/1/backlink":        false,
+		"/api/pages/1/diagrams":        false, // M13.2 PUT lives on the session-gated /api/pages/* path
+		"/api/pages/1/images":          false, // POST lives on the session-gated /api/pages/* path
+		"/api/search":                  false,
+		"/api/auth":                    false, // no trailing slash — not under /api/auth/
+		"/share":                       false, // no trailing slash — not under /share/
 	}
 	for path, want := range cases {
 		if got := IsPublicPath(path); got != want {
@@ -129,13 +129,13 @@ func TestMiddleware_HappyPathSlidesSessionAndAttachesUser(t *testing.T) {
 	}
 
 	var beforeExpiry string
-	if err := d.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE id = ?`, sid).Scan(&beforeExpiry); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE id = $1`, sid).Scan(&beforeExpiry); err != nil {
 		t.Fatalf("read expires_at: %v", err)
 	}
 
 	// Force the session to look "older" so slide can be observed (1 day ago).
 	if _, err := d.ExecContext(ctx,
-		`UPDATE sessions SET expires_at = datetime('now', '+1 day'), last_seen_at = datetime('now', '-1 day') WHERE id = ?`, sid); err != nil {
+		`UPDATE sessions SET expires_at = to_char((now() AT TIME ZONE 'UTC') + make_interval(days => 1), 'YYYY-MM-DD HH24:MI:SS'), last_seen_at = to_char((now() AT TIME ZONE 'UTC') - make_interval(days => 1), 'YYYY-MM-DD HH24:MI:SS') WHERE id = $1`, sid); err != nil {
 		t.Fatalf("backdate session: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestMiddleware_HappyPathSlidesSessionAndAttachesUser(t *testing.T) {
 	}
 
 	var afterExpiry, afterSeen string
-	if err := d.QueryRowContext(ctx, `SELECT expires_at, last_seen_at FROM sessions WHERE id = ?`, sid).Scan(&afterExpiry, &afterSeen); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT expires_at, last_seen_at FROM sessions WHERE id = $1`, sid).Scan(&afterExpiry, &afterSeen); err != nil {
 		t.Fatalf("read after-slide: %v", err)
 	}
 	// expires_at should be ~30d out (well past the 1-day backdated value).
@@ -186,7 +186,7 @@ func TestMiddleware_RejectsInactiveUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if _, err := d.ExecContext(ctx, `UPDATE users SET is_active = 0 WHERE id = ?`, adminID); err != nil {
+	if _, err := d.ExecContext(ctx, `UPDATE users SET is_active = 0 WHERE id = $1`, adminID); err != nil {
 		t.Fatalf("deactivate: %v", err)
 	}
 
@@ -217,7 +217,7 @@ func TestLoadSessionAndSlide_RejectsExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if _, err := d.ExecContext(ctx, `UPDATE sessions SET expires_at = datetime('now', '-1 hour') WHERE id = ?`, sid); err != nil {
+	if _, err := d.ExecContext(ctx, `UPDATE sessions SET expires_at = to_char((now() AT TIME ZONE 'UTC') - make_interval(hours => 1), 'YYYY-MM-DD HH24:MI:SS') WHERE id = $1`, sid); err != nil {
 		t.Fatalf("expire: %v", err)
 	}
 	if _, err := LoadSessionAndSlide(ctx, d, sid); err == nil {
@@ -231,18 +231,10 @@ func TestLoadSessionAndSlide_RejectsExpired(t *testing.T) {
 // + slide ran in a DEFERRED tx and lost the write-promotion race under WAL.
 func TestLoadSessionAndSlide_Concurrent(t *testing.T) {
 	ctx := context.Background()
-	// On-disk DB so WAL write-promotion semantics actually apply (the
-	// in-memory helper opens a single shared connection that serialises
-	// every call and hides the bug). Cleanup via t.TempDir.
-	dir := t.TempDir()
-	d, err := db.Open(dir + "/tela.db")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(ctx, d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	// A shared Postgres pool runs every goroutine against one real database,
+	// so concurrent validate+slide transactions genuinely contend (the old
+	// SQLite in-memory helper serialised on one connection and hid the bug).
+	d := testdb.New(t)
 
 	if _, err := BootstrapAdmin(ctx, d, "admin", "pw-1234567890", "", rand.Reader); err != nil {
 		t.Fatalf("bootstrap: %v", err)
@@ -352,4 +344,3 @@ func TestSetSessionCookie_ClearVsSet(t *testing.T) {
 		t.Errorf("clear cookie missing Max-Age=0: %q", clearCookie)
 	}
 }
-

@@ -88,13 +88,13 @@ func TestPageBodies_FullFlow(t *testing.T) {
 	// has bite. We pin updated_at via UPDATE with explicit datetime strings.
 	pageIDs := make([]int64, 0, 5)
 	for i := 0; i < 5; i++ {
-		res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-		                    VALUES (?, NULL, ?, ?, ?)`,
-			space, fmt.Sprintf("Title %d", i), fmt.Sprintf("body content %d", i), int64(i))
+		var id int64
+		err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+		                    VALUES ($1, NULL, $2, $3, $4) RETURNING id`,
+			space, fmt.Sprintf("Title %d", i), fmt.Sprintf("body content %d", i), int64(i)).Scan(&id)
 		if err != nil {
 			t.Fatalf("seed page %d: %v", i, err)
 		}
-		id, _ := res.LastInsertId()
 		pageIDs = append(pageIDs, id)
 	}
 	// Pin updated_at: page i gets timestamp "2026-01-01 00:00:0i".
@@ -106,7 +106,7 @@ func TestPageBodies_FullFlow(t *testing.T) {
 		"2026-01-01 00:00:04",
 	}
 	for i, id := range pageIDs {
-		if _, err := d.Exec(`UPDATE pages SET updated_at = ? WHERE id = ?`, timestamps[i], id); err != nil {
+		if _, err := d.Exec(`UPDATE pages SET updated_at = $1 WHERE id = $2`, timestamps[i], id); err != nil {
 			t.Fatalf("pin updated_at for page %d: %v", id, err)
 		}
 	}
@@ -278,22 +278,22 @@ func TestSpaceIndexVersion_FullFlow(t *testing.T) {
 	}
 
 	// Seed two pages with known updated_at; max is "2026-02-01 00:00:01".
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'A', 'a', 0)`, space)
+	var pageA int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'A', 'a', 0) RETURNING id`, space).Scan(&pageA)
 	if err != nil {
 		t.Fatalf("seed page A: %v", err)
 	}
-	pageA, _ := res.LastInsertId()
-	res, err = d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'B', 'b', 1)`, space)
+	var pageB int64
+	err = d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'B', 'b', 1) RETURNING id`, space).Scan(&pageB)
 	if err != nil {
 		t.Fatalf("seed page B: %v", err)
 	}
-	pageB, _ := res.LastInsertId()
-	if _, err := d.Exec(`UPDATE pages SET updated_at = ? WHERE id = ?`, "2026-02-01 00:00:00", pageA); err != nil {
+	if _, err := d.Exec(`UPDATE pages SET updated_at = $1 WHERE id = $2`, "2026-02-01 00:00:00", pageA); err != nil {
 		t.Fatalf("pin A: %v", err)
 	}
-	if _, err := d.Exec(`UPDATE pages SET updated_at = ? WHERE id = ?`, "2026-02-01 00:00:01", pageB); err != nil {
+	if _, err := d.Exec(`UPDATE pages SET updated_at = $1 WHERE id = $2`, "2026-02-01 00:00:01", pageB); err != nil {
 		t.Fatalf("pin B: %v", err)
 	}
 
@@ -306,7 +306,7 @@ func TestSpaceIndexVersion_FullFlow(t *testing.T) {
 	// Cross-check that the value matches a raw query on the DB so the
 	// computation is honest, not a coincidence.
 	var dbMax string
-	if err := d.QueryRow(`SELECT MAX(updated_at) FROM pages WHERE space_id = ?`, space).Scan(&dbMax); err != nil {
+	if err := d.QueryRow(`SELECT MAX(updated_at) FROM pages WHERE space_id = $1`, space).Scan(&dbMax); err != nil {
 		t.Fatalf("raw max query: %v", err)
 	}
 	if v != dbMax {

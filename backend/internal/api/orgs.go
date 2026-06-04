@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/models"
@@ -53,7 +54,7 @@ func (s *Server) ListOrgs(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM org_members m WHERE m.org_id = o.id) AS member_count,
 		       om.org_role
 		  FROM orgs o
-		  LEFT JOIN org_members om ON om.org_id = o.id AND om.user_id = ?`
+		  LEFT JOIN org_members om ON om.org_id = o.id AND om.user_id = $1`
 	if u.IsInstanceAdmin {
 		rows, err = s.DB.QueryContext(r.Context(), base+` ORDER BY o.name ASC`, u.ID)
 	} else {
@@ -107,19 +108,15 @@ func (s *Server) CreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.DB.ExecContext(r.Context(),
-		`INSERT INTO orgs(name, slug) VALUES (?, ?)`, name, slug)
+	var id int64
+	err := s.DB.QueryRowContext(r.Context(),
+		`INSERT INTO orgs(name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "slug_conflict", "an org with that slug already exists")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "create org failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create org: last insert id failed")
 		return
 	}
 	org, err := selectOrgByID(r.Context(), s.DB, id)
@@ -173,13 +170,15 @@ func (s *Server) UpdateOrg(w http.ResponseWriter, r *http.Request) {
 
 	sets := make([]string, 0, 3)
 	args := make([]any, 0, 4)
+	n := 0
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > maxOrgNameLen {
 			writeError(w, http.StatusBadRequest, "invalid_name", "name must be 1-200 characters")
 			return
 		}
-		sets = append(sets, "name = ?")
+		n++
+		sets = append(sets, "name = $"+strconv.Itoa(n))
 		args = append(args, name)
 	}
 	if req.Slug != nil {
@@ -188,13 +187,15 @@ func (s *Server) UpdateOrg(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_slug", "slug must be lowercase alphanumeric segments joined by '-'")
 			return
 		}
-		sets = append(sets, "slug = ?")
+		n++
+		sets = append(sets, "slug = $"+strconv.Itoa(n))
 		args = append(args, slug)
 	}
-	sets = append(sets, "updated_at = datetime('now')")
+	sets = append(sets, "updated_at = tela_now()")
+	n++
 	args = append(args, id)
 
-	stmt := "UPDATE orgs SET " + strings.Join(sets, ", ") + " WHERE id = ?"
+	stmt := "UPDATE orgs SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(n)
 	if _, err := s.DB.ExecContext(r.Context(), stmt, args...); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "slug_conflict", "an org with that slug already exists")
@@ -232,11 +233,11 @@ func (s *Server) DeleteOrg(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM space_grants WHERE principal_kind = 'org' AND principal_id = ?`, id); err != nil {
+		`DELETE FROM space_grants WHERE principal_kind = 'org' AND principal_id = $1`, id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "remove org grants failed")
 		return
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM orgs WHERE id = ?`, id)
+	res, err := tx.ExecContext(ctx, `DELETE FROM orgs WHERE id = $1`, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete org failed")
 		return
@@ -283,7 +284,7 @@ func resolveOrgSlug(w http.ResponseWriter, name, raw string) (string, bool) {
 func selectOrgByID(ctx context.Context, db *sql.DB, id int64) (models.Org, error) {
 	var o models.Org
 	err := db.QueryRowContext(ctx,
-		`SELECT id, name, slug, created_at, updated_at FROM orgs WHERE id = ?`, id,
+		`SELECT id, name, slug, created_at, updated_at FROM orgs WHERE id = $1`, id,
 	).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.UpdatedAt)
 	return o, err
 }

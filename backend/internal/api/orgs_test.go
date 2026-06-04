@@ -12,19 +12,19 @@ import (
 
 func seedOrg(t *testing.T, d *sql.DB, name, slug string) int64 {
 	t.Helper()
-	res, err := d.ExecContext(context.Background(),
-		`INSERT INTO orgs (name, slug) VALUES (?, ?)`, name, slug)
+	var id int64
+	err := d.QueryRowContext(context.Background(),
+		`INSERT INTO orgs (name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert org: %v", err)
 	}
-	id, _ := res.LastInsertId()
 	return id
 }
 
 func seedOrgMember(t *testing.T, d *sql.DB, orgID, userID int64, role string) {
 	t.Helper()
 	if _, err := d.ExecContext(context.Background(),
-		`INSERT INTO org_members (org_id, user_id, org_role) VALUES (?, ?, ?)`,
+		`INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1, $2, $3)`,
 		orgID, userID, role); err != nil {
 		t.Fatalf("insert org_member: %v", err)
 	}
@@ -33,7 +33,7 @@ func seedOrgMember(t *testing.T, d *sql.DB, orgID, userID int64, role string) {
 func seedSpaceGrant(t *testing.T, d *sql.DB, spaceID, orgID int64, role string) {
 	t.Helper()
 	if _, err := d.ExecContext(context.Background(),
-		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES (?, 'org', ?, ?)`,
+		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES ($1, 'org', $2, $3)`,
 		spaceID, orgID, role); err != nil {
 		t.Fatalf("insert space_grant: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestDeleteOrg_RemovesGrantsAndAccess(t *testing.T) {
 		t.Fatalf("delete org status = %d; want 204 (%s)", rec.Code, rec.Body)
 	}
 	var n int
-	d.QueryRow(`SELECT COUNT(*) FROM space_grants WHERE principal_id = ?`, org).Scan(&n)
+	d.QueryRow(`SELECT COUNT(*) FROM space_grants WHERE principal_id = $1`, org).Scan(&n)
 	if n != 0 {
 		t.Fatalf("space_grants for deleted org = %d; want 0", n)
 	}
@@ -236,7 +236,7 @@ func TestSpaceGrant_OwnerPrincipalRejectedByDB(t *testing.T) {
 	org := seedOrg(t, d, "Acme", "acme")
 
 	_, err := d.Exec(
-		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES (?, 'org', ?, 'owner')`,
+		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES ($1, 'org', $2, 'owner')`,
 		space, org)
 	if err == nil {
 		t.Fatal("inserting an org grant with role=owner should be rejected by the trigger")
@@ -244,7 +244,7 @@ func TestSpaceGrant_OwnerPrincipalRejectedByDB(t *testing.T) {
 	// And the same via UPDATE from a legit editor grant.
 	seedSpaceGrant(t, d, space, org, roleEditor)
 	if _, err := d.Exec(
-		`UPDATE space_grants SET role='owner' WHERE space_id=? AND principal_id=?`, space, org); err == nil {
+		`UPDATE space_grants SET role='owner' WHERE space_id=$1 AND principal_id=$2`, space, org); err == nil {
 		t.Fatal("updating an org grant to role=owner should be rejected by the trigger")
 	}
 }
@@ -255,13 +255,13 @@ func TestDeleteOrgMember_DomainManagedBlocked(t *testing.T) {
 	srv := New(d)
 	adminID := seedUser(t, d, "admin", "adminpw12", false)
 	memberID := seedUser(t, d, "carol", "carolpw12", false)
-	if _, err := d.Exec(`UPDATE users SET email='carol@acme.com' WHERE id=?`, memberID); err != nil {
+	if _, err := d.Exec(`UPDATE users SET email='carol@acme.com' WHERE id=$1`, memberID); err != nil {
 		t.Fatalf("set email: %v", err)
 	}
 	org := seedOrg(t, d, "Acme", "acme")
 	seedOrgMember(t, d, org, adminID, orgRoleAdmin)
 	seedOrgMember(t, d, org, memberID, orgRoleMember)
-	if _, err := d.Exec(`INSERT INTO org_email_domains (domain, org_id) VALUES ('acme.com', ?)`, org); err != nil {
+	if _, err := d.Exec(`INSERT INTO org_email_domains (domain, org_id) VALUES ('acme.com', $1)`, org); err != nil {
 		t.Fatalf("seed domain: %v", err)
 	}
 
@@ -344,12 +344,12 @@ func TestInstanceAdmin_RetainsOrgAuthorityWhenMember(t *testing.T) {
 
 func seedGroup(t *testing.T, d *sql.DB, orgID int64, name string) int64 {
 	t.Helper()
-	res, err := d.ExecContext(context.Background(),
-		`INSERT INTO groups (org_id, name) VALUES (?, ?)`, orgID, name)
+	var id int64
+	err := d.QueryRowContext(context.Background(),
+		`INSERT INTO groups (org_id, name) VALUES ($1, $2) RETURNING id`, orgID, name).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert group: %v", err)
 	}
-	id, _ := res.LastInsertId()
 	return id
 }
 
@@ -369,7 +369,7 @@ func TestGroupGrant_ConfersSpaceAccess(t *testing.T) {
 	seedGroupMember(t, d, group, member) // member in group; stranger only in org
 
 	if _, err := d.Exec(
-		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES (?, 'group', ?, 'editor')`,
+		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES ($1, 'group', $2, 'editor')`,
 		space, group); err != nil {
 		t.Fatalf("insert group grant: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestGroupGrant_ConfersSpaceAccess(t *testing.T) {
 func seedGroupMember(t *testing.T, d *sql.DB, groupID, userID int64) {
 	t.Helper()
 	if _, err := d.ExecContext(context.Background(),
-		`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, groupID, userID); err != nil {
+		`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, groupID, userID); err != nil {
 		t.Fatalf("insert group_member: %v", err)
 	}
 }
@@ -404,7 +404,7 @@ func TestGroupMembership_ContainmentInvariants(t *testing.T) {
 
 	// Not an org member yet → trigger rejects.
 	if _, err := d.Exec(
-		`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, group, u); err == nil {
+		`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, group, u); err == nil {
 		t.Fatal("adding a non-org-member to a group should be rejected by the trigger")
 	}
 
@@ -413,11 +413,11 @@ func TestGroupMembership_ContainmentInvariants(t *testing.T) {
 	seedGroupMember(t, d, group, u)
 
 	// Leaving the org cascades out of the group.
-	if _, err := d.Exec(`DELETE FROM org_members WHERE org_id = ? AND user_id = ?`, org, u); err != nil {
+	if _, err := d.Exec(`DELETE FROM org_members WHERE org_id = $1 AND user_id = $2`, org, u); err != nil {
 		t.Fatalf("remove org member: %v", err)
 	}
 	var n int
-	d.QueryRow(`SELECT COUNT(*) FROM group_members WHERE group_id = ? AND user_id = ?`, group, u).Scan(&n)
+	d.QueryRow(`SELECT COUNT(*) FROM group_members WHERE group_id = $1 AND user_id = $2`, group, u).Scan(&n)
 	if n != 0 {
 		t.Fatalf("group_members after org-leave = %d; want 0 (cascade)", n)
 	}
@@ -427,7 +427,7 @@ func TestApplyAutoJoin_EnrollsMatchingDomain(t *testing.T) {
 	d := newAPITestDB(t)
 	org := seedOrg(t, d, "Acme", "acme")
 	if _, err := d.Exec(
-		`INSERT INTO org_email_domains (domain, org_id) VALUES ('acme.com', ?)`, org); err != nil {
+		`INSERT INTO org_email_domains (domain, org_id) VALUES ('acme.com', $1)`, org); err != nil {
 		t.Fatalf("seed domain: %v", err)
 	}
 	uid := seedUser(t, d, "carol", "carolpw12", false)
@@ -441,7 +441,7 @@ func TestApplyAutoJoin_EnrollsMatchingDomain(t *testing.T) {
 	// Idempotent + non-matching domain is a no-op.
 	applyAutoJoin(context.Background(), d, uid, "carol@other.com")
 	var n int
-	d.QueryRow(`SELECT COUNT(*) FROM org_members WHERE user_id = ?`, uid).Scan(&n)
+	d.QueryRow(`SELECT COUNT(*) FROM org_members WHERE user_id = $1`, uid).Scan(&n)
 	if n != 1 {
 		t.Fatalf("org_members count = %d; want 1", n)
 	}

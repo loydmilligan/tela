@@ -18,12 +18,12 @@ func TestPublicShare_FullFlow(t *testing.T) {
 	space := seedSpace(t, d, "Engineering", "engineering", admin)
 
 	// Seed a vanilla page.
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'Welcome', 'hello world body', 0)`, space)
+	var pageID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'Welcome', 'hello world body', 0) RETURNING id`, space).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
 	}
-	pageID, _ := res.LastInsertId()
 
 	// Cookie-less client whose redirects are surfaced rather than followed,
 	// so the test can assert 302 status + Location header.
@@ -147,13 +147,13 @@ func TestPublicShare_XSSGuards(t *testing.T) {
 	admin := seedUser(t, d, "admin", "adminpw12", true)
 	space := seedSpace(t, d, "Engineering", "engineering", admin)
 
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, ?, ?, 0)`,
-		space, `<script>alert(1)</script>`, `<img onerror="bad" src="x">`)
+	var pageID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, $2, $3, 0) RETURNING id`,
+		space, `<script>alert(1)</script>`, `<img onerror="bad" src="x">`).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
 	}
-	pageID, _ := res.LastInsertId()
 
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+fmt.Sprintf("/p/%d", pageID), nil)
 	req.Header.Set("User-Agent", "Slackbot-LinkExpanding 1.0")
@@ -189,22 +189,22 @@ func TestPublicShare_DescriptionIsTitleOnly(t *testing.T) {
 	// A long body that, under the old behaviour, would have leaked as a 200-char
 	// excerpt. It must NOT appear in the envelope now.
 	longBody := strings.Repeat("a", 500)
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'Long', ?, 0)`, space, longBody)
+	var longID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'Long', $2, 0) RETURNING id`, space, longBody).Scan(&longID)
 	if err != nil {
 		t.Fatalf("seed long: %v", err)
 	}
-	longID, _ := res.LastInsertId()
 
 	// A markdown body whose stripped text ("H1 link") used to surface in the
 	// description — must no longer appear.
 	mdBody := "# H1\n\n```js\ncode\n```\n[link](https://x)"
-	res, err = d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'MD', ?, 1)`, space, mdBody)
+	var mdID int64
+	err = d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'MD', $2, 1) RETURNING id`, space, mdBody).Scan(&mdID)
 	if err != nil {
 		t.Fatalf("seed md: %v", err)
 	}
-	mdID, _ := res.LastInsertId()
 
 	get := func(id int64) string {
 		t.Helper()

@@ -42,9 +42,9 @@ func loadActiveShareFacts(ctx context.Context, db *sql.DB, spaceID int64) (map[i
 		       CASE WHEN sl.password_hash IS NULL THEN 1 ELSE 0 END, sl.expires_at
 		  FROM share_links sl
 		  JOIN pages p ON p.id = sl.page_id
-		 WHERE p.space_id = ?
+		 WHERE p.space_id = $1
 		   AND sl.revoked_at IS NULL
-		   AND (sl.expires_at IS NULL OR sl.expires_at > datetime('now'))`, spaceID)
+		   AND (sl.expires_at IS NULL OR sl.expires_at > tela_now())`, spaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func loadActiveShareFacts(ctx context.Context, db *sql.DB, spaceID int64) (map[i
 // loadSpaceParentMap returns id -> parent id (nil for roots) for every page in
 // spaceID. Used to walk ancestor chains when resolving inherited exposure.
 func loadSpaceParentMap(ctx context.Context, db *sql.DB, spaceID int64) (map[int64]*int64, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, parent_id FROM pages WHERE space_id = ?`, spaceID)
+	rows, err := db.QueryContext(ctx, `SELECT id, parent_id FROM pages WHERE space_id = $1`, spaceID)
 	if err != nil {
 		return nil, err
 	}

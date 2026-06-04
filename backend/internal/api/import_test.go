@@ -146,7 +146,7 @@ func TestImport_FullFlow(t *testing.T) {
 			t.Fatalf("summary=%+v title=%q want 1/'Bar'", got.Summary, got.Pages[0].Title)
 		}
 		var dbBody string
-		if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, got.Pages[0].ID).Scan(&dbBody); err != nil {
+		if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, got.Pages[0].ID).Scan(&dbBody); err != nil {
 			t.Fatalf("query body: %v", err)
 		}
 		if !strings.Contains(dbBody, "Bar README body") {
@@ -218,7 +218,7 @@ func TestImport_FullFlow(t *testing.T) {
 	t.Run("conflict_vs_existing_db_sibling", func(t *testing.T) {
 		// Pre-seed a top-level 'Solo' page in the test space.
 		if _, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-		                     VALUES (?, NULL, 'Solo', 'pre', 99)`, space); err != nil {
+		                     VALUES ($1, NULL, 'Solo', 'pre', 99)`, space); err != nil {
 			t.Fatalf("seed existing: %v", err)
 		}
 		resp, body := postImport(t, adminC, ts.URL, space, nil, false, []importFilePart{
@@ -279,7 +279,7 @@ func TestImport_FullFlow(t *testing.T) {
 			t.Fatalf("title=%q want 'Override Wins'", got.Pages[0].Title)
 		}
 		var dbBody string
-		if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, got.Pages[0].ID).Scan(&dbBody); err != nil {
+		if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, got.Pages[0].ID).Scan(&dbBody); err != nil {
 			t.Fatalf("body: %v", err)
 		}
 		if strings.Contains(dbBody, "title: Override Wins") {
@@ -308,7 +308,7 @@ func TestImport_FullFlow(t *testing.T) {
 	// 8. dry_run=true → no DB writes; placeholders negative.
 	t.Run("dry_run", func(t *testing.T) {
 		var beforeCount int
-		if err := d.QueryRow(`SELECT COUNT(*) FROM pages WHERE space_id = ?`, space).Scan(&beforeCount); err != nil {
+		if err := d.QueryRow(`SELECT COUNT(*) FROM pages WHERE space_id = $1`, space).Scan(&beforeCount); err != nil {
 			t.Fatalf("count before: %v", err)
 		}
 		resp, body := postImport(t, adminC, ts.URL, space, nil, true, []importFilePart{
@@ -328,7 +328,7 @@ func TestImport_FullFlow(t *testing.T) {
 			}
 		}
 		var afterCount int
-		if err := d.QueryRow(`SELECT COUNT(*) FROM pages WHERE space_id = ?`, space).Scan(&afterCount); err != nil {
+		if err := d.QueryRow(`SELECT COUNT(*) FROM pages WHERE space_id = $1`, space).Scan(&afterCount); err != nil {
 			t.Fatalf("count after: %v", err)
 		}
 		if afterCount != beforeCount {
@@ -371,7 +371,7 @@ func TestImport_FullFlow(t *testing.T) {
 				t.Fatalf("%s: summary=%+v title=%q want 1 + %q", name, got.Summary, got.Pages[0].Title, subdir)
 			}
 			var dbBody string
-			if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, got.Pages[0].ID).Scan(&dbBody); err != nil {
+			if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, got.Pages[0].ID).Scan(&dbBody); err != nil {
 				t.Fatalf("body: %v", err)
 			}
 			if !strings.Contains(dbBody, "body for "+name) {
@@ -383,12 +383,12 @@ func TestImport_FullFlow(t *testing.T) {
 	// 11. parent_id places imported tree under an existing page.
 	t.Run("parent_id_target", func(t *testing.T) {
 		// Seed an existing page in the space to serve as the import target.
-		res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-		                    VALUES (?, NULL, 'Mount', '', 50)`, space)
+		var mountID int64
+		err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+		                    VALUES ($1, NULL, 'Mount', '', 50) RETURNING id`, space).Scan(&mountID)
 		if err != nil {
 			t.Fatalf("seed mount: %v", err)
 		}
-		mountID, _ := res.LastInsertId()
 		resp, body := postImport(t, adminC, ts.URL, space, &mountID, false, []importFilePart{
 			{relPath: "child.md", body: "c"},
 		})
@@ -404,12 +404,12 @@ func TestImport_FullFlow(t *testing.T) {
 	// 12. parent_id in a different space → 400 parent_space_mismatch.
 	t.Run("parent_id_wrong_space", func(t *testing.T) {
 		otherSpace := seedSpace(t, d, "Other", "other", admin)
-		res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-		                    VALUES (?, NULL, 'X', '', 0)`, otherSpace)
+		var otherPageID int64
+		err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+		                    VALUES ($1, NULL, 'X', '', 0) RETURNING id`, otherSpace).Scan(&otherPageID)
 		if err != nil {
 			t.Fatalf("seed cross-space: %v", err)
 		}
-		otherPageID, _ := res.LastInsertId()
 		resp, body := postImport(t, adminC, ts.URL, space, &otherPageID, false, []importFilePart{
 			{relPath: "x.md", body: "x"},
 		})
@@ -453,7 +453,7 @@ func TestImport_FullFlow(t *testing.T) {
 		for _, p := range got.Pages {
 			var n int
 			if err := d.QueryRow(
-				`SELECT COUNT(*) FROM page_revisions WHERE page_id = ? AND source = 'import'`,
+				`SELECT COUNT(*) FROM page_revisions WHERE page_id = $1 AND source = 'import'`,
 				p.ID).Scan(&n); err != nil {
 				t.Fatalf("count revisions for page %d: %v", p.ID, err)
 			}

@@ -139,8 +139,8 @@ func (s *Server) UploadPageDiagram(w http.ResponseWriter, r *http.Request) {
 	// must always map to the same bytes).
 	if _, err := s.DB.ExecContext(ctx, `
 		INSERT INTO page_diagrams (page_id, scene_hash, png, byte_size)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(page_id, scene_hash) DO NOTHING`,
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (page_id, scene_hash) DO NOTHING`,
 		pageID, req.SceneHash, pngBytes, int64(len(pngBytes))); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "upsert diagram failed")
 		return
@@ -152,7 +152,7 @@ func (s *Server) UploadPageDiagram(w http.ResponseWriter, r *http.Request) {
 	)
 	if err := s.DB.QueryRowContext(ctx, `
 		SELECT id, byte_size FROM page_diagrams
-		 WHERE page_id = ? AND scene_hash = ?`,
+		 WHERE page_id = $1 AND scene_hash = $2`,
 		pageID, req.SceneHash).Scan(&rowID, &byteSize); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch diagram failed")
 		return
@@ -208,7 +208,7 @@ func (s *Server) ServePageDiagramPNG(w http.ResponseWriter, r *http.Request) {
 	var png []byte
 	err = s.DB.QueryRowContext(r.Context(), `
 		SELECT png FROM page_diagrams
-		 WHERE page_id = ? AND scene_hash = ?
+		 WHERE page_id = $1 AND scene_hash = $2
 		 LIMIT 1`, pageID, hash).Scan(&png)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "diagram not found")

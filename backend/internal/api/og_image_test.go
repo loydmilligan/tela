@@ -21,12 +21,12 @@ func TestOGImage_FullFlow(t *testing.T) {
 	admin := seedUser(t, d, "admin", "adminpw12", true)
 	space := seedSpace(t, d, "Engineering", "engineering", admin)
 
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'Welcome', 'hello body', 0)`, space)
+	var pageID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'Welcome', 'hello body', 0) RETURNING id`, space).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
 	}
-	pageID, _ := res.LastInsertId()
 
 	pngMagic := []byte("\x89PNG\r\n\x1a\n")
 
@@ -149,7 +149,7 @@ func TestOGImage_FullFlow(t *testing.T) {
 		// Bump updated_at directly. Editing via PATCH would also work, but a
 		// direct UPDATE keeps the test independent of the pages handler.
 		if _, err := d.Exec(
-			`UPDATE pages SET updated_at = datetime('now','+1 hour') WHERE id = ?`, pageID,
+			`UPDATE pages SET updated_at = to_char((now() AT TIME ZONE 'UTC') + make_interval(hours => 1), 'YYYY-MM-DD HH24:MI:SS') WHERE id = $1`, pageID,
 		); err != nil {
 			t.Fatalf("bump updated_at: %v", err)
 		}
@@ -170,12 +170,12 @@ func TestOGImage_FullFlow(t *testing.T) {
 
 	t.Run("LongTitle_Truncated", func(t *testing.T) {
 		longTitle := strings.Repeat("Lorem ipsum dolor sit amet ", 50)
-		res2, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-		                     VALUES (?, NULL, ?, '', 1)`, space, longTitle)
+		var longID int64
+		err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+		                     VALUES ($1, NULL, $2, '', 1) RETURNING id`, space, longTitle).Scan(&longID)
 		if err != nil {
 			t.Fatalf("seed long page: %v", err)
 		}
-		longID, _ := res2.LastInsertId()
 
 		resp, body := get(t, nil, fmt.Sprintf("/p/%d/og.png", longID), nil)
 		if resp.StatusCode != http.StatusOK {
@@ -256,4 +256,3 @@ func TestOGImage_ConcurrentRendering(t *testing.T) {
 	}
 	wg.Wait()
 }
-

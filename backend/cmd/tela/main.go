@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -28,15 +27,12 @@ func main() {
 		addr = v
 	}
 
-	dbPath := "/data/tela.db"
-	if v := os.Getenv("TELA_DB_PATH"); v != "" {
-		dbPath = v
-	}
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		log.Fatalf("create db dir: %v", err)
+	dsn := os.Getenv("TELA_DATABASE_URL")
+	if dsn == "" {
+		log.Fatalf("TELA_DATABASE_URL is required (e.g. postgres://tela:pass@localhost:5432/tela?sslmode=disable)")
 	}
 
-	d, err := db.Open(dbPath)
+	d, err := db.Open(dsn)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -45,7 +41,7 @@ func main() {
 	if err := db.Migrate(context.Background(), d); err != nil {
 		log.Fatalf("migrate db: %v", err)
 	}
-	log.Printf("db ready at %s", dbPath)
+	log.Printf("db ready")
 
 	bs, err := auth.BootstrapFromEnv(context.Background(), d)
 	if err != nil {

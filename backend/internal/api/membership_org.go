@@ -23,7 +23,7 @@ func isValidOrgRole(r string) bool {
 func orgRole(ctx context.Context, db *sql.DB, userID, orgID int64) (string, error) {
 	var role string
 	err := db.QueryRowContext(ctx,
-		`SELECT org_role FROM org_members WHERE org_id = ? AND user_id = ?`,
+		`SELECT org_role FROM org_members WHERE org_id = $1 AND user_id = $2`,
 		orgID, userID).Scan(&role)
 	return role, err
 }
@@ -32,7 +32,7 @@ func orgRole(ctx context.Context, db *sql.DB, userID, orgID int64) (string, erro
 // when an instance-admin targets a missing org.
 func orgExists(ctx context.Context, db *sql.DB, orgID int64) (bool, error) {
 	var x int
-	err := db.QueryRowContext(ctx, `SELECT 1 FROM orgs WHERE id = ?`, orgID).Scan(&x)
+	err := db.QueryRowContext(ctx, `SELECT 1 FROM orgs WHERE id = $1`, orgID).Scan(&x)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

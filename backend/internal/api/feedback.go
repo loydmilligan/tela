@@ -74,16 +74,12 @@ func (s *Server) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	res, err := s.DB.ExecContext(ctx, `
+	var id int64
+	err := s.DB.QueryRowContext(ctx, `
 		INSERT INTO feedback (created_by_user_id, created_by_api_key_id, subject, body)
-		VALUES (?, ?, ?, ?)`, u.ID, apiKeyArg, subject, body)
+		VALUES ($1, $2, $3, $4) RETURNING id`, u.ID, apiKeyArg, subject, body).Scan(&id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "insert feedback failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "last insert id failed")
 		return
 	}
 	dto, err := selectFeedbackByID(ctx, s.DB, id)
@@ -97,7 +93,7 @@ func (s *Server) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 func selectFeedbackByID(ctx context.Context, q *sql.DB, id int64) (feedbackDTO, error) {
 	row := q.QueryRowContext(ctx, `
 		SELECT id, created_at, created_by_user_id, created_by_api_key_id, subject, body
-		  FROM feedback WHERE id = ?`, id)
+		  FROM feedback WHERE id = $1`, id)
 	return scanFeedback(row)
 }
 

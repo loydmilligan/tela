@@ -26,7 +26,7 @@ func TestPublicShareLink_BotGate(t *testing.T) {
 	outsideID := seedPageInSpace(t, d, otherSpace, nil, "Outside", "outside body")
 
 	// Insert tokens directly so we know exactly what state we're testing.
-	// All times use the SQLite datetime format the rest of the share code
+	// All times use the datetime text format the rest of the share code
 	// relies on for wire-format consistency.
 	insertShare := func(token string, pageID int64, includeDesc bool, passwordHash *string, expiresAt, revokedAt *string) {
 		t.Helper()
@@ -49,7 +49,7 @@ func TestPublicShareLink_BotGate(t *testing.T) {
 		if _, err := d.Exec(`INSERT INTO share_links
 			(token, page_id, include_descendants, password_hash,
 			 created_by, created_at, expires_at, revoked_at)
-			VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?)`,
+			VALUES ($1, $2, $3, $4, $5, tela_now(), $6, $7)`,
 			token, pageID, inc, pwArg, admin, expArg, revArg); err != nil {
 			t.Fatalf("insert share %s: %v", token, err)
 		}
@@ -248,4 +248,3 @@ func TestPublicShareLink_BotGate(t *testing.T) {
 		}
 	})
 }
-

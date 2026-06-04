@@ -80,8 +80,8 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 		SELECT u.id, u.username, u.email, u.is_instance_admin
 		  FROM sessions s
 		  JOIN users u ON u.id = s.user_id
-		 WHERE s.id = ?
-		   AND s.expires_at > datetime('now')
+		 WHERE s.id = $1
+		   AND s.expires_at > tela_now()
 		   AND u.is_active = 1`, sessionID).Scan(&userID, &username, &email, &isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidSession
@@ -92,7 +92,7 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 
 	newExpires := time.Now().UTC().Add(SessionMaxAge).Format("2006-01-02 15:04:05")
 	if _, err := d.ExecContext(ctx,
-		`UPDATE sessions SET expires_at = ?, last_seen_at = datetime('now') WHERE id = ?`,
+		`UPDATE sessions SET expires_at = $1, last_seen_at = tela_now() WHERE id = $2`,
 		newExpires, sessionID); err != nil {
 		log.Printf("auth: session slide failed for %s: %v", sessionID, err)
 	}
@@ -111,7 +111,7 @@ func CreateSession(ctx context.Context, d *sql.DB, userID int64, userAgent strin
 	expires := time.Now().UTC().Add(SessionMaxAge).Format("2006-01-02 15:04:05")
 	if _, err := d.ExecContext(ctx, `
 		INSERT INTO sessions(id, user_id, expires_at, last_seen_at, user_agent)
-		VALUES (?, ?, ?, datetime('now'), ?)`,
+		VALUES ($1, $2, $3, tela_now(), $4)`,
 		id, userID, expires, userAgent); err != nil {
 		return "", err
 	}
@@ -120,7 +120,7 @@ func CreateSession(ctx context.Context, d *sql.DB, userID int64, userAgent strin
 
 // DeleteSession removes a session row by id. No error if the row is missing.
 func DeleteSession(ctx context.Context, d *sql.DB, sessionID string) error {
-	_, err := d.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, sessionID)
+	_, err := d.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, sessionID)
 	return err
 }
 
@@ -134,7 +134,7 @@ type sessionExec interface {
 // password reset + admin deactivate so the affected user is logged out of
 // every device immediately.
 func DeleteUserSessions(ctx context.Context, d sessionExec, userID int64) error {
-	_, err := d.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+	_, err := d.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
 	return err
 }
 
@@ -143,7 +143,7 @@ func DeleteUserSessions(ctx context.Context, d sessionExec, userID int64) error 
 // own session survives.
 func DeleteUserSessionsExcept(ctx context.Context, d sessionExec, userID int64, exceptID string) error {
 	_, err := d.ExecContext(ctx,
-		`DELETE FROM sessions WHERE user_id = ? AND id != ?`, userID, exceptID)
+		`DELETE FROM sessions WHERE user_id = $1 AND id != $2`, userID, exceptID)
 	return err
 }
 

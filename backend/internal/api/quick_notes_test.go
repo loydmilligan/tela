@@ -59,7 +59,7 @@ func TestQuickNotesFindOrCreate(t *testing.T) {
 
 	// The page must live in alice's *personal* space.
 	var personalUser sql.NullInt64
-	if err := d.QueryRow(`SELECT personal_user_id FROM spaces WHERE id = ?`, first.SpaceID).
+	if err := d.QueryRow(`SELECT personal_user_id FROM spaces WHERE id = $1`, first.SpaceID).
 		Scan(&personalUser); err != nil {
 		t.Fatalf("lookup space: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestQuickNotesFindOrCreate(t *testing.T) {
 	// Exactly one Quick Notes page exists (no duplicate from the second call).
 	var n int
 	if err := d.QueryRow(
-		`SELECT COUNT(*) FROM pages WHERE space_id = ? AND title = 'Quick Notes'`, first.SpaceID).
+		`SELECT COUNT(*) FROM pages WHERE space_id = $1 AND title = 'Quick Notes'`, first.SpaceID).
 		Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}

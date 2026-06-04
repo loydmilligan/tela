@@ -28,21 +28,22 @@ const pageRevisionFullColumns = `
 	       r.source, r.byte_size, r.created_at`
 
 // insertPageRevision writes a new page_revisions row for pageID. byte_size is
-// derived from len(body); created_at is set by SQLite's datetime('now') so the
+// derived from len(body); created_at is set by tela_now() so the
 // wire format matches the rest of the API. authorID is nullable; pass nil when
 // the writer's user record is unavailable. Called from the snapshot-on-save
 // hook AFTER the pages UPDATE has committed, so a failure here cannot roll the
 // user's save back.
 func insertPageRevision(ctx context.Context, db *sql.DB, pageID int64, body, title string, authorID *int64, source string) (int64, error) {
-	res, err := db.ExecContext(ctx, `
+	var id int64
+	err := db.QueryRowContext(ctx, `
 		INSERT INTO page_revisions
 		  (page_id, body, title, author_id, source, byte_size, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-		pageID, body, title, nullableInt64(authorID), source, int64(len(body)))
+		VALUES ($1, $2, $3, $4, $5, $6, tela_now()) RETURNING id`,
+		pageID, body, title, nullableInt64(authorID), source, int64(len(body))).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
 // ListPageRevisions returns a paginated list of revisions for a page,
@@ -113,16 +114,16 @@ func (s *Server) ListPageRevisions(w http.ResponseWriter, r *http.Request) {
 		rows, err = s.DB.QueryContext(ctx, pageRevisionListColumns+`
 			  FROM page_revisions r
 			  LEFT JOIN users u ON u.id = r.author_id
-			 WHERE r.page_id = ?
+			 WHERE r.page_id = $1
 			 ORDER BY r.id DESC
-			 LIMIT ?`, pageID, limit)
+			 LIMIT $2`, pageID, limit)
 	} else {
 		rows, err = s.DB.QueryContext(ctx, pageRevisionListColumns+`
 			  FROM page_revisions r
 			  LEFT JOIN users u ON u.id = r.author_id
-			 WHERE r.page_id = ? AND r.id < ?
+			 WHERE r.page_id = $1 AND r.id < $2
 			 ORDER BY r.id DESC
-			 LIMIT ?`, pageID, cursor, limit)
+			 LIMIT $3`, pageID, cursor, limit)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list revisions failed")
@@ -193,7 +194,7 @@ func (s *Server) GetPageRevision(w http.ResponseWriter, r *http.Request) {
 	row := s.DB.QueryRowContext(ctx, pageRevisionFullColumns+`
 		  FROM page_revisions r
 		  LEFT JOIN users u ON u.id = r.author_id
-		 WHERE r.id = ? AND r.page_id = ?`, revID, pageID)
+		 WHERE r.id = $1 AND r.page_id = $2`, revID, pageID)
 	rev, err := scanPageRevisionFull(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "revision_not_found", "revision not found")

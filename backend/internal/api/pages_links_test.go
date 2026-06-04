@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
 // TestSyncPageLinks_SkipsSelfLink: a body that links to its own page id must
@@ -13,16 +13,9 @@ import (
 // pass — would otherwise render as "this page links to itself" in backlinks.
 func TestSyncPageLinks_SkipsSelfLink(t *testing.T) {
 	ctx := context.Background()
-	d, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open in-memory db: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(ctx, d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	d := testdb.New(t)
 
-	if _, err := d.ExecContext(ctx, `INSERT INTO spaces(name, slug) VALUES (?,?)`, "General", "general"); err != nil {
+	if _, err := d.ExecContext(ctx, `INSERT INTO spaces(name, slug) VALUES ($1,$2)`, "General", "general"); err != nil {
 		t.Fatalf("seed space: %v", err)
 	}
 	var spaceID int64
@@ -31,21 +24,13 @@ func TestSyncPageLinks_SkipsSelfLink(t *testing.T) {
 	}
 
 	// Insert page A and page B in the same space.
-	res, err := d.ExecContext(ctx, `INSERT INTO pages(space_id, parent_id, title, body, position) VALUES (?, NULL, ?, '', 0)`, spaceID, "Page A")
-	if err != nil {
+	var pageA int64
+	if err := d.QueryRowContext(ctx, `INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, NULL, $2, '', 0) RETURNING id`, spaceID, "Page A").Scan(&pageA); err != nil {
 		t.Fatalf("insert page A: %v", err)
 	}
-	pageA, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id A: %v", err)
-	}
-	res, err = d.ExecContext(ctx, `INSERT INTO pages(space_id, parent_id, title, body, position) VALUES (?, NULL, ?, '', 1)`, spaceID, "Page B")
-	if err != nil {
+	var pageB int64
+	if err := d.QueryRowContext(ctx, `INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, NULL, $2, '', 1) RETURNING id`, spaceID, "Page B").Scan(&pageB); err != nil {
 		t.Fatalf("insert page B: %v", err)
-	}
-	pageB, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id B: %v", err)
 	}
 
 	// Body links to self twice (different forms) and to B once. Only the B row
@@ -65,7 +50,7 @@ func TestSyncPageLinks_SkipsSelfLink(t *testing.T) {
 	}
 
 	var selfCount int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_links WHERE source_id = ? AND target_id = ?`, pageA, pageA).Scan(&selfCount); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_links WHERE source_id = $1 AND target_id = $2`, pageA, pageA).Scan(&selfCount); err != nil {
 		t.Fatalf("count self rows: %v", err)
 	}
 	if selfCount != 0 {
@@ -73,7 +58,7 @@ func TestSyncPageLinks_SkipsSelfLink(t *testing.T) {
 	}
 
 	var bCount int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_links WHERE source_id = ? AND target_id = ?`, pageA, pageB).Scan(&bCount); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_links WHERE source_id = $1 AND target_id = $2`, pageA, pageB).Scan(&bCount); err != nil {
 		t.Fatalf("count B rows: %v", err)
 	}
 	if bCount != 1 {
@@ -95,7 +80,7 @@ func TestSyncPageLinks_SkipsSelfLink(t *testing.T) {
 	}
 
 	var totalForA int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_links WHERE source_id = ?`, pageA).Scan(&totalForA); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_links WHERE source_id = $1`, pageA).Scan(&totalForA); err != nil {
 		t.Fatalf("count total for A: %v", err)
 	}
 	if totalForA != 0 {

@@ -17,10 +17,14 @@ type searchBodiesResp struct {
 	Results []searchBodyHit `json:"results"`
 }
 
-// TestSearchBodies_FullFlow exercises the happy path + every documented error
-// envelope via the wired stack: missing/blank inputs, membership gating,
-// silent limit clamp, score normalisation, tie-break ordering, and the FTS5
-// injection defence.
+// TestSearchBodies_FullFlow exercises the endpoint contract + access control
+// via the wired stack: missing/blank inputs, membership gating, silent limit
+// clamp, title/body matching, and injection-safety.
+//
+// NOTE: search is a PLACEHOLDER (unranked ILIKE; see docs/search.md and the
+// TODO(search) banner in search_bodies.go). These assertions therefore cover
+// the contract + access control, NOT relevance ranking — ranking/score will be
+// re-tested when the real tsvector/pgvector search lands.
 func TestSearchBodies_FullFlow(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
@@ -89,45 +93,34 @@ func TestSearchBodies_FullFlow(t *testing.T) {
 		t.Fatalf("empty space: got %d results, want 0", len(got.Results))
 	}
 
-	// Seed pages with distinct text content so we can assert ordering by
-	// match quality. The pages_fts triggers populate the index automatically.
+	// Seed pages with distinct text content.
 	pageIDs := map[string]int64{
-		"alpha":    seedPageInSpace(t, d, space, nil, "Alpha Page", "alpha alpha alpha widget content"),
-		"bravo":    seedPageInSpace(t, d, space, nil, "Bravo Page", "alpha widget once"),
-		"charlie":  seedPageInSpace(t, d, space, nil, "Charlie Page", "completely unrelated body text"),
+		"alpha":     seedPageInSpace(t, d, space, nil, "Alpha Page", "alpha alpha alpha widget content"),
+		"bravo":     seedPageInSpace(t, d, space, nil, "Bravo Page", "alpha widget once"),
+		"charlie":   seedPageInSpace(t, d, space, nil, "Charlie Page", "completely unrelated body text"),
 		"titleOnly": seedPageInSpace(t, d, space, nil, "Alpha Stuff", "no widget in this body"),
 	}
 
-	// 8. Happy path: admin queries "alpha widget" and gets ranked hits.
-	got = getBodySearch(t, adminC, base+fmt.Sprintf("?space_id=%d&q=alpha+widget", space))
-	if len(got.Results) < 2 {
-		t.Fatalf("alpha widget: got %d results, want >=2", len(got.Results))
+	// 8. Body match: a term in the body returns the pages that contain it, and
+	//    excludes the unrelated one. (Substring match, unranked.)
+	got = getBodySearch(t, adminC, base+fmt.Sprintf("?space_id=%d&q=widget", space))
+	ids := resultIDSet(got)
+	if !ids[pageIDs["alpha"]] || !ids[pageIDs["bravo"]] {
+		t.Fatalf("q=widget should match alpha + bravo, got results=%+v", got.Results)
 	}
-	// Top hit should be the alpha-heavy page.
-	if got.Results[0].ID != pageIDs["alpha"] {
-		t.Fatalf("top hit id=%d, want alpha page id=%d (results=%+v)",
-			got.Results[0].ID, pageIDs["alpha"], got.Results)
+	if ids[pageIDs["charlie"]] {
+		t.Fatalf("q=widget should NOT match charlie (unrelated body), got results=%+v", got.Results)
 	}
-	// Scores must be in [0,1), monotonically non-increasing (we ORDER BY bm25 ASC).
+	// Score is a placeholder constant; just assert it's in range.
 	for i, r := range got.Results {
-		if r.Score < 0 || r.Score >= 1 {
-			t.Fatalf("result %d score=%f out of [0,1)", i, r.Score)
-		}
-		if i > 0 && r.Score > got.Results[i-1].Score+1e-9 {
-			t.Fatalf("result %d score=%f > result %d score=%f — not monotonic",
-				i, r.Score, i-1, got.Results[i-1].Score)
+		if r.Score < 0 || r.Score > 1 {
+			t.Fatalf("result %d score=%f out of [0,1]", i, r.Score)
 		}
 	}
 
-	// 9. Title-only match returned (FTS5 indexes both columns).
+	// 9. Title-only match returned (title is searched too).
 	got = getBodySearch(t, adminC, base+fmt.Sprintf("?space_id=%d&q=Stuff", space))
-	foundTitleOnly := false
-	for _, r := range got.Results {
-		if r.ID == pageIDs["titleOnly"] {
-			foundTitleOnly = true
-		}
-	}
-	if !foundTitleOnly {
+	if !resultIDSet(got)[pageIDs["titleOnly"]] {
 		t.Fatalf("expected title-only match for q=Stuff, got results=%+v", got.Results)
 	}
 
@@ -137,14 +130,11 @@ func TestSearchBodies_FullFlow(t *testing.T) {
 		t.Fatalf("viewer bob got 0 results for q=alpha, want >=1")
 	}
 
-	// 11. Silent limit clamp (NOT a 400). limit=9999 returns at most maxLimit
-	//     rows; we only seeded 4 here so we just verify it's a 200 and the
-	//     count is bounded.
+	// 11. Silent limit clamp (NOT a 400).
 	got = getBodySearch(t, adminC, base+fmt.Sprintf("?space_id=%d&q=alpha&limit=9999", space))
 	if len(got.Results) > searchBodiesMaxLimit {
 		t.Fatalf("limit=9999 clamp: got %d, want <=%d", len(got.Results), searchBodiesMaxLimit)
 	}
-	// limit=0 / negative also clamps to min, not 400.
 	for _, bad := range []string{"0", "-3", "abc"} {
 		resp, _ = adminC.Get(base + fmt.Sprintf("?space_id=%d&q=alpha&limit=%s", space, bad))
 		resp.Body.Close()
@@ -159,15 +149,13 @@ func TestSearchBodies_FullFlow(t *testing.T) {
 		t.Fatalf("limit=1: got %d results, want 1", len(got.Results))
 	}
 
-	// 13. FTS5 syntax injection: a query containing FTS5 operator chars must
-	//     not 500. The sanitiser strips `*`, escapes `"`, and wraps each term
-	//     in quotes — the engine sees a well-formed MATCH expression.
-	for _, evil := range []string{`+evil-stuff`, `"OR"`, `***`, `(foo OR bar)`} {
+	// 13. Injection-safety: a query full of special chars (LIKE wildcards, FTS5
+	//     operator leftovers) must not 500 — escapeLike neutralises % / _ and
+	//     the rest is matched literally.
+	for _, evil := range []string{`+evil-stuff`, `"OR"`, `***`, `(foo OR bar)`, `a_b`} {
 		resp, _ = adminC.Get(base + fmt.Sprintf("?space_id=%d&q=%s", space, urlEscape(evil)))
 		body, _ = io.ReadAll(resp.Body)
 		resp.Body.Close()
-		// 200 OK is the expected outcome — possibly with empty results. A 500
-		// here means the sanitiser let through unbalanced FTS5 syntax.
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("injection q=%q: status=%d body=%s want 200", evil, resp.StatusCode, body)
 		}
@@ -177,11 +165,6 @@ func TestSearchBodies_FullFlow(t *testing.T) {
 // TestSearchBodies_BearerScopes asserts the M16.A.1 bearer-auth integrations:
 // a `read`-scope key works (GET allowed), a `read` key restricted to a
 // different space 403s with api_key_space_scope.
-//
-// Bearer-auth tests require an on-disk DB — LookupAPIKey kicks off an async
-// last_used_at goroutine and modernc.org/sqlite's `:memory:` is per-
-// connection (see api_keys_test.go's newWiredServerOnDisk for the long-form
-// rationale).
 func TestSearchBodies_BearerScopes(t *testing.T) {
 	t.Setenv("TELA_API_KEY_SECRET", "deadbeef00112233445566778899aabbccddeeff00112233445566778899aabb")
 	auth.ResetAPIKeySecretCache()
@@ -208,7 +191,7 @@ func TestSearchBodies_BearerScopes(t *testing.T) {
 		}
 		if _, err := d.ExecContext(context.Background(), `
 			INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
-			VALUES (?, 'k', ?, ?, ?, ?)`,
+			VALUES ($1, 'k', $2, $3, $4, $5)`,
 			uid, prefix, hmacHex, scope, spaceArg); err != nil {
 			t.Fatalf("seed key: %v", err)
 		}
@@ -250,38 +233,48 @@ func TestSearchBodies_BearerScopes(t *testing.T) {
 	}
 }
 
-// TestSearchBodies_LargeSpaceSeed_TopHit seeds 50 pages where one page has
-// the highest term-density for the query, then asserts the top-1 result is
-// that page. Guards against the score normalisation accidentally inverting
-// the ranking direction.
-func TestSearchBodies_LargeSpaceSeed_TopHit(t *testing.T) {
+// TestSearchBodies_LargeSpaceSeed seeds 50 matching pages and asserts the limit
+// is honoured and a known page is reachable. (Ranking is not asserted — search
+// is an unranked placeholder; see docs/search.md.)
+func TestSearchBodies_LargeSpaceSeed(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
 	space := seedSpace(t, d, "Test Space", "test-space", admin)
 	adminC := loginClient(t, ts, "admin", "adminpw12")
 
-	// 49 distractor pages with single mentions of "needle".
 	for i := 0; i < 49; i++ {
 		_ = seedPageInSpace(t, d, space, nil,
 			fmt.Sprintf("Distractor %d", i),
 			fmt.Sprintf("page %d talks about needle once and lots of other words", i))
 	}
-	// One target page mentions "needle" many times.
 	target := seedPageInSpace(t, d, space, nil, "Target",
 		"needle needle needle needle needle needle needle needle")
 
+	// limit=5 honoured.
 	got := getBodySearch(t, adminC,
 		ts.URL+fmt.Sprintf("/api/search/bodies?space_id=%d&q=needle&limit=5", space))
-	if len(got.Results) == 0 {
-		t.Fatalf("got 0 results, want >=1")
+	if len(got.Results) == 0 || len(got.Results) > 5 {
+		t.Fatalf("limit=5: got %d results, want 1..5", len(got.Results))
 	}
-	if got.Results[0].ID != target {
-		t.Fatalf("top hit id=%d, want target id=%d (results=%+v)", got.Results[0].ID, target, got.Results)
+
+	// With a high limit, every "needle" page (all 50) is returned and the
+	// target is among them.
+	got = getBodySearch(t, adminC,
+		ts.URL+fmt.Sprintf("/api/search/bodies?space_id=%d&q=needle&limit=100", space))
+	if len(got.Results) != 50 {
+		t.Fatalf("q=needle limit=100: got %d results, want 50", len(got.Results))
 	}
-	// limit=5 is honoured: at most 5 rows.
-	if len(got.Results) > 5 {
-		t.Fatalf("got %d results with limit=5", len(got.Results))
+	if !resultIDSet(got)[target] {
+		t.Fatalf("target page %d not found in results", target)
 	}
+}
+
+func resultIDSet(r searchBodiesResp) map[int64]bool {
+	set := map[int64]bool{}
+	for _, h := range r.Results {
+		set[h.ID] = true
+	}
+	return set
 }
 
 func getBodySearch(t *testing.T, c *http.Client, url string) searchBodiesResp {

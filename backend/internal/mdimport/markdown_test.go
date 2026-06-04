@@ -6,35 +6,26 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// newImportTestDB opens an in-memory SQLite, runs every migration, and seeds
-// the minimal users + spaces + space_members rows needed for FK constraints
-// on the import path (page_revisions.author_id FK → users.id).
+// newImportTestDB provisions a fresh migrated Postgres database and seeds the
+// minimal users + spaces + space_members rows needed for FK constraints on the
+// import path (page_revisions.author_id FK → users.id).
 func newImportTestDB(t *testing.T) (*sql.DB, int64, int64) {
 	t.Helper()
-	d, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	res, err := d.Exec(`INSERT INTO users (username, password_hash, is_instance_admin, is_active)
-	                    VALUES ('importer', 'x', 1, 1)`)
-	if err != nil {
+	d := testdb.New(t)
+	var userID int64
+	if err := d.QueryRow(`INSERT INTO users (username, password_hash, is_instance_admin, is_active)
+	                    VALUES ('importer', 'x', 1, 1) RETURNING id`).Scan(&userID); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
-	userID, _ := res.LastInsertId()
-	res, err = d.Exec(`INSERT INTO spaces (name, slug) VALUES ('Test', 'test')`)
-	if err != nil {
+	var spaceID int64
+	if err := d.QueryRow(`INSERT INTO spaces (name, slug) VALUES ('Test', 'test') RETURNING id`).Scan(&spaceID); err != nil {
 		t.Fatalf("seed space: %v", err)
 	}
-	spaceID, _ := res.LastInsertId()
 	if _, err := d.Exec(`INSERT INTO space_members (space_id, user_id, role)
-	                     VALUES (?, ?, 'owner')`, spaceID, userID); err != nil {
+	                     VALUES ($1, $2, 'owner')`, spaceID, userID); err != nil {
 		t.Fatalf("seed member: %v", err)
 	}
 	return d, spaceID, userID
@@ -64,7 +55,7 @@ func runImport(t *testing.T, d *sql.DB, spaceID, userID int64, parentID *int64, 
 func countPages(t *testing.T, d *sql.DB, spaceID int64) int {
 	t.Helper()
 	var n int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM pages WHERE space_id = ?`, spaceID).Scan(&n); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM pages WHERE space_id = $1`, spaceID).Scan(&n); err != nil {
 		t.Fatalf("count pages: %v", err)
 	}
 	return n
@@ -104,7 +95,7 @@ func TestImport_SingleDir_WithReadme(t *testing.T) {
 		t.Fatalf("title=%q want 'Foo' (dir name overrides README H1)", r.Pages[0].Title)
 	}
 	var body string
-	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, r.Pages[0].ID).Scan(&body); err != nil {
 		t.Fatalf("query body: %v", err)
 	}
 	if body != readme {
@@ -127,7 +118,7 @@ func TestImport_SingleDir_WithReadme_FrontmatterIgnored(t *testing.T) {
 		t.Fatalf("title=%q want 'Foo' (dir basename overrides frontmatter title AND H1)", r.Pages[0].Title)
 	}
 	var body string
-	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, r.Pages[0].ID).Scan(&body); err != nil {
 		t.Fatalf("query body: %v", err)
 	}
 	if strings.Contains(body, "title: Should Be Ignored") {
@@ -207,7 +198,7 @@ func TestImport_TitleConflict_AppendsNumber(t *testing.T) {
 	d, sp, u := newImportTestDB(t)
 	// Pre-seed an existing top-level "Foo" page.
 	if _, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                     VALUES (?, NULL, 'Foo', 'existing', 0)`, sp); err != nil {
+	                     VALUES ($1, NULL, 'Foo', 'existing', 0)`, sp); err != nil {
 		t.Fatalf("seed existing: %v", err)
 	}
 	r := runImport(t, d, sp, u, nil, []ImportFile{
@@ -245,7 +236,7 @@ func TestImport_FrontmatterTitle_OverridesFilenameAndH1(t *testing.T) {
 		t.Fatalf("title=%q want 'Custom'", r.Pages[0].Title)
 	}
 	var body string
-	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, r.Pages[0].ID).Scan(&body); err != nil {
 		t.Fatalf("body: %v", err)
 	}
 	if strings.Contains(body, "title: Custom") {
@@ -317,7 +308,7 @@ func TestImport_ReadmeCaseInsensitive(t *testing.T) {
 				t.Fatalf("for %s: summary=%+v title=%q want 1 created + 'Bar'", name, r.Summary, r.Pages[0].Title)
 			}
 			var body string
-			if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, r.Pages[0].ID).Scan(&body); err != nil {
+			if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, r.Pages[0].ID).Scan(&body); err != nil {
 				t.Fatalf("body: %v", err)
 			}
 			if !strings.Contains(body, "body for "+name) {
@@ -389,7 +380,7 @@ func TestImport_FlattenSpaceRoot_WithReadme_Wrapped(t *testing.T) {
 		t.Fatalf("wrapper parent_id=%v want nil (space root)", wrapper.ParentID)
 	}
 	var body string
-	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, wrapper.ID).Scan(&body); err != nil {
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, wrapper.ID).Scan(&body); err != nil {
 		t.Fatalf("body: %v", err)
 	}
 	if body != "notes overview body" {
@@ -410,12 +401,11 @@ func TestImport_FlattenSpaceRoot_WithReadme_Wrapped(t *testing.T) {
 func TestImport_FlattenRealParent_NoReadme(t *testing.T) {
 	d, sp, u := newImportTestDB(t)
 	// Pre-create a real parent page.
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'Manual', '', 0)`, sp)
-	if err != nil {
+	var parentID int64
+	if err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'Manual', '', 0) RETURNING id`, sp).Scan(&parentID); err != nil {
 		t.Fatalf("seed parent: %v", err)
 	}
-	parentID, _ := res.LastInsertId()
 	r := runImport(t, d, sp, u, &parentID, []ImportFile{
 		{Path: "Notes/alpha.md", Content: []byte("alpha body")},
 		{Path: "Notes/beta.md", Content: []byte("beta body")},
@@ -438,12 +428,11 @@ func TestImport_FlattenRealParent_NoReadme(t *testing.T) {
 // wrapper. This is the Q42 B "wrap regardless of parent type" lock.
 func TestImport_FlattenRealParent_WithReadme_Wrapped(t *testing.T) {
 	d, sp, u := newImportTestDB(t)
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'Manual', '', 0)`, sp)
-	if err != nil {
+	var parentID int64
+	if err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'Manual', '', 0) RETURNING id`, sp).Scan(&parentID); err != nil {
 		t.Fatalf("seed parent: %v", err)
 	}
-	parentID, _ := res.LastInsertId()
 	r := runImport(t, d, sp, u, &parentID, []ImportFile{
 		{Path: "Notes/README.md", Content: []byte("notes overview body")},
 		{Path: "Notes/leaf.md", Content: []byte("leaf body")},
@@ -465,7 +454,7 @@ func TestImport_FlattenRealParent_WithReadme_Wrapped(t *testing.T) {
 		t.Fatalf("wrapper parent_id=%v want %d (real parent)", wrapper.ParentID, parentID)
 	}
 	var body string
-	if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, wrapper.ID).Scan(&body); err != nil {
+	if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, wrapper.ID).Scan(&body); err != nil {
 		t.Fatalf("body: %v", err)
 	}
 	if body != "notes overview body" {

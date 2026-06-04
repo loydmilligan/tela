@@ -43,9 +43,10 @@ func EnsurePersonalSpace(ctx context.Context, db *sql.DB, userID int64, username
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx,
-		`INSERT INTO spaces(name, slug, personal_user_id) VALUES (?, ?, ?)`,
-		personalSpaceName, slug, userID)
+	var id int64
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO spaces(name, slug, personal_user_id) VALUES ($1, $2, $3) RETURNING id`,
+		personalSpaceName, slug, userID).Scan(&id)
 	if err != nil {
 		// Lost a race (someone else just made this user's personal space) —
 		// return theirs instead of erroring.
@@ -54,12 +55,8 @@ func EnsurePersonalSpace(ctx context.Context, db *sql.DB, userID int64, username
 		}
 		return 0, fmt.Errorf("insert personal space: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO space_members(space_id, user_id, role) VALUES (?, ?, 'owner')`,
+		`INSERT INTO space_members(space_id, user_id, role) VALUES ($1, $2, 'owner')`,
 		id, userID); err != nil {
 		return 0, fmt.Errorf("assign personal space owner: %w", err)
 	}
@@ -120,7 +117,7 @@ func EnsurePersonalSpacesForAll(ctx context.Context, db *sql.DB) error {
 func personalSpaceID(ctx context.Context, db *sql.DB, userID int64) (int64, error) {
 	var id int64
 	err := db.QueryRowContext(ctx,
-		`SELECT id FROM spaces WHERE personal_user_id = ?`, userID).Scan(&id)
+		`SELECT id FROM spaces WHERE personal_user_id = $1`, userID).Scan(&id)
 	return id, err
 }
 
@@ -137,7 +134,7 @@ func uniquePersonalSlug(ctx context.Context, db *sql.DB, username string) (strin
 	candidate := base
 	for n := 2; ; n++ {
 		var x int
-		err := db.QueryRowContext(ctx, `SELECT 1 FROM spaces WHERE slug = ?`, candidate).Scan(&x)
+		err := db.QueryRowContext(ctx, `SELECT 1 FROM spaces WHERE slug = $1`, candidate).Scan(&x)
 		if errors.Is(err, sql.ErrNoRows) {
 			return candidate, nil
 		}

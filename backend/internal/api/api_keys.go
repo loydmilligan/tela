@@ -125,7 +125,7 @@ func (s *Server) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var x int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM spaces WHERE id = ?`, *req.SpaceID).Scan(&x)
+		err := tx.QueryRowContext(ctx, `SELECT id FROM spaces WHERE id = $1`, *req.SpaceID).Scan(&x)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, "space_not_found", "space not found")
 			return
@@ -143,17 +143,13 @@ func (s *Server) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := tx.ExecContext(ctx, `
+	var id int64
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		u.ID, name, prefix, hmacHex, scope, spaceArg, expiresArg)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		u.ID, name, prefix, hmacHex, scope, spaceArg, expiresArg).Scan(&id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "insert api key failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "last insert id failed")
 		return
 	}
 	dto, err := selectAPIKeyByIDTx(ctx, tx, id)
@@ -237,7 +233,7 @@ func (s *Server) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		revokedAt sql.NullString
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT user_id, revoked_at FROM api_keys WHERE id = ?`, keyID).
+		`SELECT user_id, revoked_at FROM api_keys WHERE id = $1`, keyID).
 		Scan(&ownerID, &revokedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "api key not found")
@@ -261,7 +257,7 @@ func (s *Server) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE api_keys SET revoked_at = strftime('%Y-%m-%d %H:%M:%S','now') WHERE id = ?`,
+		`UPDATE api_keys SET revoked_at = tela_now() WHERE id = $1`,
 		keyID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "revoke api key failed")
 		return
@@ -280,11 +276,11 @@ const apiKeySelectColumns = `
 
 func scanAPIKey(r rowScanner) (apiKeyDTO, error) {
 	var (
-		dto        apiKeyDTO
-		spaceID    sql.NullInt64
-		lastUsed   sql.NullString
-		expiresAt  sql.NullString
-		revokedAt  sql.NullString
+		dto       apiKeyDTO
+		spaceID   sql.NullInt64
+		lastUsed  sql.NullString
+		expiresAt sql.NullString
+		revokedAt sql.NullString
 	)
 	if err := r.Scan(&dto.ID, &dto.Name, &dto.KeyPrefix, &dto.Scope, &spaceID,
 		&lastUsed, &expiresAt, &dto.CreatedAt, &revokedAt); err != nil {
@@ -301,6 +297,6 @@ func scanAPIKey(r rowScanner) (apiKeyDTO, error) {
 }
 
 func selectAPIKeyByIDTx(ctx context.Context, tx *sql.Tx, id int64) (apiKeyDTO, error) {
-	row := tx.QueryRowContext(ctx, apiKeySelectColumns+` WHERE id = ?`, id)
+	row := tx.QueryRowContext(ctx, apiKeySelectColumns+` WHERE id = $1`, id)
 	return scanAPIKey(row)
 }

@@ -22,13 +22,12 @@ func TestDeleteUserSessions_RemovesAllForUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash bob: %v", err)
 	}
-	res, err := d.ExecContext(ctx,
-		`INSERT INTO users(username,password_hash,is_instance_admin,is_active) VALUES (?,?,0,1)`,
-		"bob", hash)
-	if err != nil {
+	var bobID int64
+	if err := d.QueryRowContext(ctx,
+		`INSERT INTO users(username,password_hash,is_instance_admin,is_active) VALUES ($1,$2,0,1) RETURNING id`,
+		"bob", hash).Scan(&bobID); err != nil {
 		t.Fatalf("insert bob: %v", err)
 	}
-	bobID, _ := res.LastInsertId()
 
 	for i := 0; i < 3; i++ {
 		if _, err := CreateSession(ctx, d, aliceID, "ua"); err != nil {
@@ -44,10 +43,10 @@ func TestDeleteUserSessions_RemovesAllForUser(t *testing.T) {
 	}
 
 	var aliceCount, bobCount int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, aliceID).Scan(&aliceCount); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, aliceID).Scan(&aliceCount); err != nil {
 		t.Fatalf("count alice: %v", err)
 	}
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, bobID).Scan(&bobCount); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, bobID).Scan(&bobCount); err != nil {
 		t.Fatalf("count bob: %v", err)
 	}
 	if aliceCount != 0 {
@@ -85,10 +84,10 @@ func TestDeleteUserSessionsExcept_KeepsTheException(t *testing.T) {
 	}
 
 	var total, kept int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, aliceID).Scan(&total); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, aliceID).Scan(&total); err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id = ?`, keep).Scan(&kept); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id = $1`, keep).Scan(&kept); err != nil {
 		t.Fatalf("count kept: %v", err)
 	}
 	if total != 1 {

@@ -91,7 +91,7 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 		`SELECT p.title, sp.name, p.updated_at
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
-		  WHERE p.id = ?`, pageID,
+		  WHERE p.id = $1`, pageID,
 	).Scan(&title, &spaceName, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)
@@ -219,7 +219,7 @@ func renderOGImage(title, spaceName string) ([]byte, error) {
 // maxWidth pixels when drawn with face. The final line is suffixed with "…" if
 // remaining words would overflow. Whitespace-separated; existing newlines
 // inside the input are flattened to single spaces by the upstream caller (page
-// title is a single SQLite TEXT column with no newline convention).
+// title is a single TEXT column with no newline convention).
 func wrapLines(face font.Face, text string, maxWidth, maxLines int) []string {
 	text = strings.TrimSpace(text)
 	if text == "" {

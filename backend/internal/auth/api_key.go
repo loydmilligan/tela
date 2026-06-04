@@ -180,7 +180,7 @@ func LookupAPIKey(ctx context.Context, d *sql.DB, secret []byte, rawKey string) 
 		SELECT k.id, k.user_id, k.scope, k.space_id, k.expires_at, u.is_active
 		  FROM api_keys k
 		  JOIN users u ON u.id = k.user_id
-		 WHERE k.key_hmac = ?
+		 WHERE k.key_hmac = $1
 		   AND k.revoked_at IS NULL`, hmacHex).
 		Scan(&k.ID, &k.UserID, &k.Scope, &spaceID, &expiresAt, &isActive)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -210,7 +210,7 @@ func LookupAPIKey(ctx context.Context, d *sql.DB, secret []byte, rawKey string) 
 	// timeline so the response isn't held up by the write.
 	go func(id int64) {
 		if _, ierr := d.ExecContext(context.Background(),
-			`UPDATE api_keys SET last_used_at = strftime('%Y-%m-%d %H:%M:%S','now') WHERE id = ?`, id); ierr != nil {
+			`UPDATE api_keys SET last_used_at = tela_now() WHERE id = $1`, id); ierr != nil {
 			log.Printf("auth: api_key last_used_at update failed for %d: %v", id, ierr)
 		}
 	}(k.ID)
@@ -230,7 +230,7 @@ func userForAPIKey(ctx context.Context, d *sql.DB, userID int64) (*User, error) 
 		isAdmin int
 	)
 	err := d.QueryRowContext(ctx,
-		`SELECT id, username, email, is_instance_admin FROM users WHERE id = ? AND is_active = 1`,
+		`SELECT id, username, email, is_instance_admin FROM users WHERE id = $1 AND is_active = 1`,
 		userID).Scan(&u.ID, &u.Username, &email, &isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidAPIKey

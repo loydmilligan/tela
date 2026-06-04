@@ -6,31 +6,22 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// newOnDiskAuthDB is the on-disk DB variant for tests that exercise the
-// bearer middleware's async last_used_at goroutine. modernc.org/sqlite's
-// `:memory:` is per-connection, so the goroutine would otherwise see a fresh
-// empty DB that hasn't run any migrations.
+// newOnDiskAuthDB returns a fresh migrated Postgres database. The name is kept
+// for the tests that exercise the bearer middleware's async last_used_at
+// goroutine and concurrent lookups: with Postgres a pool against one real
+// database is shared across every connection/goroutine, so the old SQLite
+// `:memory:`-is-per-connection hazard (which forced an on-disk DB here) is gone.
 func newOnDiskAuthDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dir := t.TempDir()
-	d, err := db.Open(filepath.Join(dir, "tela.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return d
+	return testdb.New(t)
 }
 
 // seedUserDirect inserts a users row and returns the new id. Used by the
@@ -46,15 +37,11 @@ func seedUserDirect(t *testing.T, d *sql.DB, username string, isAdmin bool) int6
 	if isAdmin {
 		admin = 1
 	}
-	res, err := d.ExecContext(context.Background(), `
+	var id int64
+	if err := d.QueryRowContext(context.Background(), `
 		INSERT INTO users (username, password_hash, is_instance_admin, is_active)
-		VALUES (?, ?, ?, 1)`, username, hash, admin)
-	if err != nil {
+		VALUES ($1, $2, $3, 1) RETURNING id`, username, hash, admin).Scan(&id); err != nil {
 		t.Fatalf("insert user: %v", err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id: %v", err)
 	}
 	return id
 }
@@ -76,16 +63,12 @@ func seedAPIKeyDB(t *testing.T, d *sql.DB, userID int64, scope string, spaceID *
 	if expiresAt != nil {
 		expArg = *expiresAt
 	}
-	res, err := d.ExecContext(context.Background(), `
+	var id int64
+	if err := d.QueryRowContext(context.Background(), `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		userID, name, prefix, hmacHex, scope, spaceArg, expArg)
-	if err != nil {
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		userID, name, prefix, hmacHex, scope, spaceArg, expArg).Scan(&id); err != nil {
 		t.Fatalf("insert api_key: %v", err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id: %v", err)
 	}
 	return raw, id
 }
@@ -177,7 +160,7 @@ func TestLookupAPIKey_RejectsRevoked(t *testing.T) {
 	raw, id := seedAPIKeyDB(t, d, uid, ScopeWrite, nil, nil, "test-key")
 
 	if _, err := d.ExecContext(ctx,
-		`UPDATE api_keys SET revoked_at = strftime('%Y-%m-%d %H:%M:%S','now') WHERE id = ?`, id); err != nil {
+		`UPDATE api_keys SET revoked_at = tela_now() WHERE id = $1`, id); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	if _, err := LookupAPIKey(ctx, d, LoadAPIKeySecret(), raw); !errors.Is(err, ErrInvalidAPIKey) {
@@ -209,7 +192,7 @@ func TestLookupAPIKey_RejectsInactiveUser(t *testing.T) {
 	uid := seedUserDirect(t, d, "alice", true)
 	raw, _ := seedAPIKeyDB(t, d, uid, ScopeWrite, nil, nil, "test-key")
 
-	if _, err := d.ExecContext(ctx, `UPDATE users SET is_active = 0 WHERE id = ?`, uid); err != nil {
+	if _, err := d.ExecContext(ctx, `UPDATE users SET is_active = 0 WHERE id = $1`, uid); err != nil {
 		t.Fatalf("deactivate: %v", err)
 	}
 	if _, err := LookupAPIKey(ctx, d, LoadAPIKeySecret(), raw); !errors.Is(err, ErrInvalidAPIKey) {
@@ -218,20 +201,11 @@ func TestLookupAPIKey_RejectsInactiveUser(t *testing.T) {
 }
 
 func TestLookupAPIKey_LastUsedAt_OnDisk(t *testing.T) {
-	// Per the Known Pitfall, in-memory SQLite serialises everything so the
-	// async last_used_at goroutine never races. Use an on-disk DB so the
-	// non-blocking goroutine actually exercises the writer path.
+	// The async last_used_at goroutine writes on its own connection; the
+	// shared Postgres pool means it lands in the same database the test reads.
 	t.Setenv("TELA_API_KEY_SECRET", "secrettestbytes")
 	ResetAPIKeySecretCache()
-	dir := t.TempDir()
-	d, err := db.Open(filepath.Join(dir, "tela.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	d := testdb.New(t)
 
 	uid := seedUserDirect(t, d, "alice", true)
 	raw, id := seedAPIKeyDB(t, d, uid, ScopeWrite, nil, nil, "test-key")
@@ -245,7 +219,7 @@ func TestLookupAPIKey_LastUsedAt_OnDisk(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		var last sql.NullString
-		if err := d.QueryRow(`SELECT last_used_at FROM api_keys WHERE id = ?`, id).Scan(&last); err == nil {
+		if err := d.QueryRow(`SELECT last_used_at FROM api_keys WHERE id = $1`, id).Scan(&last); err == nil {
 			if last.Valid && last.String != "" {
 				return
 			}
@@ -263,9 +237,9 @@ func TestMiddleware_BearerHappyPathAttachesContext(t *testing.T) {
 	raw, _ := seedAPIKeyDB(t, d, uid, ScopeWrite, nil, nil, "k1")
 
 	var (
-		gotUserID  int64
-		gotScope   string
-		gotIsKey   bool
+		gotUserID int64
+		gotScope  string
+		gotIsKey  bool
 	)
 	h := Middleware(d, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := UserFromContext(r.Context()); ok {
@@ -382,20 +356,10 @@ func TestMiddleware_CookieStillWorksWithoutBearer(t *testing.T) {
 }
 
 // Concurrent bearer auth: a burst of parallel Lookups must all succeed.
-// Per the Known Pitfall, sqlite tests that hit the writer concurrently need
-// an on-disk DB.
 func TestLookupAPIKey_Concurrent(t *testing.T) {
 	t.Setenv("TELA_API_KEY_SECRET", "secrettestbytes")
 	ResetAPIKeySecretCache()
-	dir := t.TempDir()
-	d, err := db.Open(filepath.Join(dir, "tela.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	d := testdb.New(t)
 
 	uid := seedUserDirect(t, d, "alice", false)
 	raw, _ := seedAPIKeyDB(t, d, uid, ScopeWrite, nil, nil, "k")

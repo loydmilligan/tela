@@ -44,7 +44,7 @@ func (s *Server) ListOrgMembers(w http.ResponseWriter, r *http.Request) {
 		SELECT om.user_id, u.username, u.email, om.org_role, om.created_at, om.updated_at
 		  FROM org_members om
 		  JOIN users u ON u.id = om.user_id
-		 WHERE om.org_id = ?
+		 WHERE om.org_id = $1
 		 ORDER BY om.org_role ASC, u.username ASC`, orgID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list org members failed")
@@ -96,7 +96,7 @@ func (s *Server) AddOrgMember(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var targetID int64
 	err := s.DB.QueryRowContext(ctx,
-		`SELECT id FROM users WHERE (username = ? OR email = ?) AND is_active = 1`,
+		`SELECT id FROM users WHERE (username = $1 OR email = $2) AND is_active = 1`,
 		identifier, normalizeEmail(identifier)).Scan(&targetID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
@@ -108,7 +108,7 @@ func (s *Server) AddOrgMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.DB.ExecContext(ctx,
-		`INSERT INTO org_members (org_id, user_id, org_role) VALUES (?, ?, ?)`,
+		`INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1, $2, $3)`,
 		orgID, targetID, req.OrgRole); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "user is already a member")
@@ -160,7 +160,7 @@ func (s *Server) PatchOrgMember(w http.ResponseWriter, r *http.Request) {
 
 	var existingRole string
 	err = tx.QueryRowContext(ctx,
-		`SELECT org_role FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, userID).Scan(&existingRole)
+		`SELECT org_role FROM org_members WHERE org_id = $1 AND user_id = $2`, orgID, userID).Scan(&existingRole)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "member not found")
 		return
@@ -181,8 +181,8 @@ func (s *Server) PatchOrgMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE org_members SET org_role = ?, updated_at = datetime('now')
-		 WHERE org_id = ? AND user_id = ?`, req.OrgRole, orgID, userID); err != nil {
+		UPDATE org_members SET org_role = $1, updated_at = tela_now()
+		 WHERE org_id = $2 AND user_id = $3`, req.OrgRole, orgID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update member failed")
 		return
 	}
@@ -236,7 +236,7 @@ func (s *Server) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 
 	var existingRole string
 	err = tx.QueryRowContext(ctx,
-		`SELECT org_role FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, targetID).Scan(&existingRole)
+		`SELECT org_role FROM org_members WHERE org_id = $1 AND user_id = $2`, orgID, targetID).Scan(&existingRole)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "member not found")
 		return
@@ -266,7 +266,7 @@ func (s *Server) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, targetID); err != nil {
+		`DELETE FROM org_members WHERE org_id = $1 AND user_id = $2`, orgID, targetID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete member failed")
 		return
 	}
@@ -284,7 +284,7 @@ func wouldLeaveZeroOrgAdminsTx(ctx context.Context, tx *sql.Tx, orgID, excludeUs
 	var n int
 	err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM org_members
-		 WHERE org_id = ? AND org_role = 'admin' AND user_id != ?`, orgID, excludeUserID).Scan(&n)
+		 WHERE org_id = $1 AND org_role = 'admin' AND user_id != $2`, orgID, excludeUserID).Scan(&n)
 	if err != nil {
 		return false, err
 	}
@@ -311,7 +311,7 @@ func selectOrgMember(ctx context.Context, d *sql.DB, orgID, userID int64) (orgMe
 	row := d.QueryRowContext(ctx, `
 		SELECT om.user_id, u.username, u.email, om.org_role, om.created_at, om.updated_at
 		  FROM org_members om JOIN users u ON u.id = om.user_id
-		 WHERE om.org_id = ? AND om.user_id = ?`, orgID, userID)
+		 WHERE om.org_id = $1 AND om.user_id = $2`, orgID, userID)
 	return scanOrgMemberRow(row)
 }
 
@@ -319,6 +319,6 @@ func selectOrgMemberTx(ctx context.Context, tx *sql.Tx, orgID, userID int64) (or
 	row := tx.QueryRowContext(ctx, `
 		SELECT om.user_id, u.username, u.email, om.org_role, om.created_at, om.updated_at
 		  FROM org_members om JOIN users u ON u.id = om.user_id
-		 WHERE om.org_id = ? AND om.user_id = ?`, orgID, userID)
+		 WHERE om.org_id = $1 AND om.user_id = $2`, orgID, userID)
 	return scanOrgMemberRow(row)
 }

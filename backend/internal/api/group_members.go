@@ -44,7 +44,7 @@ func (s *Server) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
 		SELECT gm.user_id, u.username, u.email, gm.created_at
 		  FROM group_members gm
 		  JOIN users u ON u.id = gm.user_id
-		 WHERE gm.group_id = ?
+		 WHERE gm.group_id = $1
 		 ORDER BY u.username ASC`, groupID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list group members failed")
@@ -104,7 +104,7 @@ func (s *Server) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var targetID int64
 	err := s.DB.QueryRowContext(ctx,
-		`SELECT id FROM users WHERE (username = ? OR email = ?) AND is_active = 1`,
+		`SELECT id FROM users WHERE (username = $1 OR email = $2) AND is_active = 1`,
 		identifier, normalizeEmail(identifier)).Scan(&targetID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
@@ -125,7 +125,7 @@ func (s *Server) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.DB.ExecContext(ctx,
-		`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, groupID, targetID); err != nil {
+		`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, groupID, targetID); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "user is already in this group")
 			return
@@ -175,7 +175,7 @@ func (s *Server) DeleteGroupMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := s.DB.ExecContext(r.Context(),
-		`DELETE FROM group_members WHERE group_id = ? AND user_id = ?`, groupID, targetID)
+		`DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`, groupID, targetID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete group member failed")
 		return
@@ -196,7 +196,7 @@ func selectGroupMember(ctx context.Context, d *sql.DB, groupID, userID int64) (g
 	err := d.QueryRowContext(ctx, `
 		SELECT gm.user_id, u.username, u.email, gm.created_at
 		  FROM group_members gm JOIN users u ON u.id = gm.user_id
-		 WHERE gm.group_id = ? AND gm.user_id = ?`, groupID, userID).
+		 WHERE gm.group_id = $1 AND gm.user_id = $2`, groupID, userID).
 		Scan(&m.UserID, &m.Username, &email, &m.CreatedAt)
 	m.Email = nullableString(email)
 	return m, err

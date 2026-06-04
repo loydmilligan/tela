@@ -32,7 +32,7 @@ type accessAuditEntry struct {
 func writeAudit(ctx context.Context, ex emailTokenExec, actorID *int64, action, targetKind string, targetID int64, detail string) {
 	if _, err := ex.ExecContext(ctx,
 		`INSERT INTO access_audit (actor_user_id, action, target_kind, target_id, detail)
-		 VALUES (?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5)`,
 		actorID, action, targetKind, targetID, detail); err != nil {
 		log.Printf("audit %s: %v", action, err)
 	}
@@ -58,7 +58,7 @@ func (s *Server) ListAccessAudit(w http.ResponseWriter, r *http.Request) {
 		  FROM access_audit a
 		  LEFT JOIN users u ON u.id = a.actor_user_id
 		 ORDER BY a.id DESC
-		 LIMIT ?`, limit)
+		 LIMIT $1`, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list audit failed")
 		return

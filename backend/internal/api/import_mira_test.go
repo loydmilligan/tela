@@ -92,7 +92,7 @@ func TestImportMira_FullFlow(t *testing.T) {
 			t.Fatalf("payload import leaked source comment: %q", got.Page.Body)
 		}
 		var dbBody string
-		if err := d.QueryRow(`SELECT body FROM pages WHERE id = ?`, got.Page.ID).Scan(&dbBody); err != nil {
+		if err := d.QueryRow(`SELECT body FROM pages WHERE id = $1`, got.Page.ID).Scan(&dbBody); err != nil {
 			t.Fatalf("query body: %v", err)
 		}
 		if !strings.Contains(dbBody, "hello from mira") {
@@ -347,12 +347,12 @@ func TestImportMira_FullFlow(t *testing.T) {
 	})
 
 	t.Run("parent_id_in_target_space", func(t *testing.T) {
-		res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-		                    VALUES (?, NULL, 'Parent', '', 0)`, space)
+		var parentID int64
+		err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+		                    VALUES ($1, NULL, 'Parent', '', 0) RETURNING id`, space).Scan(&parentID)
 		if err != nil {
 			t.Fatalf("seed parent: %v", err)
 		}
-		parentID, _ := res.LastInsertId()
 		body := fmt.Sprintf(`{"parent_id": %d, "payload": {"template":"page","blocks":[{"type":"heading_1","heading_1":{"rich_text":[{"type":"text","text":{"content":"Child"}}]}}]}}`, parentID)
 		resp, out := postImportMira(t, adminC, ts.URL, space, body)
 		if resp.StatusCode != http.StatusCreated {
@@ -366,12 +366,12 @@ func TestImportMira_FullFlow(t *testing.T) {
 
 	t.Run("parent_id_in_other_space", func(t *testing.T) {
 		otherSpace := seedSpace(t, d, "Other", "other", admin)
-		res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-		                    VALUES (?, NULL, 'X', '', 0)`, otherSpace)
+		var otherID int64
+		err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+		                    VALUES ($1, NULL, 'X', '', 0) RETURNING id`, otherSpace).Scan(&otherID)
 		if err != nil {
 			t.Fatalf("seed cross-space: %v", err)
 		}
-		otherID, _ := res.LastInsertId()
 		body := fmt.Sprintf(`{"parent_id": %d, "payload": {"template":"page","blocks":[]}}`, otherID)
 		resp, out := postImportMira(t, adminC, ts.URL, space, body)
 		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(out), `"code":"bad_request"`) {

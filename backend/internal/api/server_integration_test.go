@@ -245,7 +245,7 @@ func TestIntegration_SpaceMember_LastOwnerAndSelfLeave(t *testing.T) {
 		t.Fatalf("bob self-leave status=%d want 204", resp.StatusCode)
 	}
 	var n int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM space_members WHERE space_id = ? AND user_id = ?`,
+	if err := d.QueryRow(`SELECT COUNT(*) FROM space_members WHERE space_id = $1 AND user_id = $2`,
 		space, bob).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -322,12 +322,12 @@ func TestComments_FullFlow(t *testing.T) {
 	seedMember(t, d, space, carolID, "editor")
 
 	// Seed a page directly so we know the id.
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'P', 'hello world body', 0)`, space)
+	var pageID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'P', 'hello world body', 0) RETURNING id`, space).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
 	}
-	pageID, _ := res.LastInsertId()
 	pageURL := fmt.Sprintf("%s/api/pages/%d/comments", ts.URL, pageID)
 
 	adminC := loginClient(t, ts, "admin", "adminpw12")
@@ -433,7 +433,7 @@ func TestComments_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 	var deletedAt sql.NullString
-	if err := d.QueryRow(`SELECT deleted_at FROM comments WHERE id = ?`, otherRoot).Scan(&deletedAt); err != nil {
+	if err := d.QueryRow(`SELECT deleted_at FROM comments WHERE id = $1`, otherRoot).Scan(&deletedAt); err != nil {
 		t.Fatalf("lookup deleted comment: %v", err)
 	}
 	if !deletedAt.Valid {

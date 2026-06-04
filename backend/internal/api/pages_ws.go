@@ -157,7 +157,7 @@ func (r *room) initFromDB(ctx context.Context, db *sql.DB) error {
 	}
 	var maxUpd sql.NullInt64
 	if err := db.QueryRowContext(ctx,
-		`SELECT MAX(seq) FROM page_yjs_updates WHERE page_id = ?`,
+		`SELECT MAX(seq) FROM page_yjs_updates WHERE page_id = $1`,
 		r.pageID).Scan(&maxUpd); err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (r *room) initFromDB(ctx context.Context, db *sql.DB) error {
 	}
 	var maxSnap sql.NullInt64
 	if err := db.QueryRowContext(ctx,
-		`SELECT MAX(seq) FROM page_yjs_snapshots WHERE page_id = ?`,
+		`SELECT MAX(seq) FROM page_yjs_snapshots WHERE page_id = $1`,
 		r.pageID).Scan(&maxSnap); err != nil {
 		return err
 	}
@@ -199,7 +199,7 @@ func (r *room) appendUpdate(ctx context.Context, db *sql.DB, blob []byte) (int64
 	defer r.mu.Unlock()
 	seq := r.nextSeq
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO page_yjs_updates(page_id, seq, payload) VALUES (?, ?, ?)`,
+		`INSERT INTO page_yjs_updates(page_id, seq, payload) VALUES ($1, $2, $3)`,
 		r.pageID, seq, blob); err != nil {
 		return 0, false, err
 	}
@@ -230,7 +230,7 @@ func (r *room) applySnapshot(ctx context.Context, db *sql.DB, state []byte) erro
 	seq := r.pendingSnapSeq
 	pageID := r.pageID
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO page_yjs_snapshots(page_id, seq, state) VALUES (?, ?, ?)`,
+		`INSERT INTO page_yjs_snapshots(page_id, seq, state) VALUES ($1, $2, $3)`,
 		pageID, seq, state); err != nil {
 		r.snapInFlight = false
 		r.snapRequestedOf = nil
@@ -252,7 +252,7 @@ func (r *room) applySnapshot(ctx context.Context, db *sql.DB, state []byte) erro
 func gcPreSnapshotUpdates(db *sql.DB, pageID, seq int64) {
 	time.Sleep(snapshotGCGrace)
 	if _, err := db.ExecContext(context.Background(),
-		`DELETE FROM page_yjs_updates WHERE page_id = ? AND seq < ?`,
+		`DELETE FROM page_yjs_updates WHERE page_id = $1 AND seq < $2`,
 		pageID, seq); err != nil {
 		log.Printf("ws page %d: GC pre-snapshot updates failed (seq < %d): %v", pageID, seq, err)
 	}
@@ -321,7 +321,7 @@ func (s *Server) GetPageYjsState(w http.ResponseWriter, r *http.Request) {
 		snapshot []byte
 	)
 	err = s.DB.QueryRowContext(ctx,
-		`SELECT seq, state FROM page_yjs_snapshots WHERE page_id = ? ORDER BY seq DESC LIMIT 1`,
+		`SELECT seq, state FROM page_yjs_snapshots WHERE page_id = $1 ORDER BY seq DESC LIMIT 1`,
 		id).Scan(&snapSeq, &snapshot)
 	if errors.Is(err, sql.ErrNoRows) {
 		snapSeq, snapshot = 0, nil
@@ -331,7 +331,7 @@ func (s *Server) GetPageYjsState(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.DB.QueryContext(ctx,
 		`SELECT payload FROM page_yjs_updates
-		 WHERE page_id = ? AND seq >= ?
+		 WHERE page_id = $1 AND seq >= $2
 		 ORDER BY seq ASC`, id, snapSeq)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "load updates failed")
@@ -530,7 +530,7 @@ func (s *Server) sendSyncInit(ctx context.Context, conn *websocket.Conn, rm *roo
 	var snapshot []byte
 	if snapSeq > 0 {
 		err := s.DB.QueryRowContext(ctx,
-			`SELECT state FROM page_yjs_snapshots WHERE page_id = ? AND seq = ?`,
+			`SELECT state FROM page_yjs_snapshots WHERE page_id = $1 AND seq = $2`,
 			pageID, snapSeq).Scan(&snapshot)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -538,7 +538,7 @@ func (s *Server) sendSyncInit(ctx context.Context, conn *websocket.Conn, rm *roo
 	}
 	rows, err := s.DB.QueryContext(ctx,
 		`SELECT payload FROM page_yjs_updates
-		 WHERE page_id = ? AND seq >= ?
+		 WHERE page_id = $1 AND seq >= $2
 		 ORDER BY seq ASC`, pageID, snapSeq)
 	if err != nil {
 		return err
