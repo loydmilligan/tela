@@ -259,6 +259,25 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+// `/n` — quick-capture shortcut. Find-or-creates the caller's "Quick Notes"
+// page in their personal space, then redirects to it. Authenticated via the
+// parent appLayoutRoute gate (which runs first and bounces to /login?next=/n
+// when signed out). Pure redirect — the component never renders.
+const quickNotesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/n',
+  beforeLoad: async () => {
+    const { page } = await api<{ page: Page }>('/api/users/me/quick-notes', {
+      method: 'POST',
+    })
+    throw redirect({
+      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+      params: { spaceId: page.space_id, pageId: page.id, slug: undefined },
+    })
+  },
+  component: () => null,
+})
+
 // Cross-space "Shared" audit view (docs/visibility-model.md). Lazy so its
 // share-audit query + row chrome stay off the main chunk until visited.
 const sharedRoute = createRoute({
@@ -519,6 +538,7 @@ const routeTree = rootRoute.addChildren([
   printRoute,
   appLayoutRoute.addChildren([
     indexRoute,
+    quickNotesRoute,
     settingsRoute,
     sharedRoute,
     searchRoute,

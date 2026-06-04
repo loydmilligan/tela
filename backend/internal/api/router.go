@@ -141,6 +141,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/users/{id}", srv.DeleteAdminUser)
 
 	mux.HandleFunc("POST /api/users/me/password", srv.ChangePassword)
+	mux.HandleFunc("POST /api/users/me/quick-notes", srv.QuickNotes)
 	mux.HandleFunc("GET /api/users/me/sessions", srv.ListMySessions)
 	mux.HandleFunc("DELETE /api/users/me/sessions", srv.DeleteAllMySessionsExceptCurrent)
 	mux.HandleFunc("DELETE /api/users/me/sessions/{id}", srv.DeleteMySession)
