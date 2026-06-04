@@ -18,7 +18,7 @@ A self-hostable, markdown-native team wiki: Go + SQLite/FTS5 backend, React/TS f
 
 ## Conventions
 
-- **Issues:** every change ships behind a numbered issue. Commit format `type(scope): #NNN — summary` (e.g. `feat(backend): #142 — ...`). Concise messages, no co-author trailer.
+- **No issue/task tracker.** Do NOT open GitHub issues (or any other tickets) for this repo, ever. The `#NNN` references in older commits are artifacts from a retired system (forge) — do not continue or imitate them. Commit format is `type(scope): summary` (e.g. `feat(backend): hybrid chunk search`), no issue number. Concise messages, no co-author trailer.
 - **Backend:** hand-written SQL via `database/sql`. New migration = new `NNNN_name.sql` (never edit an applied one; forward-only). One handler file per resource in `internal/api`.
 - **Frontend hard rules (load-bearing):**
   1. Design tokens in `src/styles/tokens.css`, semantic names only. **Never** hardcode hex / raw px / ad-hoc radii.
