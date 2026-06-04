@@ -185,12 +185,44 @@ export interface SpaceGrant {
 }
 
 // Row in GET /api/admin/org-domains — an auto-join email-domain mapping.
-// Mirrors backend's orgDomainDTO.
+// Mirrors backend's orgDomainDTO. Auto-join is identity-derived and member-only
+// (no per-domain role) — see docs/access-model.md.
 export interface OrgDomain {
   domain: string
   org_id: number
   org_name: string
-  org_role: OrgRole
+  created_at: string
+}
+
+// One way a user reaches a space (GET /api/spaces/{id}/access). Mirrors
+// backend's accessSource.
+export interface AccessSource {
+  kind: 'direct' | 'org'
+  role: 'owner' | 'editor' | 'viewer'
+  org_id?: number
+  org_name?: string
+}
+
+// Resolved access entry: a user, their effective (max) role, and every source
+// it comes through. Mirrors backend's spaceAccessEntry.
+export interface SpaceAccessEntry {
+  user_id: number
+  username: string
+  email: string | null
+  effective_role: 'owner' | 'editor' | 'viewer'
+  sources: AccessSource[]
+}
+
+// Row in GET /api/admin/access-audit. Mirrors backend's accessAuditEntry.
+// actor_* are null for system actions (auto-join).
+export interface AccessAuditEntry {
+  id: number
+  actor_user_id: number | null
+  actor_username: string | null
+  action: string
+  target_kind: string
+  target_id: number | null
+  detail: string
   created_at: string
 }
 

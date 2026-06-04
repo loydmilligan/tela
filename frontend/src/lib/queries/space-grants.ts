@@ -1,10 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import type { SpaceGrant } from '../types'
+import type { SpaceAccessEntry, SpaceGrant } from '../types'
 
 export const spaceGrantKeys = {
   all: ['space-grants'] as const,
   list: (spaceId: number) => [...spaceGrantKeys.all, spaceId] as const,
+}
+
+export const spaceAccessKeys = {
+  all: ['space-access'] as const,
+  list: (spaceId: number) => [...spaceAccessKeys.all, spaceId] as const,
+}
+
+// GET /api/spaces/{id}/access — resolved people + provenance + effective role.
+// Any member may read. The authoritative "who can see this, and why" list.
+export function useSpaceAccess(spaceId: number | null | undefined) {
+  return useQuery({
+    queryKey: spaceAccessKeys.list(spaceId ?? -1),
+    queryFn: async () => {
+      const { access } = await api<{ access: SpaceAccessEntry[] }>(
+        `/api/spaces/${spaceId}/access`,
+      )
+      return access
+    },
+    enabled: spaceId != null,
+    staleTime: 30_000,
+  })
 }
 
 // GET /api/spaces/{id}/grants — the org grants on a space. Any member may read.
@@ -40,6 +61,7 @@ export function useAddSpaceGrant() {
     },
     onSuccess: (_grant, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: spaceGrantKeys.list(spaceId) })
+      void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
     },
   })
 }
@@ -62,6 +84,7 @@ export function useUpdateSpaceGrant() {
     },
     onSuccess: (_grant, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: spaceGrantKeys.list(spaceId) })
+      void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
     },
   })
 }
@@ -81,6 +104,7 @@ export function useRemoveSpaceGrant() {
     },
     onSuccess: (_void, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: spaceGrantKeys.list(spaceId) })
+      void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
     },
   })
 }

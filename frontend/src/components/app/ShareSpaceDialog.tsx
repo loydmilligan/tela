@@ -13,10 +13,17 @@ import { useOrgs } from '../../lib/queries/orgs'
 import {
   useAddSpaceGrant,
   useRemoveSpaceGrant,
+  useSpaceAccess,
   useSpaceGrants,
   useUpdateSpaceGrant,
 } from '../../lib/queries/space-grants'
-import type { Org, Space, SpaceGrant, SpaceMember } from '../../lib/types'
+import type {
+  AccessSource,
+  Org,
+  Space,
+  SpaceGrant,
+  SpaceMember,
+} from '../../lib/types'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import {
@@ -69,7 +76,13 @@ export function ShareSpaceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-[var(--space-3)]">
+        <div className="flex flex-col gap-[var(--space-4)]">
+          {open ? <SpaceAccessSummary spaceId={space.id} /> : null}
+
+          <div className="flex flex-col gap-[var(--space-2)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
+            <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+              Direct members
+            </span>
           {members.isLoading ? (
             <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Loading members…
@@ -99,6 +112,7 @@ export function ShareSpaceDialog({
           {iAmOwner ? (
             <AddMemberForm spaceId={space.id} />
           ) : null}
+          </div>
 
           {open ? <SpaceOrgGrants space={space} iAmOwner={iAmOwner} /> : null}
         </div>
@@ -412,6 +426,65 @@ function AddMemberForm({ spaceId }: { spaceId: number }) {
 const GRANT_ROLE_LABEL: Record<SpaceGrant['role'], string> = {
   editor: 'Editor',
   viewer: 'Viewer',
+}
+
+// The authoritative answer to "who can access this space, and why" — resolves
+// direct members + everyone reached via an org into one list with each person's
+// effective (max) role and provenance. Read-only; editing happens in the
+// Direct members / Organizations sections below. Reconciles the sidebar access
+// count with what's actually shown.
+function SpaceAccessSummary({ spaceId }: { spaceId: number }) {
+  const access = useSpaceAccess(spaceId)
+  const people = access.data ?? []
+
+  return (
+    <div className="flex flex-col gap-[var(--space-2)]">
+      <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+        People with access{people.length > 0 ? ` (${people.length})` : ''}
+      </span>
+      {access.isLoading ? (
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          Resolving access…
+        </p>
+      ) : access.isError ? (
+        <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+          Couldn't resolve access.
+        </p>
+      ) : people.length > 0 ? (
+        <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
+          {people.map((p) => (
+            <li
+              key={p.user_id}
+              className="m-0 list-none flex items-center gap-[var(--space-3)] px-[var(--space-2)] py-[var(--space-1)]"
+            >
+              <div className="flex-1 min-w-0 flex flex-col gap-[1px]">
+                <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-sans)]">
+                  {p.username}
+                </span>
+                <span className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                  {provenanceLabel(p.sources)}
+                </span>
+              </div>
+              <Badge variant={p.effective_role === 'owner' ? 'accent' : 'muted'}>
+                {ROLE_LABEL[p.effective_role]}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+// "Direct" and/or "via <Org>, <Org>" — explains every route a person has in.
+function provenanceLabel(sources: AccessSource[]): string {
+  const parts: string[] = []
+  if (sources.some((s) => s.kind === 'direct')) parts.push('Direct')
+  const orgs = sources
+    .filter((s) => s.kind === 'org' && s.org_name)
+    .map((s) => s.org_name as string)
+  if (orgs.length > 0) parts.push(`via ${orgs.join(', ')}`)
+  return parts.join(' · ')
 }
 
 // Org grants: share the whole space with an org so every member gets access.

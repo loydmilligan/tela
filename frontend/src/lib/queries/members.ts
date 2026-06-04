@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import type { SpaceMember } from '../types'
 import { spaceKeys } from './spaces'
+import { spaceAccessKeys } from './space-grants'
 
 export const memberKeys = {
   all: ['members'] as const,
@@ -42,6 +43,7 @@ export function useAddSpaceMember() {
     },
     onSuccess: (_member, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: memberKeys.list(spaceId) })
+      void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
     },
   })
 }
@@ -64,6 +66,7 @@ export function useUpdateSpaceMember() {
     },
     onSuccess: (_member, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: memberKeys.list(spaceId) })
+      void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
     },
   })
 }
@@ -87,6 +90,7 @@ export function useRemoveSpaceMember() {
     },
     onSuccess: (_void, { spaceId, isSelf }) => {
       void qc.invalidateQueries({ queryKey: memberKeys.list(spaceId) })
+      void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
       if (isSelf) {
         void qc.invalidateQueries({ queryKey: spaceKeys.list() })
       }

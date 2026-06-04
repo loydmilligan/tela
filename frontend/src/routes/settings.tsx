@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ImportSection } from '../components/app/ImportSection'
 import { MiraImportSection } from '../components/app/MiraImportSection'
 import { SettingsApiKeysTab } from '../components/app/SettingsApiKeysTab'
+import { SettingsAuditTab } from '../components/app/SettingsAuditTab'
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
 import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
@@ -51,6 +52,12 @@ const ORGS_TAB: SettingsTab = {
   render: () => <SettingsOrgsTab />,
 }
 
+const AUDIT_TAB: SettingsTab = {
+  id: 'audit',
+  label: 'Audit',
+  render: () => <SettingsAuditTab />,
+}
+
 export function SettingsPage() {
   const me = useMe()
   // The Users + API Keys tabs are gated on instance-admin; the array itself
@@ -59,7 +66,7 @@ export function SettingsPage() {
   // too — mounting the tab for non-admins would just render a perpetual 403.
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, IMPORT_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB]
+      return [PROFILE_TAB, IMPORT_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
     }
     return [PROFILE_TAB, IMPORT_TAB]
   }, [me.data?.is_instance_admin])

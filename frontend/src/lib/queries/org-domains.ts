@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import type { OrgDomain, OrgRole } from '../types'
+import type { OrgDomain } from '../types'
 
 export const orgDomainKeys = {
   all: ['org-domains'] as const,
@@ -24,7 +24,6 @@ export function useOrgDomains() {
 export interface CreateOrgDomainInput {
   domain: string
   org_id: number
-  org_role: OrgRole
 }
 
 export function useCreateOrgDomain() {

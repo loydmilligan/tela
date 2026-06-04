@@ -37,11 +37,6 @@ import { Input } from '../ui/input'
 import { Select } from '../ui/select'
 import { cn } from '../../lib/utils'
 
-const ORG_ROLE_LABEL: Record<OrgRole, string> = {
-  admin: 'Admin',
-  member: 'Member',
-}
-
 export function SettingsOrgsTab() {
   const orgs = useOrgs()
   const [createOpen, setCreateOpen] = useState(false)
@@ -533,7 +528,6 @@ function DomainsSection({ orgs }: { orgs: Org[] }) {
   const domains = useOrgDomains()
   const [domain, setDomain] = useState('')
   const [orgId, setOrgId] = useState<number | ''>('')
-  const [role, setRole] = useState<OrgRole>('member')
   const [error, setError] = useState<string | null>(null)
   const createDomain = useCreateOrgDomain()
   const deleteDomain = useDeleteOrgDomain()
@@ -551,10 +545,9 @@ function DomainsSection({ orgs }: { orgs: Org[] }) {
     }
     setError(null)
     try {
-      await createDomain.mutateAsync({ domain: trimmed, org_id: orgId, org_role: role })
+      await createDomain.mutateAsync({ domain: trimmed, org_id: orgId })
       setDomain('')
       setOrgId('')
-      setRole('member')
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setError('That domain is already mapped to an org.')
@@ -575,8 +568,10 @@ function DomainsSection({ orgs }: { orgs: Org[] }) {
         </h2>
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
           A user whose verified email domain matches is enrolled into the mapped
-          org automatically on sign-in. Only domains you add here auto-join —
-          avoid public providers like gmail.com.
+          org as a <strong className="font-medium text-[var(--text-primary)]">member</strong>{' '}
+          automatically on sign-in — membership is identity-derived, so they
+          can't be removed without removing the mapping. Only domains you add
+          here auto-join; avoid public providers like gmail.com.
         </p>
       </header>
 
@@ -600,7 +595,6 @@ function DomainsSection({ orgs }: { orgs: Org[] }) {
                 <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">
                   {d.org_name}
                 </span>
-                <Badge variant="muted">{ORG_ROLE_LABEL[d.org_role]}</Badge>
               </div>
               <Button
                 type="button"
@@ -657,17 +651,6 @@ function DomainsSection({ orgs }: { orgs: Org[] }) {
                   {o.name}
                 </option>
               ))}
-            </Select>
-          </div>
-          <div className="w-[6.5rem] shrink-0">
-            <Select
-              size="md"
-              aria-label="Role for auto-joined members"
-              value={role}
-              onChange={(e) => setRole(e.target.value as OrgRole)}
-            >
-              <option value="admin">Admin</option>
-              <option value="member">Member</option>
             </Select>
           </div>
           <Button type="submit" variant="secondary" disabled={createDomain.isPending}>
