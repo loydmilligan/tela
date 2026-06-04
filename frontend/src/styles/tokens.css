@@ -51,8 +51,17 @@
     --duration-base: 200ms;
     --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-    --sidebar-width: 17rem;
+    --sidebar-width: 16rem;
     --sheet-width: 420px;
+
+    /* Sidebar row states. Derived from themed --accent/--surface so they adapt
+       across themes without per-theme overrides. hover is a plain surface step;
+       active is a soft accent veil + a left accent bar (--sidebar-item-active-bar). */
+    --sidebar-item-hover: var(--surface-3);
+    --sidebar-item-active: color-mix(in oklch, var(--accent) 12%, transparent);
+    --sidebar-item-active-bar: var(--accent);
+    /* Indent step per nesting level in the page tree (kept tight on purpose). */
+    --sidebar-indent: 0.875rem;
 
     --surface-1: #ffffff;
     --surface-2: #f7f7f8;

@@ -15,7 +15,7 @@ import {
   useSpaces,
   useUpdateSpace,
 } from '../../lib/queries/spaces'
-import type { Space, SpacePrincipal } from '../../lib/types'
+import type { Space } from '../../lib/types'
 import { Button } from '../ui/button'
 import { Card, CardBody, CardFooter } from '../ui/card'
 import {
@@ -67,7 +67,7 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
           size="sm"
           aria-label="New space"
           onClick={() => setNewOpen(true)}
-          className="h-[var(--space-7)] w-[var(--space-7)] p-0"
+          className="h-[var(--space-6)] w-[var(--space-6)] p-0"
         >
           <Plus width={14} height={14} />
         </Button>
@@ -159,49 +159,49 @@ function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
   return (
     <div
       className={cn(
-        'group flex items-center gap-[var(--space-1)] px-[var(--space-2)] rounded-[var(--radius-sm)]',
-        'hover:bg-[var(--surface-2)]',
-        active && 'bg-[var(--surface-3)]',
+        'group relative flex items-center gap-[var(--space-1)] pl-[var(--space-2)] pr-[var(--space-1)] rounded-[var(--radius-sm)]',
+        'hover:bg-[var(--sidebar-item-hover)]',
+        active &&
+          'bg-[var(--sidebar-item-active)] shadow-[inset_2px_0_0_0_var(--sidebar-item-active-bar)]',
       )}
     >
-      <div className="flex-1 min-w-0 flex flex-col py-[var(--space-1)]">
-        <button
-          type="button"
-          onClick={onSelect}
-          className={cn(
-            'min-w-0 text-left truncate',
-            'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
-            'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
-            active && 'text-[var(--accent)] font-medium',
-          )}
-        >
-          {space.name || (
-            <span className="text-[var(--text-muted)]">Untitled space</span>
-          )}
-        </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          'flex-1 min-w-0 text-left truncate py-[var(--space-2)]',
+          'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
+          'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
+          active && 'text-[var(--accent)] font-medium',
+        )}
+      >
+        {space.name || (
+          <span className="text-[var(--text-muted)]">Untitled space</span>
+        )}
+      </button>
 
-        {/* Access line: who/what can reach this space, at a glance. Click →
-            manage access; hover → the full resolved who/what. Fires the access
-            query lazily (only when the tooltip opens). */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={`${accessAriaLabel(space)} — manage access`}
-              onClick={(e) => {
-                e.stopPropagation()
-                setShareOpen(true)
-              }}
-              className="mt-[1px] min-w-0 w-fit max-w-full text-left bg-transparent border-0 p-0 cursor-pointer outline-none rounded-[var(--radius-xs)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-            >
-              <AccessSummary space={space} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            <SpaceAccessPeek space={space} />
-          </TooltipContent>
-        </Tooltip>
-      </div>
+      {/* Compact access cluster: a lock for solo spaces, else people-count +
+          org/group kind icons. Click → manage; hover → full who/what peek.
+          The hover query fires lazily (only when the tooltip opens). The
+          cluster hides on hover to make room for the ⋯ menu. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${accessAriaLabel(space)} — manage access`}
+            onClick={(e) => {
+              e.stopPropagation()
+              setShareOpen(true)
+            }}
+            className="shrink-0 inline-flex items-center bg-transparent border-0 p-[var(--space-1)] cursor-pointer outline-none rounded-[var(--radius-xs)] group-hover:hidden focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <AccessCluster space={space} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <SpaceAccessPeek space={space} />
+        </TooltipContent>
+      </Tooltip>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -209,7 +209,7 @@ function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
             variant="ghost"
             size="sm"
             aria-label={`Actions for ${space.name || 'space'}`}
-            className="shrink-0 h-[var(--space-7)] w-[var(--space-7)] p-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100"
+            className="shrink-0 h-[var(--space-6)] w-[var(--space-6)] p-0 hidden group-hover:inline-flex data-[state=open]:inline-flex focus-visible:inline-flex"
           >
             <MoreHorizontal width={14} height={14} />
           </Button>
@@ -262,58 +262,33 @@ function accessAriaLabel(space: Space): string {
   return `${people} ${people === 1 ? 'person' : 'people'}${shared ? `, shared with ${shared}` : ''}`
 }
 
-// AccessSummary — the compact access line under a space name. Personal / Private
-// collapse to a lock; shared spaces show the effective people count plus the
-// orgs/groups it's shared with (first two, then +N).
-function AccessSummary({ space }: { space: Space }) {
-  const baseChip =
-    'inline-flex items-center gap-[3px] min-w-0 text-[length:var(--text-xs)] leading-none text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]'
+// AccessCluster — the compact, single-line access signal: a lock for solo
+// spaces, else the effective people count plus one icon per principal *kind*
+// present (org / group). Names + roles live in the hover peek, keeping the row
+// calm. Quiet by default; brightens on row hover.
+function AccessCluster({ space }: { space: Space }) {
+  const tone =
+    'text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'
 
-  if (space.is_personal) {
-    return (
-      <span className={baseChip}>
-        <Lock width={11} height={11} aria-hidden />
-        <span>Personal</span>
-      </span>
-    )
-  }
-  if (isPrivateSpace(space)) {
-    return (
-      <span className={baseChip}>
-        <Lock width={11} height={11} aria-hidden />
-        <span>Private</span>
-      </span>
-    )
+  if (space.is_personal || isPrivateSpace(space)) {
+    return <Lock width={13} height={13} aria-hidden className={tone} />
   }
 
   const principals = space.principals ?? []
-  const shown = principals.slice(0, 2)
-  const overflow = principals.length - shown.length
+  const hasOrg = principals.some((p) => p.kind === 'org')
+  const hasGroup = principals.some((p) => p.kind === 'group')
 
   return (
-    <span className="flex items-center gap-[var(--space-1)] min-w-0">
-      <span className={cn(baseChip, 'shrink-0')}>
-        <UsersRound width={11} height={11} aria-hidden />
-        <span>{space.member_count ?? 0}</span>
-      </span>
-      {shown.map((p) => (
-        <PrincipalChip key={`${p.kind}:${p.name}`} principal={p} />
-      ))}
-      {overflow > 0 ? (
-        <span className="shrink-0 text-[length:var(--text-xs)] leading-none text-[var(--text-muted)]">
-          +{overflow}
-        </span>
-      ) : null}
-    </span>
-  )
-}
-
-function PrincipalChip({ principal }: { principal: SpacePrincipal }) {
-  const Icon = principal.kind === 'group' ? Users : Building2
-  return (
-    <span className="inline-flex items-center gap-[3px] min-w-0 max-w-[7rem] rounded-[var(--radius-xs)] bg-[var(--surface-2)] group-hover:bg-[var(--surface-3)] px-[var(--space-1)] py-[1px] text-[length:var(--text-xs)] leading-none text-[var(--text-secondary)]">
-      <Icon width={10} height={10} aria-hidden className="shrink-0" />
-      <span className="truncate">{principal.name}</span>
+    <span
+      className={cn(
+        'inline-flex items-center gap-[3px] text-[length:var(--text-xs)] leading-none tabular-nums',
+        tone,
+      )}
+    >
+      <UsersRound width={13} height={13} aria-hidden />
+      <span>{space.member_count ?? 0}</span>
+      {hasOrg ? <Building2 width={12} height={12} aria-hidden /> : null}
+      {hasGroup ? <Users width={12} height={12} aria-hidden /> : null}
     </span>
   )
 }

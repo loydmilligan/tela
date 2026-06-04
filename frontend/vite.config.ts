@@ -25,11 +25,22 @@ export default defineConfig({
     alias: [{ find: /^refractor$/, replacement: 'refractor/core' }],
   },
   server: {
+    // When running an isolated verify backend (TELA_PROXY_TARGET set), also
+    // expose the dev server on the LAN/tailnet and accept any Host header so it
+    // can be reached as e.g. http://marko:5199. Normal `make dev` is unchanged.
+    ...(process.env.TELA_PROXY_TARGET
+      ? { host: true as const, allowedHosts: true as const }
+      : {}),
     proxy: {
       '/api': {
         // Override with TELA_PROXY_TARGET for an isolated dev/verify backend.
         target: process.env.TELA_PROXY_TARGET ?? 'http://localhost:8080',
         changeOrigin: false,
+        // Swallow upstream socket resets so a dropped backend connection
+        // doesn't crash the whole dev server (ECONNRESET unhandled-error).
+        configure: (proxy) => {
+          proxy.on('error', () => {})
+        },
       },
     },
   },

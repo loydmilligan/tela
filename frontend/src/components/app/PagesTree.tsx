@@ -14,6 +14,7 @@ import {
   usePages,
   useUpdatePage,
 } from '../../lib/queries/pages'
+import { useSpaces } from '../../lib/queries/spaces'
 import type { PageTreeNode } from '../../lib/types'
 import { useExpandedNodes } from '../../lib/useExpandedNodes'
 import { Button } from '../ui/button'
@@ -65,6 +66,8 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
   const tree = usePages({ spaceId, tree: true })
   const createPage = useCreatePage()
   const { expanded, toggle, expand, expandMany } = useExpandedNodes(spaceId)
+  const spaces = useSpaces()
+  const spaceName = spaces.data?.find((s) => s.id === spaceId)?.name
 
   const treeData = tree.data as PageTreeNode[] | undefined
   const nodes = treeData ?? []
@@ -100,21 +103,24 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
 
   return (
     <section
-      className="flex flex-col gap-[var(--space-1)] px-[var(--space-3)] pt-[var(--space-5)] pb-[var(--space-3)] flex-1 min-h-0 overflow-y-auto"
+      className="flex flex-col gap-[var(--space-1)] px-[var(--space-3)] pt-[var(--space-4)] pb-[var(--space-3)] mt-[var(--space-2)] flex-1 min-h-0 overflow-y-auto border-t border-[var(--border-subtle)]"
       aria-labelledby="sidebar-pages-heading"
     >
-      <div className="flex items-center justify-between pl-[var(--space-2)] pr-[var(--space-1)]">
+      <div className="flex items-center justify-between gap-[var(--space-2)] pl-[var(--space-2)] pr-[var(--space-1)]">
+        {/* The tree always shows the active space's pages — name the space here
+            so the section reads as "<Space> · its pages", not a stray list. */}
         <h2
           id="sidebar-pages-heading"
-          className="m-0 text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
+          className="m-0 min-w-0 truncate font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] font-medium leading-[var(--leading-tight)] text-[var(--text-primary)]"
+          title={spaceName ?? 'Pages'}
         >
-          Pages
+          {spaceName ?? 'Pages'}
         </h2>
         <Button
           variant="ghost"
           size="sm"
           aria-label="New top-level page"
-          className="h-[var(--space-7)] w-[var(--space-7)] p-0"
+          className="h-[var(--space-6)] w-[var(--space-6)] p-0"
           onClick={() => void handleCreate(null)}
           disabled={createPage.isPending}
         >
@@ -263,11 +269,12 @@ function PageNode({
         ref={rowRef}
         className={cn(
           'group flex items-center gap-[var(--space-1)] pr-[var(--space-1)] rounded-[var(--radius-sm)]',
-          'hover:bg-[var(--surface-2)]',
-          active && 'bg-[var(--surface-3)]',
+          'hover:bg-[var(--sidebar-item-hover)]',
+          active &&
+            'bg-[var(--sidebar-item-active)] shadow-[inset_2px_0_0_0_var(--sidebar-item-active-bar)]',
         )}
         style={{
-          paddingLeft: `calc(var(--space-3) * ${depth} + var(--space-1))`,
+          paddingLeft: `calc(var(--sidebar-indent) * ${depth} + var(--space-2))`,
         }}
       >
         {hasChildren ? (
@@ -276,33 +283,20 @@ function PageNode({
             aria-label={isOpen ? 'Collapse' : 'Expand'}
             aria-expanded={isOpen}
             onClick={() => onToggle(node.id)}
-            className="inline-flex items-center justify-center h-[var(--space-7)] w-[var(--space-7)] rounded-[var(--radius-sm)] bg-transparent border-0 cursor-pointer text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            className="inline-flex items-center justify-center h-[var(--space-6)] w-[var(--space-4)] shrink-0 rounded-[var(--radius-xs)] bg-transparent border-0 cursor-pointer text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             {isOpen ? (
-              <ChevronDown width={14} height={14} />
+              <ChevronDown width={13} height={13} />
             ) : (
-              <ChevronRight width={14} height={14} />
+              <ChevronRight width={13} height={13} />
             )}
           </button>
         ) : (
           <span
             aria-hidden="true"
-            className="inline-block h-[var(--space-7)] w-[var(--space-7)]"
+            className="inline-block h-[var(--space-6)] w-[var(--space-4)] shrink-0"
           />
         )}
-
-        {/* Exposure marker — fixed left slot (always reserved) so titles align
-            and the icons form a vertical line down the gutter. Only exposed
-            pages render an icon; private pages leave the slot empty. */}
-        <span className="inline-flex items-center justify-center w-[var(--space-4)] shrink-0">
-          {node.exposure && node.exposure.state !== 'private' ? (
-            <VisibilityBadge
-              state={node.exposure.state}
-              inherited={node.exposure.inherited}
-              compact
-            />
-          ) : null}
-        </span>
 
         <button
           type="button"
@@ -327,13 +321,25 @@ function PageNode({
           )}
         </button>
 
+        {/* Exposure marker — trailing, only when the page is actually exposed.
+            Reclaims the left gutter (titles align tight to the chevron). */}
+        {node.exposure && node.exposure.state !== 'private' ? (
+          <span className="shrink-0 inline-flex items-center justify-center group-hover:hidden">
+            <VisibilityBadge
+              state={node.exposure.state}
+              inherited={node.exposure.inherited}
+              compact
+            />
+          </span>
+        ) : null}
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
               aria-label={`Actions for ${node.title || UNTITLED_TITLE}`}
-              className="h-[var(--space-7)] w-[var(--space-7)] p-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100"
+              className="shrink-0 h-[var(--space-6)] w-[var(--space-6)] p-0 hidden group-hover:inline-flex data-[state=open]:inline-flex focus-visible:inline-flex"
             >
               <MoreHorizontal width={14} height={14} />
             </Button>
