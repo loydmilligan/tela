@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Trash2, UserPlus } from 'lucide-react'
+import { Building2, Trash2, UserPlus } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useMe } from '../../lib/queries/auth'
 import {
@@ -9,7 +9,14 @@ import {
   useSpaceMembers,
   useUpdateSpaceMember,
 } from '../../lib/queries/members'
-import type { Space, SpaceMember } from '../../lib/types'
+import { useOrgs } from '../../lib/queries/orgs'
+import {
+  useAddSpaceGrant,
+  useRemoveSpaceGrant,
+  useSpaceGrants,
+  useUpdateSpaceGrant,
+} from '../../lib/queries/space-grants'
+import type { Org, Space, SpaceGrant, SpaceMember } from '../../lib/types'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import {
@@ -92,6 +99,8 @@ export function ShareSpaceDialog({
           {iAmOwner ? (
             <AddMemberForm spaceId={space.id} />
           ) : null}
+
+          {open ? <SpaceOrgGrants space={space} iAmOwner={iAmOwner} /> : null}
         </div>
 
         <DialogFooter>
@@ -393,6 +402,240 @@ function AddMemberForm({ spaceId }: { spaceId: number }) {
           role="alert"
           className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]"
         >
+          {error}
+        </p>
+      ) : null}
+    </form>
+  )
+}
+
+const GRANT_ROLE_LABEL: Record<SpaceGrant['role'], string> = {
+  editor: 'Editor',
+  viewer: 'Viewer',
+}
+
+// Org grants: share the whole space with an org so every member gets access.
+// The list is readable by any member; only owners get the controls.
+function SpaceOrgGrants({
+  space,
+  iAmOwner,
+}: {
+  space: Space
+  iAmOwner: boolean
+}) {
+  const grants = useSpaceGrants(space.id)
+
+  // Nothing to show to non-owners when there are no org grants yet — keeps the
+  // dialog quiet for plain spaces.
+  if (!iAmOwner && (grants.data == null || grants.data.length === 0)) {
+    return null
+  }
+
+  return (
+    <div className="flex flex-col gap-[var(--space-2)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
+      <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+        Organizations
+      </span>
+
+      {grants.isError ? (
+        <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+          Couldn't load org access.
+        </p>
+      ) : grants.data && grants.data.length > 0 ? (
+        <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
+          {grants.data.map((grant) => (
+            <GrantRow
+              key={grant.id}
+              spaceId={space.id}
+              grant={grant}
+              iAmOwner={iAmOwner}
+            />
+          ))}
+        </ul>
+      ) : null}
+
+      {iAmOwner ? (
+        <AddOrgGrantForm
+          spaceId={space.id}
+          granted={grants.data ?? []}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function GrantRow({
+  spaceId,
+  grant,
+  iAmOwner,
+}: {
+  spaceId: number
+  grant: SpaceGrant
+  iAmOwner: boolean
+}) {
+  const [rowError, setRowError] = useState<string | null>(null)
+  const updateGrant = useUpdateSpaceGrant()
+  const removeGrant = useRemoveSpaceGrant()
+
+  async function handleRoleChange(role: SpaceGrant['role']) {
+    if (role === grant.role) return
+    setRowError(null)
+    try {
+      await updateGrant.mutateAsync({ spaceId, grantId: grant.id, role })
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : 'Something went wrong.')
+    }
+  }
+
+  async function handleRemove() {
+    setRowError(null)
+    try {
+      await removeGrant.mutateAsync({ spaceId, grantId: grant.id })
+    } catch (err) {
+      setRowError(err instanceof ApiError ? err.message : 'Something went wrong.')
+    }
+  }
+
+  return (
+    <li
+      className={cn(
+        'm-0 list-none flex items-center gap-[var(--space-3)]',
+        'px-[var(--space-3)] py-[var(--space-2)]',
+        'rounded-[var(--radius-sm)]',
+        'border border-[var(--border-subtle)] bg-[var(--surface-1)]',
+      )}
+    >
+      <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
+        <div className="flex items-center gap-[var(--space-2)] min-w-0">
+          <Building2 width={13} height={13} className="text-[var(--text-muted)] shrink-0" />
+          <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-medium font-[family-name:var(--font-sans)]">
+            {grant.org_name}
+          </span>
+        </div>
+        {rowError ? (
+          <span role="alert" className="text-[length:var(--text-xs)] text-[var(--danger)]">
+            {rowError}
+          </span>
+        ) : null}
+      </div>
+
+      {iAmOwner ? (
+        <div className="w-[6.5rem] shrink-0">
+          <Select
+            size="sm"
+            aria-label={`Role for ${grant.org_name}`}
+            value={grant.role}
+            disabled={updateGrant.isPending}
+            onChange={(e) => void handleRoleChange(e.target.value as SpaceGrant['role'])}
+          >
+            <option value="editor">Editor</option>
+            <option value="viewer">Viewer</option>
+          </Select>
+        </div>
+      ) : (
+        <Badge variant="muted">{GRANT_ROLE_LABEL[grant.role]}</Badge>
+      )}
+
+      {iAmOwner ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label={`Remove ${grant.org_name}`}
+          onClick={() => void handleRemove()}
+          disabled={removeGrant.isPending}
+          className="text-[var(--text-muted)] hover:text-[var(--danger)]"
+        >
+          <Trash2 width={14} height={14} />
+        </Button>
+      ) : null}
+    </li>
+  )
+}
+
+function AddOrgGrantForm({
+  spaceId,
+  granted,
+}: {
+  spaceId: number
+  granted: SpaceGrant[]
+}) {
+  const orgs = useOrgs()
+  const [orgId, setOrgId] = useState<number | ''>('')
+  const [role, setRole] = useState<SpaceGrant['role']>('viewer')
+  const [error, setError] = useState<string | null>(null)
+  const addGrant = useAddSpaceGrant()
+
+  const grantedIds = new Set(granted.map((g) => g.org_id))
+  const available: Org[] = (orgs.data ?? []).filter((o) => !grantedIds.has(o.id))
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (orgId === '') {
+      setError('Pick an org to share with.')
+      return
+    }
+    setError(null)
+    try {
+      await addGrant.mutateAsync({ spaceId, org_id: orgId, role })
+      setOrgId('')
+      setRole('viewer')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError('That org already has access.')
+      } else if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to share with org.')
+      }
+    }
+  }
+
+  // No orgs the caller can offer — stay quiet rather than show an empty picker.
+  if (available.length === 0) {
+    return null
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-[var(--space-2)]">
+      <div className="flex items-start gap-[var(--space-2)]">
+        <div className="flex-1 min-w-0">
+          <Select
+            size="md"
+            aria-label="Org to share with"
+            value={orgId === '' ? '' : String(orgId)}
+            onChange={(e) => setOrgId(e.target.value === '' ? '' : Number(e.target.value))}
+          >
+            <option value="">Share with an org…</option>
+            {available.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="w-[6.5rem] shrink-0">
+          <Select
+            size="md"
+            aria-label="Role for org"
+            value={role}
+            onChange={(e) => setRole(e.target.value as SpaceGrant['role'])}
+          >
+            <option value="editor">Editor</option>
+            <option value="viewer">Viewer</option>
+          </Select>
+        </div>
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={addGrant.isPending || orgId === ''}
+        >
+          <Building2 width={14} height={14} />
+          <span>{addGrant.isPending ? 'Sharing…' : 'Share'}</span>
+        </Button>
+      </div>
+      {error ? (
+        <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
           {error}
         </p>
       ) : null}

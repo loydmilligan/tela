@@ -20,10 +20,19 @@ Extended exception: `mira_password_required` is a 403 with a third field `{ erro
 Middleware bypasses `/api/health`, `/api/version`, `/api/auth/`, `/p/{id}`, `/share/{token}`, `/api/share/`, `/api/diagrams/`.
 
 ## Spaces & membership
-- `GET /api/spaces` — spaces the caller can access.
+- `GET /api/spaces` — spaces the caller can access (direct membership **or** via an org grant; resolved through the `space_access` view).
 - `POST /api/spaces` — create (creator becomes owner).
 - `GET|PATCH|DELETE /api/spaces/{id}`.
-- `GET|POST|PATCH|DELETE` space members under the space (owner-gated; `last_owner` guard).
+- `GET|POST|PATCH|DELETE` space members under the space (owner-gated; `last_owner` guard). These are **direct user** grants (`space_members`).
+
+## Organizations (#153)
+An org is a *grantable principal*: share a space with an org and every member gains the granted role. Access resolves through the `space_access` view = direct user grants ∪ org grants. Slot reserved for future `group` principals (same view, same routes).
+- `GET /api/orgs` — caller's orgs (instance-admins see all; each row carries `my_role`, `member_count`).
+- `POST /api/orgs` — create. **Instance-admin only.**
+- `GET|PATCH|DELETE /api/orgs/{id}` — get/rename (org-admin or instance-admin) / delete (instance-admin only; tears down the org's space_grants).
+- `GET|POST|PATCH|DELETE /api/orgs/{id}/members[/{user_id}]` — membership (org-admin or instance-admin; self-leave allowed; `last_admin` guard).
+- `GET|POST|PATCH|DELETE /api/spaces/{id}/grants[/{grant_id}]` — share a space with an org. **Space owner only**; role limited to `editor`/`viewer` (`owner` reserved for direct users so the last-owner guard stays sound).
+- `GET|POST|DELETE /api/admin/org-domains[/{domain}]` — auto-join email-domain → org mappings. **Instance-admin only.** A user whose verified email domain matches is enrolled into the org on verify/login (idempotent, best-effort).
 
 ## Pages
 - `GET /api/spaces/{id}/pages` — pages in a space (optional `parent_id`).

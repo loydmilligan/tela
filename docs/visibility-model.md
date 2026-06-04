@@ -39,6 +39,13 @@ same answer for every page in it.
   Google-Docs sprawl unknowable. Keeping identity at the space level is what makes the
   system answerable at a glance.)
 
+> **Orgs (#153) keep this axis intact.** Identity access can be conferred to a
+> *group* (an org) as well as an individual, but still **only at the space level** —
+> never per-page. A space's "who can open this" is now: direct members ∪ members of
+> any org the space is shared with, resolved in one place (the `space_access` view).
+> Org grants are `editor`/`viewer` only; `owner` stays a direct-user responsibility.
+> The answer to "who can see this page?" is still a single space-level lookup.
+
 ### Axis 2 — Public exposure (link): lives on the **page**
 
 Every page resolves to one **public-exposure state**, computed from active share links

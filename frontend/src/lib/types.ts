@@ -144,6 +144,56 @@ export interface AdminUserRow {
   updated_at: string
 }
 
+// Organizations (#153). An org is a grantable principal: a space can be shared
+// with a whole org via space_grants, and every member gains the granted role
+// through the space_access view. Mirrors backend's orgDTO.
+export type OrgRole = 'admin' | 'member'
+
+export interface Org {
+  id: number
+  name: string
+  slug: string
+  member_count: number
+  // The caller's own org_role, or null when they only see the org as an
+  // instance-admin (no membership row).
+  my_role: OrgRole | null
+  created_at: string
+  updated_at: string
+}
+
+// Row in GET /api/orgs/{id}/members. Mirrors backend's orgMemberDTO.
+export interface OrgMember {
+  user_id: number
+  username: string
+  email: string | null
+  org_role: OrgRole
+  created_at: string
+  updated_at: string
+}
+
+// Row in GET /api/spaces/{id}/grants — an org's access to a space. Keyed by
+// grant id (principal kind is an implementation detail). Org grants are limited
+// to editor/viewer. Mirrors backend's spaceGrantDTO.
+export interface SpaceGrant {
+  id: number
+  org_id: number
+  org_name: string
+  org_slug: string
+  role: 'editor' | 'viewer'
+  created_at: string
+  updated_at: string
+}
+
+// Row in GET /api/admin/org-domains — an auto-join email-domain mapping.
+// Mirrors backend's orgDomainDTO.
+export interface OrgDomain {
+  domain: string
+  org_id: number
+  org_name: string
+  org_role: OrgRole
+  created_at: string
+}
+
 // Three-rung scope ceiling on a personal access token. See
 // backend/internal/auth/api_key.go — `admin` implies write+read, `write`
 // implies read.
