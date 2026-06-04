@@ -63,11 +63,13 @@ func toBytes(v driver.Value) []byte {
 }
 
 // init registers tela_cosine(a BLOB, b BLOB) -> REAL at the driver level, the
-// same mechanism db.tela_strip_excalidraw uses. This is what lets brute-force
-// kNN run inside SQLite (ORDER BY tela_cosine(embedding, :qvec)) without a C
-// extension — keeping the pure-Go modernc.org/sqlite build intact. Registration
-// happens once per process when this package is imported; re-registration
-// panics, so it must live in init() (not Open()).
+// same mechanism db.tela_strip_excalidraw uses. This lets brute-force kNN run
+// inside SQLite (ORDER BY tela_cosine(embedding, :qvec)) as a plain UDF. We go
+// this route rather than the sqlite-vec C extension only because the current
+// driver (modernc.org/sqlite) is pure Go and can't load C extensions — a fact
+// about today's build, not a goal. Registration happens once per process when
+// this package is imported; re-registration panics, so it must live in init()
+// (not Open()).
 func init() {
 	sqlite.MustRegisterDeterministicScalarFunction(
 		"tela_cosine", 2,

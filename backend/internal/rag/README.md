@@ -34,9 +34,13 @@ query ──▶ lexicalRank (BM25)  ┐
 ```
 
 `tela_cosine(a_blob, b_blob)` is a Go scalar UDF (same mechanism as
-`tela_strip_excalidraw`) — brute-force cosine inside SQLite, so vector search
-needs **no C extension** and the pure-Go `modernc.org/sqlite` build stays intact.
-At wiki scale (thousands–tens-of-thousands of chunks) brute force is sub-10ms.
+`tela_strip_excalidraw`) — brute-force cosine inside SQLite, so vector search is
+just an `ORDER BY` with no extra moving parts. We use a UDF rather than the
+`sqlite-vec` C extension only because the current driver (`modernc.org/sqlite`)
+is pure Go and can't load C extensions — a practical fact about today's build,
+not a constraint to defend. At wiki scale (thousands–tens-of-thousands of
+chunks) brute force is sub-10ms. If the corpus ever outgrows it, revisit with a
+real ANN index (e.g. a cgo driver + `sqlite-vec`, or an external index).
 
 ## Try it
 
