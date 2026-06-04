@@ -9,6 +9,9 @@ export interface Space {
   slug: string
   created_at: string
   updated_at: string
+  // Number of members with access. Present on the spaces list (sidebar shows a
+  // count chip when > 1); optional elsewhere.
+  member_count?: number
 }
 
 // Resolved public-link exposure of a page (backend exposure.go). Read-only,

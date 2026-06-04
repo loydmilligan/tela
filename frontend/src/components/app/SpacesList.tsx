@@ -27,6 +27,8 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { Input } from '../ui/input'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { useSpaceMembers } from '../../lib/queries/members'
 import { cn } from '../../lib/utils'
 import { NewSpaceDialog } from './NewSpaceDialog'
 import { ShareSpaceDialog } from './ShareSpaceDialog'
@@ -168,6 +170,32 @@ function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
       >
         {space.name || <span className="text-[var(--text-muted)]">Untitled space</span>}
       </button>
+
+      {/* Access signal: a member-count chip on shared spaces (>1 member).
+          Solo/Personal spaces show nothing. Hover → who can access; click →
+          manage members. Muted + compact so the row stays calm. */}
+      {(space.member_count ?? 0) > 1 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${space.member_count} members — manage access`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setShareOpen(true)
+              }}
+              className="inline-flex items-center gap-[2px] shrink-0 h-[var(--space-6)] px-[var(--space-1)] rounded-[var(--radius-xs)] text-[length:var(--text-xs)] text-[var(--text-muted)] bg-transparent border-0 cursor-pointer outline-none hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            >
+              <UsersRound width={13} height={13} aria-hidden />
+              {space.member_count}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <SpaceMembersPeek spaceId={space.id} />
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -206,6 +234,35 @@ function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
       />
+    </div>
+  )
+}
+
+// SpaceMembersPeek — the count chip's hover content: who can access this space
+// and their roles. Rendered only when the tooltip opens, so the members query
+// fires lazily (not for every shared space up front).
+function SpaceMembersPeek({ spaceId }: { spaceId: number }) {
+  const members = useSpaceMembers(spaceId)
+  if (members.isLoading) {
+    return <span className="text-[var(--text-muted)]">Loading…</span>
+  }
+  const list = members.data ?? []
+  if (list.length === 0) {
+    return <span className="text-[var(--text-muted)]">No members</span>
+  }
+  return (
+    <div className="flex flex-col gap-[2px] max-w-[15rem]">
+      {list.map((m) => (
+        <div
+          key={m.user_id}
+          className="flex items-center justify-between gap-[var(--space-3)]"
+        >
+          <span className="truncate">{m.username}</span>
+          <span className="shrink-0 text-[var(--text-muted)] capitalize">
+            {m.role}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }

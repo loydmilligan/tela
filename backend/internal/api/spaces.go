@@ -31,6 +31,13 @@ var (
 	slugNormalizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
+// spaceListItem is the sidebar row shape: a space plus how many members can
+// access it. The frontend shows a count chip on shared spaces (member_count > 1).
+type spaceListItem struct {
+	models.Space
+	MemberCount int `json:"member_count"`
+}
+
 type spaceCreateRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
@@ -47,7 +54,8 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT s.id, s.name, s.slug, s.created_at, s.updated_at
+		SELECT s.id, s.name, s.slug, s.created_at, s.updated_at,
+		       (SELECT COUNT(*) FROM space_members m WHERE m.space_id = s.id) AS member_count
 		  FROM spaces s
 		  JOIN space_members sm ON sm.space_id = s.id
 		 WHERE sm.user_id = ?
@@ -58,14 +66,14 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	spaces := []models.Space{}
+	spaces := []spaceListItem{}
 	for rows.Next() {
-		var sp models.Space
-		if err := rows.Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.CreatedAt, &sp.UpdatedAt); err != nil {
+		var it spaceListItem
+		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan space row failed")
 			return
 		}
-		spaces = append(spaces, sp)
+		spaces = append(spaces, it)
 	}
 	if err := rows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "iterate spaces failed")
