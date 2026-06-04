@@ -68,6 +68,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/pages/{id}", srv.DeletePage)
 	mux.HandleFunc("POST /api/pages/{id}/move", srv.MovePage)
 	mux.HandleFunc("GET /api/pages/{id}/backlinks", srv.Backlinks)
+	// Persisted Yjs state for instant editor paint (member-gated). The editor
+	// applies this on mount so content shows without waiting for the WS sync.
+	mux.HandleFunc("GET /api/pages/{id}/yjs", srv.GetPageYjsState)
 
 	// #3 PDF export. Session-authed: renders the caller's own page to PDF via
 	// gotenberg (which loads the /print/{token} reader). The public token-data

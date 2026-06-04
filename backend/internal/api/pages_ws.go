@@ -290,6 +290,76 @@ func encodeSyncInit(snapshot []byte, updates [][]byte) []byte {
 	return buf
 }
 
+// GetPageYjsState — GET /api/pages/{id}/yjs. Returns the page's persisted Yjs
+// state (latest snapshot + tail updates) in the sync-init layout WITHOUT the
+// leading tag byte, so the client can feed it straight to decodeSyncInit. The
+// editor applies this on mount to paint content instantly from REST instead of
+// waiting for the WS handshake; the WS sync-init then re-delivers the same
+// state, which is a no-op (Yjs CRDT update application is idempotent). Member
+// of the page's space required; a missing page collapses to 403 like GetPage.
+func (s *Server) GetPageYjsState(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	page, err := selectPageByID(r.Context(), s.DB, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
+		return
+	}
+	if _, ok := s.requireMembership(w, r, page.SpaceID); !ok {
+		return
+	}
+
+	ctx := r.Context()
+	var (
+		snapSeq  int64
+		snapshot []byte
+	)
+	err = s.DB.QueryRowContext(ctx,
+		`SELECT seq, state FROM page_yjs_snapshots WHERE page_id = ? ORDER BY seq DESC LIMIT 1`,
+		id).Scan(&snapSeq, &snapshot)
+	if errors.Is(err, sql.ErrNoRows) {
+		snapSeq, snapshot = 0, nil
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load snapshot failed")
+		return
+	}
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT payload FROM page_yjs_updates
+		 WHERE page_id = ? AND seq >= ?
+		 ORDER BY seq ASC`, id, snapSeq)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load updates failed")
+		return
+	}
+	defer rows.Close()
+	var updates [][]byte
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "scan update failed")
+			return
+		}
+		updates = append(updates, b)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "iterate updates failed")
+		return
+	}
+
+	// encodeSyncInit prefixes the tag byte; strip it so the body is exactly a
+	// decodeSyncInit payload.
+	frame := encodeSyncInit(snapshot, updates)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(frame[1:])
+}
+
 // WSPage is the HTTP handler behind GET /ws/pages/{id}. It authenticates +
 // authorises before upgrading, then hands off to the long-lived per-conn
 // loop in handleWSConn.

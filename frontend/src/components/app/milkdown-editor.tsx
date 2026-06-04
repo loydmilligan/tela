@@ -32,6 +32,7 @@ import { cn } from '../../lib/utils'
 import { configureRefractor } from '../../lib/milkdown/refractor-config'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { TelaProvider, type TelaProviderStatus } from '../../lib/collab/tela-provider'
+import { decodeSyncInit } from '../../lib/collab/encode'
 import { cursorBuilder, selectionBuilder } from '../../lib/collab/cursor-builder'
 import { useLeaderElection } from '../../lib/collab/use-leader-election'
 import { slashPlugin, SlashView } from './milkdown-slash'
@@ -705,6 +706,37 @@ function MilkdownEditorInner({
       unsub()
     }
   }, [loading, get, defaultValue])
+
+  // Instant paint: fetch the server's persisted Yjs state over REST and apply
+  // it as soon as the editor mounts, so content shows without waiting for the
+  // WS sync-init round-trip (the actual cause of the open-page blank on prod).
+  // Applied with the provider as the Yjs origin so the doc-update observer
+  // skips it (no rebroadcast). The WS then re-delivers the same state — a
+  // no-op, since Yjs update application is idempotent.
+  useEffect(() => {
+    if (collabPageId == null) return
+    const collab = collabRef.current
+    if (!collab) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/pages/${collabPageId}/yjs`, {
+          credentials: 'include',
+        })
+        if (!res.ok || cancelled) return
+        const buf = new Uint8Array(await res.arrayBuffer())
+        if (cancelled || buf.byteLength === 0) return
+        const { snapshot, updates } = decodeSyncInit(buf)
+        if (snapshot) Y.applyUpdate(collab.doc, snapshot, collab.provider)
+        for (const u of updates) Y.applyUpdate(collab.doc, u, collab.provider)
+      } catch {
+        // Best-effort — the WS sync-init still delivers the state.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [collabPageId])
 
   // Broken-wikilink click → emit a request to open the new-page dialog with
   // the link text pre-filled. We hang the listener on the editor's
