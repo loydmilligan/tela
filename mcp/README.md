@@ -52,7 +52,7 @@ A `tela://page/{id}` resource template is also registered, matching the wikilink
 | `list_spaces`    | List every space the API key can access (id, name, slug).                    | read           |
 | `list_pages`     | Flat page listing in a space. Optional `parent_id` for direct children.      | read           |
 | `get_page`       | Full markdown body + metadata for a numeric page id.                         | read           |
-| `search`         | FTS5 full-text search over title + body. Returns snippet-highlighted hits.   | read           |
+| `search`         | Full-text search over title + body. Returns snippet-highlighted hits.        | read           |
 | `search_bodies`  | Per-space fuzzy body search (no snippets). Re-fetch via `get_page`.          | read           |
 | `list_backlinks` | Pages that link to a given page via `[[wikilink]]` / `tela://page/{id}`.     | read           |
 | `create_page`    | Create a page. `{space_id, parent_id?, title, body}` → returns the new row.  | write          |

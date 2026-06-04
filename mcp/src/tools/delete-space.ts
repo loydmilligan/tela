@@ -1,4 +1,4 @@
-// delete_space hard-deletes a space and (via SQLite ON DELETE CASCADE) every
+// delete_space hard-deletes a space and (via ON DELETE CASCADE) every
 // page, comment, share link, and revision under it. Irreversible. Backend
 // requires the caller to hold the owner role within the space. The MCP tool
 // is tagged `admin` scope so only admin-tier API keys can call it — that is
