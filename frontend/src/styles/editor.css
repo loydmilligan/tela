@@ -770,6 +770,14 @@
     border-radius: var(--radius-sm);
     cursor: grab;
   }
+  /* Task cards: keep room for the checkbox (the card's padding shorthand would
+     otherwise clobber the task item's padding-left, overlapping the text). */
+  .tela-milkdown .ProseMirror .tela-kanban-col-body > ul > li[data-item-type='task'] {
+    padding-left: var(--space-8);
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col-body > ul > li[data-item-type='task']::before {
+    left: var(--space-2);
+  }
 
   /* Tabs (:::tabs). Strip of tab buttons over the active panel; inactive
      panels are hidden by the nodeView (display:none). */
@@ -806,6 +814,23 @@
   }
   .tela-milkdown .ProseMirror .tela-tab > :first-child {
     margin-top: 0;
+  }
+  /* Panel visibility is CSS-driven off the wrapper's data-active index — no JS
+     timing race with PM populating the contentDOM. Hide all, show the active
+     nth panel (supports up to 9 tabs; extras just stay hidden). */
+  .tela-milkdown .ProseMirror .tela-tabs-panels > .tela-tab {
+    display: none;
+  }
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='0'] > .tela-tabs-panels > .tela-tab:nth-child(1),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='1'] > .tela-tabs-panels > .tela-tab:nth-child(2),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='2'] > .tela-tabs-panels > .tela-tab:nth-child(3),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='3'] > .tela-tabs-panels > .tela-tab:nth-child(4),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='4'] > .tela-tabs-panels > .tela-tab:nth-child(5),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='5'] > .tela-tabs-panels > .tela-tab:nth-child(6),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='6'] > .tela-tabs-panels > .tela-tab:nth-child(7),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='7'] > .tela-tabs-panels > .tela-tab:nth-child(8),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='8'] > .tela-tabs-panels > .tela-tab:nth-child(9) {
+    display: block;
   }
 
   /* Mermaid diagram preview, rendered as a widget below the ```mermaid code

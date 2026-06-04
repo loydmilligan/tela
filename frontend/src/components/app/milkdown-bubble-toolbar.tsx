@@ -5,7 +5,7 @@ import { useInstance } from '@milkdown/react'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { CmdKey } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { NodeSelection } from '@milkdown/kit/prose/state'
 import type { EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import {
@@ -105,8 +105,12 @@ function currentLinkHref(state: EditorState): string {
 function shouldShow(view: EditorView): boolean {
   if (!view.editable || !view.hasFocus()) return false
   const sel = view.state.selection
-  if (sel.empty || !(sel instanceof TextSelection)) return false
+  if (sel.empty) return false
+  // A node selection (e.g. an image/excalidraw atom) isn't a text range.
+  if (sel instanceof NodeSelection) return false
   // Marks are meaningless inside a code block (`spec.code`); don't offer them.
+  // (`$from.parent` is the block at the selection start; for a multi-block /
+  // select-all range this still correctly skips a code-block-only selection.)
   if (sel.$from.parent.type.spec.code) return false
   return true
 }
