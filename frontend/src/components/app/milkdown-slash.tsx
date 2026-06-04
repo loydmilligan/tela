@@ -123,6 +123,19 @@ const ALL_COMMANDS: SlashCommand[] = [
     keywords: ['math', 'equation', 'latex', 'katex', 'formula', 'tex'],
     run: insertMathBlock,
   },
+  {
+    id: 'date',
+    label: 'Date',
+    hint: "Insert today's date",
+    keywords: ['date', 'today', 'now'],
+    run: (ctx) => {
+      const view = ctx.get(editorViewCtx)
+      // YYYY-MM-DD, matching the project's date convention.
+      const today = new Date().toISOString().slice(0, 10)
+      view.dispatch(view.state.tr.insertText(today))
+      view.focus()
+    },
+  },
   // Built-in templates (markdown snippets). See milkdown-templates.ts.
   ...TEMPLATES.map(
     (t): SlashCommand => ({
