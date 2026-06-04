@@ -12,14 +12,26 @@
 #   docker compose -p tela-test \
 #     -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml ...
 #
-# The `-p tela-test` project name keeps volumes (tela-data, caddy-*) isolated
-# from any dev / prod stack running on the same host.
+# The `-p tela-test` project name keeps volumes (tela-pgdata, caddy-*) isolated
+# from any dev / prod stack running on the same host (compose namespaces them as
+# tela-test_<name>). Nothing here hardcodes a volume name, so isolation holds.
 
 services:
   backend:
     environment:
       TELA_ADMIN_USERNAME: ${TELA_ADMIN_USERNAME:-testadmin}
       TELA_ADMIN_PASSWORD: ${TELA_ADMIN_PASSWORD:-testpassword123}
+      # Throw-away DSN for the isolated test Postgres (matches the overrides
+      # below). The base file's TELA_DATABASE_URL also resolves these defaults,
+      # but pinning it here keeps the test stack self-contained without a .env.
+      TELA_DATABASE_URL: postgres://tela:testpgpass@postgres:5432/tela?sslmode=disable
+
+  # The base file requires TELA_PG_PASSWORD (no insecure default). The test stack
+  # never loads deploy/.env, so supply a throw-away password here. The volume is
+  # project-prefixed (tela-test_tela-pgdata) and torn down with `down -v`.
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: testpgpass
 
   proxy:
     # !override replaces the base file's `ports:` list (otherwise compose
