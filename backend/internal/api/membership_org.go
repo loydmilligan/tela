@@ -49,15 +49,10 @@ func (s *Server) requireOrgMember(w http.ResponseWriter, r *http.Request, orgID 
 	if !ok {
 		return "", false
 	}
-	role, err := orgRole(r.Context(), s.DB, u.ID, orgID)
-	if err == nil {
-		return role, true
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup org membership failed")
-		return "", false
-	}
-	// Not a member — instance-admins still get in (as virtual admin).
+	// Instance-admins are virtual admins of EVERY org — always, regardless of
+	// whether they also hold a (possibly lower) membership row. Resolve this
+	// first so an instance-admin who joined an org as a plain member doesn't
+	// lose their superuser authority over it.
 	if u.IsInstanceAdmin {
 		if exists, err := orgExists(r.Context(), s.DB, orgID); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "lookup org failed")
@@ -68,7 +63,15 @@ func (s *Server) requireOrgMember(w http.ResponseWriter, r *http.Request, orgID 
 		}
 		return orgRoleAdmin, true
 	}
-	writeError(w, http.StatusForbidden, "forbidden", "not a member of this org")
+	role, err := orgRole(r.Context(), s.DB, u.ID, orgID)
+	if err == nil {
+		return role, true
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member of this org")
+		return "", false
+	}
+	writeError(w, http.StatusInternalServerError, "internal", "lookup org membership failed")
 	return "", false
 }
 

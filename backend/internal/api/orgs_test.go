@@ -323,6 +323,25 @@ func TestGetSpaceAccess_ResolvesSourcesAndEffectiveRole(t *testing.T) {
 	}
 }
 
+// An instance-admin who is ALSO a plain member of an org keeps full admin
+// authority over it (the membership row must not downgrade their superuser
+// power). Regression for the requireOrgMember instance-admin-first fix.
+func TestInstanceAdmin_RetainsOrgAuthorityWhenMember(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	adminID := seedUser(t, d, "admin", "adminpw12", true) // instance-admin
+	org := seedOrg(t, d, "Acme", "acme")
+	seedOrgMember(t, d, org, adminID, orgRoleMember) // joined as a plain member
+
+	// Admin (instance-admin) creates a group despite holding only 'member' in
+	// the org — must succeed, not 403.
+	req := userRequest(http.MethodPost, "/api/orgs/1/groups", `{"name":"Eng"}`, authUser(adminID, "admin", true))
+	rec := routedRecorder("POST /api/orgs/{id}/groups", srv.CreateGroup, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("instance-admin (org member) create group = %d; want 201 (%s)", rec.Code, rec.Body)
+	}
+}
+
 func seedGroup(t *testing.T, d *sql.DB, orgID int64, name string) int64 {
 	t.Helper()
 	res, err := d.ExecContext(context.Background(),
