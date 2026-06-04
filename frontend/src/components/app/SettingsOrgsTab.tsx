@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Building2, Globe, MoreHorizontal, Trash2, UserPlus } from 'lucide-react'
+import { Building2, Globe, MoreHorizontal, Trash2, UserPlus, Users } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import {
   useAddOrgMember,
@@ -11,11 +11,19 @@ import {
   useUpdateOrgMember,
 } from '../../lib/queries/orgs'
 import {
+  useAddGroupMember,
+  useCreateGroup,
+  useDeleteGroup,
+  useGroupMembers,
+  useOrgGroups,
+  useRemoveGroupMember,
+} from '../../lib/queries/groups'
+import {
   useCreateOrgDomain,
   useDeleteOrgDomain,
   useOrgDomains,
 } from '../../lib/queries/org-domains'
-import type { Org, OrgMember, OrgRole } from '../../lib/types'
+import type { Group, Org, OrgMember, OrgRole } from '../../lib/types'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import {
@@ -186,6 +194,8 @@ function ManageOrgDialog({
           )}
 
           <AddOrgMemberForm orgId={org.id} />
+
+          <GroupsSection org={org} />
         </div>
 
         <DialogFooter>
@@ -518,6 +528,269 @@ function DeleteOrgDialog({
           >
             {deleteOrg.isPending ? 'Deleting…' : 'Delete org'}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Groups (sub-teams) within an org. Lives inside the org-management dialog,
+// below members. Org admins create/delete groups and manage their members.
+function GroupsSection({ org }: { org: Org }) {
+  const groups = useOrgGroups(org.id)
+  const [name, setName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const createGroup = useCreateGroup()
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setError('Group name is required.')
+      return
+    }
+    setError(null)
+    try {
+      await createGroup.mutateAsync({ orgId: org.id, name: trimmed })
+      setName('')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError('A group with that name already exists.')
+      } else if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to create group.')
+      }
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-[var(--space-2)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
+      <span className="flex items-center gap-[var(--space-2)] text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+        <Users width={12} height={12} />
+        Groups
+      </span>
+
+      {groups.data && groups.data.length > 0 ? (
+        <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
+          {groups.data.map((g) => (
+            <GroupRow key={g.id} org={org} group={g} />
+          ))}
+        </ul>
+      ) : (
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          No groups yet. Groups let you share a space with part of the org.
+        </p>
+      )}
+
+      <form onSubmit={handleSubmit} noValidate className="flex items-start gap-[var(--space-2)]">
+        <div className="flex-1 min-w-0">
+          <Input
+            placeholder="New group name (e.g. Engineering)"
+            autoComplete="off"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            aria-invalid={error != null}
+          />
+        </div>
+        <Button type="submit" variant="secondary" disabled={createGroup.isPending || name.trim() === ''}>
+          <Users width={14} height={14} />
+          <span>{createGroup.isPending ? 'Adding…' : 'Add group'}</span>
+        </Button>
+      </form>
+      {error ? (
+        <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function GroupRow({ org, group }: { org: Org; group: Group }) {
+  const [membersOpen, setMembersOpen] = useState(false)
+  const deleteGroup = useDeleteGroup()
+
+  return (
+    <li
+      className={cn(
+        'm-0 list-none flex items-center gap-[var(--space-3)]',
+        'px-[var(--space-3)] py-[var(--space-2)]',
+        'rounded-[var(--radius-sm)]',
+        'border border-[var(--border-subtle)] bg-[var(--surface-1)]',
+      )}
+    >
+      <div className="flex-1 min-w-0 flex items-center gap-[var(--space-2)] flex-wrap">
+        <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-medium font-[family-name:var(--font-sans)]">
+          {group.name}
+        </span>
+        <Badge variant="muted">
+          {group.member_count} {group.member_count === 1 ? 'member' : 'members'}
+        </Badge>
+      </div>
+      <Button type="button" variant="ghost" size="sm" onClick={() => setMembersOpen(true)}>
+        Members
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Delete ${group.name}`}
+        onClick={() => void deleteGroup.mutateAsync({ orgId: org.id, groupId: group.id })}
+        disabled={deleteGroup.isPending}
+        className="text-[var(--text-muted)] hover:text-[var(--danger)]"
+      >
+        <Trash2 width={14} height={14} />
+      </Button>
+      <GroupMembersDialog
+        org={org}
+        group={group}
+        open={membersOpen}
+        onOpenChange={setMembersOpen}
+      />
+    </li>
+  )
+}
+
+function GroupMembersDialog({
+  org,
+  group,
+  open,
+  onOpenChange,
+}: {
+  org: Org
+  group: Group
+  open: boolean
+  onOpenChange: (next: boolean) => void
+}) {
+  const members = useGroupMembers(open ? org.id : null, open ? group.id : null)
+  const [identifier, setIdentifier] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const addMember = useAddGroupMember()
+  const removeMember = useRemoveGroupMember()
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = identifier.trim()
+    if (!trimmed) {
+      setError('Email or username is required.')
+      return
+    }
+    setError(null)
+    try {
+      await addMember.mutateAsync({ orgId: org.id, groupId: group.id, identifier: trimmed })
+      setIdentifier('')
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'not_org_member') {
+        setError('Add them to the org first — group members must be org members.')
+      } else if (err instanceof ApiError && err.status === 404) {
+        setError('User not found.')
+      } else if (err instanceof ApiError && err.status === 409) {
+        setError('Already in this group.')
+      } else if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to add member.')
+      }
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>"{group.name}" members</DialogTitle>
+          <DialogDescription>
+            Group members must already belong to {org.name}. Sharing a space with
+            this group gives all of them access.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-[var(--space-3)]">
+          {members.isLoading ? (
+            <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              Loading members…
+            </p>
+          ) : members.data && members.data.length > 0 ? (
+            <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
+              {members.data.map((m) => (
+                <li
+                  key={m.user_id}
+                  className={cn(
+                    'm-0 list-none flex items-center gap-[var(--space-3)]',
+                    'px-[var(--space-3)] py-[var(--space-2)]',
+                    'rounded-[var(--radius-sm)]',
+                    'border border-[var(--border-subtle)] bg-[var(--surface-1)]',
+                  )}
+                >
+                  <div className="flex-1 min-w-0 flex flex-col gap-[1px]">
+                    <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-medium font-[family-name:var(--font-sans)]">
+                      {m.username}
+                    </span>
+                    {m.email ? (
+                      <span className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                        {m.email}
+                      </span>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Remove ${m.username}`}
+                    onClick={() =>
+                      void removeMember.mutateAsync({
+                        orgId: org.id,
+                        groupId: group.id,
+                        userId: m.user_id,
+                      })
+                    }
+                    disabled={removeMember.isPending}
+                    className="text-[var(--text-muted)] hover:text-[var(--danger)]"
+                  >
+                    <Trash2 width={14} height={14} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              No members yet.
+            </p>
+          )}
+
+          <form
+            onSubmit={handleAdd}
+            noValidate
+            className="flex items-start gap-[var(--space-2)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]"
+          >
+            <div className="flex-1 min-w-0">
+              <Input
+                placeholder="Email or username (must be an org member)"
+                autoComplete="off"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                aria-invalid={error != null}
+              />
+            </div>
+            <Button type="submit" variant="secondary" disabled={addMember.isPending || identifier.trim() === ''}>
+              <UserPlus width={14} height={14} />
+              <span>{addMember.isPending ? 'Adding…' : 'Add'}</span>
+            </Button>
+          </form>
+          {error ? (
+            <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
+              {error}
+            </p>
+          ) : null}
+        </div>
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost">
+              Close
+            </Button>
+          </DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>

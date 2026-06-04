@@ -171,14 +171,44 @@ export interface OrgMember {
   updated_at: string
 }
 
-// Row in GET /api/spaces/{id}/grants — an org's access to a space. Keyed by
-// grant id (principal kind is an implementation detail). Org grants are limited
-// to editor/viewer. Mirrors backend's spaceGrantDTO.
-export interface SpaceGrant {
+// A group sub-team within an org (GET /api/orgs/{id}/groups). Mirrors backend's
+// groupDTO.
+export interface Group {
   id: number
   org_id: number
+  name: string
+  member_count: number
+  created_at: string
+  updated_at: string
+}
+
+// Flat cross-org group for the share picker (GET /api/groups). Mirrors
+// backend's myGroupDTO.
+export interface MyGroup {
+  id: number
+  org_id: number
+  name: string
   org_name: string
-  org_slug: string
+}
+
+// Row in GET /api/orgs/{id}/groups/{group_id}/members. Mirrors groupMemberDTO.
+export interface GroupMember {
+  user_id: number
+  username: string
+  email: string | null
+  created_at: string
+}
+
+// Row in GET /api/spaces/{id}/grants — a non-user principal's access to a space.
+// Principal-generic: principal_name is the org/group name; context_name is the
+// parent org's name for a group grant (null for an org). Grants are editor/viewer
+// only. Mirrors backend's spaceGrantDTO.
+export interface SpaceGrant {
+  id: number
+  principal_kind: 'org' | 'group'
+  principal_id: number
+  principal_name: string
+  context_name: string | null
   role: 'editor' | 'viewer'
   created_at: string
   updated_at: string
@@ -195,12 +225,11 @@ export interface OrgDomain {
 }
 
 // One way a user reaches a space (GET /api/spaces/{id}/access). Mirrors
-// backend's accessSource.
+// backend's accessSource. name is the org/group name; absent for direct.
 export interface AccessSource {
-  kind: 'direct' | 'org'
+  kind: 'direct' | 'org' | 'group'
   role: 'owner' | 'editor' | 'viewer'
-  org_id?: number
-  org_name?: string
+  name?: string
 }
 
 // Resolved access entry: a user, their effective (max) role, and every source

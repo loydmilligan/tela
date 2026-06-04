@@ -45,17 +45,26 @@ export function useSpaceGrants(spaceId: number | null | undefined) {
 
 export interface AddSpaceGrantInput {
   spaceId: number
-  org_id: number
+  principal_kind: SpaceGrant['principal_kind']
+  principal_id: number
   role: SpaceGrant['role']
 }
 
 export function useAddSpaceGrant() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ spaceId, org_id, role }: AddSpaceGrantInput) => {
+    mutationFn: async ({
+      spaceId,
+      principal_kind,
+      principal_id,
+      role,
+    }: AddSpaceGrantInput) => {
       const { grant } = await api<{ grant: SpaceGrant }>(
         `/api/spaces/${spaceId}/grants`,
-        { method: 'POST', body: JSON.stringify({ org_id, role }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({ principal_kind, principal_id, role }),
+        },
       )
       return grant
     },
