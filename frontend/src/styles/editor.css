@@ -720,6 +720,29 @@
     min-width: 18rem;
   }
 
+  /* Mermaid diagram preview, rendered as a widget below the ```mermaid code
+     block. The SVG comes from mermaid; we just center + bound it. */
+  .tela-milkdown .tela-mermaid {
+    display: flex;
+    justify-content: center;
+    margin: var(--space-2) 0 var(--space-4);
+    padding: var(--space-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+  }
+  .tela-milkdown .tela-mermaid svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .tela-milkdown .tela-mermaid-error {
+    justify-content: flex-start;
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
   /* Highlight mark (==text==). Theme-aware translucent wash off the warning
      (amber) token — works over light + dark surfaces without a new token. */
   .tela-milkdown .ProseMirror mark.tela-highlight {

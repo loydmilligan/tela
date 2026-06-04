@@ -54,6 +54,7 @@ import {
   highlightSchema,
   toggleHighlightCommand,
 } from './milkdown-highlight'
+import { mermaidPlugin } from './milkdown-mermaid'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
   calloutInputRule,
@@ -621,6 +622,8 @@ function MilkdownEditorInner({
       .use(highlightSchema)
       .use(highlightInputRule)
       .use(toggleHighlightCommand)
+      // Mermaid: renders a diagram below each ```mermaid code block (lazy lib).
+      .use(mermaidPlugin)
       .use(history)
       .use(clipboard)
       .use(listener)

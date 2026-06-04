@@ -19,6 +19,7 @@ import { insertExcalidraw } from './milkdown-excalidraw'
 import { insertTaskList } from './milkdown-task-list'
 import { insertMathBlock } from './milkdown-math'
 import { TEMPLATES, insertTemplate } from './milkdown-templates'
+import { insertMermaid } from './milkdown-mermaid'
 
 export const slashPlugin = slashFactory('tela-slash')
 
@@ -122,6 +123,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     hint: 'Block math (LaTeX)',
     keywords: ['math', 'equation', 'latex', 'katex', 'formula', 'tex'],
     run: insertMathBlock,
+  },
+  {
+    id: 'mermaid',
+    label: 'Mermaid diagram',
+    hint: 'Diagram from text',
+    keywords: ['mermaid', 'diagram', 'flowchart', 'graph', 'sequence'],
+    run: insertMermaid,
   },
   {
     id: 'date',
