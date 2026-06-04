@@ -104,6 +104,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// be served without a session (incl. share-mode). Mirrors diagrams.
 	mux.HandleFunc("POST /api/pages/{id}/images", srv.UploadPageImage)
 
+	// URL unfurl for paste-as-titled-link. Session-authed (makes an outbound
+	// SSRF-guarded request); never public.
+	mux.HandleFunc("GET /api/unfurl", srv.Unfurl)
+
 	// M15.0 PublicShare management: session-authed, editor+ on source page's
 	// space. Soft-delete via revoked_at so the audit trail survives revocation.
 	mux.HandleFunc("POST /api/pages/{id}/shares", srv.CreateShareLink)

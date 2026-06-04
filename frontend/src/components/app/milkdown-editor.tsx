@@ -83,6 +83,7 @@ import {
 } from './milkdown-mira-paste'
 import { MiraPastePopover } from './milkdown-mira-paste-popover'
 import { createImageUploadPlugin } from './milkdown-image-upload'
+import { createUrlUnfurlPlugin } from './milkdown-url-unfurl'
 import { useQueryClient } from '@tanstack/react-query'
 import { pageKeys } from '../../lib/queries/pages'
 import { navigateToPage } from '../../lib/pageHitItem'
@@ -520,6 +521,15 @@ function MilkdownEditorInner({
         // insertions, so the paste-hook needs to suppress the default paste
         // BEFORE the collab plugins see it. Returning false (non-mira paste)
         // lets the chain fall through to the default markdown link rendering.
+        // Paste-a-bare-URL → titled link. Registered BEFORE the mira hook so
+        // that after both prepends the order is [..., mira, urlUnfurl, ...] —
+        // mira intercepts its own URLs first; urlUnfurl handles the rest.
+        // Still ahead of the default clipboard parse. Gated editable+non-share.
+        if (wikilinkMode !== 'share' && !readOnly) {
+          const urlUnfurl = createUrlUnfurlPlugin()
+          ctx.update(prosePluginsCtx, (existing) => [urlUnfurl, ...existing])
+        }
+
         if (miraPasteEnabled) {
           const miraPaste = createMiraPastePlugin(ctx)
           ctx.update(prosePluginsCtx, (existing) => [miraPaste, ...existing])
