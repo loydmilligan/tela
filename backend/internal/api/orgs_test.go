@@ -159,23 +159,23 @@ func TestAddSpaceGrant_OwnerGatedAndRoleRestricted(t *testing.T) {
 	seedMember(t, d, space, editorID, roleEditor)
 	org := seedOrg(t, d, "Acme", "acme")
 
+	_ = org
 	// Editor (non-owner) is refused.
-	req := userRequest(http.MethodPost, "/api/spaces/1/grants", `{"org_id":1,"role":"viewer"}`, authUser(editorID, "editor", false))
+	req := userRequest(http.MethodPost, "/api/spaces/1/grants", `{"principal_kind":"org","principal_id":1,"role":"viewer"}`, authUser(editorID, "editor", false))
 	rec := routedRecorder("POST /api/spaces/{id}/grants", srv.AddSpaceGrant, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("editor add grant = %d; want 403", rec.Code)
 	}
 
 	// Owner granting 'owner' to an org is rejected (reserved for direct users).
-	req = userRequest(http.MethodPost, "/api/spaces/1/grants", `{"org_id":1,"role":"owner"}`, authUser(ownerID, "owner", false))
+	req = userRequest(http.MethodPost, "/api/spaces/1/grants", `{"principal_kind":"org","principal_id":1,"role":"owner"}`, authUser(ownerID, "owner", false))
 	rec = routedRecorder("POST /api/spaces/{id}/grants", srv.AddSpaceGrant, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("owner grant role=owner = %d; want 400 (%s)", rec.Code, rec.Body)
 	}
 
 	// Owner granting editor succeeds.
-	_ = org
-	req = userRequest(http.MethodPost, "/api/spaces/1/grants", `{"org_id":1,"role":"editor"}`, authUser(ownerID, "owner", false))
+	req = userRequest(http.MethodPost, "/api/spaces/1/grants", `{"principal_kind":"org","principal_id":1,"role":"editor"}`, authUser(ownerID, "owner", false))
 	rec = routedRecorder("POST /api/spaces/{id}/grants", srv.AddSpaceGrant, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("owner add editor grant = %d; want 201 (%s)", rec.Code, rec.Body)
@@ -320,6 +320,87 @@ func TestGetSpaceAccess_ResolvesSourcesAndEffectiveRole(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("dual user missing from access list")
+	}
+}
+
+func seedGroup(t *testing.T, d *sql.DB, orgID int64, name string) int64 {
+	t.Helper()
+	res, err := d.ExecContext(context.Background(),
+		`INSERT INTO groups (org_id, name) VALUES (?, ?)`, orgID, name)
+	if err != nil {
+		t.Fatalf("insert group: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+// A space shared with a group confers access to its members via the rebuilt
+// space_access view — the third principal leg.
+func TestGroupGrant_ConfersSpaceAccess(t *testing.T) {
+	d := newAPITestDB(t)
+	owner := seedUser(t, d, "owner", "ownerpw12", false)
+	member := seedUser(t, d, "member", "memberpw1", false)
+	stranger := seedUser(t, d, "stranger", "strangerp", false)
+
+	space := seedSpace(t, d, "Docs", "docs", owner)
+	org := seedOrg(t, d, "Acme", "acme")
+	seedOrgMember(t, d, org, member, orgRoleMember)
+	seedOrgMember(t, d, org, stranger, orgRoleMember)
+	group := seedGroup(t, d, org, "Eng")
+	seedGroupMember(t, d, group, member) // member in group; stranger only in org
+
+	if _, err := d.Exec(
+		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES (?, 'group', ?, 'editor')`,
+		space, group); err != nil {
+		t.Fatalf("insert group grant: %v", err)
+	}
+
+	ctx := context.Background()
+	if role, err := spaceRole(ctx, d, member, space); err != nil || role != roleEditor {
+		t.Fatalf("group member effective role = %q, %v; want editor", role, err)
+	}
+	// In the org but not the group → no access from the group grant.
+	if _, err := spaceRole(ctx, d, stranger, space); err != sql.ErrNoRows {
+		t.Fatalf("org-only user role err = %v; want ErrNoRows", err)
+	}
+}
+
+// seedGroupMember satisfies the group⊆org trigger (caller must seed org
+// membership first).
+func seedGroupMember(t *testing.T, d *sql.DB, groupID, userID int64) {
+	t.Helper()
+	if _, err := d.ExecContext(context.Background(),
+		`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, groupID, userID); err != nil {
+		t.Fatalf("insert group_member: %v", err)
+	}
+}
+
+// Containment invariant: a non-org-member can't be added to the org's group
+// (DB trigger), and leaving the org drops group membership (cascade trigger).
+func TestGroupMembership_ContainmentInvariants(t *testing.T) {
+	d := newAPITestDB(t)
+	u := seedUser(t, d, "u", "upassword", false)
+	org := seedOrg(t, d, "Acme", "acme")
+	group := seedGroup(t, d, org, "Eng")
+
+	// Not an org member yet → trigger rejects.
+	if _, err := d.Exec(
+		`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, group, u); err == nil {
+		t.Fatal("adding a non-org-member to a group should be rejected by the trigger")
+	}
+
+	// Add to org, then group — now allowed.
+	seedOrgMember(t, d, org, u, orgRoleMember)
+	seedGroupMember(t, d, group, u)
+
+	// Leaving the org cascades out of the group.
+	if _, err := d.Exec(`DELETE FROM org_members WHERE org_id = ? AND user_id = ?`, org, u); err != nil {
+		t.Fatalf("remove org member: %v", err)
+	}
+	var n int
+	d.QueryRow(`SELECT COUNT(*) FROM group_members WHERE group_id = ? AND user_id = ?`, group, u).Scan(&n)
+	if n != 0 {
+		t.Fatalf("group_members after org-leave = %d; want 0 (cascade)", n)
 	}
 }
 

@@ -8,6 +8,14 @@ type Org struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+type Group struct {
+	ID        int64  `json:"id"`
+	OrgID     int64  `json:"org_id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type Space struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`

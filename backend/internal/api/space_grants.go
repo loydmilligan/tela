@@ -8,36 +8,84 @@ import (
 	"strconv"
 )
 
-// spaceGrantDTO is the wire shape for a space's org grants. Keyed by grant id
-// so the principal kind stays an implementation detail (groups slot in later
-// without a new route shape).
+// Space grants share a space with a non-user principal (an org or a group), at
+// editor/viewer. Keyed by grant id so the principal kind is an implementation
+// detail of the row, not the route. Owner-gated; 'owner' is rejected (API +
+// DB trigger) so the last-owner guard stays sound.
+
+// spaceGrantDTO is principal-generic: PrincipalName is the org/group name;
+// ContextName is the parent org's name for a group grant (nil for an org).
 type spaceGrantDTO struct {
-	ID        int64  `json:"id"`
-	OrgID     int64  `json:"org_id"`
-	OrgName   string `json:"org_name"`
-	OrgSlug   string `json:"org_slug"`
-	Role      string `json:"role"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID            int64   `json:"id"`
+	PrincipalKind string  `json:"principal_kind"` // "org" | "group"
+	PrincipalID   int64   `json:"principal_id"`
+	PrincipalName string  `json:"principal_name"`
+	ContextName   *string `json:"context_name"`
+	Role          string  `json:"role"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 type spaceGrantAddRequest struct {
-	OrgID int64  `json:"org_id"`
-	Role  string `json:"role"`
+	PrincipalKind string `json:"principal_kind"`
+	PrincipalID   int64  `json:"principal_id"`
+	Role          string `json:"role"`
 }
 
 type spaceGrantPatchRequest struct {
 	Role string `json:"role"`
 }
 
-// grantRoleValid restricts org grants to editor/viewer. 'owner' is reserved for
-// direct user members so the last-owner safeguard (which counts space_members)
-// stays sound — a whole org can't become co-owner of a space.
+// grantRoleValid restricts grants to editor/viewer. 'owner' is reserved for
+// direct user members (last-owner guard counts space_members).
 func grantRoleValid(role string) bool {
 	return role == roleEditor || role == roleViewer
 }
 
-// ListSpaceGrants returns the org grants on a space. Any space member can read.
+func validPrincipalKind(kind string) bool {
+	return kind == "org" || kind == "group"
+}
+
+// principalExists reports whether an org/group principal_id is real.
+func principalExists(ctx context.Context, db *sql.DB, kind string, id int64) (bool, error) {
+	var table string
+	switch kind {
+	case "org":
+		table = "orgs"
+	case "group":
+		table = "groups"
+	default:
+		return false, nil
+	}
+	var x int
+	err := db.QueryRowContext(ctx, "SELECT 1 FROM "+table+" WHERE id = ?", id).Scan(&x)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+const spaceGrantSelect = `
+	SELECT sg.id, sg.principal_kind, sg.principal_id,
+	       COALESCE(o.name, g.name) AS principal_name,
+	       go.name AS context_name,
+	       sg.role, sg.created_at, sg.updated_at
+	  FROM space_grants sg
+	  LEFT JOIN orgs o   ON sg.principal_kind = 'org'   AND o.id = sg.principal_id
+	  LEFT JOIN groups g ON sg.principal_kind = 'group' AND g.id = sg.principal_id
+	  LEFT JOIN orgs go  ON go.id = g.org_id`
+
+func scanSpaceGrant(sc interface{ Scan(...any) error }) (spaceGrantDTO, error) {
+	var (
+		g       spaceGrantDTO
+		ctxName sql.NullString
+	)
+	err := sc.Scan(&g.ID, &g.PrincipalKind, &g.PrincipalID, &g.PrincipalName, &ctxName, &g.Role, &g.CreatedAt, &g.UpdatedAt)
+	g.ContextName = nullableString(ctxName)
+	return g, err
+}
+
+// ListSpaceGrants returns the org + group grants on a space. Any member reads.
 func (s *Server) ListSpaceGrants(w http.ResponseWriter, r *http.Request) {
 	spaceID, ok := parseIDParam(w, r, "id")
 	if !ok {
@@ -46,12 +94,8 @@ func (s *Server) ListSpaceGrants(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, spaceID); !ok {
 		return
 	}
-	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT sg.id, o.id, o.name, o.slug, sg.role, sg.created_at, sg.updated_at
-		  FROM space_grants sg
-		  JOIN orgs o ON o.id = sg.principal_id
-		 WHERE sg.space_id = ? AND sg.principal_kind = 'org'
-		 ORDER BY o.name ASC`, spaceID)
+	rows, err := s.DB.QueryContext(r.Context(),
+		spaceGrantSelect+` WHERE sg.space_id = ? ORDER BY sg.principal_kind ASC, principal_name ASC`, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list space grants failed")
 		return
@@ -60,8 +104,8 @@ func (s *Server) ListSpaceGrants(w http.ResponseWriter, r *http.Request) {
 
 	grants := []spaceGrantDTO{}
 	for rows.Next() {
-		var g spaceGrantDTO
-		if err := rows.Scan(&g.ID, &g.OrgID, &g.OrgName, &g.OrgSlug, &g.Role, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		g, err := scanSpaceGrant(rows)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan grant row failed")
 			return
 		}
@@ -74,7 +118,7 @@ func (s *Server) ListSpaceGrants(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"grants": grants})
 }
 
-// AddSpaceGrant shares a space with an org at editor/viewer. Space owner only.
+// AddSpaceGrant shares a space with an org or group at editor/viewer. Owner only.
 func (s *Server) AddSpaceGrant(w http.ResponseWriter, r *http.Request) {
 	spaceID, ok := parseIDParam(w, r, "id")
 	if !ok {
@@ -93,8 +137,12 @@ func (s *Server) AddSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
-	if req.OrgID <= 0 {
-		writeError(w, http.StatusBadRequest, "bad_request", "org_id is required")
+	if !validPrincipalKind(req.PrincipalKind) {
+		writeError(w, http.StatusBadRequest, "bad_request", "principal_kind must be one of org, group")
+		return
+	}
+	if req.PrincipalID <= 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "principal_id is required")
 		return
 	}
 	if !grantRoleValid(req.Role) {
@@ -103,20 +151,20 @@ func (s *Server) AddSpaceGrant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if exists, err := orgExists(ctx, s.DB, req.OrgID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup org failed")
+	if exists, err := principalExists(ctx, s.DB, req.PrincipalKind, req.PrincipalID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup principal failed")
 		return
 	} else if !exists {
-		writeError(w, http.StatusNotFound, "not_found", "org not found")
+		writeError(w, http.StatusNotFound, "not_found", req.PrincipalKind+" not found")
 		return
 	}
 
 	res, err := s.DB.ExecContext(ctx, `
 		INSERT INTO space_grants (space_id, principal_kind, principal_id, role)
-		VALUES (?, 'org', ?, ?)`, spaceID, req.OrgID, req.Role)
+		VALUES (?, ?, ?, ?)`, spaceID, req.PrincipalKind, req.PrincipalID, req.Role)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
-			writeError(w, http.StatusConflict, "conflict", "this org already has a grant on the space")
+			writeError(w, http.StatusConflict, "conflict", "this principal already has a grant on the space")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "add space grant failed")
@@ -132,7 +180,7 @@ func (s *Server) AddSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch added grant failed")
 		return
 	}
-	s.audit(ctx, r, "grant.add", "space", spaceID, dto.OrgName+" → "+req.Role)
+	s.audit(ctx, r, "grant.add", "space", spaceID, dto.PrincipalKind+" "+dto.PrincipalName+" → "+req.Role)
 	writeJSON(w, http.StatusCreated, map[string]any{"grant": dto})
 }
 
@@ -165,9 +213,9 @@ func (s *Server) PatchSpaceGrant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	res, err := s.DB.ExecContext(ctx, `
-		UPDATE space_grants SET role = ?, updated_at = datetime('now')
-		 WHERE id = ? AND space_id = ? AND principal_kind = 'org'`, req.Role, grantID, spaceID)
+	res, err := s.DB.ExecContext(ctx,
+		`UPDATE space_grants SET role = ?, updated_at = datetime('now') WHERE id = ? AND space_id = ?`,
+		req.Role, grantID, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update grant failed")
 		return
@@ -181,11 +229,11 @@ func (s *Server) PatchSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch updated grant failed")
 		return
 	}
-	s.audit(ctx, r, "grant.role", "space", spaceID, dto.OrgName+" → "+req.Role)
+	s.audit(ctx, r, "grant.role", "space", spaceID, dto.PrincipalKind+" "+dto.PrincipalName+" → "+req.Role)
 	writeJSON(w, http.StatusOK, map[string]any{"grant": dto})
 }
 
-// DeleteSpaceGrant revokes an org's access to a space. Space owner only.
+// DeleteSpaceGrant revokes a principal's access to a space. Space owner only.
 func (s *Server) DeleteSpaceGrant(w http.ResponseWriter, r *http.Request) {
 	spaceID, ok := parseIDParam(w, r, "id")
 	if !ok {
@@ -204,7 +252,7 @@ func (s *Server) DeleteSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.DB.ExecContext(r.Context(),
-		`DELETE FROM space_grants WHERE id = ? AND space_id = ? AND principal_kind = 'org'`, grantID, spaceID)
+		`DELETE FROM space_grants WHERE id = ? AND space_id = ?`, grantID, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete grant failed")
 		return
@@ -218,12 +266,6 @@ func (s *Server) DeleteSpaceGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func selectSpaceGrant(ctx context.Context, db *sql.DB, spaceID, grantID int64) (spaceGrantDTO, error) {
-	var g spaceGrantDTO
-	err := db.QueryRowContext(ctx, `
-		SELECT sg.id, o.id, o.name, o.slug, sg.role, sg.created_at, sg.updated_at
-		  FROM space_grants sg
-		  JOIN orgs o ON o.id = sg.principal_id
-		 WHERE sg.id = ? AND sg.space_id = ? AND sg.principal_kind = 'org'`, grantID, spaceID).
-		Scan(&g.ID, &g.OrgID, &g.OrgName, &g.OrgSlug, &g.Role, &g.CreatedAt, &g.UpdatedAt)
-	return g, err
+	row := db.QueryRowContext(ctx, spaceGrantSelect+` WHERE sg.id = ? AND sg.space_id = ?`, grantID, spaceID)
+	return scanSpaceGrant(row)
 }

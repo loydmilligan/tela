@@ -181,6 +181,17 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)
 	mux.HandleFunc("DELETE /api/orgs/{id}/members/{user_id}", srv.DeleteOrgMember)
 
+	// Group sub-teams: a third grantable principal nested under an org. Org-admin
+	// gated; membership ⊆ org membership (DB-enforced). See docs/access-model.md.
+	mux.HandleFunc("GET /api/groups", srv.ListMyGroups)
+	mux.HandleFunc("GET /api/orgs/{id}/groups", srv.ListGroups)
+	mux.HandleFunc("POST /api/orgs/{id}/groups", srv.CreateGroup)
+	mux.HandleFunc("PATCH /api/orgs/{id}/groups/{group_id}", srv.UpdateGroup)
+	mux.HandleFunc("DELETE /api/orgs/{id}/groups/{group_id}", srv.DeleteGroup)
+	mux.HandleFunc("GET /api/orgs/{id}/groups/{group_id}/members", srv.ListGroupMembers)
+	mux.HandleFunc("POST /api/orgs/{id}/groups/{group_id}/members", srv.AddGroupMember)
+	mux.HandleFunc("DELETE /api/orgs/{id}/groups/{group_id}/members/{user_id}", srv.DeleteGroupMember)
+
 	// #153 Space↔org grants: share a space with an org at editor/viewer. Owner
 	// gated. Keyed by grant id so 'group' principals slot in without a new route.
 	mux.HandleFunc("GET /api/spaces/{id}/grants", srv.ListSpaceGrants)

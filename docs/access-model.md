@@ -4,9 +4,8 @@
 > what* in tela. Pairs with [`visibility-model.md`](visibility-model.md) (public
 > exposure / share links). When the two disagree, fix the code, not this doc.
 >
-> Scope as of #153 (orgs) + the lock-down pass: users, orgs, grants, auto-join,
-> auditing. **Groups (sub-teams) are designed here but not yet built** — the §
-> marked "planned" is the contract they must implement.
+> Scope as of #153 (orgs) + the lock-down pass + #155 (groups): users, orgs,
+> groups, grants, auto-join, auditing. All three principal kinds are live.
 
 ## Vocabulary (locked — use these words everywhere: code, UI, docs)
 
@@ -92,25 +91,25 @@ Membership/grant/auto-join/org-lifecycle changes are recorded in `access_audit`
 (actor, action, target, detail, time). Read surface is instance-admin only. This
 is the answer to "who added whom / who shared what with whom" as tenants grow.
 
-## Groups (sub-teams) — **planned** contract
+## Groups (sub-teams) — **shipped** (#155)
 
-Groups are the next `principal_kind`. They must slot into everything above with
-**no new resolution path** — just a third leg in `space_access`.
+Groups are the third `principal_kind`. They slot into everything above with **no
+new resolution path** — just a third leg in `space_access`.
 
 - **A group belongs to exactly one org** (`groups.org_id`); it cannot span orgs.
 - **Group membership ⊆ org membership.** You can only add an org member to that
-  org's groups; removing someone from the org removes them from its groups
-  (FK cascade). This keeps the containment legible: org ⊇ its groups.
-- **Managed by org admins** in v1 (no separate "group lead" role yet — that's a
-  later, additive `group_members.group_role` if needed).
+  org's groups (DB trigger `group_members_require_org_member`); leaving the org
+  removes you from its groups (trigger `org_members_cascade_groups`). Containment
+  is enforced, not hoped: org ⊇ its groups.
+- **Managed by org admins** (no separate "group lead" role — that's a later,
+  additive `group_members.group_role` if needed). Self-leave is allowed.
 - **Grantable principal**, `editor`/`viewer` only (invariant 1 applies via the
-  same `space_grants` triggers).
-- **Resolution:** `space_access` gains
-  `… UNION ALL SELECT sg.space_id, gm.user_id, sg.role FROM space_grants sg JOIN
-  group_members gm ON gm.group_id = sg.principal_id WHERE sg.principal_kind =
-  'group'`. Effective role stays the same pure max — now over direct ∪ org ∪
-  group.
-- **Provenance** gains a `via <Group>` source; the effective-access panel already
-  renders sources generically, so groups need no new UI shape there.
-- **Vocabulary:** "group" is the technical noun; UI label "Group". Never reuse
-  "team" loosely — a group *is* the sub-team.
+  same `space_grants` triggers, which already cover `principal_kind='group'`).
+- **Resolution:** `space_access` has the group leg
+  (`… JOIN group_members gm ON gm.group_id = sg.principal_id WHERE
+  sg.principal_kind='group'`). Effective role is still a pure max over
+  direct ∪ org ∪ group.
+- **Provenance:** the effective-access panel renders a `via <Group>` source
+  generically (accessSource carries `kind` + `name`), no special-casing.
+- **Vocabulary:** "group" is the technical noun; UI label "Group". A group *is*
+  the sub-team.
