@@ -55,6 +55,8 @@ import {
   toggleHighlightCommand,
 } from './milkdown-highlight'
 import { mermaidPlugin } from './milkdown-mermaid'
+import { directiveRemarkPlugin } from './milkdown-directives'
+import { tabSchema, tabsNodeView, tabsSchema } from './milkdown-tabs'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
   calloutInputRule,
@@ -624,6 +626,11 @@ function MilkdownEditorInner({
       .use(toggleHighlightCommand)
       // Mermaid: renders a diagram below each ```mermaid code block (lazy lib).
       .use(mermaidPlugin)
+      // Container directives (:::name) + the tabs block built on them.
+      .use(directiveRemarkPlugin)
+      .use(tabSchema)
+      .use(tabsSchema)
+      .use(tabsNodeView)
       .use(history)
       .use(clipboard)
       .use(listener)

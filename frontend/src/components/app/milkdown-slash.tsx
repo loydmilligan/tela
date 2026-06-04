@@ -20,6 +20,7 @@ import { insertTaskList } from './milkdown-task-list'
 import { insertMathBlock } from './milkdown-math'
 import { TEMPLATES, insertTemplate } from './milkdown-templates'
 import { insertMermaid } from './milkdown-mermaid'
+import { insertTabs } from './milkdown-tabs'
 
 export const slashPlugin = slashFactory('tela-slash')
 
@@ -130,6 +131,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     hint: 'Diagram from text',
     keywords: ['mermaid', 'diagram', 'flowchart', 'graph', 'sequence'],
     run: insertMermaid,
+  },
+  {
+    id: 'tabs',
+    label: 'Tabs',
+    hint: 'Tabbed sections',
+    keywords: ['tabs', 'tab', 'tabbed', 'sections'],
+    run: insertTabs,
   },
   {
     id: 'date',
