@@ -130,11 +130,14 @@ func (s *Server) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Provision the personal space now that the account is real (idempotent).
-	var username string
-	if err := s.DB.QueryRowContext(ctx, `SELECT username FROM users WHERE id = ?`, userID).Scan(&username); err == nil {
+	var username, email string
+	if err := s.DB.QueryRowContext(ctx, `SELECT username, COALESCE(email, '') FROM users WHERE id = ?`, userID).Scan(&username, &email); err == nil {
 		if _, err := EnsurePersonalSpace(ctx, s.DB, userID, username); err != nil {
 			log.Printf("personal space for verified user %d (%s): %v", userID, username, err)
 		}
+		// Enroll into any org whose auto-join domain matches the just-confirmed
+		// address (#153).
+		applyAutoJoin(ctx, s.DB, userID, email)
 	}
 
 	dto, err := s.authUserByID(ctx, userID)

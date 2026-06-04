@@ -55,10 +55,9 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT s.id, s.name, s.slug, s.created_at, s.updated_at,
-		       (SELECT COUNT(*) FROM space_members m WHERE m.space_id = s.id) AS member_count
+		       (SELECT COUNT(DISTINCT user_id) FROM space_access a WHERE a.space_id = s.id) AS member_count
 		  FROM spaces s
-		  JOIN space_members sm ON sm.space_id = s.id
-		 WHERE sm.user_id = ?
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sa ON sa.space_id = s.id
 		 ORDER BY s.name ASC`, u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list spaces failed")

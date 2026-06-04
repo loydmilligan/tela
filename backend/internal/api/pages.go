@@ -168,7 +168,7 @@ func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
 			SELECT p.id, p.space_id, s.name, p.title
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
-			  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
 			 WHERE p.space_id = ?
 			 ORDER BY s.name ASC, p.title ASC`, u.ID, *k.SpaceID)
 	} else {
@@ -176,7 +176,7 @@ func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
 			SELECT p.id, p.space_id, s.name, p.title
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
-			  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
 			 ORDER BY s.name ASC, p.title ASC`, u.ID)
 	}
 	if err != nil {

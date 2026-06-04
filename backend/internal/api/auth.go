@@ -89,6 +89,12 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Apply auto-join domains on every sign-in so a domain mapping added after
+	// the user already verified still takes effect (idempotent, best-effort).
+	if email.Valid {
+		applyAutoJoin(ctx, s.DB, userID, email.String)
+	}
+
 	sid, err := auth.CreateSession(ctx, s.DB, userID, r.UserAgent())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "create session failed")

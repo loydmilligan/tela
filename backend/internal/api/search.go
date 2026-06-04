@@ -46,7 +46,7 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 			       snippet(pages_fts, 1, '<mark>', '</mark>', '…', 32)
 			FROM pages_fts
 			JOIN pages p ON p.id = pages_fts.rowid
-			JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
 			WHERE pages_fts MATCH ? AND p.space_id = ?
 			ORDER BY bm25(pages_fts) ASC
 			LIMIT ?`, u.ID, fts, *k.SpaceID, searchLimit)
@@ -56,7 +56,7 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 			       snippet(pages_fts, 1, '<mark>', '</mark>', '…', 32)
 			FROM pages_fts
 			JOIN pages p ON p.id = pages_fts.rowid
-			JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+			JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
 			WHERE pages_fts MATCH ?
 			ORDER BY bm25(pages_fts) ASC
 			LIMIT ?`, u.ID, fts, searchLimit)

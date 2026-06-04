@@ -167,6 +167,32 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/spaces/{id}/members/{user_id}", srv.PatchSpaceMember)
 	mux.HandleFunc("DELETE /api/spaces/{id}/members/{user_id}", srv.DeleteSpaceMember)
 
+	// #153 Organizations. A space can be shared with a whole org (grantable
+	// principal); access resolves through the space_access view. Org CRUD is
+	// instance-admin gated; membership is org-admin gated; auto-join domains are
+	// instance-admin gated.
+	mux.HandleFunc("GET /api/orgs", srv.ListOrgs)
+	mux.HandleFunc("POST /api/orgs", srv.CreateOrg)
+	mux.HandleFunc("GET /api/orgs/{id}", srv.GetOrg)
+	mux.HandleFunc("PATCH /api/orgs/{id}", srv.UpdateOrg)
+	mux.HandleFunc("DELETE /api/orgs/{id}", srv.DeleteOrg)
+	mux.HandleFunc("GET /api/orgs/{id}/members", srv.ListOrgMembers)
+	mux.HandleFunc("POST /api/orgs/{id}/members", srv.AddOrgMember)
+	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)
+	mux.HandleFunc("DELETE /api/orgs/{id}/members/{user_id}", srv.DeleteOrgMember)
+
+	// #153 Space↔org grants: share a space with an org at editor/viewer. Owner
+	// gated. Keyed by grant id so 'group' principals slot in without a new route.
+	mux.HandleFunc("GET /api/spaces/{id}/grants", srv.ListSpaceGrants)
+	mux.HandleFunc("POST /api/spaces/{id}/grants", srv.AddSpaceGrant)
+	mux.HandleFunc("PATCH /api/spaces/{id}/grants/{grant_id}", srv.PatchSpaceGrant)
+	mux.HandleFunc("DELETE /api/spaces/{id}/grants/{grant_id}", srv.DeleteSpaceGrant)
+
+	// #153 Auto-join email-domain mappings (instance-admin only).
+	mux.HandleFunc("GET /api/admin/org-domains", srv.ListOrgDomains)
+	mux.HandleFunc("POST /api/admin/org-domains", srv.CreateOrgDomain)
+	mux.HandleFunc("DELETE /api/admin/org-domains/{domain}", srv.DeleteOrgDomain)
+
 	// M7.1 LiveCollab: ws upgrade for Yjs relay. Authed via auth.Middleware
 	// on the upgrade request — must NOT be added to auth.IsPublicPath.
 	mux.HandleFunc("GET /ws/pages/{id}", srv.WSPage)

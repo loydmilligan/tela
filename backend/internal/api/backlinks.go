@@ -61,7 +61,7 @@ func (s *Server) Backlinks(w http.ResponseWriter, r *http.Request) {
 		  FROM page_links l
 		  JOIN pages p ON p.id = l.source_id
 		  JOIN spaces s ON s.id = p.space_id
-		  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
 		 WHERE l.target_id = ?
 		 ORDER BY s.name ASC, p.title ASC`, u.ID, id)
 	if err != nil {

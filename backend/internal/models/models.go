@@ -1,5 +1,13 @@
 package models
 
+type Org struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type Space struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`

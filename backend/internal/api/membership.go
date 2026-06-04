@@ -49,13 +49,21 @@ func requireInstanceAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, b
 	return u, true
 }
 
-// spaceRole returns the user's role for spaceID, or sql.ErrNoRows when they
-// are not a member.
+// effectiveRoleQuery resolves a user's single effective role on a space from
+// the space_access view (direct user grants ∪ org grants), picking the highest
+// by precedence (owner > editor > viewer). Returns sql.ErrNoRows when the user
+// has no access at all — preserving the pre-orgs spaceRole contract.
+const effectiveRoleQuery = `
+	SELECT role FROM space_access
+	 WHERE space_id = ? AND user_id = ?
+	 ORDER BY CASE role WHEN 'owner' THEN 3 WHEN 'editor' THEN 2 ELSE 1 END DESC
+	 LIMIT 1`
+
+// spaceRole returns the user's effective role for spaceID, or sql.ErrNoRows
+// when they have no access (directly or via any org).
 func spaceRole(ctx context.Context, db *sql.DB, userID, spaceID int64) (string, error) {
 	var role string
-	err := db.QueryRowContext(ctx,
-		`SELECT role FROM space_members WHERE space_id = ? AND user_id = ?`,
-		spaceID, userID).Scan(&role)
+	err := db.QueryRowContext(ctx, effectiveRoleQuery, spaceID, userID).Scan(&role)
 	return role, err
 }
 
@@ -63,9 +71,7 @@ func spaceRole(ctx context.Context, db *sql.DB, userID, spaceID int64) (string, 
 // the membership check inside an existing transaction.
 func spaceRoleTx(ctx context.Context, tx *sql.Tx, userID, spaceID int64) (string, error) {
 	var role string
-	err := tx.QueryRowContext(ctx,
-		`SELECT role FROM space_members WHERE space_id = ? AND user_id = ?`,
-		spaceID, userID).Scan(&role)
+	err := tx.QueryRowContext(ctx, effectiveRoleQuery, spaceID, userID).Scan(&role)
 	return role, err
 }
 

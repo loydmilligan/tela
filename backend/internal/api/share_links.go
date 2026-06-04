@@ -406,7 +406,7 @@ func (s *Server) ListAllShares(w http.ResponseWriter, r *http.Request) {
 		  FROM share_links sl
 		  JOIN pages p ON p.id = sl.page_id
 		  JOIN spaces sp ON sp.id = p.space_id
-		  JOIN space_members sm ON sm.space_id = p.space_id AND sm.user_id = ?
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ?) sm ON sm.space_id = p.space_id
 		 WHERE sl.revoked_at IS NULL`
 	args := []any{u.ID}
 	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
