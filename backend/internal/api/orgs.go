@@ -127,6 +127,7 @@ func (s *Server) CreateOrg(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch created org failed")
 		return
 	}
+	s.audit(r.Context(), r, "org.create", "org", id, org.Name)
 	writeJSON(w, http.StatusCreated, map[string]any{"org": org})
 }
 
@@ -253,6 +254,7 @@ func (s *Server) DeleteOrg(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
 	}
+	s.audit(ctx, r, "org.delete", "org", id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 

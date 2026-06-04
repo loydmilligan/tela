@@ -188,10 +188,17 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/spaces/{id}/grants/{grant_id}", srv.PatchSpaceGrant)
 	mux.HandleFunc("DELETE /api/spaces/{id}/grants/{grant_id}", srv.DeleteSpaceGrant)
 
+	// Effective access: resolved people + provenance + effective role for a
+	// space (any member). The one legible answer to "who can see this, and why".
+	mux.HandleFunc("GET /api/spaces/{id}/access", srv.GetSpaceAccess)
+
 	// #153 Auto-join email-domain mappings (instance-admin only).
 	mux.HandleFunc("GET /api/admin/org-domains", srv.ListOrgDomains)
 	mux.HandleFunc("POST /api/admin/org-domains", srv.CreateOrgDomain)
 	mux.HandleFunc("DELETE /api/admin/org-domains/{domain}", srv.DeleteOrgDomain)
+
+	// Access audit trail (instance-admin only).
+	mux.HandleFunc("GET /api/admin/access-audit", srv.ListAccessAudit)
 
 	// M7.1 LiveCollab: ws upgrade for Yjs relay. Authed via auth.Middleware
 	// on the upgrade request — must NOT be added to auth.IsPublicPath.

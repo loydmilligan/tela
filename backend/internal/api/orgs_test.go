@@ -227,11 +227,107 @@ func TestIntegration_OrgGrantGivesSpaceAccess(t *testing.T) {
 	}
 }
 
+// Invariant 1: org/group grants can never be 'owner' — enforced at the DB layer
+// (trigger), independent of the API check.
+func TestSpaceGrant_OwnerPrincipalRejectedByDB(t *testing.T) {
+	d := newAPITestDB(t)
+	owner := seedUser(t, d, "owner", "ownerpw12", false)
+	space := seedSpace(t, d, "Docs", "docs", owner)
+	org := seedOrg(t, d, "Acme", "acme")
+
+	_, err := d.Exec(
+		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES (?, 'org', ?, 'owner')`,
+		space, org)
+	if err == nil {
+		t.Fatal("inserting an org grant with role=owner should be rejected by the trigger")
+	}
+	// And the same via UPDATE from a legit editor grant.
+	seedSpaceGrant(t, d, space, org, roleEditor)
+	if _, err := d.Exec(
+		`UPDATE space_grants SET role='owner' WHERE space_id=? AND principal_id=?`, space, org); err == nil {
+		t.Fatal("updating an org grant to role=owner should be rejected by the trigger")
+	}
+}
+
+// Identity-derived membership can't be removed while the domain mapping stands.
+func TestDeleteOrgMember_DomainManagedBlocked(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	adminID := seedUser(t, d, "admin", "adminpw12", false)
+	memberID := seedUser(t, d, "carol", "carolpw12", false)
+	if _, err := d.Exec(`UPDATE users SET email='carol@acme.com' WHERE id=?`, memberID); err != nil {
+		t.Fatalf("set email: %v", err)
+	}
+	org := seedOrg(t, d, "Acme", "acme")
+	seedOrgMember(t, d, org, adminID, orgRoleAdmin)
+	seedOrgMember(t, d, org, memberID, orgRoleMember)
+	if _, err := d.Exec(`INSERT INTO org_email_domains (domain, org_id) VALUES ('acme.com', ?)`, org); err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+
+	if !isDomainManagedMember(context.Background(), d, org, memberID) {
+		t.Fatalf("precondition: member should be domain-managed (org=%d member=%d)", org, memberID)
+	}
+
+	req := userRequest(http.MethodDelete, "/api/orgs/1/members/2", "", authUser(adminID, "admin", false))
+	rec := routedRecorder("DELETE /api/orgs/{id}/members/{user_id}", srv.DeleteOrgMember, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("remove domain-managed member = %d; want 409 (%s)", rec.Code, rec.Body)
+	}
+}
+
+// The effective-access endpoint resolves direct + org sources and the max role.
+func TestGetSpaceAccess_ResolvesSourcesAndEffectiveRole(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	owner := seedUser(t, d, "owner", "ownerpw12", false)
+	dual := seedUser(t, d, "dual", "dualpw123", false) // direct viewer + org editor
+	space := seedSpace(t, d, "Docs", "docs", owner)
+	seedMember(t, d, space, dual, roleViewer)
+	org := seedOrg(t, d, "Acme", "acme")
+	seedOrgMember(t, d, org, dual, orgRoleMember)
+	seedSpaceGrant(t, d, space, org, roleEditor)
+
+	req := userRequest(http.MethodGet, "/api/spaces/1/access", "", authUser(owner, "owner", false))
+	rec := routedRecorder("GET /api/spaces/{id}/access", srv.GetSpaceAccess, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get access = %d; want 200 (%s)", rec.Code, rec.Body)
+	}
+	var out struct {
+		Access []struct {
+			UserID        int64  `json:"user_id"`
+			EffectiveRole string `json:"effective_role"`
+			Sources       []struct {
+				Kind string `json:"kind"`
+			} `json:"sources"`
+		} `json:"access"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if len(out.Access) != 2 {
+		t.Fatalf("access entries = %d; want 2", len(out.Access))
+	}
+	var found bool
+	for _, a := range out.Access {
+		if a.UserID == dual {
+			found = true
+			if a.EffectiveRole != roleEditor {
+				t.Fatalf("dual effective role = %q; want editor (max of viewer/editor)", a.EffectiveRole)
+			}
+			if len(a.Sources) != 2 {
+				t.Fatalf("dual sources = %d; want 2 (direct + org)", len(a.Sources))
+			}
+		}
+	}
+	if !found {
+		t.Fatal("dual user missing from access list")
+	}
+}
+
 func TestApplyAutoJoin_EnrollsMatchingDomain(t *testing.T) {
 	d := newAPITestDB(t)
 	org := seedOrg(t, d, "Acme", "acme")
 	if _, err := d.Exec(
-		`INSERT INTO org_email_domains (domain, org_id, org_role) VALUES ('acme.com', ?, 'member')`, org); err != nil {
+		`INSERT INTO org_email_domains (domain, org_id) VALUES ('acme.com', ?)`, org); err != nil {
 		t.Fatalf("seed domain: %v", err)
 	}
 	uid := seedUser(t, d, "carol", "carolpw12", false)

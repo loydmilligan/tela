@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -121,6 +122,7 @@ func (s *Server) AddOrgMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch added member failed")
 		return
 	}
+	s.audit(ctx, r, "org_member.add", "org", orgID, req.OrgRole+": "+dto.Username)
 	writeJSON(w, http.StatusCreated, map[string]any{"member": dto})
 }
 
@@ -193,6 +195,7 @@ func (s *Server) PatchOrgMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
 	}
+	s.audit(ctx, r, "org_member.role", "org", orgID, dto.Username+" → "+req.OrgRole)
 	writeJSON(w, http.StatusOK, map[string]any{"member": dto})
 }
 
@@ -253,6 +256,15 @@ func (s *Server) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Identity-derived membership is non-discretionary: a member whose verified
+	// email domain maps to this org can't be removed (login would re-add them).
+	// Remove the domain mapping instead. See docs/access-model.md.
+	if isDomainManagedMember(ctx, tx, orgID, targetID) {
+		writeError(w, http.StatusConflict, "domain_managed",
+			"this member is auto-joined via an email-domain mapping — remove the mapping to remove them")
+		return
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, targetID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete member failed")
@@ -262,6 +274,7 @@ func (s *Server) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
 	}
+	s.audit(ctx, r, "org_member.remove", "org", orgID, strconv.FormatInt(targetID, 10))
 	w.WriteHeader(http.StatusNoContent)
 }
 

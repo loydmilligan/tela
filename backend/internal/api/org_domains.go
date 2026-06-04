@@ -4,24 +4,25 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 )
 
-// orgDomainDTO is the wire shape for an auto-join domain mapping.
+// orgDomainDTO is the wire shape for an auto-join domain mapping. Auto-join is
+// member-only (identity-derived), so there is no per-domain role — see
+// docs/access-model.md.
 type orgDomainDTO struct {
 	Domain    string `json:"domain"`
 	OrgID     int64  `json:"org_id"`
 	OrgName   string `json:"org_name"`
-	OrgRole   string `json:"org_role"`
 	CreatedAt string `json:"created_at"`
 }
 
 type orgDomainAddRequest struct {
-	Domain  string `json:"domain"`
-	OrgID   int64  `json:"org_id"`
-	OrgRole string `json:"org_role"`
+	Domain string `json:"domain"`
+	OrgID  int64  `json:"org_id"`
 }
 
 // ListOrgDomains returns every auto-join domain mapping. Instance-admin only.
@@ -30,7 +31,7 @@ func (s *Server) ListOrgDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT d.domain, d.org_id, o.name, d.org_role, d.created_at
+		SELECT d.domain, d.org_id, o.name, d.created_at
 		  FROM org_email_domains d
 		  JOIN orgs o ON o.id = d.org_id
 		 ORDER BY d.domain ASC`)
@@ -43,7 +44,7 @@ func (s *Server) ListOrgDomains(w http.ResponseWriter, r *http.Request) {
 	domains := []orgDomainDTO{}
 	for rows.Next() {
 		var d orgDomainDTO
-		if err := rows.Scan(&d.Domain, &d.OrgID, &d.OrgName, &d.OrgRole, &d.CreatedAt); err != nil {
+		if err := rows.Scan(&d.Domain, &d.OrgID, &d.OrgName, &d.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan domain row failed")
 			return
 		}
@@ -76,14 +77,6 @@ func (s *Server) CreateOrgDomain(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "org_id is required")
 		return
 	}
-	role := req.OrgRole
-	if role == "" {
-		role = orgRoleMember
-	}
-	if !isValidOrgRole(role) {
-		writeError(w, http.StatusBadRequest, "bad_request", "org_role must be one of admin, member")
-		return
-	}
 
 	ctx := r.Context()
 	if exists, err := orgExists(ctx, s.DB, req.OrgID); err != nil {
@@ -95,8 +88,8 @@ func (s *Server) CreateOrgDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.DB.ExecContext(ctx,
-		`INSERT INTO org_email_domains (domain, org_id, org_role) VALUES (?, ?, ?)`,
-		domain, req.OrgID, role); err != nil {
+		`INSERT INTO org_email_domains (domain, org_id) VALUES (?, ?)`,
+		domain, req.OrgID); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "that domain is already mapped to an org")
 			return
@@ -106,14 +99,15 @@ func (s *Server) CreateOrgDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	var dto orgDomainDTO
 	err := s.DB.QueryRowContext(ctx, `
-		SELECT d.domain, d.org_id, o.name, d.org_role, d.created_at
+		SELECT d.domain, d.org_id, o.name, d.created_at
 		  FROM org_email_domains d JOIN orgs o ON o.id = d.org_id
 		 WHERE d.domain = ?`, domain).
-		Scan(&dto.Domain, &dto.OrgID, &dto.OrgName, &dto.OrgRole, &dto.CreatedAt)
+		Scan(&dto.Domain, &dto.OrgID, &dto.OrgName, &dto.CreatedAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch created domain failed")
 		return
 	}
+	s.audit(ctx, r, "domain.map", "org", req.OrgID, domain+" → "+dto.OrgName)
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": dto})
 }
 
@@ -157,19 +151,69 @@ func emailDomain(email string) string {
 	return strings.ToLower(email[at+1:])
 }
 
-// applyAutoJoin enrolls userID into any org whose configured email domain
-// matches the (already verified) address. Best-effort: a hiccup here must not
-// block sign-in, so errors are logged and swallowed. INSERT OR IGNORE keeps it
-// idempotent and respects existing (possibly admin-elevated) memberships.
+// applyAutoJoin enrolls userID into the org mapped to their (already verified)
+// email domain. Identity-derived semantics (docs/access-model.md): always
+// 'member', never overwrites a manual role (INSERT OR IGNORE), idempotent.
+// Best-effort — a hiccup must not block sign-in, so errors are logged and
+// swallowed. A genuinely new enrollment is audited as a system action.
 func applyAutoJoin(ctx context.Context, db *sql.DB, userID int64, email string) {
 	domain := emailDomain(email)
 	if domain == "" {
 		return
 	}
-	if _, err := db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO org_members (org_id, user_id, org_role)
-		SELECT org_id, ?, org_role FROM org_email_domains WHERE domain = ?`,
-		userID, domain); err != nil {
-		log.Printf("auto-join for user %d (%s): %v", userID, domain, err)
+	var orgID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT org_id FROM org_email_domains WHERE domain = ?`, domain).Scan(&orgID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("auto-join lookup for %s: %v", domain, err)
+		}
+		return
 	}
+	res, err := db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO org_members (org_id, user_id, org_role)
+		VALUES (?, ?, 'member')`, orgID, userID)
+	if err != nil {
+		log.Printf("auto-join for user %d (%s): %v", userID, domain, err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		writeAudit(ctx, db, nil, "org_member.auto_join", "org", orgID, email+" ("+domain+")")
+	}
+}
+
+// rowQuerier is the read subset of *sql.DB / *sql.Tx, so the domain-managed
+// check can run inside an existing transaction (one consistent connection —
+// matters under the per-connection in-memory test DB, and avoids a TOCTOU).
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// userEmailDomain returns the lowercased domain of userID's stored email, or ""
+// if none. Used to decide whether an org membership is domain-managed.
+func userEmailDomain(ctx context.Context, q rowQuerier, userID int64) string {
+	var email sql.NullString
+	if err := q.QueryRowContext(ctx, `SELECT email FROM users WHERE id = ?`, userID).Scan(&email); err != nil {
+		return ""
+	}
+	if !email.Valid {
+		return ""
+	}
+	return emailDomain(email.String)
+}
+
+// isDomainManagedMember reports whether userID's membership in orgID is derived
+// from an auto-join domain mapping (their verified email domain maps to this
+// org). Such memberships are non-discretionary — they can't be removed without
+// removing the mapping (see docs/access-model.md).
+func isDomainManagedMember(ctx context.Context, q rowQuerier, orgID, userID int64) bool {
+	domain := userEmailDomain(ctx, q, userID)
+	if domain == "" {
+		return false
+	}
+	var mappedOrg int64
+	if err := q.QueryRowContext(ctx,
+		`SELECT org_id FROM org_email_domains WHERE domain = ?`, domain).Scan(&mappedOrg); err != nil {
+		return false
+	}
+	return mappedOrg == orgID
 }

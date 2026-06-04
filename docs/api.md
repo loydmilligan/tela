@@ -30,9 +30,13 @@ An org is a *grantable principal*: share a space with an org and every member ga
 - `GET /api/orgs` — caller's orgs (instance-admins see all; each row carries `my_role`, `member_count`).
 - `POST /api/orgs` — create. **Instance-admin only.**
 - `GET|PATCH|DELETE /api/orgs/{id}` — get/rename (org-admin or instance-admin) / delete (instance-admin only; tears down the org's space_grants).
-- `GET|POST|PATCH|DELETE /api/orgs/{id}/members[/{user_id}]` — membership (org-admin or instance-admin; self-leave allowed; `last_admin` guard).
-- `GET|POST|PATCH|DELETE /api/spaces/{id}/grants[/{grant_id}]` — share a space with an org. **Space owner only**; role limited to `editor`/`viewer` (`owner` reserved for direct users so the last-owner guard stays sound).
-- `GET|POST|DELETE /api/admin/org-domains[/{domain}]` — auto-join email-domain → org mappings. **Instance-admin only.** A user whose verified email domain matches is enrolled into the org on verify/login (idempotent, best-effort).
+- `GET|POST|PATCH|DELETE /api/orgs/{id}/members[/{user_id}]` — membership (org-admin or instance-admin; self-leave allowed; `last_admin` guard). Removing a **domain-managed** member (verified email domain maps to the org) is refused with `409 domain_managed` — membership is identity-derived (see access-model.md).
+- `GET|POST|PATCH|DELETE /api/spaces/{id}/grants[/{grant_id}]` — share a space with an org. **Space owner only**; role limited to `editor`/`viewer` (`owner` reserved for direct users so the last-owner guard stays sound; also enforced by a DB trigger).
+- `GET /api/spaces/{id}/access` — resolved access list (any member): each user with their **effective role** (max over sources) + **sources** (`direct` / `via <org>`). The authoritative "who can see this, and why".
+- `GET|POST|DELETE /api/admin/org-domains[/{domain}]` — auto-join email-domain → org mappings. **Instance-admin only.** Member-only (no per-domain role). A user whose verified email domain matches is enrolled into the org on verify/login (idempotent, best-effort, non-discretionary).
+- `GET /api/admin/access-audit?limit` — access-control change log (org/membership/grant/auto-join/domain). **Instance-admin only.**
+
+See [`access-model.md`](access-model.md) for the canonical principal/grant/role model, precedence, and the group (sub-team) design.
 
 ## Pages
 - `GET /api/spaces/{id}/pages` — pages in a space (optional `parent_id`).

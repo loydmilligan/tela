@@ -1,0 +1,116 @@
+# tela — Access model (canonical)
+
+> Status: **authoritative.** This is the single source of truth for *who can do
+> what* in tela. Pairs with [`visibility-model.md`](visibility-model.md) (public
+> exposure / share links). When the two disagree, fix the code, not this doc.
+>
+> Scope as of #153 (orgs) + the lock-down pass: users, orgs, grants, auto-join,
+> auditing. **Groups (sub-teams) are designed here but not yet built** — the §
+> marked "planned" is the contract they must implement.
+
+## Vocabulary (locked — use these words everywhere: code, UI, docs)
+
+- **Principal** — anything that can be *granted* access to a space: a **user**,
+  an **org**, or (planned) a **group**. Concrete tables, not one polymorphic
+  entity; the only thing they share is appearing as a grant target.
+- **Grant** — one `(principal → space, role)` edge. Direct **user** grants live
+  in `space_members`; **org**/**group** grants live in `space_grants`
+  (`principal_kind`). One unifying read surface: the `space_access` view.
+- **Space role** — `owner` | `editor` | `viewer`. Capability over a space's
+  *content* (pages, comments, sharing).
+- **Org role** — `admin` | `member`. Capability over *the org itself* (its
+  members, its name, its grants). **A different axis from space role** — being an
+  org admin grants nothing inside a space by itself.
+- **Effective role** — the *single* role a user has on a space =
+  `max(all grants reaching them)`, precedence **owner > editor > viewer**. This
+  is what every gate checks (`spaceRole` → `space_access`).
+- **Access source / provenance** — *how* a user reaches a space: `direct`, or
+  `via <Org>` (planned: `via <Group>`). A user may have several sources; the
+  effective role is the max across them.
+- **Membership** — reserved for principal-in-principal containment: **org
+  membership** (`org_members`), and planned **group membership**. Do **not** say
+  "space membership" for org/group-derived access — say "access" or "granted via
+  <org>". Direct user grants on a space are "**direct members**".
+- **Instance-admin** — the operator (`users.is_instance_admin`). Above all
+  tenants: virtual admin of *every* org, sees every org, provisions orgs.
+
+## Invariants (must always hold; enforced, not hoped)
+
+1. **Owner is only ever a direct user.** Org/group grants are `editor`/`viewer`
+   only. Enforced in the API *and* at the DB layer (triggers on `space_grants`).
+   Rationale: `owner` carries management + deletion power; handing it to a whole
+   group would make "who can delete this space" unanswerable, and would break
+   invariant 2.
+2. **Every space has ≥ 1 direct owner.** The last-owner guard (counts
+   `space_members` owners) refuses to remove/demote the final one. Combined with
+   (1), there is always exactly one place that answers "who governs this space."
+3. **Effective role is a pure max.** No grant can *lower* access; adding any
+   grant can only raise (or not change) a user's effective role. A direct viewer
+   who is also in an editor-granted org is an **editor**.
+4. **One resolution path.** Every access decision goes through `space_access`
+   (via `spaceRole`/`spaceRoleTx` or a `space_id IN (SELECT … space_access …)`
+   gate). No handler queries `space_members` to *decide* access — only to
+   *manage* direct members.
+
+## Auto-join domains — identity-derived (locked semantics)
+
+An instance-admin maps an email **domain → org**. The mapping means "anyone with
+a verified address at this domain *is* part of this org." Therefore:
+
+- **Member-only.** Auto-join always grants `org_role = member`. Admin is never
+  conferred by a domain — it is always a deliberate, manual elevation.
+- **Non-discretionary (can't leave / can't be removed).** Membership is derived
+  from the identity, not chosen. The "leave" affordance is hidden for
+  domain-managed members, and the API rejects removing/demoting-below-member a
+  member whose verified email still matches a mapping for that org
+  (`domain_managed`). To remove them: remove the domain mapping, or their email
+  changes. Manual **elevation** above member (→ admin) is allowed and sticks
+  (auto-join uses `INSERT OR IGNORE`, so it never overwrites a manual role).
+- **Applied on verify + every login**, best-effort and idempotent, so a mapping
+  added *after* a user already verified still catches them next sign-in.
+- **Operator-curated only.** Never auto-join public providers (gmail.com, …);
+  the UI warns and the instance-admin owns that judgement.
+
+## Who can do what (authority matrix)
+
+| Action | Who |
+|---|---|
+| Create / delete an org | Instance-admin |
+| Rename an org | Org admin · Instance-admin |
+| Add / remove / re-role org members | Org admin · Instance-admin (subject to `last_admin` + `domain_managed`) |
+| Map / unmap auto-join domains | Instance-admin |
+| Create a space | Any user (becomes its owner) |
+| Manage direct space members | Space **owner** |
+| Share a space with an org/group (grant) | Space **owner** (role ≤ editor) |
+| Edit pages / comment | Effective `editor`+ on the space |
+| View pages | Effective `viewer`+ on the space |
+| Delete a space | Effective `owner` (⇒ a direct user, by invariant 1) |
+
+## Auditing
+
+Membership/grant/auto-join/org-lifecycle changes are recorded in `access_audit`
+(actor, action, target, detail, time). Read surface is instance-admin only. This
+is the answer to "who added whom / who shared what with whom" as tenants grow.
+
+## Groups (sub-teams) — **planned** contract
+
+Groups are the next `principal_kind`. They must slot into everything above with
+**no new resolution path** — just a third leg in `space_access`.
+
+- **A group belongs to exactly one org** (`groups.org_id`); it cannot span orgs.
+- **Group membership ⊆ org membership.** You can only add an org member to that
+  org's groups; removing someone from the org removes them from its groups
+  (FK cascade). This keeps the containment legible: org ⊇ its groups.
+- **Managed by org admins** in v1 (no separate "group lead" role yet — that's a
+  later, additive `group_members.group_role` if needed).
+- **Grantable principal**, `editor`/`viewer` only (invariant 1 applies via the
+  same `space_grants` triggers).
+- **Resolution:** `space_access` gains
+  `… UNION ALL SELECT sg.space_id, gm.user_id, sg.role FROM space_grants sg JOIN
+  group_members gm ON gm.group_id = sg.principal_id WHERE sg.principal_kind =
+  'group'`. Effective role stays the same pure max — now over direct ∪ org ∪
+  group.
+- **Provenance** gains a `via <Group>` source; the effective-access panel already
+  renders sources generically, so groups need no new UI shape there.
+- **Vocabulary:** "group" is the technical noun; UI label "Group". Never reuse
+  "team" loosely — a group *is* the sub-team.

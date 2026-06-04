@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 // spaceGrantDTO is the wire shape for a space's org grants. Keyed by grant id
@@ -131,6 +132,7 @@ func (s *Server) AddSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch added grant failed")
 		return
 	}
+	s.audit(ctx, r, "grant.add", "space", spaceID, dto.OrgName+" → "+req.Role)
 	writeJSON(w, http.StatusCreated, map[string]any{"grant": dto})
 }
 
@@ -179,6 +181,7 @@ func (s *Server) PatchSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch updated grant failed")
 		return
 	}
+	s.audit(ctx, r, "grant.role", "space", spaceID, dto.OrgName+" → "+req.Role)
 	writeJSON(w, http.StatusOK, map[string]any{"grant": dto})
 }
 
@@ -210,6 +213,7 @@ func (s *Server) DeleteSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "grant not found")
 		return
 	}
+	s.audit(r.Context(), r, "grant.remove", "space", spaceID, strconv.FormatInt(grantID, 10))
 	w.WriteHeader(http.StatusNoContent)
 }
 
