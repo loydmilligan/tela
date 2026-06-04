@@ -198,8 +198,8 @@ export function ImportSection() {
   function handleOpenFirstPage() {
     if (spaceId == null || !result || result.pages.length === 0) return
     void navigate({
-      to: '/spaces/$spaceId/pages/$pageId',
-      params: { spaceId, pageId: result.pages[0].id },
+      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+      params: { spaceId, pageId: result.pages[0].id, slug: undefined },
     })
   }
 

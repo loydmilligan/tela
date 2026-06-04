@@ -24,8 +24,8 @@ export interface PageHitItemOptions {
 
 export function navigateToPage(spaceId: number, pageId: number) {
   void router.navigate({
-    to: '/spaces/$spaceId/pages/$pageId',
-    params: { spaceId, pageId },
+    to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+    params: { spaceId, pageId, slug: undefined },
   })
 }
 

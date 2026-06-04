@@ -178,8 +178,8 @@ export function MiraImportSection() {
           : { spaceId, parentId, payload: parsedPayload }
       const res = await importMira.mutateAsync(input)
       void navigate({
-        to: '/spaces/$spaceId/pages/$pageId',
-        params: { spaceId: res.page.space_id, pageId: res.page.id },
+        to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+        params: { spaceId: res.page.space_id, pageId: res.page.id, slug: undefined },
       })
     } catch (err) {
       if (err instanceof ApiError) {

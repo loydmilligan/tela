@@ -37,10 +37,11 @@ export function BacklinksSection({ pageId }: BacklinksSectionProps) {
         {rows.map((row) => (
           <li key={row.item.page_id} className="m-0 p-0 list-none">
             <Link
-              to="/spaces/$spaceId/pages/$pageId"
+              to="/spaces/$spaceId/pages/$pageId/{-$slug}"
               params={{
                 spaceId: row.item.space_id,
                 pageId: row.item.page_id,
+                slug: undefined,
               }}
               className={cn(
                 'group block w-full no-underline',

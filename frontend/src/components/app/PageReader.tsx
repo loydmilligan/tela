@@ -50,8 +50,8 @@ interface ReadModeViewProps {
 function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewProps) {
   const navigate = useNavigate()
   const editorRoute = {
-    to: '/spaces/$spaceId/pages/$pageId' as const,
-    params: { spaceId, pageId },
+    to: '/spaces/$spaceId/pages/$pageId/{-$slug}' as const,
+    params: { spaceId, pageId, slug: undefined },
   }
 
   // Alive page ids power broken-wikilink rendering; the full list also resolves

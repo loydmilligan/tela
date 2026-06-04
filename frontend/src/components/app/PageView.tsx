@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   BookOpen,
   ChevronRight,
@@ -129,8 +129,28 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
   // M9.3 — soft-draft mode is opted into via `?draft=$revId`. The param is
   // typed by the route's validateSearch in router.tsx.
   const { draft: draftRevId } = useSearch({
-    from: '/_app/spaces/$spaceId/pages/$pageId',
+    from: '/_app/spaces/$spaceId/pages/$pageId/{-$slug}',
   })
+  const { slug: currentSlug } = useParams({
+    from: '/_app/spaces/$spaceId/pages/$pageId/{-$slug}',
+  })
+
+  // Confluence-style canonical URL: keep the address bar at /pages/{id}/{slug}
+  // (or bare when the title yields no slug), refreshed on rename. This is a
+  // param change on the SAME route, so it never remounts the editor.
+  const persistedTitle = page.data?.title ?? ''
+  const inThisSpace = page.data?.space_id === spaceId
+  useEffect(() => {
+    if (!page.data || !inThisSpace) return
+    const desired = pageSlug(persistedTitle)
+    if (desired === (currentSlug ?? '')) return
+    void navigate({
+      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+      params: { spaceId, pageId, slug: desired || undefined },
+      replace: true,
+      search: (prev) => prev,
+    })
+  }, [page.data, inThisSpace, persistedTitle, currentSlug, spaceId, pageId, navigate])
 
   // 404 / wrong-space handling
   if (page.isError) {
@@ -336,8 +356,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
 
   const stripDraftParam = useCallback(() => {
     void navigate({
-      to: '/spaces/$spaceId/pages/$pageId',
-      params: { spaceId, pageId: page.id },
+      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+      params: { spaceId, pageId: page.id, slug: undefined },
       search: {},
       replace: true,
     })
@@ -978,8 +998,8 @@ function ChildPagesSection({
         title: 'Untitled',
       })
       void navigate({
-        to: '/spaces/$spaceId/pages/$pageId',
-        params: { spaceId, pageId: created.id },
+        to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+        params: { spaceId, pageId: created.id, slug: undefined },
       })
     } catch {
       // Tree refetch surfaces failure; v0 has no toast layer.
@@ -1024,8 +1044,8 @@ function ChildPagesSection({
                 type="button"
                 onClick={() =>
                   void navigate({
-                    to: '/spaces/$spaceId/pages/$pageId',
-                    params: { spaceId, pageId: child.id },
+                    to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+                    params: { spaceId, pageId: child.id, slug: undefined },
                   })
                 }
                 className={cn(
@@ -1101,8 +1121,8 @@ function Breadcrumb({ spaceId, pageId }: { spaceId: number; pageId: number }) {
               </span>
             ) : (
               <Link
-                to="/spaces/$spaceId/pages/$pageId"
-                params={{ spaceId, pageId: node.id }}
+                to="/spaces/$spaceId/pages/$pageId/{-$slug}"
+                params={{ spaceId, pageId: node.id, slug: undefined }}
                 className="truncate hover:text-[var(--text-primary)] hover:underline underline-offset-2"
               >
                 {node.title || 'Untitled'}

@@ -162,8 +162,8 @@ const indexRoute = createRoute({
         })
         if (page.space_id === last.spaceId) {
           throw redirect({
-            to: '/spaces/$spaceId/pages/$pageId',
-            params: { spaceId: page.space_id, pageId: page.id },
+            to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+            params: { spaceId: page.space_id, pageId: page.id, slug: undefined },
           })
         }
         // Page lives in a different space now — drop the stale pointer.
@@ -291,8 +291,8 @@ const spaceIndexRoute = createRoute({
           title: 'Untitled',
         })
         void navigate({
-          to: '/spaces/$spaceId/pages/$pageId',
-          params: { spaceId, pageId: created.id },
+          to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+          params: { spaceId, pageId: created.id, slug: undefined },
         })
       } catch {
         // Failure surfaces via tree refetch / sidebar error state.
@@ -349,9 +349,15 @@ function validatePageSearch(search: Record<string, unknown>): { draft?: number }
 
 const pageRoute = createRoute({
   getParentRoute: () => spaceRoute,
-  path: 'pages/$pageId',
-  parseParams: (raw) => ({ pageId: Number(raw.pageId) }),
-  stringifyParams: (params) => ({ pageId: String(params.pageId) }),
+  // Optional cosmetic slug: one route matches both /pages/{id} and
+  // /pages/{id}/{slug}, so canonicalising the slug is a param change, never a
+  // route swap (no editor remount). The id stays canonical.
+  path: 'pages/$pageId/{-$slug}',
+  parseParams: (raw) => ({ pageId: Number(raw.pageId), slug: raw.slug }),
+  stringifyParams: (params) => ({
+    pageId: String(params.pageId),
+    slug: params.slug,
+  }),
   validateSearch: validatePageSearch,
   beforeLoad: ({ params }) => {
     // Remember the last-viewed page so a future cold mount can restore it. We
@@ -362,7 +368,7 @@ const pageRoute = createRoute({
   },
   component: function PageRouteComponent() {
     const { spaceId, pageId } = useParams({
-      from: '/_app/spaces/$spaceId/pages/$pageId',
+      from: '/_app/spaces/$spaceId/pages/$pageId/{-$slug}',
     })
     return <PageView spaceId={spaceId} pageId={pageId} />
   },

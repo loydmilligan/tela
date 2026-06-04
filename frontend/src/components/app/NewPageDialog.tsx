@@ -218,8 +218,8 @@ export function NewPageDialog({
       // AppCommandHost, which is a sibling of RouterProvider — useNavigate()
       // wouldn't see the route definitions from this context.
       void router.navigate({
-        to: '/spaces/$spaceId/pages/$pageId',
-        params: { spaceId: created.space_id, pageId: created.id },
+        to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+        params: { spaceId: created.space_id, pageId: created.id, slug: undefined },
       })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create page.')

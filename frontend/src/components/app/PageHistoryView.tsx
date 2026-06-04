@@ -188,8 +188,8 @@ function PageHistoryAuthed({
         />
         <Button asChild variant="ghost" size="sm">
           <Link
-            to="/spaces/$spaceId/pages/$pageId"
-            params={{ spaceId, pageId }}
+            to="/spaces/$spaceId/pages/$pageId/{-$slug}"
+            params={{ spaceId, pageId, slug: undefined }}
           >
             Back to page
           </Link>
@@ -368,8 +368,8 @@ function RevisionPaneSelected({
   const handleOpenAsDraft = useCallback(() => {
     setConfirmOpen(false)
     void navigate({
-      to: '/spaces/$spaceId/pages/$pageId',
-      params: { spaceId, pageId },
+      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+      params: { spaceId, pageId, slug: undefined },
       search: { draft: revision.id },
     })
   }, [navigate, spaceId, pageId, revision.id])
@@ -492,8 +492,8 @@ function HistoryBreadcrumb({
         className="mx-[var(--space-1)] shrink-0"
       />
       <Link
-        to="/spaces/$spaceId/pages/$pageId"
-        params={{ spaceId, pageId }}
+        to="/spaces/$spaceId/pages/$pageId/{-$slug}"
+        params={{ spaceId, pageId, slug: undefined }}
         className="truncate hover:text-[var(--text-primary)] hover:underline underline-offset-2"
       >
         {pageTitle || 'Untitled'}
@@ -531,8 +531,8 @@ function HistoryViewerEmpty({
         <CardBody className="items-center">
           <Button asChild variant="secondary">
             <Link
-              to="/spaces/$spaceId/pages/$pageId"
-              params={{ spaceId, pageId }}
+              to="/spaces/$spaceId/pages/$pageId/{-$slug}"
+              params={{ spaceId, pageId, slug: undefined }}
             >
               Back to page
             </Link>

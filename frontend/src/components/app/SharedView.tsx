@@ -118,8 +118,8 @@ function ShareAuditRow({ item, now }: { item: ShareAuditItem; now: number }) {
           state={item.has_password ? 'password' : 'public'}
         />
         <Link
-          to="/spaces/$spaceId/pages/$pageId"
-          params={{ spaceId: item.space_id, pageId: item.page_id }}
+          to="/spaces/$spaceId/pages/$pageId/{-$slug}"
+          params={{ spaceId: item.space_id, pageId: item.page_id, slug: undefined }}
           className="flex-1 min-w-0 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)] no-underline hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-[var(--radius-xs)]"
         >
           {item.page_title || 'Untitled'}

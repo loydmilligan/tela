@@ -90,8 +90,8 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
         title: UNTITLED_TITLE,
       })
       void navigate({
-        to: '/spaces/$spaceId/pages/$pageId',
-        params: { spaceId, pageId: created.id },
+        to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+        params: { spaceId, pageId: created.id, slug: undefined },
       })
     } catch {
       // Surface via tree refetch on next interaction; in v0 swallowing the toast.
@@ -249,8 +249,8 @@ function PageNode({
         title: UNTITLED_TITLE,
       })
       void navigate({
-        to: '/spaces/$spaceId/pages/$pageId',
-        params: { spaceId, pageId: created.id },
+        to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+        params: { spaceId, pageId: created.id, slug: undefined },
       })
     } catch {
       // Tree refetch surfaces failure on next interaction.
@@ -309,8 +309,8 @@ function PageNode({
           aria-current={active ? 'page' : undefined}
           onClick={() =>
             void navigate({
-              to: '/spaces/$spaceId/pages/$pageId',
-              params: { spaceId, pageId: node.id },
+              to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+              params: { spaceId, pageId: node.id, slug: undefined },
             })
           }
           className={cn(
