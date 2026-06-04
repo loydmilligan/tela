@@ -938,6 +938,15 @@
     text-underline-offset: 2px;
     text-decoration-thickness: 1px;
   }
+  /* Person mention chip (tela://user/{id} links). */
+  .tela-milkdown .ProseMirror .tela-mention {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: var(--radius-xs);
+    padding: 0 0.2em;
+    text-decoration: none;
+    font-weight: 500;
+  }
   .tela-milkdown .ProseMirror .tela-wikilink--broken {
     color: var(--danger);
     text-decoration: line-through;
