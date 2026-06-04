@@ -135,7 +135,7 @@ export function buildServer(client: TelaClient, version: string): McpServer {
     "search",
     {
       description:
-        "Full-text search across page titles and bodies (FTS5 BM25). Returns snippet-highlighted hits.",
+        "Full-text search across page titles and bodies. Returns snippet-highlighted hits.",
       inputSchema: searchInputSchema,
     },
     async (args) => {

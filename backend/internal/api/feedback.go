@@ -13,7 +13,7 @@ import (
 // M17.A.1 Feedback. Meta-feedback channel for Tela + tela-mcp themselves —
 // bugs, friction, suggestions to the developers. DISTINCT from page-content
 // comments (use /api/pages/{id}/comments for those). v0 is write-only: no
-// GET endpoint, no admin UI; rows accumulate and PO inspects via sqlite shell.
+// GET endpoint, no admin UI; rows accumulate and PO inspects via psql.
 //
 // Auth: any authenticated caller (session OR bearer token). Bearer scope
 // gating is relaxed at the middleware level for POST /api/feedback so that

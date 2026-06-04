@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { TelaClient } from "../client.js";
 
 export const searchInputSchema = {
-  query: z.string().min(1).describe("Search phrase. Last word becomes an FTS5 prefix match."),
+  query: z.string().min(1).describe("Search phrase, matched across page titles and bodies."),
   space_id: z
     .number()
     .int()
