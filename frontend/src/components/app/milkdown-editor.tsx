@@ -10,6 +10,7 @@ import {
 } from '@milkdown/kit/core'
 import { commonmark, imageAttr } from '@milkdown/kit/preset/commonmark'
 import { gfm } from '@milkdown/kit/preset/gfm'
+import { block } from '@milkdown/kit/plugin/block'
 import { history } from '@milkdown/kit/plugin/history'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
@@ -36,6 +37,31 @@ import { decodeSyncInit } from '../../lib/collab/encode'
 import { cursorBuilder, selectionBuilder } from '../../lib/collab/cursor-builder'
 import { useLeaderElection } from '../../lib/collab/use-leader-election'
 import { slashPlugin, SlashView } from './milkdown-slash'
+import { bubblePlugin, BubbleToolbarView } from './milkdown-bubble-toolbar'
+import { BlockHandleView } from './milkdown-block-handle'
+import { taskCheckboxPlugin } from './milkdown-task-list'
+import {
+  mathBlockInputRule,
+  mathBlockSchema,
+  mathInlineInputRule,
+  mathInlineSchema,
+  mathNodeViews,
+  mathRemarkPlugin,
+} from './milkdown-math'
+import {
+  highlightInputRule,
+  highlightRemarkPlugin,
+  highlightSchema,
+  toggleHighlightCommand,
+} from './milkdown-highlight'
+import { mermaidPlugin } from './milkdown-mermaid'
+import { directiveRemarkPlugin } from './milkdown-directives'
+import { tabSchema, tabsNodeView, tabsSchema } from './milkdown-tabs'
+import {
+  kanbanColumnSchema,
+  kanbanNodeViews,
+  kanbanSchema,
+} from './milkdown-kanban'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
   calloutInputRule,
@@ -70,6 +96,8 @@ import {
   type MiraPasteRequest,
 } from './milkdown-mira-paste'
 import { MiraPastePopover } from './milkdown-mira-paste-popover'
+import { createImageUploadPlugin } from './milkdown-image-upload'
+import { createUrlUnfurlPlugin } from './milkdown-url-unfurl'
 import { useQueryClient } from '@tanstack/react-query'
 import { pageKeys } from '../../lib/queries/pages'
 import { navigateToPage } from '../../lib/pageHitItem'
@@ -260,6 +288,11 @@ function MilkdownEditorInner({
     pageId > 0 &&
     spaceId != null
 
+  // Image-upload paste/drop. Editable, non-share, page-known (space id not
+  // needed — the upload route is page-scoped). Same gating shape as mira paste.
+  const imageUploadEnabled =
+    wikilinkMode !== 'share' && !readOnly && pageId > 0
+
   // M13.5 (#116) — modifier-click wikilink follow. Resolve pageId → space_id
   // via the cross-space allFlat cache (populated by useAllPages, refreshed
   // through the page-mutation bus). Cache miss = broken / out-of-scope link;
@@ -400,9 +433,21 @@ function MilkdownEditorInner({
           ctx.set(slashPlugin.key, {
             view: pluginViewFactory({ component: SlashView }),
           })
+          ctx.set(bubblePlugin.key, {
+            view: pluginViewFactory({ component: BubbleToolbarView }),
+          })
           ctx.set(wikilinkPlugin.key, {
             view: pluginViewFactory({ component: WikilinkView }),
           })
+          // Block drag-handle + add-block gutter. The `block` plugin (added to
+          // the .use() chain) supplies the drag service; BlockHandleView owns
+          // the gutter DOM + the BlockProvider. Mounted as its own PM plugin
+          // view since `block` has no view slot of its own. Self-gates on
+          // view.editable, so it stays inert in viewer mode.
+          const blockHandle = new Plugin({
+            view: pluginViewFactory({ component: BlockHandleView }),
+          })
+          ctx.update(prosePluginsCtx, (existing) => [...existing, blockHandle])
         }
         ctx.set(wikilinkModeCtx.key, wikilinkMode)
         // M13.4 — share-mode + viewer-mode render collapsibles CLOSED by
@@ -490,9 +535,27 @@ function MilkdownEditorInner({
         // insertions, so the paste-hook needs to suppress the default paste
         // BEFORE the collab plugins see it. Returning false (non-mira paste)
         // lets the chain fall through to the default markdown link rendering.
+        // Paste-a-bare-URL → titled link. Registered BEFORE the mira hook so
+        // that after both prepends the order is [..., mira, urlUnfurl, ...] —
+        // mira intercepts its own URLs first; urlUnfurl handles the rest.
+        // Still ahead of the default clipboard parse. Gated editable+non-share.
+        if (wikilinkMode !== 'share' && !readOnly) {
+          const urlUnfurl = createUrlUnfurlPlugin()
+          ctx.update(prosePluginsCtx, (existing) => [urlUnfurl, ...existing])
+        }
+
         if (miraPasteEnabled) {
           const miraPaste = createMiraPastePlugin(ctx)
           ctx.update(prosePluginsCtx, (existing) => [miraPaste, ...existing])
+        }
+
+        // Image paste/drop → upload → ![](url). Prepended so it intercepts
+        // image files before the default clipboard handler turns them into
+        // nothing. Image files and mira/URL pastes are disjoint clipboard
+        // payloads, so ordering against the mira hook above is immaterial.
+        if (imageUploadEnabled) {
+          const imageUpload = createImageUploadPlugin(pageId)
+          ctx.update(prosePluginsCtx, (existing) => [imageUpload, ...existing])
         }
 
         // M7.2: bind y-prosemirror's sync + undo plugins when collab is
@@ -545,11 +608,44 @@ function MilkdownEditorInner({
       })
       .use(commonmark)
       .use(gfm)
+      // GFM task lists: schema + input rule (`[ ] `) ship in the preset above;
+      // this adds the click-to-toggle on the CSS checkbox. See
+      // milkdown-task-list.ts.
+      .use(taskCheckboxPlugin)
+      // Block drag-handle service (the gutter view is mounted as a PM plugin
+      // view in the config block above). Self-gates on view.editable.
+      .use(block)
+      // Math / LaTeX: remark-math parse + `$inline$` / `$$block$$` schemas +
+      // KaTeX nodeView (click-to-edit) + autoformat input rules. See
+      // milkdown-math.ts. KaTeX stylesheet imported in main.tsx.
+      .use(mathRemarkPlugin)
+      .use(mathInlineSchema)
+      .use(mathBlockSchema)
+      .use(mathNodeViews)
+      .use(mathInlineInputRule)
+      .use(mathBlockInputRule)
+      // Highlight mark: ==text== ⇄ <mark>. See milkdown-highlight.ts.
+      .use(highlightRemarkPlugin)
+      .use(highlightSchema)
+      .use(highlightInputRule)
+      .use(toggleHighlightCommand)
+      // Mermaid: renders a diagram below each ```mermaid code block (lazy lib).
+      .use(mermaidPlugin)
+      // Container directives (:::name) + the tabs block built on them.
+      .use(directiveRemarkPlugin)
+      .use(tabSchema)
+      .use(tabsSchema)
+      .use(tabsNodeView)
+      // Kanban board, also on the directive foundation.
+      .use(kanbanColumnSchema)
+      .use(kanbanSchema)
+      .use(kanbanNodeViews)
       .use(history)
       .use(clipboard)
       .use(listener)
       .use(prism)
       .use(slashPlugin)
+      .use(bubblePlugin)
       .use(wikilinkPlugin)
       .use(wikilinkAliveIdsCtx)
       .use(wikilinkModeCtx)

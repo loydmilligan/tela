@@ -85,7 +85,16 @@ function buildWikilinkDecorations(
     const link = node.marks.find((m) => m.type.name === 'link')
     if (!link) return
     const href = link.attrs.href
-    if (typeof href !== 'string' || !href.startsWith('tela://page/')) return
+    if (typeof href !== 'string') return
+    // Person mentions: `tela://user/{id}` → a mention chip. No alive-check (the
+    // user directory isn't loaded here); always styled as a mention.
+    if (href.startsWith('tela://user/')) {
+      decos.push(
+        Decoration.inline(pos, pos + node.nodeSize, { class: 'tela-mention' }),
+      )
+      return
+    }
+    if (!href.startsWith('tela://page/')) return
     let cls = 'tela-wikilink'
     if (aliveIds != null) {
       const id = parseWikilinkPageId(href)

@@ -671,6 +671,332 @@
     color: var(--text-muted);
   }
 
+  /* Selection bubble-toolbar. Same fixed-floating-card family as the slash
+     menu; positioned above the selection via JS (left/top inline). A compact
+     horizontal row of icon buttons for inline marks + link. */
+  .tela-bubble-toolbar {
+    position: fixed;
+    z-index: 50;
+    display: none;
+    align-items: center;
+    gap: 1px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-1);
+    box-shadow: 0 10px 30px -8px
+      color-mix(in srgb, var(--text-primary) 25%, transparent);
+    outline: none;
+  }
+  .tela-bubble-toolbar[data-show='true'] {
+    display: flex;
+  }
+  .tela-bubble-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--space-7);
+    height: var(--space-7);
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      color var(--duration-fast) var(--ease-out);
+  }
+  .tela-bubble-btn:hover {
+    background: var(--surface-2);
+  }
+  .tela-bubble-btn[data-active='true'] {
+    background: var(--surface-2);
+    color: var(--accent);
+  }
+  .tela-bubble-link-input {
+    min-width: 18rem;
+  }
+
+  /* Kanban board (:::kanban). Columns laid out horizontally; cards are the
+     list items, draggable between columns. */
+  .tela-milkdown .ProseMirror .tela-kanban {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    margin: var(--space-3) 0;
+    overflow-x: auto;
+    padding-bottom: var(--space-2);
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col {
+    flex: 0 0 16rem;
+    min-width: 14rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col-header {
+    margin-bottom: var(--space-1);
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col-title {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: var(--space-1);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col-title:focus {
+    outline: none;
+    background: var(--surface-1);
+    border-radius: var(--radius-sm);
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col-body > ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col-body > ul > li {
+    list-style: none;
+    margin: 0 0 var(--space-2);
+    padding: var(--space-2);
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    cursor: grab;
+  }
+  /* Task cards: keep room for the checkbox (the card's padding shorthand would
+     otherwise clobber the task item's padding-left, overlapping the text). */
+  .tela-milkdown .ProseMirror .tela-kanban-col-body > ul > li[data-item-type='task'] {
+    padding-left: var(--space-8);
+  }
+  .tela-milkdown .ProseMirror .tela-kanban-col-body > ul > li[data-item-type='task']::before {
+    left: var(--space-2);
+  }
+
+  /* Tabs (:::tabs). Strip of tab buttons over the active panel; inactive
+     panels are hidden by the nodeView (display:none). */
+  .tela-milkdown .ProseMirror .tela-tabs {
+    margin: var(--space-3) 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .tela-milkdown .ProseMirror .tela-tabs-strip {
+    display: flex;
+    gap: 1px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: var(--space-1) var(--space-1) 0;
+  }
+  .tela-milkdown .ProseMirror .tela-tabs-tab {
+    padding: var(--space-2) var(--space-3);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .tela-milkdown .ProseMirror .tela-tabs-tab[data-active='true'] {
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+  .tela-milkdown .ProseMirror .tela-tabs-panels {
+    padding: var(--space-3);
+  }
+  .tela-milkdown .ProseMirror .tela-tab > :first-child {
+    margin-top: 0;
+  }
+  /* Panel visibility is CSS-driven off the wrapper's data-active index — no JS
+     timing race with PM populating the contentDOM. Hide all, show the active
+     nth panel (supports up to 9 tabs; extras just stay hidden). */
+  .tela-milkdown .ProseMirror .tela-tabs-panels > .tela-tab {
+    display: none;
+  }
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='0'] > .tela-tabs-panels > .tela-tab:nth-child(1),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='1'] > .tela-tabs-panels > .tela-tab:nth-child(2),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='2'] > .tela-tabs-panels > .tela-tab:nth-child(3),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='3'] > .tela-tabs-panels > .tela-tab:nth-child(4),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='4'] > .tela-tabs-panels > .tela-tab:nth-child(5),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='5'] > .tela-tabs-panels > .tela-tab:nth-child(6),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='6'] > .tela-tabs-panels > .tela-tab:nth-child(7),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='7'] > .tela-tabs-panels > .tela-tab:nth-child(8),
+  .tela-milkdown .ProseMirror .tela-tabs[data-active='8'] > .tela-tabs-panels > .tela-tab:nth-child(9) {
+    display: block;
+  }
+
+  /* Mermaid diagram preview, rendered as a widget below the ```mermaid code
+     block. The SVG comes from mermaid; we just center + bound it. */
+  .tela-milkdown .tela-mermaid {
+    display: flex;
+    justify-content: center;
+    margin: var(--space-2) 0 var(--space-4);
+    padding: var(--space-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+  }
+  .tela-milkdown .tela-mermaid svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .tela-milkdown .tela-mermaid-error {
+    justify-content: flex-start;
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  /* Highlight mark (==text==). Theme-aware translucent wash off the warning
+     (amber) token — works over light + dark surfaces without a new token. */
+  .tela-milkdown .ProseMirror mark.tela-highlight {
+    background: color-mix(in srgb, var(--warning) 30%, transparent);
+    color: inherit;
+    border-radius: var(--radius-xs);
+    padding: 0 0.1em;
+  }
+
+  /* Math / LaTeX nodes. KaTeX supplies the glyph styling via its own
+     stylesheet (imported in main.tsx); these rules handle block layout, the
+     click-to-edit field, and the empty-equation placeholder. */
+  .tela-milkdown .ProseMirror .tela-math-block {
+    display: block;
+    margin: var(--space-3) 0;
+    text-align: center;
+    overflow-x: auto;
+  }
+  .tela-milkdown .ProseMirror .tela-math-inline {
+    cursor: pointer;
+  }
+  .tela-milkdown .ProseMirror .tela-math-empty {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-style: italic;
+  }
+  .tela-math-input {
+    width: 100%;
+    min-width: 8rem;
+    box-sizing: border-box;
+    padding: var(--space-1) var(--space-2);
+    background: var(--surface-2);
+    color: var(--text-primary);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    resize: vertical;
+  }
+  span.tela-math-input {
+    width: auto;
+  }
+  .tela-math-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  /* Block drag-handle gutter. BlockProvider positions this (fixed strategy)
+     to the left of the hovered block and makes it a drag source; data-show
+     toggles visibility. Two compact, muted icon buttons (+ / grip). */
+  .tela-block-handle {
+    position: fixed;
+    z-index: 40;
+    display: none;
+    align-items: center;
+    gap: 1px;
+    padding: 0;
+  }
+  .tela-block-handle[data-show='true'] {
+    display: flex;
+  }
+  .tela-block-handle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--space-5);
+    height: var(--space-6);
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-muted);
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      color var(--duration-fast) var(--ease-out);
+  }
+  .tela-block-handle-btn:hover {
+    background: var(--surface-2);
+    color: var(--text-primary);
+  }
+  .tela-block-handle-grip {
+    cursor: grab;
+  }
+  .tela-block-handle-grip:active {
+    cursor: grabbing;
+  }
+
+  /* Block-action menu (opened by clicking the grip). Same floating-card family
+     as the slash menu; positioned fixed at JS-computed coords. */
+  .tela-block-menu {
+    position: fixed;
+    z-index: 50;
+    min-width: 10rem;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-1);
+    box-shadow: 0 10px 30px -8px
+      color-mix(in srgb, var(--text-primary) 25%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .tela-block-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+    transition: background-color var(--duration-fast) var(--ease-out);
+  }
+  .tela-block-menu-item:hover {
+    background: var(--surface-2);
+  }
+  .tela-block-menu-label {
+    padding: var(--space-1) var(--space-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .tela-block-menu-sep {
+    height: 1px;
+    margin: var(--space-1) 0;
+    background: var(--border-subtle);
+  }
+
   /* M18.B.2 — mira paste-hook popover. Positioned via JS (left/top set as
      inline styles by the React component); the slash menu and this popover
      share the same fixed-floating-card aesthetic so they read as one family
@@ -724,6 +1050,15 @@
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 1px;
+  }
+  /* Person mention chip (tela://user/{id} links). */
+  .tela-milkdown .ProseMirror .tela-mention {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: var(--radius-xs);
+    padding: 0 0.2em;
+    text-decoration: none;
+    font-weight: 500;
   }
   .tela-milkdown .ProseMirror .tela-wikilink--broken {
     color: var(--danger);

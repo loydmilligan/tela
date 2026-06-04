@@ -11,17 +11,21 @@ import { useInstance } from '@milkdown/react'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { useAllPages } from '../../lib/queries/pages'
+import { useUsers, type MentionUser } from '../../lib/queries/users'
 import type { PageListItem } from '../../lib/types'
 import {
   disambiguateBreadcrumbs,
   type DisambiguatedRow,
 } from '../../lib/disambiguateBreadcrumbs'
 
-// Floating caret-anchored `[[Page]]` autocomplete. Mirrors the slash plugin's
-// shape (slashFactory + SlashProvider + capture-phase keydown for nav). Saved
-// markdown round-trips as `[Title](tela://page/{id})` via the stock commonmark
-// link mark — M5.2a's `parseWikiLinks` regex already picks those up to
-// populate the `page_links` table on save. The companion decoration plugin
+// Floating caret-anchored page autocomplete. Two triggers feed the same
+// picker: `[[Page]]` (wiki-style) and `@Page` (mention-style) — both insert a
+// `[Title](tela://page/{id})` link, so a page-mention IS a page link. Mirrors
+// the slash plugin's shape (slashFactory + SlashProvider + capture-phase
+// keydown for nav). Saved markdown round-trips via the stock commonmark link
+// mark — M5.2a's `parseWikiLinks` regex picks those up to populate the
+// `page_links` table on save. People-mentions are deliberately out of scope
+// (no canonical-markdown serialization yet). The companion decoration plugin
 // lives in milkdown-wikilink-decoration.ts (separate file so react-refresh
 // allows a non-component constant export alongside this React view).
 
@@ -31,7 +35,20 @@ export const wikilinkPlugin = slashFactory('tela-wikilink')
 
 interface WikilinkTrigger {
   query: string
-  openOffset: number // offset of the first `[` within the parent paragraph
+  // Offset of the trigger's first char within the parent paragraph — the `[`
+  // of `[[` or the `@`. Insertion replaces from here to the cursor, so the
+  // trigger text itself is consumed regardless of which form opened the picker.
+  openOffset: number
+  // `[[` → pages only; `@` → people + pages (Notion-style combined picker).
+  trigger: 'bracket' | 'at'
+}
+
+// Block start OR whitespace before the trigger char — prevents mid-word
+// triggers (and, for `@`, keeps `foo@bar.com` emails from popping the picker).
+function triggerPrecededOk(text: string, idx: number): boolean {
+  if (idx === 0) return true
+  const prev = text[idx - 1]
+  return !prev || /\s/.test(prev)
 }
 
 function readWikilinkState(view: EditorView): WikilinkTrigger | null {
@@ -40,19 +57,33 @@ function readWikilinkState(view: EditorView): WikilinkTrigger | null {
   if (!empty) return null
   if ($from.parent.type.name !== 'paragraph') return null
   const text = $from.parent.textBetween(0, $from.parentOffset, undefined, '￼')
-  const openIdx = text.lastIndexOf('[[')
-  if (openIdx < 0) return null
-  // Block start OR whitespace before `[[`. Mirrors the slash plugin's rule
-  // that prevents mid-word triggers.
-  if (openIdx > 0) {
-    const prev = text[openIdx - 1]
-    if (prev && !/\s/.test(prev)) return null
+
+  const candidates: WikilinkTrigger[] = []
+
+  // `[[` — whitespace inside the query is allowed (titles have spaces); any
+  // `]` closes the trigger so we don't fight a user typing `]]` manually.
+  const bracketIdx = text.lastIndexOf('[[')
+  if (bracketIdx >= 0 && triggerPrecededOk(text, bracketIdx)) {
+    const query = text.slice(bracketIdx + 2)
+    if (!query.includes(']')) {
+      candidates.push({ query, openOffset: bracketIdx, trigger: 'bracket' })
+    }
   }
-  const query = text.slice(openIdx + 2)
-  // Any `]` after the `[[` closes the trigger — don't fight the user typing
-  // `]]` manually. Whitespace inside the query is allowed (titles have spaces).
-  if (query.includes(']')) return null
-  return { query, openOffset: openIdx }
+
+  // `@` — opens on a bare `@` and while typing a name. A leading space
+  // (`@ foo`) means "not a mention" so prose `@` is left alone.
+  const atIdx = text.lastIndexOf('@')
+  if (atIdx >= 0 && triggerPrecededOk(text, atIdx)) {
+    const query = text.slice(atIdx + 1)
+    if (!/^\s/.test(query)) {
+      candidates.push({ query, openOffset: atIdx, trigger: 'at' })
+    }
+  }
+
+  if (candidates.length === 0) return null
+  // If both are present, the one closest to the cursor (largest offset) wins.
+  candidates.sort((a, b) => b.openOffset - a.openOffset)
+  return candidates[0]
 }
 
 // ---------- Filtering --------------------------------------------------------
@@ -104,12 +135,54 @@ function insertWikilink(
   view.focus()
 }
 
+// Person mention — same shape as a wikilink but href `tela://user/{id}` and
+// `@username` text. Round-trips as a stock link; the decoration renders a chip.
+function insertUserMention(
+  view: EditorView,
+  openOffset: number,
+  userId: number,
+  username: string,
+) {
+  const { state } = view
+  const { $from } = state.selection
+  const start = $from.start() + openOffset
+  const end = $from.pos
+  const linkType = state.schema.marks.link
+  if (!linkType) return
+  const mark = linkType.create({ href: `tela://user/${userId}`, title: null })
+  const linkText = state.schema.text(`@${username}`, [mark])
+  const spaceText = state.schema.text(' ', [])
+  view.dispatch(
+    state.tr
+      .replaceWith(start, end, [linkText, spaceText])
+      .setStoredMarks([])
+      .scrollIntoView(),
+  )
+  view.focus()
+}
+
+function filterUsers(users: MentionUser[], query: string): MentionUser[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return users
+  return users.filter(
+    (u) =>
+      u.username.toLowerCase().includes(q) ||
+      (u.email ?? '').toLowerCase().includes(q),
+  )
+}
+
 // ---------- React picker view -----------------------------------------------
+
+// A picker row is either a page (both triggers) or a person (only on `@`).
+type PickerItem =
+  | { kind: 'page'; row: PickerRow }
+  | { kind: 'user'; user: MentionUser }
 
 interface PickerState {
   visible: boolean
   query: string
   openOffset: number
+  trigger: 'bracket' | 'at'
 }
 
 export function WikilinkView() {
@@ -124,17 +197,30 @@ export function WikilinkView() {
   const [loading, getEditor] = useInstance()
 
   const { data: pages } = useAllPages()
+  const { data: users } = useUsers()
 
-  const [{ visible, query, openOffset }, setPickerState] = useState<PickerState>(
-    { visible: false, query: '', openOffset: -1 },
-  )
+  const [{ visible, query, openOffset, trigger }, setPickerState] =
+    useState<PickerState>({
+      visible: false,
+      query: '',
+      openOffset: -1,
+      trigger: 'bracket',
+    })
   const [activeIdx, setActiveIdx] = useState(0)
 
-  const rows = useMemo(
-    () => disambiguateBreadcrumbs(pages ?? []),
-    [pages],
-  )
-  const items = useMemo(() => filterRows(rows, query), [rows, query])
+  const rows = useMemo(() => disambiguateBreadcrumbs(pages ?? []), [pages])
+  // `@` → people first, then pages; `[[` → pages only.
+  const items = useMemo<PickerItem[]>(() => {
+    const pageItems: PickerItem[] = filterRows(rows, query).map((row) => ({
+      kind: 'page',
+      row,
+    }))
+    if (trigger !== 'at') return pageItems
+    const userItems: PickerItem[] = filterUsers(users ?? [], query).map(
+      (user) => ({ kind: 'user', user }),
+    )
+    return [...userItems, ...pageItems]
+  }, [rows, users, query, trigger])
 
   useEffect(() => {
     const el = ref.current
@@ -167,7 +253,9 @@ export function WikilinkView() {
     const onBlur = () => {
       providerRef.current?.hide()
       setPickerState((prev) =>
-        prev.visible ? { visible: false, query: '', openOffset: -1 } : prev,
+        prev.visible
+          ? { visible: false, query: '', openOffset: -1, trigger: 'bracket' }
+          : prev,
       )
     }
     dom.addEventListener('blur', onBlur)
@@ -184,14 +272,18 @@ export function WikilinkView() {
     if (next == null) {
       dismissedOffsetRef.current = null
       setPickerState((prev) =>
-        prev.visible ? { visible: false, query: '', openOffset: -1 } : prev,
+        prev.visible
+          ? { visible: false, query: '', openOffset: -1, trigger: 'bracket' }
+          : prev,
       )
       return
     }
     if (dismissedOffsetRef.current === next.openOffset) {
       // Still dismissed for this trigger position — keep React state hidden.
       setPickerState((prev) =>
-        prev.visible ? { visible: false, query: '', openOffset: -1 } : prev,
+        prev.visible
+          ? { visible: false, query: '', openOffset: -1, trigger: 'bracket' }
+          : prev,
       )
       return
     }
@@ -200,9 +292,15 @@ export function WikilinkView() {
     setPickerState((prev) =>
       prev.visible &&
       prev.query === next.query &&
-      prev.openOffset === next.openOffset
+      prev.openOffset === next.openOffset &&
+      prev.trigger === next.trigger
         ? prev
-        : { visible: true, query: next.query, openOffset: next.openOffset },
+        : {
+            visible: true,
+            query: next.query,
+            openOffset: next.openOffset,
+            trigger: next.trigger,
+          },
     )
   })
 
@@ -217,12 +315,16 @@ export function WikilinkView() {
   }, [query])
 
   const runInsert = useCallback(
-    (row: PickerRow) => {
+    (item: PickerItem) => {
       if (loading) return
       const editor = getEditor()
       editor?.action((ctx) => {
         const v = ctx.get(editorViewCtx)
-        insertWikilink(v, openOffset, row.item.id, row.item.title)
+        if (item.kind === 'user') {
+          insertUserMention(v, openOffset, item.user.id, item.user.username)
+        } else {
+          insertWikilink(v, openOffset, item.row.item.id, item.row.item.title)
+        }
       })
     },
     [loading, getEditor, openOffset],
@@ -255,7 +357,12 @@ export function WikilinkView() {
         e.preventDefault()
         e.stopPropagation()
         dismissedOffsetRef.current = openOffset
-        setPickerState({ visible: false, query: '', openOffset: -1 })
+        setPickerState({
+          visible: false,
+          query: '',
+          openOffset: -1,
+          trigger: 'bracket',
+        })
         providerRef.current?.hide()
       }
     }
@@ -267,41 +374,65 @@ export function WikilinkView() {
     <div
       ref={ref}
       role="listbox"
-      aria-label="Link to page"
+      aria-label={trigger === 'at' ? 'Mention a person or page' : 'Link to page'}
       className="tela-wikilink-menu"
     >
       {items.length === 0 ? (
         <div className="tela-wikilink-empty">No matches.</div>
       ) : (
-        items.map((row, idx) => (
-          <button
-            key={row.item.id}
-            type="button"
-            role="option"
-            aria-selected={idx === activeIdx}
-            data-active={idx === activeIdx ? 'true' : 'false'}
-            className="tela-wikilink-item"
-            onMouseEnter={() => setActiveIdx(idx)}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              runInsert(row)
-            }}
-          >
-            <span className="tela-wikilink-item-head">
-              <span className="tela-wikilink-item-title">
-                {row.item.title || 'Untitled'}
-              </span>
-              {row.showSpaceChip ? (
-                <span className="tela-wikilink-item-chip">
-                  {row.item.space_name}
-                </span>
-              ) : null}
-            </span>
-            <span className="tela-wikilink-item-breadcrumb">
-              {row.breadcrumbLabel}
-            </span>
-          </button>
-        ))
+        items.map((item, idx) => {
+          const key =
+            item.kind === 'user'
+              ? `user-${item.user.id}`
+              : `page-${item.row.item.id}`
+          return (
+            <button
+              key={key}
+              type="button"
+              role="option"
+              aria-selected={idx === activeIdx}
+              data-active={idx === activeIdx ? 'true' : 'false'}
+              className="tela-wikilink-item"
+              onMouseEnter={() => setActiveIdx(idx)}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                runInsert(item)
+              }}
+            >
+              {item.kind === 'user' ? (
+                <>
+                  <span className="tela-wikilink-item-head">
+                    <span className="tela-wikilink-item-title">
+                      @{item.user.username}
+                    </span>
+                    <span className="tela-wikilink-item-chip">Person</span>
+                  </span>
+                  {item.user.email ? (
+                    <span className="tela-wikilink-item-breadcrumb">
+                      {item.user.email}
+                    </span>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <span className="tela-wikilink-item-head">
+                    <span className="tela-wikilink-item-title">
+                      {item.row.item.title || 'Untitled'}
+                    </span>
+                    {item.row.showSpaceChip ? (
+                      <span className="tela-wikilink-item-chip">
+                        {item.row.item.space_name}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="tela-wikilink-item-breadcrumb">
+                    {item.row.breadcrumbLabel}
+                  </span>
+                </>
+              )}
+            </button>
+          )
+        })
       )}
     </div>
   )

@@ -16,6 +16,12 @@ import {
 import { insertTableCommand } from '@milkdown/kit/preset/gfm'
 import { COLLAPSIBLE_DEFAULT_SUMMARY } from './milkdown-collapsibles'
 import { insertExcalidraw } from './milkdown-excalidraw'
+import { insertTaskList } from './milkdown-task-list'
+import { insertMathBlock } from './milkdown-math'
+import { TEMPLATES, insertTemplate } from './milkdown-templates'
+import { insertMermaid } from './milkdown-mermaid'
+import { insertTabs } from './milkdown-tabs'
+import { insertKanban } from './milkdown-kanban'
 
 export const slashPlugin = slashFactory('tela-slash')
 
@@ -64,6 +70,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     run: (ctx) => ctx.get(commandsCtx).call(wrapInOrderedListCommand.key),
   },
   {
+    id: 'task-list',
+    label: 'To-do list',
+    hint: 'Checkbox / task list',
+    keywords: ['todo', 'to-do', 'task', 'checkbox', 'checklist', 'check'],
+    run: insertTaskList,
+  },
+  {
     id: 'quote',
     label: 'Quote',
     hint: 'Block quote',
@@ -106,6 +119,57 @@ const ALL_COMMANDS: SlashCommand[] = [
     run: (ctx) =>
       ctx.get(commandsCtx).call(insertTableCommand.key, { row: 3, col: 2 }),
   },
+  {
+    id: 'equation',
+    label: 'Equation',
+    hint: 'Block math (LaTeX)',
+    keywords: ['math', 'equation', 'latex', 'katex', 'formula', 'tex'],
+    run: insertMathBlock,
+  },
+  {
+    id: 'mermaid',
+    label: 'Mermaid diagram',
+    hint: 'Diagram from text',
+    keywords: ['mermaid', 'diagram', 'flowchart', 'graph', 'sequence'],
+    run: insertMermaid,
+  },
+  {
+    id: 'tabs',
+    label: 'Tabs',
+    hint: 'Tabbed sections',
+    keywords: ['tabs', 'tab', 'tabbed', 'sections'],
+    run: insertTabs,
+  },
+  {
+    id: 'kanban',
+    label: 'Kanban board',
+    hint: 'Columns of draggable cards',
+    keywords: ['kanban', 'board', 'columns', 'cards', 'todo'],
+    run: insertKanban,
+  },
+  {
+    id: 'date',
+    label: 'Date',
+    hint: "Insert today's date",
+    keywords: ['date', 'today', 'now'],
+    run: (ctx) => {
+      const view = ctx.get(editorViewCtx)
+      // YYYY-MM-DD, matching the project's date convention.
+      const today = new Date().toISOString().slice(0, 10)
+      view.dispatch(view.state.tr.insertText(today))
+      view.focus()
+    },
+  },
+  // Built-in templates (markdown snippets). See milkdown-templates.ts.
+  ...TEMPLATES.map(
+    (t): SlashCommand => ({
+      id: t.id,
+      label: t.label,
+      hint: 'Template',
+      keywords: t.keywords,
+      run: (ctx) => insertTemplate(ctx, t.markdown),
+    }),
+  ),
 ]
 
 interface SlashState {

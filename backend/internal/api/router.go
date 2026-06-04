@@ -99,6 +99,15 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// is on /api/diagrams/* (public) so it can be served without a session.
 	mux.HandleFunc("PUT /api/pages/{id}/diagrams", srv.UploadPageDiagram)
 
+	// Image-upload sidecar. POST is session-authed editor+ on the page's
+	// space; the GET counterpart below is on /api/images/* (public) so it can
+	// be served without a session (incl. share-mode). Mirrors diagrams.
+	mux.HandleFunc("POST /api/pages/{id}/images", srv.UploadPageImage)
+
+	// URL unfurl for paste-as-titled-link. Session-authed (makes an outbound
+	// SSRF-guarded request); never public.
+	mux.HandleFunc("GET /api/unfurl", srv.Unfurl)
+
 	// M15.0 PublicShare management: session-authed, editor+ on source page's
 	// space. Soft-delete via revoked_at so the audit trail survives revocation.
 	mux.HandleFunc("POST /api/pages/{id}/shares", srv.CreateShareLink)
@@ -146,6 +155,8 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/admin/users/{id}", srv.PatchAdminUser)
 	mux.HandleFunc("DELETE /api/admin/users/{id}", srv.DeleteAdminUser)
 
+	// Mention directory — active users for the @-mention picker (any member).
+	mux.HandleFunc("GET /api/users", srv.ListUsers)
 	mux.HandleFunc("POST /api/users/me/password", srv.ChangePassword)
 	mux.HandleFunc("POST /api/users/me/quick-notes", srv.QuickNotes)
 	mux.HandleFunc("GET /api/users/me/sessions", srv.ListMySessions)
@@ -228,6 +239,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// lives inside the {file} path value (Go 1.22 mux wildcards must end a
 	// segment); the handler strips it before validating against the hex regex.
 	mux.HandleFunc("GET /api/diagrams/{page_id}/{file}", srv.ServePageDiagramPNG)
+
+	// Public image serve — content-addressed, immutable. MUST be on
+	// auth.IsPublicPath via the /api/images/ HasPrefix branch.
+	mux.HandleFunc("GET /api/images/{page_id}/{file}", srv.ServePageImage)
 
 	// M11.0 OG share: public unauthenticated route. Crawler UAs get OG HTML;
 	// real browsers get 302'd to the SPA. MUST be on auth.IsPublicPath.

@@ -28,10 +28,18 @@ import { Plugin } from '@milkdown/kit/prose/state'
 //    embedded, body content as block children, closing tag) so the markdown
 //    is exactly the GitHub-renderable form.
 //
-// Note: the `open` attribute is intentionally NOT preserved across save/reload.
-// Toggle state is session-only — matches the brief ("persistent open-state in
-// URL" is out of scope for v0). Re-opening a saved page renders all details
-// closed; the user toggles them open as needed.
+// Fold state: the `open` attribute IS preserved through the round-trip — it
+// parses from the opening tag into a PM node attr and serializes back as
+// `<details open>` / `<details>`, so an authored/imported `<details open>`
+// stays open. In VIEW / SHARE (read-only) rendering the saved state is
+// honored. EDIT mode still force-opens every details regardless of the attr,
+// because Chromium routes caret input through the <summary> when the body is
+// hidden by a closed <details> — collapsing while editing would break
+// caret-routing into the body. (An edit-mode "collapse + remember" gesture
+// would need a caret-routing redesign; that's deliberately out of scope here.)
+//
+// Nesting: `<details>` may nest. The closing-tag scan is depth-aware, and a
+// matched block's body is re-processed as a group so inner brackets resolve.
 
 export const COLLAPSIBLE_DEFAULT_SUMMARY = 'Click to expand'
 
@@ -67,9 +75,21 @@ const DETAILS_CLOSE_RE = /<\/details>\s*$/i
 // here.
 const SUMMARY_INLINE_RE = /<summary[^>]*>([\s\S]*?)<\/summary>/i
 
+// `open` is detected on the opening tag (`<details open>`); whitespace/other
+// attrs are tolerated. Anchored to the tag's attribute list so the word
+// "open" inside summary text doesn't trip it.
+const DETAILS_OPEN_ATTR_RE = /^\s*<details(\s+[^>]*)?>/i
+
+function detailsHasOpenAttr(openingValue: string): boolean {
+  const m = openingValue.match(DETAILS_OPEN_ATTR_RE)
+  const attrs = m?.[1] ?? ''
+  return /(^|\s)open(\s|=|$)/i.test(attrs)
+}
+
 interface DetailsMatch {
   closingIdx: number
   summary: string
+  open: boolean
   // Index range of body children (siblings between opening and closing,
   // inclusive of start, exclusive of end). May be empty if the body is empty
   // — we'll inject an empty paragraph in that case to satisfy `block+`.
@@ -90,16 +110,22 @@ function tryMatchDetailsAt(
   if (openingValue == null) return null
   if (!DETAILS_OPEN_RE.test(openingValue)) return null
 
-  // Look for the matching closing </details>. Conservative single-level scan
-  // (no nested details support in v0 — nested details was a stretch goal in
-  // the brief, not a blocker; complex nesting is rare and the failure mode
-  // is graceful: the inner details just renders as plain raw HTML).
+  // Find the matching closing </details>, depth-aware so nested details pair
+  // correctly: each further opener increments depth, each closer decrements;
+  // the closer that brings depth back below zero is ours.
   let closingIdx = -1
+  let depth = 0
   for (let i = startIdx + 1; i < children.length; i++) {
     const v = paragraphHtmlValue(children[i])
-    if (v != null && DETAILS_CLOSE_RE.test(v)) {
-      closingIdx = i
-      break
+    if (v == null) continue
+    if (DETAILS_OPEN_RE.test(v)) {
+      depth += 1
+    } else if (DETAILS_CLOSE_RE.test(v)) {
+      if (depth === 0) {
+        closingIdx = i
+        break
+      }
+      depth -= 1
     }
   }
   if (closingIdx === -1) return null
@@ -126,6 +152,7 @@ function tryMatchDetailsAt(
   return {
     closingIdx,
     summary,
+    open: detailsHasOpenAttr(openingValue),
     bodyStart,
     bodyEnd: closingIdx,
     consumeSecondAsSummary,
@@ -156,14 +183,16 @@ function transformCollapsiblesInMdast(node: MdastNode): void {
       if (bodyChildren.length === 0) {
         bodyChildren.push({ type: 'paragraph', children: [] })
       }
-      // Recurse into each body child so nested transforms (e.g. a callout
-      // inside a collapsible) still fire.
-      for (const b of bodyChildren) {
-        transformCollapsiblesInMdast(b)
-      }
+      // Re-run the transform over the body as a sibling group (not per-child)
+      // so a NESTED `<details>…</details>` — whose opener/closer are separate
+      // body siblings — is detected and collapsed too. This also recurses into
+      // each body child, so a callout/list inside the body still transforms.
+      const bodyContainer: MdastNode = { type: 'root', children: bodyChildren }
+      transformCollapsiblesInMdast(bodyContainer)
       outChildren.push({
         type: 'details',
-        children: [summaryNode, ...bodyChildren],
+        open: match.open,
+        children: [summaryNode, ...(bodyContainer.children ?? [])],
       })
       i = match.closingIdx + 1
       continue
@@ -228,12 +257,22 @@ export const detailsSchema = $nodeSchema('details', () => ({
   content: 'details_summary block+',
   group: 'block',
   defining: true,
+  // Fold state. Round-trips as the native `open` HTML attribute; honored in
+  // read-only rendering (see detailsNodeView). Default closed.
+  attrs: { open: { default: false } },
   // ProseMirror's parseDOM walks the `<details>` element's children and resolves
   // each via its own parseDOM rule — `<summary>` lands in `details_summary` via
   // the summary schema above, body markup lands as ordinary blocks. We don't
   // need a `contentElement` selector here because PM treats the details as the
   // container and recursively parses its children.
-  parseDOM: [{ tag: 'details' }],
+  parseDOM: [
+    {
+      tag: 'details',
+      getAttrs: (dom) => ({
+        open: dom instanceof HTMLElement && dom.hasAttribute('open'),
+      }),
+    },
+  ],
   // toDOM is used for clipboard / parseDOM round-trips. In-editor rendering
   // goes through `detailsNodeView` below, which decides whether to set the
   // `open` attribute based on `view.editable`: editable view (live editor)
@@ -246,7 +285,7 @@ export const detailsSchema = $nodeSchema('details', () => ({
   parseMarkdown: {
     match: ({ type }) => type === 'details',
     runner: (state, node, type) => {
-      state.openNode(type)
+      state.openNode(type, { open: Boolean((node as MdastNode).open) })
       state.next((node as MdastNode).children ?? [])
       state.closeNode()
     },
@@ -257,13 +296,15 @@ export const detailsSchema = $nodeSchema('details', () => ({
       // Pull the summary out of the first child (schema guarantees it exists
       // and is a `details_summary`). Emit it inline with the opening tag so
       // the round-trip is the GitHub-canonical form `<details><summary>X</summary>`.
+      // Carry the `open` attribute so fold state survives the round-trip.
       const summaryNode = node.firstChild
       const summaryText = summaryNode?.textContent ?? ''
       const safeSummary = escapeHtmlText(summaryText)
+      const openAttr = node.attrs.open ? ' open' : ''
       state.addNode(
         'html',
         undefined,
-        `<details><summary>${safeSummary}</summary>`,
+        `<details${openAttr}><summary>${safeSummary}</summary>`,
       )
       // Emit body siblings — skip the first child (summary), which we've
       // already consumed above. forEach iterates by document position; the
@@ -303,11 +344,15 @@ export const detailsNodeView = $prose((ctx) => {
   return new Plugin({
     props: {
       nodeViews: {
-        details: () => {
+        details: (node) => {
           const dom = document.createElement('details')
           dom.className = 'tela-details'
           const readOnly = ctx.get(detailsReadOnlyCtx.key)
-          if (!readOnly) dom.setAttribute('open', '')
+          // Edit mode: force open so caret-routing into the body works. Read-
+          // only (view / share): honor the saved fold state from the `open`
+          // attr — an authored `<details open>` renders expanded, others stay
+          // collapsed (native HTMLDetailsElement default).
+          if (!readOnly || node.attrs.open) dom.setAttribute('open', '')
           return {
             dom,
             contentDOM: dom,
