@@ -3,7 +3,6 @@ package api
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"regexp"
@@ -44,13 +43,14 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 		title     string
 		body      string
 		spaceName string
+		spaceID   int64
 	)
 	err := s.DB.QueryRowContext(r.Context(),
-		`SELECT p.title, p.body, sp.name
+		`SELECT p.title, p.body, sp.name, p.space_id
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
 		  WHERE p.id = ?`, pageID,
-	).Scan(&title, &body, &spaceName)
+	).Scan(&title, &body, &spaceName, &spaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)
 		return
@@ -61,7 +61,10 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !isBotUA(r.Header.Get("User-Agent")) {
-		http.Redirect(w, r, fmt.Sprintf("/pages/%d", pageID), http.StatusFound)
+		// The SPA page route is nested under the space
+		// (/spaces/{spaceID}/pages/{id}/{slug}); a bare /pages/{id} no longer
+		// resolves and renders the SPA's not-found view.
+		http.Redirect(w, r, pageAppPath(spaceID, pageID, title), http.StatusFound)
 		return
 	}
 

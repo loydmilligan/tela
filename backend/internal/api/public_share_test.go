@@ -92,13 +92,15 @@ func TestPublicShare_FullFlow(t *testing.T) {
 		t.Fatalf("generic bot UA status=%d want 200", resp.StatusCode)
 	}
 
-	// 5. Non-bot UA (Chrome) → 302 with Location: /pages/{id}.
+	// 5. Non-bot UA (Chrome) → 302 to the in-app SPA route
+	//    /spaces/{spaceID}/pages/{id}/{slug}.
 	resp, _ = get("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0", fmt.Sprintf("/p/%d", pageID))
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("Chrome UA status=%d want 302", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != fmt.Sprintf("/pages/%d", pageID) {
-		t.Fatalf("Chrome UA Location=%q want /pages/%d", loc, pageID)
+	wantLoc := pageAppPath(space, pageID, "Welcome")
+	if loc := resp.Header.Get("Location"); loc != wantLoc {
+		t.Fatalf("Chrome UA Location=%q want %q", loc, wantLoc)
 	}
 
 	// 6. Missing UA → 302 (treated as human; no UA, no allowlist match).

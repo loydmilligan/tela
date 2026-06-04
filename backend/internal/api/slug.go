@@ -66,3 +66,15 @@ func pagePermalinkPath(id int64, title string) string {
 	}
 	return base
 }
+
+// pageAppPath returns the in-app SPA route path for a page:
+// /spaces/{spaceID}/pages/{id}/{slug}, or without the slug suffix when the
+// title yields none. Mirrors the frontend's pagePath (src/lib/slug.ts) — the
+// page route lives under the space, so a bare /pages/{id} no longer resolves.
+func pageAppPath(spaceID, id int64, title string) string {
+	base := "/spaces/" + strconv.FormatInt(spaceID, 10) + "/pages/" + strconv.FormatInt(id, 10)
+	if s := pageSlug(title); s != "" {
+		return base + "/" + s
+	}
+	return base
+}
