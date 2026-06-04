@@ -5,8 +5,8 @@ Each entry: context → decision → consequence.
 ## D1 — Go backend, single static binary
 Want a fast, easy-to-self-host server. Go with the stdlib `net/http` ServeMux (Go 1.22 pattern routing), no web framework. → simple distroless deploy; manual routing means watching the wildcard-then-literal ServeMux limitation.
 
-## D2 — SQLite + FTS5, no separate DB or search engine
-A personal/small-team wiki shouldn't require operating Postgres + Elasticsearch. `modernc.org/sqlite` (pure-Go, no cgo) on a Docker volume, with built-in FTS5 for full-text search. → one file, one volume, trivial backup; `:memory:` is per-connection so concurrent tests need an on-disk DB.
+## D2 — PostgreSQL (was: SQLite + FTS5) — SUPERSEDED → revised
+Originally `modernc.org/sqlite` (pure-Go, no cgo) on a Docker volume with FTS5 for search, chosen to avoid operating a separate DB. **Revised:** the backend now runs on **PostgreSQL** (`pgx/v5` stdlib, still `database/sql`). The driver is `pgx`; the SQLite migration history was squashed into a single Postgres baseline (`0001_init.sql`) since the live DB held no data worth keeping. Datetime-as-TEXT and boolean-as-INTEGER conventions were kept so the read paths and frontend didn't churn. → adds a `postgres` service to the stack, but unlocks proper concurrency (the `:memory:`-per-connection test hazard is gone — `internal/testdb` clones a throwaway DB per test) and a single engine for the planned search (tsvector + pg_trgm + pgvector; see [`search.md`](search.md)). FTS5 was removed; search is a placeholder until that rebuild.
 
 ## D3 — Hand-written `database/sql`, no ORM / no sqlc
 Small schema, full control over queries. → real SQL, no codegen step, no ORM magic; the cost is manual scanning boilerplate.

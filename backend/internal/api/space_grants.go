@@ -58,7 +58,7 @@ func principalExists(ctx context.Context, db *sql.DB, kind string, id int64) (bo
 		return false, nil
 	}
 	var x int
-	err := db.QueryRowContext(ctx, "SELECT 1 FROM "+table+" WHERE id = ?", id).Scan(&x)
+	err := db.QueryRowContext(ctx, "SELECT 1 FROM "+table+" WHERE id = $1", id).Scan(&x)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -95,7 +95,7 @@ func (s *Server) ListSpaceGrants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(),
-		spaceGrantSelect+` WHERE sg.space_id = ? ORDER BY sg.principal_kind ASC, principal_name ASC`, spaceID)
+		spaceGrantSelect+` WHERE sg.space_id = $1 ORDER BY sg.principal_kind ASC, principal_name ASC`, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list space grants failed")
 		return
@@ -159,20 +159,16 @@ func (s *Server) AddSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.DB.ExecContext(ctx, `
+	var id int64
+	err := s.DB.QueryRowContext(ctx, `
 		INSERT INTO space_grants (space_id, principal_kind, principal_id, role)
-		VALUES (?, ?, ?, ?)`, spaceID, req.PrincipalKind, req.PrincipalID, req.Role)
+		VALUES ($1, $2, $3, $4) RETURNING id`, spaceID, req.PrincipalKind, req.PrincipalID, req.Role).Scan(&id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "this principal already has a grant on the space")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "add space grant failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "add grant: last insert id failed")
 		return
 	}
 	dto, err := selectSpaceGrant(ctx, s.DB, spaceID, id)
@@ -214,7 +210,7 @@ func (s *Server) PatchSpaceGrant(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	res, err := s.DB.ExecContext(ctx,
-		`UPDATE space_grants SET role = ?, updated_at = datetime('now') WHERE id = ? AND space_id = ?`,
+		`UPDATE space_grants SET role = $1, updated_at = tela_now() WHERE id = $2 AND space_id = $3`,
 		req.Role, grantID, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update grant failed")
@@ -252,7 +248,7 @@ func (s *Server) DeleteSpaceGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.DB.ExecContext(r.Context(),
-		`DELETE FROM space_grants WHERE id = ? AND space_id = ?`, grantID, spaceID)
+		`DELETE FROM space_grants WHERE id = $1 AND space_id = $2`, grantID, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete grant failed")
 		return
@@ -266,6 +262,6 @@ func (s *Server) DeleteSpaceGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func selectSpaceGrant(ctx context.Context, db *sql.DB, spaceID, grantID int64) (spaceGrantDTO, error) {
-	row := db.QueryRowContext(ctx, spaceGrantSelect+` WHERE sg.id = ? AND sg.space_id = ?`, grantID, spaceID)
+	row := db.QueryRowContext(ctx, spaceGrantSelect+` WHERE sg.id = $1 AND sg.space_id = $2`, grantID, spaceID)
 	return scanSpaceGrant(row)
 }

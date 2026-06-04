@@ -9,22 +9,14 @@ import (
 	"testing"
 
 	"github.com/zcag/tela/backend/internal/auth"
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// newAPITestDB opens an in-memory SQLite and runs every migration. Shared by
-// the M6.2 admin/me/space-member tests.
+// newAPITestDB returns a fresh, already-migrated throwaway Postgres database
+// (dropped on test cleanup). Shared by the M6.2 admin/me/space-member tests.
 func newAPITestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	d, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open in-memory db: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return d
+	return testdb.New(t)
 }
 
 // seedUser inserts a user row directly and returns the new id. The password
@@ -39,15 +31,12 @@ func seedUser(t *testing.T, d *sql.DB, username, password string, isAdmin bool) 
 	if isAdmin {
 		admin = 1
 	}
-	res, err := d.ExecContext(context.Background(),
+	var id int64
+	err = d.QueryRowContext(context.Background(),
 		`INSERT INTO users (username, password_hash, is_instance_admin, is_active)
-		 VALUES (?, ?, ?, 1)`, username, hash, admin)
+		 VALUES ($1, $2, $3, 1) RETURNING id`, username, hash, admin).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert user %s: %v", username, err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id: %v", err)
 	}
 	return id
 }
@@ -55,14 +44,11 @@ func seedUser(t *testing.T, d *sql.DB, username, password string, isAdmin bool) 
 // seedSpace inserts a space and (optionally) makes ownerID its owner.
 func seedSpace(t *testing.T, d *sql.DB, name, slug string, ownerID int64) int64 {
 	t.Helper()
-	res, err := d.ExecContext(context.Background(),
-		`INSERT INTO spaces (name, slug) VALUES (?, ?)`, name, slug)
+	var id int64
+	err := d.QueryRowContext(context.Background(),
+		`INSERT INTO spaces (name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert space: %v", err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id: %v", err)
 	}
 	if ownerID > 0 {
 		seedMember(t, d, id, ownerID, "owner")
@@ -73,7 +59,7 @@ func seedSpace(t *testing.T, d *sql.DB, name, slug string, ownerID int64) int64 
 func seedMember(t *testing.T, d *sql.DB, spaceID, userID int64, role string) {
 	t.Helper()
 	if _, err := d.ExecContext(context.Background(),
-		`INSERT INTO space_members (space_id, user_id, role) VALUES (?, ?, ?)`,
+		`INSERT INTO space_members (space_id, user_id, role) VALUES ($1, $2, $3)`,
 		spaceID, userID, role); err != nil {
 		t.Fatalf("insert space_members: %v", err)
 	}

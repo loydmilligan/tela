@@ -3,28 +3,20 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// auditTestDB returns an on-disk DB with migrations applied + a single
-// api_key row pre-seeded. On-disk so the audit goroutine's
-// context.Background() ExecContext sees the same data the test writes —
-// modernc.org/sqlite's `:memory:` is per-connection (see Known Pitfall).
+// auditTestDB returns a fresh migrated Postgres database + a single api_key row
+// pre-seeded. The audit goroutine's context.Background() ExecContext writes on
+// its own pool connection, which lands in the same database the test reads —
+// the shared Postgres pool removes the old SQLite `:memory:`-per-connection
+// hazard that forced an on-disk DB here.
 func auditTestDB(t *testing.T) (*sql.DB, int64) {
 	t.Helper()
-	dir := t.TempDir()
-	d, err := db.Open(filepath.Join(dir, "tela.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	d := testdb.New(t)
 	ctx := context.Background()
 	if _, err := d.ExecContext(ctx, `
 		INSERT INTO users (username, password_hash, is_instance_admin, is_active)
@@ -35,15 +27,11 @@ func auditTestDB(t *testing.T) (*sql.DB, int64) {
 	if err := d.QueryRowContext(ctx, `SELECT id FROM users WHERE username='alice'`).Scan(&uid); err != nil {
 		t.Fatalf("read user id: %v", err)
 	}
-	res, err := d.ExecContext(ctx, `
+	var keyID int64
+	if err := d.QueryRowContext(ctx, `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope)
-		VALUES (?, 'k', 'tela_pat', 'deadbeefdeadbeef', 'write')`, uid)
-	if err != nil {
+		VALUES ($1, 'k', 'tela_pat', 'deadbeefdeadbeef', 'write') RETURNING id`, uid).Scan(&keyID); err != nil {
 		t.Fatalf("seed api_key: %v", err)
-	}
-	keyID, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id: %v", err)
 	}
 	return d, keyID
 }
@@ -63,7 +51,7 @@ func TestAuditWriter_SubmitInsertsRow(t *testing.T) {
 		ts         string
 	)
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT method, path, status_code, ts FROM api_key_audit WHERE api_key_id = ?`, keyID).
+		`SELECT method, path, status_code, ts FROM api_key_audit WHERE api_key_id = $1`, keyID).
 		Scan(&method, &path, &statusCode, &ts); err != nil {
 		t.Fatalf("read audit row: %v", err)
 	}
@@ -83,7 +71,7 @@ func TestAuditWriter_SubmitAfterClose_IsNoop(t *testing.T) {
 	aw.Submit(AuditEvent{APIKeyID: keyID, Method: "GET", Path: "/x", StatusCode: 200})
 	var n int
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM api_key_audit WHERE api_key_id = ?`, keyID).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM api_key_audit WHERE api_key_id = $1`, keyID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 0 {
@@ -132,12 +120,12 @@ func TestPurgeAuditOlderThan_DropsExpired(t *testing.T) {
 	// Old row (35 days ago) and a fresh row.
 	if _, err := d.ExecContext(ctx, `
 		INSERT INTO api_key_audit (api_key_id, method, path, status_code, ts)
-		VALUES (?, 'GET', '/old', 200, datetime('now', '-35 days'))`, keyID); err != nil {
+		VALUES ($1, 'GET', '/old', 200, to_char((now() AT TIME ZONE 'UTC') - make_interval(days => 35), 'YYYY-MM-DD HH24:MI:SS'))`, keyID); err != nil {
 		t.Fatalf("insert old: %v", err)
 	}
 	if _, err := d.ExecContext(ctx, `
 		INSERT INTO api_key_audit (api_key_id, method, path, status_code, ts)
-		VALUES (?, 'GET', '/new', 200, datetime('now'))`, keyID); err != nil {
+		VALUES ($1, 'GET', '/new', 200, tela_now())`, keyID); err != nil {
 		t.Fatalf("insert new: %v", err)
 	}
 
@@ -146,14 +134,14 @@ func TestPurgeAuditOlderThan_DropsExpired(t *testing.T) {
 	}
 
 	var n int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_audit WHERE api_key_id = ?`, keyID).Scan(&n); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_audit WHERE api_key_id = $1`, keyID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("post-purge count=%d, want 1 (only the fresh row should survive)", n)
 	}
 	var path string
-	if err := d.QueryRowContext(ctx, `SELECT path FROM api_key_audit WHERE api_key_id = ?`, keyID).Scan(&path); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT path FROM api_key_audit WHERE api_key_id = $1`, keyID).Scan(&path); err != nil {
 		t.Fatalf("read surviving path: %v", err)
 	}
 	if path != "/new" {
@@ -165,7 +153,7 @@ func TestPurgeAuditOlderThan_ZeroDaysIsNoop(t *testing.T) {
 	d, keyID := auditTestDB(t)
 	if _, err := d.ExecContext(context.Background(), `
 		INSERT INTO api_key_audit (api_key_id, method, path, status_code, ts)
-		VALUES (?, 'GET', '/x', 200, datetime('now', '-1 day'))`, keyID); err != nil {
+		VALUES ($1, 'GET', '/x', 200, to_char((now() AT TIME ZONE 'UTC') - make_interval(days => 1), 'YYYY-MM-DD HH24:MI:SS'))`, keyID); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	if err := purgeAuditOlderThan(context.Background(), d, 0); err != nil {

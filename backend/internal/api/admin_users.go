@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
@@ -119,20 +120,16 @@ func (s *Server) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	res, err := s.DB.ExecContext(ctx, `
+	var id int64
+	err = s.DB.QueryRowContext(ctx, `
 		INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
-		VALUES (?, ?, ?, ?, ?, 1)`, username, email, verifiedAt, hash, isAdmin)
+		VALUES ($1, $2, $3, $4, $5, 1) RETURNING id`, username, email, verifiedAt, hash, isAdmin).Scan(&id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "username or email already exists")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "create user failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create user: last insert id failed")
 		return
 	}
 	// Provision the new user's personal space (best-effort: the user already
@@ -204,7 +201,7 @@ func (s *Server) PatchAdminUser(w http.ResponseWriter, r *http.Request) {
 		existingIsAdmin int
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT is_active, is_instance_admin FROM users WHERE id = ?`, id).
+		`SELECT is_active, is_instance_admin FROM users WHERE id = $1`, id).
 		Scan(&existingActive, &existingIsAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
@@ -234,7 +231,7 @@ func (s *Server) PatchAdminUser(w http.ResponseWriter, r *http.Request) {
 		if *req.IsActive {
 			v = 1
 		}
-		sets = append(sets, "is_active = ?")
+		sets = append(sets, "is_active = $"+strconv.Itoa(len(args)+1))
 		args = append(args, v)
 	}
 	if req.IsInstanceAdmin != nil {
@@ -242,17 +239,16 @@ func (s *Server) PatchAdminUser(w http.ResponseWriter, r *http.Request) {
 		if *req.IsInstanceAdmin {
 			v = 1
 		}
-		sets = append(sets, "is_instance_admin = ?")
+		sets = append(sets, "is_instance_admin = $"+strconv.Itoa(len(args)+1))
 		args = append(args, v)
 	}
 	if req.Password != nil {
-		sets = append(sets, "password_hash = ?")
+		sets = append(sets, "password_hash = $"+strconv.Itoa(len(args)+1))
 		args = append(args, newHash)
 	}
-	sets = append(sets, "updated_at = datetime('now')")
+	sets = append(sets, "updated_at = tela_now()")
+	stmt := "UPDATE users SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(len(args)+1)
 	args = append(args, id)
-
-	stmt := "UPDATE users SET " + strings.Join(sets, ", ") + " WHERE id = ?"
 	if _, err := tx.ExecContext(ctx, stmt, args...); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update user failed")
 		return
@@ -310,7 +306,7 @@ func (s *Server) DeleteAdminUser(w http.ResponseWriter, r *http.Request) {
 		existingIsAdmin int
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT is_active, is_instance_admin FROM users WHERE id = ?`, id).
+		`SELECT is_active, is_instance_admin FROM users WHERE id = $1`, id).
 		Scan(&existingActive, &existingIsAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
@@ -332,7 +328,7 @@ func (s *Server) DeleteAdminUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET is_active = 0, updated_at = datetime('now') WHERE id = ?`, id); err != nil {
+		`UPDATE users SET is_active = 0, updated_at = tela_now() WHERE id = $1`, id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "deactivate user failed")
 		return
 	}
@@ -354,7 +350,7 @@ func wouldLeaveZeroAdminsTx(ctx context.Context, tx *sql.Tx, excludeID int64) (b
 	var n int
 	err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM users
-		 WHERE is_active = 1 AND is_instance_admin = 1 AND id != ?`, excludeID).Scan(&n)
+		 WHERE is_active = 1 AND is_instance_admin = 1 AND id != $1`, excludeID).Scan(&n)
 	if err != nil {
 		return false, err
 	}
@@ -384,13 +380,13 @@ func scanAdminUserRow(s adminUserScanner) (adminUserDTO, error) {
 func selectAdminUserByID(ctx context.Context, d *sql.DB, id int64) (adminUserDTO, error) {
 	row := d.QueryRowContext(ctx, `
 		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
-		  FROM users WHERE id = ?`, id)
+		  FROM users WHERE id = $1`, id)
 	return scanAdminUserRow(row)
 }
 
 func selectAdminUserByIDTx(ctx context.Context, tx *sql.Tx, id int64) (adminUserDTO, error) {
 	row := tx.QueryRowContext(ctx, `
 		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
-		  FROM users WHERE id = ?`, id)
+		  FROM users WHERE id = $1`, id)
 	return scanAdminUserRow(row)
 }

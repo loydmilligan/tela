@@ -4,14 +4,14 @@
 
 Three parts:
 
-1. **Backend** (Go) — REST API over SQLite + FTS5; auth, collab WebSocket, business logic.
+1. **Backend** (Go) — REST API over PostgreSQL; auth, collab WebSocket, business logic.
 2. **Frontend** (React + TS) — SPA, Milkdown editor, talks to the backend over REST + a WebSocket for live collab.
 3. **MCP server** (TypeScript) — exposes tela to AI agents over the Model Context Protocol; a thin bearer-authed client over the REST API.
 
 ```
 ┌──────────┐  REST + WS   ┌──────────┐   database/sql   ┌────────────────┐
-│ Frontend │ ───────────▶ │ Backend  │ ───────────────▶ │ SQLite + FTS5  │
-│ (React)  │              │  (Go)    │                  │ (tela-data vol)│
+│ Frontend │ ───────────▶ │ Backend  │ ───────────────▶ │   PostgreSQL   │
+│ (React)  │              │  (Go)    │   (pgx/v5 stdlib)│ (tela-pgdata)  │
 └──────────┘              └──────────┘                  └────────────────┘
                                ▲
                                │ REST (bearer PAT)
@@ -25,25 +25,30 @@ Three parts:
 
 ## Deploy topology
 
-Docker Compose, three services on a private network; only Caddy publishes a host port (**8780**). `tela.cagdas.io` → Cloudflare → host:8780.
+Docker Compose; only Caddy publishes a host port (**8780**). `tela.cagdas.io` → Cloudflare → host:8780.
 
-- **backend** — Go binary, internal `:8080`, SQLite on the `tela-data` volume.
+- **postgres** — `postgres:17-alpine`, data on the `tela-pgdata` volume, `pg_isready` healthcheck. Internal only.
+- **backend** — Go binary, internal `:8080`; reads `TELA_DATABASE_URL` (auto-built in compose from `TELA_PG_*`), `depends_on: postgres (service_healthy)`. `db.Open` retries the connection so it tolerates the gap before Postgres is query-ready.
+- **gotenberg** — headless-Chromium HTML→PDF, internal only.
 - **frontend** — Vite static build served by nginx, internal `:80`.
-- **proxy** — Caddy. Routes `/api/*` + `/p/*` + `/share/*` (UA bot-gate) + `/ws/*` → backend; everything else → frontend.
+- **proxy** — Caddy. Routes `/api/*` + `/p/*` + `/share/*` (UA bot-gate) + `/ws/*` → backend; serves `landing/dist` at the apex; everything else → frontend.
 
-Backend image is distroless. Ad-hoc DB poke: `docker run --rm -v tela_tela-data:/data alpine:3 sh -c "apk add --no-cache sqlite && sqlite3 /data/tela.db '...'"`. `make up`/`make build` auto-stamp `TELA_VERSION` (`git describe --tags --always --dirty`) + `TELA_COMMIT` into the image, surfaced by `GET /api/version`.
+Backend image is distroless. Ad-hoc DB poke: `docker compose exec postgres psql -U tela -d tela -c '…'`. `make up`/`make build` auto-stamp `TELA_VERSION` (`git describe --tags --always --dirty`) + `TELA_COMMIT` into the image, surfaced by `GET /api/version`.
+
+**Deploy** is build-on-archer, runnable from any machine: `make deploy` (full), `make deploy-backend|deploy-frontend|deploy-landing` (one service), each followed by a `/api/version` health gate. `make reset-prod-db FORCE=1` wipes the Postgres volume (sanctioned — prod data is disposable).
 
 ## Backend layout (`backend/`)
 
 - `cmd/tela/main.go` — entrypoint, wiring, graceful shutdown.
 - `internal/api` — chi-free `net/http` ServeMux handlers, one file per resource (`spaces.go`, `pages.go`, `search.go`, `backlinks.go`, `comments.go`, `page_revisions.go`, `share_links.go`, `public_share*.go`, `api_keys.go`, `api_key_audit.go`, `og_image.go`, `page_diagrams.go`, `import.go`, `import_mira.go`, `feedback.go`, `version.go`, `health.go`, `pages_ws.go`, …) + `router.go` (`Handler(d *sql.DB) http.Handler`).
-- `internal/db` — `db.go` (connection + helpers) and `migrate.go` (embedded forward-only runner). Migrations in `db/migrations/NNNN_name.sql`, applied on `Open()`, tracked in a `schema_migrations` table by filename.
+- `internal/db` — `db.go` (Postgres connection pool via `pgx/v5` stdlib, with a ping-retry loop) and `migrate.go` (embedded forward-only runner). Migrations in `db/migrations/NNNN_name.sql`, applied by `Migrate()` on boot, tracked in a `schema_migrations` table by filename.
 - `internal/auth` — sessions (argon2id), bearer/API-key middleware, scopes, membership gate, public-path checks, audit log + GC.
 - `internal/mdimport` — bulk markdown/zip import (named `mdimport`, not `import` — Go keyword).
 - `internal/miraimport` — mira (mira.cagdas.io) single-page import: Tier-1/Tier-2/unknown block converters.
 - `internal/models` — shared types.
+- `internal/testdb` — test helper: provisions a throwaway Postgres database per test (`New(t)` → CREATE DATABASE → migrate → drop on cleanup). Replaces the SQLite `:memory:`/on-disk pattern.
 
-DB access is hand-written SQL through `database/sql` on `modernc.org/sqlite`. **No sqlc, no ORM.** Go 1.22+ ServeMux pattern routing — note: a literal segment after a wildcard is rejected.
+DB access is hand-written SQL through `database/sql` on the **`pgx/v5` stdlib** driver (positional `$1` placeholders; inserts return ids via `RETURNING`). **No sqlc, no ORM.** Go 1.22+ ServeMux pattern routing — note: a literal segment after a wildcard is rejected.
 
 ## Frontend layout (`frontend/src/`)
 
@@ -57,19 +62,19 @@ State is TanStack Query; routing is TanStack Router. The command palette (`AppCo
 
 ## Data model
 
-SQLite, built up by the embedded migrations (current set):
+PostgreSQL. The SQLite migration history (`0001`–`0018`) was squashed into a single Postgres baseline `0001_init.sql` when the live DB held no data worth keeping; forward-only `NNNN_name.sql` from there.
 
-`0001_init` · `0002_search` (FTS5) · `0003_page_links` · `0004_auth` · `0005_yjs` · `0006_comments` · `0007_page_revisions` · `0008_share_links` · `0009_page_diagrams` · `0010_fts_strip_excalidraw` · `0011_api_keys` · `0012_api_key_audit` · `0013_feedback`.
+Era-carried conventions (kept to minimize churn): datetimes are **TEXT** `'YYYY-MM-DD HH:MM:SS'` UTC (`DEFAULT tela_now()`, a SQL function; Go's `nowStamp()` emits the same), booleans are **INTEGER 0/1**, blobs are **BYTEA**, surrogate keys are **BIGINT IDENTITY** (inserts use `RETURNING id`). The org/group invariants are PL/pgSQL triggers (`RAISE EXCEPTION`); effective access is the `space_access` view (direct ∪ org ∪ group).
 
-Core shape: `spaces`, `pages` (`body TEXT` canonical markdown, soft-deleted), `space_members` (role: owner/editor/viewer), `pages_fts` (FTS5), page-link rows (backlinks from `[[wikilink]]` / `tela://page/{id}`), `users` + sessions, `comments`, `page_revisions`, `share_links`, `page_diagrams` (Excalidraw PNG sidecars), `api_keys` + audit, `feedback`.
+Core shape: `spaces`, `pages` (`body TEXT` canonical markdown), `space_members` (role: owner/editor/viewer), page-link rows (backlinks from `[[wikilink]]` / `tela://page/{id}`), `users` + sessions + `email_tokens`, `orgs`/`org_members`/`groups`/`group_members`/`space_grants`, `comments`, `page_revisions`, `share_links`, `page_diagrams` (Excalidraw PNG sidecars), `page_images`, `page_yjs_*`, `api_keys` + audit, `feedback`, `access_audit`.
 
-- **Search:** SQLite FTS5. Body search builds a MATCH query in `buildFTSBodyMatch` (per-term quote-escape + `*` prefix wildcard); score `= -bm25/(1-bm25)`. The `0010` trigger strips Excalidraw fences from the FTS index.
+- **Search:** PLACEHOLDER. FTS5 was removed in the Postgres switch; `/api/search*` currently run an unranked `ILIKE` substring scan (escapeLike-guarded), `TODO(search)` in `internal/api/search*.go`. The target two-tier instant + semantic (pgvector) design is in [`search.md`](search.md). tsvector / pg_trgm / pgvector all live in this one Postgres, so the rebuild is additive.
 - **Backlinks:** parsed from `[[wikilink]]` / `tela://page/{id}` on save.
 - **Soft delete:** queries must filter out deleted rows.
 
 ## Request flow
 
-Frontend → `/api/...` (Vite proxy in dev, Caddy in prod) → ServeMux → handler → `database/sql` → SQLite. MCP → the same `/api/...` with a bearer PAT.
+Frontend → `/api/...` (Vite proxy in dev, Caddy in prod) → ServeMux → handler → `database/sql` → PostgreSQL. MCP → the same `/api/...` with a bearer PAT.
 
 ## Subsystem notes (load-bearing)
 

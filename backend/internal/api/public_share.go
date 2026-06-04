@@ -49,7 +49,7 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 		`SELECT p.title, p.body, sp.name, p.space_id
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
-		  WHERE p.id = ?`, pageID,
+		  WHERE p.id = $1`, pageID,
 	).Scan(&title, &body, &spaceName, &spaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)
@@ -159,4 +159,3 @@ func stripMarkdownToText(body string) string {
 	s = whitespaceRE.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
 }
-

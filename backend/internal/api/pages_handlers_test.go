@@ -11,15 +11,12 @@ import (
 // seedPage inserts a top-level page row directly and returns the new id.
 func seedPage(t *testing.T, d *sql.DB, spaceID int64, title string) int64 {
 	t.Helper()
-	res, err := d.ExecContext(context.Background(),
-		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES (?, NULL, ?, '', 0)`,
-		spaceID, title)
+	var id int64
+	err := d.QueryRowContext(context.Background(),
+		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, NULL, $2, '', 0) RETURNING id`,
+		spaceID, title).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert page %q: %v", title, err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id: %v", err)
 	}
 	return id
 }

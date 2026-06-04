@@ -40,7 +40,7 @@ func (s *Server) ListGroups(w http.ResponseWriter, r *http.Request) {
 		SELECT g.id, g.org_id, g.name, g.created_at, g.updated_at,
 		       (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS member_count
 		  FROM groups g
-		 WHERE g.org_id = ?
+		 WHERE g.org_id = $1
 		 ORDER BY g.name ASC`, orgID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list groups failed")
@@ -93,7 +93,7 @@ func (s *Server) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 		rows, err = s.DB.QueryContext(r.Context(), base+` ORDER BY o.name ASC, g.name ASC`)
 	} else {
 		rows, err = s.DB.QueryContext(r.Context(),
-			base+` WHERE g.org_id IN (SELECT org_id FROM org_members WHERE user_id = ?)
+			base+` WHERE g.org_id IN (SELECT org_id FROM org_members WHERE user_id = $1)
 			 ORDER BY o.name ASC, g.name ASC`, u.ID)
 	}
 	if err != nil {
@@ -138,19 +138,15 @@ func (s *Server) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.DB.ExecContext(r.Context(),
-		`INSERT INTO groups (org_id, name) VALUES (?, ?)`, orgID, name)
+	var id int64
+	err := s.DB.QueryRowContext(r.Context(),
+		`INSERT INTO groups (org_id, name) VALUES ($1, $2) RETURNING id`, orgID, name).Scan(&id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "a group with that name already exists in this org")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "create group failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create group: last insert id failed")
 		return
 	}
 	g, err := selectGroupByID(r.Context(), s.DB, id)
@@ -189,7 +185,7 @@ func (s *Server) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.DB.ExecContext(r.Context(),
-		`UPDATE groups SET name = ?, updated_at = datetime('now') WHERE id = ?`, name, groupID); err != nil {
+		`UPDATE groups SET name = $1, updated_at = tela_now() WHERE id = $2`, name, groupID); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "a group with that name already exists in this org")
 			return
@@ -233,11 +229,11 @@ func (s *Server) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM space_grants WHERE principal_kind = 'group' AND principal_id = ?`, groupID); err != nil {
+		`DELETE FROM space_grants WHERE principal_kind = 'group' AND principal_id = $1`, groupID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "remove group grants failed")
 		return
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM groups WHERE id = ?`, groupID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM groups WHERE id = $1`, groupID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete group failed")
 		return
 	}
@@ -267,7 +263,7 @@ func (s *Server) requireGroupInOrg(w http.ResponseWriter, r *http.Request, orgID
 func selectGroupByID(ctx context.Context, db *sql.DB, id int64) (models.Group, error) {
 	var g models.Group
 	err := db.QueryRowContext(ctx,
-		`SELECT id, org_id, name, created_at, updated_at FROM groups WHERE id = ?`, id,
+		`SELECT id, org_id, name, created_at, updated_at FROM groups WHERE id = $1`, id,
 	).Scan(&g.ID, &g.OrgID, &g.Name, &g.CreatedAt, &g.UpdatedAt)
 	return g, err
 }

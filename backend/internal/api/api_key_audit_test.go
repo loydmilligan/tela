@@ -8,30 +8,23 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/zcag/tela/backend/internal/auth"
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// newWiredServerOnDiskWithSrv mirrors newWiredServerOnDisk but also exposes
-// the *Server so tests can reach the AuditWriter and Flush() between
-// bearer-authed requests and "did the row land?" assertions.
+// newWiredServerOnDiskWithSrv is a wired httptest.Server (backed by a fresh
+// throwaway Postgres database) that also exposes the *Server so tests can reach
+// the AuditWriter and Flush() between bearer-authed requests and "did the row
+// land?" assertions. (Name retained for callers; the old on-disk-SQLite
+// rationale is obsolete with per-test Postgres databases.)
 func newWiredServerOnDiskWithSrv(t *testing.T) (*httptest.Server, *sql.DB, *Server) {
 	t.Helper()
 	t.Setenv("TELA_SHARE_SECRET", "tela-test-share-secret-fixed-32-byte!")
-	dir := t.TempDir()
-	d, err := db.Open(filepath.Join(dir, "tela.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	d := testdb.New(t)
 	h, srv := HandlerWithServer(d)
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
@@ -65,16 +58,13 @@ func seedAPIKeyForUser(t *testing.T, d *sql.DB, uid int64, scope string, spaceID
 	if spaceID != nil {
 		spaceArg = *spaceID
 	}
-	res, err := d.ExecContext(context.Background(), `
+	var id int64
+	err = d.QueryRowContext(context.Background(), `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		uid, "test-key", prefix, hmacHex, scope, spaceArg)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		uid, "test-key", prefix, hmacHex, scope, spaceArg).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert api_key: %v", err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("last insert id: %v", err)
 	}
 	return raw, id
 }
@@ -98,7 +88,7 @@ func TestAPIKeyAudit_BearerRequestLogsOneRow(t *testing.T) {
 
 	var n int
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM api_key_audit WHERE api_key_id = ?`, keyID).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM api_key_audit WHERE api_key_id = $1`, keyID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {
@@ -110,7 +100,7 @@ func TestAPIKeyAudit_BearerRequestLogsOneRow(t *testing.T) {
 		statusCode int
 	)
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT method, path, status_code FROM api_key_audit WHERE api_key_id = ?`, keyID).
+		`SELECT method, path, status_code FROM api_key_audit WHERE api_key_id = $1`, keyID).
 		Scan(&method, &path, &statusCode); err != nil {
 		t.Fatalf("read row: %v", err)
 	}
@@ -148,7 +138,7 @@ func TestAPIKeyAudit_LogsAllStatusCodes(t *testing.T) {
 	srv.AuditWriter().Flush()
 
 	rows, err := d.QueryContext(context.Background(),
-		`SELECT method, path, status_code FROM api_key_audit WHERE api_key_id = ? ORDER BY id ASC`, keyID)
+		`SELECT method, path, status_code FROM api_key_audit WHERE api_key_id = $1 ORDER BY id ASC`, keyID)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -297,7 +287,7 @@ func TestAPIKeyAudit_PaginatesByBefore(t *testing.T) {
 	for _, row := range rows {
 		if _, err := d.ExecContext(ctx, `
 			INSERT INTO api_key_audit (api_key_id, method, path, status_code, ts)
-			VALUES (?, 'GET', ?, 200, ?)`, keyID, row.path, row.ts); err != nil {
+			VALUES ($1, 'GET', $2, 200, $3)`, keyID, row.path, row.ts); err != nil {
 			t.Fatalf("insert %s: %v", row.path, err)
 		}
 	}

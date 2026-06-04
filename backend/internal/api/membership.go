@@ -55,7 +55,7 @@ func requireInstanceAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, b
 // has no access at all — preserving the pre-orgs spaceRole contract.
 const effectiveRoleQuery = `
 	SELECT role FROM space_access
-	 WHERE space_id = ? AND user_id = ?
+	 WHERE space_id = $1 AND user_id = $2
 	 ORDER BY CASE role WHEN 'owner' THEN 3 WHEN 'editor' THEN 2 ELSE 1 END DESC
 	 LIMIT 1`
 

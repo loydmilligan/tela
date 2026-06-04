@@ -54,12 +54,12 @@ func TestPageDiagrams_FullFlow(t *testing.T) {
 	space := seedSpace(t, d, "Test Space", "test-space", admin)
 	seedMember(t, d, space, bob, roleViewer)
 
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'P', 'body', 0)`, space)
+	var pageID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'P', 'body', 0) RETURNING id`, space).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
 	}
-	pageID, _ := res.LastInsertId()
 
 	adminC := loginClient(t, ts, "admin", "adminpw12")
 	bobC := loginClient(t, ts, "bob", "bobpw1234")
@@ -90,7 +90,7 @@ func TestPageDiagrams_FullFlow(t *testing.T) {
 		t.Fatalf("PUT happy resp = %+v", firstResp)
 	}
 	var dbCount int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_diagrams WHERE page_id = ? AND scene_hash = ?`,
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_diagrams WHERE page_id = $1 AND scene_hash = $2`,
 		pageID, hash).Scan(&dbCount); err != nil {
 		t.Fatalf("count after PUT: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestPageDiagrams_FullFlow(t *testing.T) {
 	if secondResp.ID != firstResp.ID {
 		t.Fatalf("idempotent PUT id=%d, first id=%d — must be equal", secondResp.ID, firstResp.ID)
 	}
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_diagrams WHERE page_id = ? AND scene_hash = ?`,
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_diagrams WHERE page_id = $1 AND scene_hash = $2`,
 		pageID, hash).Scan(&dbCount); err != nil {
 		t.Fatalf("count after idempotent: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestPageDiagrams_FullFlow(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete page status=%d want 204", resp.StatusCode)
 	}
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_diagrams WHERE page_id = ?`, pageID).Scan(&dbCount); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_diagrams WHERE page_id = $1`, pageID).Scan(&dbCount); err != nil {
 		t.Fatalf("count after page delete: %v", err)
 	}
 	if dbCount != 0 {

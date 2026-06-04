@@ -8,11 +8,11 @@ Public instance: **https://tela.cagdas.io**
 
 | Part       | Tech                                                                                         | Location    |
 |------------|---------------------------------------------------------------------------------------------|-------------|
-| Backend    | Go + SQLite + FTS5 (`modernc.org/sqlite`), `database/sql` (no ORM), embedded migrations      | `backend/`  |
+| Backend    | Go + PostgreSQL (`pgx/v5` stdlib), `database/sql` (no ORM), embedded migrations              | `backend/`  |
 | Frontend   | React 19 + TypeScript + Vite + Tailwind v4 + Radix + Milkdown + TanStack Query/Router + Orama | `frontend/` |
 | Collab     | Yjs + y-prosemirror over a custom WebSocket transport (not y-websocket)                      | `frontend/` |
 | MCP server | TypeScript (`@modelcontextprotocol/sdk`), published to npm as `tela-mcp`                     | `mcp/`      |
-| Deploy     | Docker Compose — backend, frontend (nginx), Caddy proxy; SQLite on a volume                  | `deploy/`   |
+| Deploy     | Docker Compose — backend, frontend (nginx), Postgres, Caddy proxy; data on a Postgres volume | `deploy/`   |
 
 `pages.body` is canonical markdown forever; there is no block table. The editor is Milkdown; Yjs is an overlay that rebases onto the markdown on save.
 
@@ -22,7 +22,7 @@ Public instance: **https://tela.cagdas.io**
 make dev        # backend (go run ./cmd/tela, :8080) + frontend (vite, :5173) in parallel
 ```
 
-The Vite dev server proxies `/api` → backend `:8080`. SQLite is created and migrated automatically on first backend start (migrations are embedded and run on `db.Open()` — there is no separate migrate step). Open http://localhost:5173.
+The Vite dev server proxies `/api` → backend `:8080`. `make dev` boots a local Postgres (`tela-dev-pg` on :55432) and points `TELA_DATABASE_URL` at it; the schema is migrated automatically on backend start (embedded migrations run by `db.Migrate()` — no separate migrate step). Open http://localhost:5173.
 
 Run parts individually:
 
@@ -67,7 +67,7 @@ make help
 ## Tests
 
 ```bash
-cd backend && go test ./...     # backend (in-memory SQLite; on-disk for concurrency tests)
+make test                       # backend (boots a throwaway Postgres; per-test isolated DBs)
 cd mcp && npm test              # MCP unit (mocked fetch) + npm run test:smoke / test:integration
 ```
 
@@ -76,7 +76,7 @@ The frontend has **no** unit-test harness today (no jsdom / vitest config). CI (
 ## Documentation
 
 - [`docs/architecture.md`](docs/architecture.md) — system shape, repo layout, data model, and per-subsystem load-bearing details
-- [`docs/decisions.md`](docs/decisions.md) — why SQLite, custom collab transport, MCP-as-thin-client, etc.
+- [`docs/decisions.md`](docs/decisions.md) — why PostgreSQL, custom collab transport, MCP-as-thin-client, etc.
 - [`docs/api.md`](docs/api.md) — REST API surface
 - [`CLAUDE.md`](CLAUDE.md) — conventions, hard rules, and the gotchas — **read before contributing**
 - [`mcp/README.md`](mcp/README.md) — the MCP server (install, tool catalog, troubleshooting)

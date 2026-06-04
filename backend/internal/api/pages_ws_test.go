@@ -9,37 +9,26 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// newWSTestDB returns a file-backed test DB. The ws handler runs in a
-// separate goroutine from the test (httptest.Server or `go` snapshots), and
-// the `:memory:` DSN gives each pool connection its own private database —
-// the migrated table only lives on whichever connection ran the migration.
-// File-backed DB on t.TempDir keeps the table visible across the pool, as
-// memory.md prescribes for concurrency-sensitive tests.
+// newWSTestDB returns a fresh, migrated throwaway Postgres database. The ws
+// handler runs in a separate goroutine from the test (httptest.Server or `go`
+// snapshots); a pool against one Postgres database is shared across all
+// connections natively, so the concurrency hazard the old on-disk SQLite DB
+// guarded against no longer applies.
 func newWSTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	d, err := db.Open(filepath.Join(t.TempDir(), "tela.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return d
+	return testdb.New(t)
 }
 
-// newWSWiredServer mirrors newWiredServer but with the file-backed DB above —
-// see newWSTestDB for why this is required for ws tests.
+// newWSWiredServer mirrors newWiredServer but with the DB helper above.
 func newWSWiredServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	t.Helper()
 	d := newWSTestDB(t)
@@ -170,7 +159,7 @@ func TestRoom_AppendUpdate_MonotonicSeqAndPersistence(t *testing.T) {
 		}
 	}
 	var n int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ?`, pageID).Scan(&n); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = $1`, pageID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 5 {
@@ -264,7 +253,7 @@ func TestRoom_ApplySnapshot_PersistsAndSchedulesGC(t *testing.T) {
 	rm.mu.Unlock()
 
 	var snapCount int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_snapshots WHERE page_id = ?`, pageID).Scan(&snapCount); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_snapshots WHERE page_id = $1`, pageID).Scan(&snapCount); err != nil {
 		t.Fatalf("count snapshots: %v", err)
 	}
 	if snapCount != 1 {
@@ -275,7 +264,7 @@ func TestRoom_ApplySnapshot_PersistsAndSchedulesGC(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var n int
 		if err := d.QueryRow(
-			`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ? AND seq < ?`,
+			`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = $1 AND seq < $2`,
 			pageID, 4).Scan(&n); err != nil {
 			t.Fatalf("count pre-snap updates: %v", err)
 		}
@@ -285,10 +274,10 @@ func TestRoom_ApplySnapshot_PersistsAndSchedulesGC(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	var pre, post int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ? AND seq < ?`, pageID, 4).Scan(&pre); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = $1 AND seq < $2`, pageID, 4).Scan(&pre); err != nil {
 		t.Fatalf("count pre: %v", err)
 	}
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ? AND seq >= ?`, pageID, 4).Scan(&post); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = $1 AND seq >= $2`, pageID, 4).Scan(&post); err != nil {
 		t.Fatalf("count post: %v", err)
 	}
 	if pre != 0 {
@@ -313,7 +302,7 @@ func TestRoom_ApplySnapshot_NoOpWhenNoneInFlight(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	var n int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_snapshots WHERE page_id = ?`, pageID).Scan(&n); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_snapshots WHERE page_id = $1`, pageID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 0 {
@@ -452,7 +441,7 @@ func TestIntegration_WSPage_PersistsLargeUpdate(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		err := d.QueryRow(
-			`SELECT payload FROM page_yjs_updates WHERE page_id = ? AND seq = 1`,
+			`SELECT payload FROM page_yjs_updates WHERE page_id = $1 AND seq = 1`,
 			pageID).Scan(&got)
 		if err == nil {
 			break
@@ -580,13 +569,13 @@ func TestIntegration_WSPage_AwarenessRebroadcastsToOthersNotSender(t *testing.T)
 	// Give the server a moment in case a misbehaving handler queued a write.
 	time.Sleep(50 * time.Millisecond)
 	var nUpd, nSnap int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ?`, pageID).Scan(&nUpd); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = $1`, pageID).Scan(&nUpd); err != nil {
 		t.Fatalf("count updates: %v", err)
 	}
 	if nUpd != 0 {
 		t.Fatalf("awareness frame leaked into page_yjs_updates (%d rows)", nUpd)
 	}
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_snapshots WHERE page_id = ?`, pageID).Scan(&nSnap); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_snapshots WHERE page_id = $1`, pageID).Scan(&nSnap); err != nil {
 		t.Fatalf("count snapshots: %v", err)
 	}
 	if nSnap != 0 {
@@ -665,7 +654,7 @@ func TestIntegration_WSPage_UnknownTagIgnored(t *testing.T) {
 
 	// And the unknown tag itself never landed in storage.
 	var n int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = ?`, pageID).Scan(&n); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_yjs_updates WHERE page_id = $1`, pageID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {
@@ -721,7 +710,7 @@ func decodeSyncInit(buf []byte) (snapshot []byte, updates [][]byte, err error) {
 func insertUpdate(t *testing.T, d *sql.DB, pageID, seq int64, blob []byte) {
 	t.Helper()
 	if _, err := d.ExecContext(context.Background(),
-		`INSERT INTO page_yjs_updates(page_id, seq, payload) VALUES (?, ?, ?)`,
+		`INSERT INTO page_yjs_updates(page_id, seq, payload) VALUES ($1, $2, $3)`,
 		pageID, seq, blob); err != nil {
 		t.Fatalf("insert update seq=%d: %v", seq, err)
 	}
@@ -731,7 +720,7 @@ func insertUpdate(t *testing.T, d *sql.DB, pageID, seq int64, blob []byte) {
 func insertSnapshot(t *testing.T, d *sql.DB, pageID, seq int64, state []byte) {
 	t.Helper()
 	if _, err := d.ExecContext(context.Background(),
-		`INSERT INTO page_yjs_snapshots(page_id, seq, state) VALUES (?, ?, ?)`,
+		`INSERT INTO page_yjs_snapshots(page_id, seq, state) VALUES ($1, $2, $3)`,
 		pageID, seq, state); err != nil {
 		t.Fatalf("insert snapshot seq=%d: %v", seq, err)
 	}

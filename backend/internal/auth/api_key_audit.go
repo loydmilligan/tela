@@ -180,7 +180,7 @@ func (aw *AuditWriter) run() {
 		// down the worker on a transient DB error.
 		if _, err := aw.db.ExecContext(context.Background(),
 			`INSERT INTO api_key_audit (api_key_id, method, path, status_code)
-			 VALUES (?, ?, ?, ?)`,
+			 VALUES ($1, $2, $3, $4)`,
 			msg.ev.APIKeyID, msg.ev.Method, msg.ev.Path, msg.ev.StatusCode); err != nil {
 			log.Printf("auth: api_key audit insert failed (key=%d %s %s -> %d): %v",
 				msg.ev.APIKeyID, msg.ev.Method, msg.ev.Path, msg.ev.StatusCode, err)

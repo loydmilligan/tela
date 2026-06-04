@@ -53,12 +53,12 @@ func TestFeedback_SessionCreate201(t *testing.T) {
 			env.Feedback.CreatedByAPIKeyID)
 	}
 	if env.Feedback.CreatedAt == "" {
-		t.Fatalf("created_at empty, want SQLite datetime string")
+		t.Fatalf("created_at empty, want datetime string")
 	}
 
 	// Confirm exactly one row landed.
 	var n int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM feedback WHERE id = ?`, env.Feedback.ID).Scan(&n); err != nil {
+	if err := d.QueryRow(`SELECT COUNT(*) FROM feedback WHERE id = $1`, env.Feedback.ID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {
@@ -72,21 +72,18 @@ func TestFeedback_SessionCreate201(t *testing.T) {
 func TestFeedback_BearerCreate201(t *testing.T) {
 	t.Setenv("TELA_API_KEY_SECRET", "deadbeef00112233445566778899aabbccddeeff00112233445566778899aabb")
 	auth.ResetAPIKeySecretCache()
-	// On-disk DB: the bearer-auth middleware spawns an async last_used_at
-	// goroutine that opens a fresh connection. modernc.org/sqlite's :memory:
-	// is per-connection so the goroutine wouldn't see the api_keys row.
 	ts, d := newWiredServerOnDisk(t)
 	uid := seedUser(t, d, "admin", "testpass123", true)
 
 	rawKey, prefix, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
-	res, err := d.ExecContext(context.Background(), `
+	var keyID int64
+	err := d.QueryRowContext(context.Background(), `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
-		VALUES (?, 'agent', ?, ?, 'write', NULL)`,
-		uid, prefix, auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey))
+		VALUES ($1, 'agent', $2, $3, 'write', NULL) RETURNING id`,
+		uid, prefix, auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey)).Scan(&keyID)
 	if err != nil {
 		t.Fatalf("seed key: %v", err)
 	}
-	keyID, _ := res.LastInsertId()
 
 	resp := bearerRequest(t, http.MethodPost, ts.URL+"/api/feedback", rawKey,
 		`{"subject":"bearer test","body":"bearer body"}`)
@@ -186,7 +183,7 @@ func TestFeedback_BearerAllScopesAccepted(t *testing.T) {
 			rawKey, prefix, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
 			if _, err := d.ExecContext(context.Background(), `
 				INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
-				VALUES (?, ?, ?, ?, ?, NULL)`,
+				VALUES ($1, $2, $3, $4, $5, NULL)`,
 				uid, "k-"+scope, prefix,
 				auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey), scope); err != nil {
 				t.Fatalf("seed key: %v", err)

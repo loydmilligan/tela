@@ -85,21 +85,18 @@ func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv, em
 		verifiedAt = nowStamp()
 	}
 
-	res, err := tx.ExecContext(ctx, `
+	var userID int64
+	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
-		VALUES (?, ?, ?, ?, 1, 1)
-	`, username, email, verifiedAt, hash)
-	if err != nil {
+		VALUES ($1, $2, $3, $4, 1, 1)
+		RETURNING id
+	`, username, email, verifiedAt, hash).Scan(&userID); err != nil {
 		return BootstrapResult{}, fmt.Errorf("auth: insert bootstrap admin: %w", err)
-	}
-	userID, err := res.LastInsertId()
-	if err != nil {
-		return BootstrapResult{}, fmt.Errorf("auth: bootstrap admin last insert id: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO space_members (space_id, user_id, role)
-		SELECT id, ?, 'owner' FROM spaces
+		SELECT id, $1, 'owner' FROM spaces
 	`, userID); err != nil {
 		return BootstrapResult{}, fmt.Errorf("auth: backfill space_members: %w", err)
 	}
@@ -149,8 +146,8 @@ func BackfillAdminEmailFromEnv(ctx context.Context, d *sql.DB) {
 	}
 	res, err := d.ExecContext(ctx, `
 		UPDATE users
-		   SET email = ?, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
-		 WHERE username = ? AND is_instance_admin = 1 AND email IS NULL`,
+		   SET email = $1, email_verified_at = COALESCE(email_verified_at, $2), updated_at = $3
+		 WHERE username = $4 AND is_instance_admin = 1 AND email IS NULL`,
 		email, nowStamp(), nowStamp(), username)
 	if err != nil {
 		log.Printf("auth: backfill admin email: %v", err)

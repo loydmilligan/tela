@@ -60,7 +60,7 @@ func createEmailToken(ctx context.Context, ex emailTokenExec, userID int64, kind
 	}
 	expires := time.Now().UTC().Add(ttl).Format("2006-01-02 15:04:05")
 	if _, err := ex.ExecContext(ctx,
-		`INSERT INTO email_tokens(user_id, kind, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO email_tokens(user_id, kind, token_hash, expires_at) VALUES ($1, $2, $3, $4)`,
 		userID, kind, hash, expires); err != nil {
 		return "", err
 	}
@@ -84,9 +84,9 @@ func consumeEmailToken(ctx context.Context, tx *sql.Tx, kind, raw string) (int64
 	)
 	err := tx.QueryRowContext(ctx, `
 		SELECT id, user_id FROM email_tokens
-		 WHERE token_hash = ? AND kind = ?
+		 WHERE token_hash = $1 AND kind = $2
 		   AND consumed_at IS NULL
-		   AND expires_at > datetime('now')`, hash, kind).Scan(&id, &userID)
+		   AND expires_at > tela_now()`, hash, kind).Scan(&id, &userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, errTokenInvalid
 	}
@@ -94,7 +94,7 @@ func consumeEmailToken(ctx context.Context, tx *sql.Tx, kind, raw string) (int64
 		return 0, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE email_tokens SET consumed_at = datetime('now') WHERE id = ?`, id); err != nil {
+		`UPDATE email_tokens SET consumed_at = tela_now() WHERE id = $1`, id); err != nil {
 		return 0, err
 	}
 	return userID, nil

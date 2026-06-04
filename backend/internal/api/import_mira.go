@@ -175,7 +175,7 @@ func (s *Server) ImportMira(w http.ResponseWriter, r *http.Request) {
 	if req.ParentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = ?`, *req.ParentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1`, *req.ParentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, "bad_request", "parent page does not exist")
 			return
@@ -193,10 +193,10 @@ func (s *Server) ImportMira(w http.ResponseWriter, r *http.Request) {
 	var maxPos sql.NullInt64
 	if req.ParentID == nil {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = ? AND parent_id IS NULL`, spaceID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL`, spaceID).Scan(&maxPos)
 	} else {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = ? AND parent_id = ?`, spaceID, *req.ParentID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, spaceID, *req.ParentID).Scan(&maxPos)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "compute position failed")
@@ -207,16 +207,12 @@ func (s *Server) ImportMira(w http.ResponseWriter, r *http.Request) {
 		position = maxPos.Int64 + 1
 	}
 
-	res, err := tx.ExecContext(ctx,
-		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES (?, ?, ?, ?, ?)`,
-		spaceID, nullableInt64(req.ParentID), title, body, position)
+	var id int64
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		spaceID, nullableInt64(req.ParentID), title, body, position).Scan(&id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "create page failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "last insert id failed")
 		return
 	}
 	if err := syncPageLinks(ctx, tx, id, body); err != nil {

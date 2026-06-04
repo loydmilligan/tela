@@ -21,21 +21,21 @@ func TestPageRevisions_FullFlow(t *testing.T) {
 	otherSpace := seedSpace(t, d, "Other Space", "other-space", admin)
 	seedMember(t, d, space, bob, roleViewer)
 
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'P', 'initial body', 0)`, space)
+	var pageID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'P', 'initial body', 0) RETURNING id`, space).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
 	}
-	pageID, _ := res.LastInsertId()
 
 	// Seed a page in the OTHER space (admin is owner; bob/carol are not
 	// members) to exercise the cross-space 403 path.
-	res2, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                     VALUES (?, NULL, 'Other', 'other body', 0)`, otherSpace)
+	var otherPageID int64
+	err = d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                     VALUES ($1, NULL, 'Other', 'other body', 0) RETURNING id`, otherSpace).Scan(&otherPageID)
 	if err != nil {
 		t.Fatalf("seed other page: %v", err)
 	}
-	otherPageID, _ := res2.LastInsertId()
 
 	adminC := loginClient(t, ts, "admin", "adminpw12")
 	bobC := loginClient(t, ts, "bob", "bobpw1234")

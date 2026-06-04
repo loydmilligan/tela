@@ -89,7 +89,7 @@ func (s *Server) ListAPIKeyAudit(w http.ResponseWriter, r *http.Request) {
 	// distinguish "no such key" from "not yours".
 	var ownerID int64
 	err := s.DB.QueryRowContext(r.Context(),
-		`SELECT user_id FROM api_keys WHERE id = ?`, keyID).Scan(&ownerID)
+		`SELECT user_id FROM api_keys WHERE id = $1`, keyID).Scan(&ownerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "api key not found")
 		return
@@ -105,16 +105,16 @@ func (s *Server) ListAPIKeyAudit(w http.ResponseWriter, r *http.Request) {
 
 	q := `SELECT id, method, path, status_code, ts
 	        FROM api_key_audit
-	       WHERE api_key_id = ?`
+	       WHERE api_key_id = $1`
 	args := []any{keyID}
 	if beforeArg != nil {
-		q += ` AND ts < ?`
+		q += ` AND ts < $` + strconv.Itoa(len(args)+1)
 		args = append(args, beforeArg)
 	}
 	// Tie-break on id DESC so two rows with identical ts (sub-second writes)
 	// still come back in a stable order — required for `before`-based
 	// pagination to converge.
-	q += ` ORDER BY ts DESC, id DESC LIMIT ?`
+	q += ` ORDER BY ts DESC, id DESC LIMIT $` + strconv.Itoa(len(args)+1)
 	args = append(args, limit)
 
 	rows, err := s.DB.QueryContext(r.Context(), q, args...)

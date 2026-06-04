@@ -186,7 +186,7 @@ func Import(
 
 	// dirMap holds the pageID for each imported directory. For dry-run these
 	// are negative placeholders (-1, -2, …); for live runs they are real
-	// LastInsertId values. nextPlaceholder is the running counter.
+	// INSERT ... RETURNING id values. nextPlaceholder is the running counter.
 	dirMap := map[string]int64{}
 	nextPlaceholder := int64(-1)
 
@@ -214,10 +214,10 @@ func Import(
 		var err error
 		if parent == nil {
 			rows, err = tx.QueryContext(ctx,
-				`SELECT title FROM pages WHERE space_id = ? AND parent_id IS NULL`, spaceID)
+				`SELECT title FROM pages WHERE space_id = $1 AND parent_id IS NULL`, spaceID)
 		} else {
 			rows, err = tx.QueryContext(ctx,
-				`SELECT title FROM pages WHERE space_id = ? AND parent_id = ?`, spaceID, *parent)
+				`SELECT title FROM pages WHERE space_id = $1 AND parent_id = $2`, spaceID, *parent)
 		}
 		if err != nil {
 			return fmt.Errorf("preload siblings: %w", err)
@@ -250,10 +250,10 @@ func Import(
 		var err error
 		if parent == nil {
 			err = tx.QueryRowContext(ctx,
-				`SELECT MAX(position) FROM pages WHERE space_id = ? AND parent_id IS NULL`, spaceID).Scan(&maxPos)
+				`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL`, spaceID).Scan(&maxPos)
 		} else {
 			err = tx.QueryRowContext(ctx,
-				`SELECT MAX(position) FROM pages WHERE space_id = ? AND parent_id = ?`, spaceID, *parent).Scan(&maxPos)
+				`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, spaceID, *parent).Scan(&maxPos)
 		}
 		if err != nil {
 			return fmt.Errorf("preload position: %w", err)
@@ -309,23 +309,19 @@ func Import(
 			if parent != nil {
 				parentArg = *parent
 			}
-			res, err := tx.ExecContext(ctx,
+			err := tx.QueryRowContext(ctx,
 				`INSERT INTO pages (space_id, parent_id, title, body, position)
-				 VALUES (?, ?, ?, ?, ?)`,
-				spaceID, parentArg, title, body, pos)
+				 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+				spaceID, parentArg, title, body, pos).Scan(&pageID)
 			if err != nil {
 				return 0, fmt.Errorf("insert page %q: %w", importPath, err)
-			}
-			pageID, err = res.LastInsertId()
-			if err != nil {
-				return 0, fmt.Errorf("last insert id for %q: %w", importPath, err)
 			}
 
 			// Seed page-history so the imported page already has an entry
 			// from t=0. Source 'import' distinguishes from 'manual' saves.
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO page_revisions (page_id, body, title, author_id, source, byte_size, created_at)
-				VALUES (?, ?, ?, ?, 'import', ?, datetime('now'))`,
+				VALUES ($1, $2, $3, $4, 'import', $5, tela_now())`,
 				pageID, body, title, authorID, int64(len(body))); err != nil {
 				return 0, fmt.Errorf("seed page_revision for %q: %w", importPath, err)
 			}

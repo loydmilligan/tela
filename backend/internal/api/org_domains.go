@@ -88,7 +88,7 @@ func (s *Server) CreateOrgDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.DB.ExecContext(ctx,
-		`INSERT INTO org_email_domains (domain, org_id) VALUES (?, ?)`,
+		`INSERT INTO org_email_domains (domain, org_id) VALUES ($1, $2)`,
 		domain, req.OrgID); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "that domain is already mapped to an org")
@@ -101,7 +101,7 @@ func (s *Server) CreateOrgDomain(w http.ResponseWriter, r *http.Request) {
 	err := s.DB.QueryRowContext(ctx, `
 		SELECT d.domain, d.org_id, o.name, d.created_at
 		  FROM org_email_domains d JOIN orgs o ON o.id = d.org_id
-		 WHERE d.domain = ?`, domain).
+		 WHERE d.domain = $1`, domain).
 		Scan(&dto.Domain, &dto.OrgID, &dto.OrgName, &dto.CreatedAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch created domain failed")
@@ -123,7 +123,7 @@ func (s *Server) DeleteOrgDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.DB.ExecContext(r.Context(),
-		`DELETE FROM org_email_domains WHERE domain = ?`, domain)
+		`DELETE FROM org_email_domains WHERE domain = $1`, domain)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete domain failed")
 		return
@@ -153,7 +153,7 @@ func emailDomain(email string) string {
 
 // applyAutoJoin enrolls userID into the org mapped to their (already verified)
 // email domain. Identity-derived semantics (docs/access-model.md): always
-// 'member', never overwrites a manual role (INSERT OR IGNORE), idempotent.
+// 'member', never overwrites a manual role (ON CONFLICT DO NOTHING), idempotent.
 // Best-effort — a hiccup must not block sign-in, so errors are logged and
 // swallowed. A genuinely new enrollment is audited as a system action.
 func applyAutoJoin(ctx context.Context, db *sql.DB, userID int64, email string) {
@@ -163,15 +163,16 @@ func applyAutoJoin(ctx context.Context, db *sql.DB, userID int64, email string) 
 	}
 	var orgID int64
 	if err := db.QueryRowContext(ctx,
-		`SELECT org_id FROM org_email_domains WHERE domain = ?`, domain).Scan(&orgID); err != nil {
+		`SELECT org_id FROM org_email_domains WHERE domain = $1`, domain).Scan(&orgID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			log.Printf("auto-join lookup for %s: %v", domain, err)
 		}
 		return
 	}
 	res, err := db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO org_members (org_id, user_id, org_role)
-		VALUES (?, ?, 'member')`, orgID, userID)
+		INSERT INTO org_members (org_id, user_id, org_role)
+		VALUES ($1, $2, 'member')
+		ON CONFLICT (org_id, user_id) DO NOTHING`, orgID, userID)
 	if err != nil {
 		log.Printf("auto-join for user %d (%s): %v", userID, domain, err)
 		return
@@ -192,7 +193,7 @@ type rowQuerier interface {
 // if none. Used to decide whether an org membership is domain-managed.
 func userEmailDomain(ctx context.Context, q rowQuerier, userID int64) string {
 	var email sql.NullString
-	if err := q.QueryRowContext(ctx, `SELECT email FROM users WHERE id = ?`, userID).Scan(&email); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT email FROM users WHERE id = $1`, userID).Scan(&email); err != nil {
 		return ""
 	}
 	if !email.Valid {
@@ -212,7 +213,7 @@ func isDomainManagedMember(ctx context.Context, q rowQuerier, orgID, userID int6
 	}
 	var mappedOrg int64
 	if err := q.QueryRowContext(ctx,
-		`SELECT org_id FROM org_email_domains WHERE domain = ?`, domain).Scan(&mappedOrg); err != nil {
+		`SELECT org_id FROM org_email_domains WHERE domain = $1`, domain).Scan(&mappedOrg); err != nil {
 		return false
 	}
 	return mappedOrg == orgID

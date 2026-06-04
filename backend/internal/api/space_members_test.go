@@ -59,7 +59,7 @@ func TestAddSpaceMember_OwnerCanAdd(t *testing.T) {
 	// verify membership row exists.
 	var role string
 	if err := d.QueryRowContext(context.Background(),
-		`SELECT role FROM space_members WHERE space_id = ? AND user_id = ?`,
+		`SELECT role FROM space_members WHERE space_id = $1 AND user_id = $2`,
 		spaceID, bob).Scan(&role); err != nil {
 		t.Fatalf("lookup new member: %v", err)
 	}

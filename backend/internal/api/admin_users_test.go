@@ -106,14 +106,14 @@ func TestPatchAdminUser_PasswordResetWipesSessions(t *testing.T) {
 	}
 
 	var bobSessions int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, bobID).Scan(&bobSessions); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, bobID).Scan(&bobSessions); err != nil {
 		t.Fatalf("count bob sessions: %v", err)
 	}
 	if bobSessions != 0 {
 		t.Fatalf("bob has %d sessions after pw reset, want 0", bobSessions)
 	}
 	var adminSessions int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, adminID).Scan(&adminSessions); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, adminID).Scan(&adminSessions); err != nil {
 		t.Fatalf("count admin sessions: %v", err)
 	}
 	if adminSessions != 1 {
@@ -148,7 +148,7 @@ func TestPatchAdminUser_LastAdminSafeguard(t *testing.T) {
 	// Then have admin-b (still flagged is_instance_admin=1, test-bypassed
 	// middleware) try to demote admin-a — that would leave zero active
 	// admins and must be refused with last_admin.
-	if _, err := d.Exec(`UPDATE users SET is_active = 0 WHERE id = ?`, adminB); err != nil {
+	if _, err := d.Exec(`UPDATE users SET is_active = 0 WHERE id = $1`, adminB); err != nil {
 		t.Fatalf("deactivate admin-b: %v", err)
 	}
 
@@ -181,14 +181,14 @@ func TestDeleteAdminUser_SoftDeleteAndSessionWipe(t *testing.T) {
 	}
 
 	var active int
-	if err := d.QueryRowContext(ctx, `SELECT is_active FROM users WHERE id = ?`, bobID).Scan(&active); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT is_active FROM users WHERE id = $1`, bobID).Scan(&active); err != nil {
 		t.Fatalf("read bob: %v", err)
 	}
 	if active != 0 {
 		t.Fatalf("bob is_active=%d, want 0", active)
 	}
 	var sessions int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, bobID).Scan(&sessions); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, bobID).Scan(&sessions); err != nil {
 		t.Fatalf("count bob sessions: %v", err)
 	}
 	if sessions != 0 {

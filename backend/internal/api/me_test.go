@@ -58,14 +58,14 @@ func TestChangePassword_KillsOtherSessionsKeepsCurrent(t *testing.T) {
 	}
 
 	var n int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, uid).Scan(&n); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, uid).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("sessions=%d, want 1 (current only)", n)
 	}
 	var stillCurrent int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id = ?`, current).Scan(&stillCurrent); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id = $1`, current).Scan(&stillCurrent); err != nil {
 		t.Fatalf("current count: %v", err)
 	}
 	if stillCurrent != 1 {
@@ -147,7 +147,7 @@ func TestDeleteAllMySessions_KeepsCurrent(t *testing.T) {
 	}
 
 	var n int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, uid).Scan(&n); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = $1`, uid).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {

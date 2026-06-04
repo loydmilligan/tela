@@ -14,6 +14,11 @@ services:
       TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
       TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}
       TELA_API_KEY_SECRET:  ${TELA_API_KEY_SECRET}
+      # Postgres DSN. Constructed here from the TELA_PG_* vars (see deploy/.env)
+      # so the backend never needs the individual pieces — host is the compose
+      # service name `postgres`, reachable on the internal network only.
+      # sslmode=disable is correct: the link is container↔container, never WAN.
+      TELA_DATABASE_URL: postgres://${TELA_PG_USER:-tela}:${TELA_PG_PASSWORD}@postgres:5432/${TELA_PG_DB:-tela}?sslmode=disable
       # #3 PDF export. The backend POSTs to gotenberg, which renders the reader
       # via the INTERNAL proxy origin (never the CF-fronted public URL) so PDF
       # generation skips the CDN entirely.
@@ -33,10 +38,36 @@ services:
       TELA_SMTP_FROM:      ${TELA_SMTP_FROM:-}
     expose:
       - "8080"
-    volumes:
-      - tela-data:/data
     depends_on:
-      - gotenberg
+      # Block backend start until Postgres answers pg_isready — migrations run on
+      # connect (db.Open), so a not-yet-ready DB would crash-loop the backend.
+      postgres:
+        condition: service_healthy
+      gotenberg:
+        condition: service_started
+    restart: unless-stopped
+
+  # Primary datastore. The backend connects via TELA_DATABASE_URL (built from the
+  # TELA_PG_* env above) and runs its embedded migrations on first connect — no
+  # separate migrate step. Data lives in the named volume tela-pgdata; with the
+  # test stack's `-p tela-test` project prefix compose namespaces this volume
+  # automatically (tela-test_tela-pgdata), so the test DB is fully isolated.
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER:     ${TELA_PG_USER:-tela}
+      POSTGRES_PASSWORD: ${TELA_PG_PASSWORD}
+      POSTGRES_DB:       ${TELA_PG_DB:-tela}
+    volumes:
+      - tela-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready against the configured role/db — `up -d --wait` and the
+      # backend's depends_on both gate on this returning 0.
+      test: ["CMD-SHELL", "pg_isready -U ${TELA_PG_USER:-tela} -d ${TELA_PG_DB:-tela}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
 
   # #3 PDF export engine — headless-Chromium HTML→PDF. Internal only (no
@@ -72,6 +103,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  tela-data:
+  tela-pgdata:
   caddy-data:
   caddy-config:

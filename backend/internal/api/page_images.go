@@ -156,8 +156,8 @@ func (s *Server) UploadPageImage(w http.ResponseWriter, r *http.Request) {
 	// for the canonical row id + mime regardless.
 	if _, err := s.DB.ExecContext(ctx, `
 		INSERT INTO page_images (page_id, content_hash, mime, data, byte_size)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(page_id, content_hash) DO NOTHING`,
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (page_id, content_hash) DO NOTHING`,
 		pageID, hash, mime, data, int64(len(data))); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "store image failed")
 		return
@@ -170,7 +170,7 @@ func (s *Server) UploadPageImage(w http.ResponseWriter, r *http.Request) {
 	)
 	if err := s.DB.QueryRowContext(ctx, `
 		SELECT id, mime, byte_size FROM page_images
-		 WHERE page_id = ? AND content_hash = ?`,
+		 WHERE page_id = $1 AND content_hash = $2`,
 		pageID, hash).Scan(&rowID, &rowMime, &byteSize); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch image failed")
 		return
@@ -224,7 +224,7 @@ func (s *Server) ServePageImage(w http.ResponseWriter, r *http.Request) {
 	)
 	err = s.DB.QueryRowContext(r.Context(), `
 		SELECT data, mime FROM page_images
-		 WHERE page_id = ? AND content_hash = ?
+		 WHERE page_id = $1 AND content_hash = $2
 		 LIMIT 1`, pageID, hash).Scan(&data, &mime)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "image not found")

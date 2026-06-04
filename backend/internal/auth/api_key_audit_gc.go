@@ -20,7 +20,7 @@ const DefaultAuditRetentionDays = 30
 // compromise: noticeably less than the retention window so a freshly
 // restarted instance with an overdue sweep catches up within one cycle, but
 // long enough that the recurring DELETE never shows up as a hot query in
-// SQLite stats.
+// the DB's stats.
 const auditGCInterval = 6 * time.Hour
 
 // StartAuditGC launches a background goroutine that periodically deletes
@@ -60,20 +60,18 @@ func StartAuditGC(ctx context.Context, d *sql.DB) {
 }
 
 // purgeAuditOlderThan deletes api_key_audit rows whose ts is older than the
-// retention cutoff. Single statement so SQLite serializes naturally; no
-// transaction needed.
+// retention cutoff. Single statement; no transaction needed.
 //
-// `?` cannot bind into datetime()'s modifier slot as a single arg, so we
-// splice via SQL `||` concat AFTER the bind — the value is still parameterised,
-// just stitched into the modifier string at SQL evaluation time. days is
-// parse-validated as a positive int upstream, so even string-concat would be
-// safe — but this is not string-concat.
+// The cutoff is computed in SQL as (now - days) rendered into the same
+// 'YYYY-MM-DD HH:MM:SS' UTC text format ts is stored in, so the comparison
+// stays a lexicographic TEXT compare. days binds directly as $1 into
+// make_interval(days => $1) (an int4 — the Go value is an int, fine).
 func purgeAuditOlderThan(ctx context.Context, d *sql.DB, days int) error {
 	if days <= 0 {
 		return nil
 	}
 	_, err := d.ExecContext(ctx,
-		`DELETE FROM api_key_audit WHERE ts < datetime('now', '-' || ? || ' days')`,
+		`DELETE FROM api_key_audit WHERE ts < to_char((now() AT TIME ZONE 'UTC') - make_interval(days => $1), 'YYYY-MM-DD HH24:MI:SS')`,
 		days)
 	return err
 }

@@ -20,7 +20,7 @@ var migrationsFS embed.FS
 func Migrate(ctx context.Context, d *sql.DB) error {
 	if _, err := d.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version TEXT PRIMARY KEY,
-		applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
@@ -87,7 +87,7 @@ func applyMigration(ctx context.Context, d *sql.DB, version, body string) error 
 	if _, err := tx.ExecContext(ctx, body); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES (?)`, version); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
 		return err
 	}
 	return tx.Commit()

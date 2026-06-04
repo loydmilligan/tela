@@ -57,23 +57,19 @@ type sharePublicGet struct {
 // without going through the page-create API.
 func seedPageInSpace(t *testing.T, d *sql.DB, spaceID int64, parentID *int64, title, body string) int64 {
 	t.Helper()
-	var res sql.Result
+	var id int64
 	var err error
 	if parentID == nil {
-		res, err = d.ExecContext(context.Background(),
+		err = d.QueryRowContext(context.Background(),
 			`INSERT INTO pages (space_id, parent_id, title, body, position)
-			 VALUES (?, NULL, ?, ?, 0)`, spaceID, title, body)
+			 VALUES ($1, NULL, $2, $3, 0) RETURNING id`, spaceID, title, body).Scan(&id)
 	} else {
-		res, err = d.ExecContext(context.Background(),
+		err = d.QueryRowContext(context.Background(),
 			`INSERT INTO pages (space_id, parent_id, title, body, position)
-			 VALUES (?, ?, ?, ?, 0)`, spaceID, *parentID, title, body)
+			 VALUES ($1, $2, $3, $4, 0) RETURNING id`, spaceID, *parentID, title, body).Scan(&id)
 	}
 	if err != nil {
 		t.Fatalf("seed page %q: %v", title, err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("seed page %q last id: %v", title, err)
 	}
 	return id
 }
@@ -223,7 +219,7 @@ func TestShareLinks_Create_WithPassword(t *testing.T) {
 		t.Fatalf("has_password=false want true")
 	}
 	var hash sql.NullString
-	if err := env.db.QueryRow(`SELECT password_hash FROM share_links WHERE id = ?`, got.Share.ID).Scan(&hash); err != nil {
+	if err := env.db.QueryRow(`SELECT password_hash FROM share_links WHERE id = $1`, got.Share.ID).Scan(&hash); err != nil {
 		t.Fatalf("lookup hash: %v", err)
 	}
 	if !hash.Valid || hash.String == "" {
@@ -243,7 +239,7 @@ func TestShareLinks_Create_WithDescendants(t *testing.T) {
 		t.Fatalf("include_descendants=false want true")
 	}
 	var flag int
-	if err := env.db.QueryRow(`SELECT include_descendants FROM share_links WHERE id = ?`, sh.ID).Scan(&flag); err != nil {
+	if err := env.db.QueryRow(`SELECT include_descendants FROM share_links WHERE id = $1`, sh.ID).Scan(&flag); err != nil {
 		t.Fatalf("lookup flag: %v", err)
 	}
 	if flag != 1 {
@@ -386,7 +382,7 @@ func TestShareLinks_Patch_Password(t *testing.T) {
 		t.Fatalf("after set has_password=false")
 	}
 	var hash sql.NullString
-	if err := env.db.QueryRow(`SELECT password_hash FROM share_links WHERE id = ?`, sh.ID).Scan(&hash); err != nil {
+	if err := env.db.QueryRow(`SELECT password_hash FROM share_links WHERE id = $1`, sh.ID).Scan(&hash); err != nil {
 		t.Fatalf("lookup hash: %v", err)
 	}
 	if !hash.Valid {
@@ -412,7 +408,7 @@ func TestShareLinks_Patch_Password(t *testing.T) {
 	if got2.Share.HasPassword {
 		t.Fatalf("after clear has_password=true")
 	}
-	if err := env.db.QueryRow(`SELECT password_hash FROM share_links WHERE id = ?`, sh.ID).Scan(&hash); err != nil {
+	if err := env.db.QueryRow(`SELECT password_hash FROM share_links WHERE id = $1`, sh.ID).Scan(&hash); err != nil {
 		t.Fatalf("lookup hash after clear: %v", err)
 	}
 	if hash.Valid {
@@ -484,7 +480,7 @@ func TestShareLinks_Delete_Soft(t *testing.T) {
 		t.Fatalf("delete 1 status=%d want 204", resp.StatusCode)
 	}
 	var revokedAt sql.NullString
-	if err := env.db.QueryRow(`SELECT revoked_at FROM share_links WHERE id = ?`, sh.ID).Scan(&revokedAt); err != nil {
+	if err := env.db.QueryRow(`SELECT revoked_at FROM share_links WHERE id = $1`, sh.ID).Scan(&revokedAt); err != nil {
 		t.Fatalf("lookup revoked_at: %v", err)
 	}
 	if !revokedAt.Valid || revokedAt.String == "" {
@@ -516,7 +512,7 @@ func TestShareLinks_CascadeOnPageDelete(t *testing.T) {
 		t.Fatalf("delete page status=%d want 204", resp.StatusCode)
 	}
 	var count int
-	if err := env.db.QueryRow(`SELECT COUNT(*) FROM share_links WHERE id = ?`, sh.ID).Scan(&count); err != nil {
+	if err := env.db.QueryRow(`SELECT COUNT(*) FROM share_links WHERE id = $1`, sh.ID).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if count != 0 {
@@ -754,7 +750,7 @@ func TestShareGet_Expired_Returns404(t *testing.T) {
 	sh := mustShareCreate(t, env.adminC, env.tsURL, env.page,
 		`{"include_descendants":false}`)
 	past := time.Now().Add(-time.Hour).UTC().Format("2006-01-02 15:04:05")
-	if _, err := env.db.Exec(`UPDATE share_links SET expires_at = ? WHERE id = ?`, past, sh.ID); err != nil {
+	if _, err := env.db.Exec(`UPDATE share_links SET expires_at = $1 WHERE id = $2`, past, sh.ID); err != nil {
 		t.Fatalf("backdate expiry: %v", err)
 	}
 
@@ -887,7 +883,7 @@ func TestShareTree_NoDescendants_ReturnsRootOnly(t *testing.T) {
 func TestShare_PageMovedOutOfSubtree_Returns404(t *testing.T) {
 	env := newShareTestEnv(t)
 	var otherSpaceID int64
-	if err := env.db.QueryRow(`SELECT space_id FROM pages WHERE id = ?`, env.other).Scan(&otherSpaceID); err != nil {
+	if err := env.db.QueryRow(`SELECT space_id FROM pages WHERE id = $1`, env.other).Scan(&otherSpaceID); err != nil {
 		t.Fatalf("lookup other space id: %v", err)
 	}
 	sh := mustShareCreate(t, env.adminC, env.tsURL, env.page,
@@ -1018,4 +1014,3 @@ func mustShareCreate(t *testing.T, c *http.Client, baseURL string, pageID int64,
 	}
 	return got.Share
 }
-

@@ -56,9 +56,10 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	res, err := s.DB.ExecContext(ctx, `
+	var userID int64
+	err = s.DB.QueryRowContext(ctx, `
 		INSERT INTO users (username, email, password_hash, is_instance_admin, is_active)
-		VALUES (?, ?, ?, 0, 1)`, username, email, hash)
+		VALUES ($1, $2, $3, 0, 1) RETURNING id`, username, email, hash).Scan(&userID)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			// Either the username or the email collided. The message stays
@@ -67,11 +68,6 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "create user failed")
-		return
-	}
-	userID, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create user: last insert id failed")
 		return
 	}
 
@@ -118,9 +114,9 @@ func (s *Server) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE users SET email_verified_at = COALESCE(email_verified_at, datetime('now')),
-		                 updated_at = datetime('now')
-		 WHERE id = ?`, userID); err != nil {
+		UPDATE users SET email_verified_at = COALESCE(email_verified_at, tela_now()),
+		                 updated_at = tela_now()
+		 WHERE id = $1`, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "confirm email failed")
 		return
 	}
@@ -131,7 +127,7 @@ func (s *Server) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	// Provision the personal space now that the account is real (idempotent).
 	var username, email string
-	if err := s.DB.QueryRowContext(ctx, `SELECT username, COALESCE(email, '') FROM users WHERE id = ?`, userID).Scan(&username, &email); err == nil {
+	if err := s.DB.QueryRowContext(ctx, `SELECT username, COALESCE(email, '') FROM users WHERE id = $1`, userID).Scan(&username, &email); err == nil {
 		if _, err := EnsurePersonalSpace(ctx, s.DB, userID, username); err != nil {
 			log.Printf("personal space for verified user %d (%s): %v", userID, username, err)
 		}
@@ -180,7 +176,7 @@ func (s *Server) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	)
 	err := s.DB.QueryRowContext(ctx, `
 		SELECT id, username, email_verified_at FROM users
-		 WHERE email = ? AND is_active = 1`, email).Scan(&userID, &username, &verified)
+		 WHERE email = $1 AND is_active = 1`, email).Scan(&userID, &username, &verified)
 	if err == nil && !verified.Valid {
 		s.sendVerification(ctx, userID, username, email)
 	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -209,7 +205,7 @@ func (s *Server) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	)
 	err := s.DB.QueryRowContext(ctx, `
 		SELECT id, username FROM users
-		 WHERE email = ? AND is_active = 1`, email).Scan(&userID, &username)
+		 WHERE email = $1 AND is_active = 1`, email).Scan(&userID, &username)
 	if err == nil {
 		raw, terr := createEmailToken(ctx, s.DB, userID, "reset", resetTokenTTL)
 		if terr != nil {
@@ -270,10 +266,10 @@ func (s *Server) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE users SET password_hash = ?,
-		                 email_verified_at = COALESCE(email_verified_at, datetime('now')),
-		                 updated_at = datetime('now')
-		 WHERE id = ?`, hash, userID); err != nil {
+		UPDATE users SET password_hash = $1,
+		                 email_verified_at = COALESCE(email_verified_at, tela_now()),
+		                 updated_at = tela_now()
+		 WHERE id = $2`, hash, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update password failed")
 		return
 	}
@@ -329,7 +325,7 @@ func (s *Server) authUserByID(ctx context.Context, id int64) (authUserDTO, error
 	)
 	err := s.DB.QueryRowContext(ctx, `
 		SELECT id, username, email, email_verified_at, is_instance_admin
-		  FROM users WHERE id = ?`, id).
+		  FROM users WHERE id = $1`, id).
 		Scan(&dto.ID, &dto.Username, &email, &verified, &isAdmin)
 	if err != nil {
 		return authUserDTO{}, err

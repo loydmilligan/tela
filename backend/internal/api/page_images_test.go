@@ -49,12 +49,12 @@ func TestPageImages_FullFlow(t *testing.T) {
 	space := seedSpace(t, d, "Test Space", "test-space", admin)
 	seedMember(t, d, space, bob, roleViewer)
 
-	res, err := d.Exec(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES (?, NULL, 'P', 'body', 0)`, space)
+	var pageID int64
+	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                    VALUES ($1, NULL, 'P', 'body', 0) RETURNING id`, space).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
 	}
-	pageID, _ := res.LastInsertId()
 
 	adminC := loginClient(t, ts, "admin", "adminpw12")
 	bobC := loginClient(t, ts, "bob", "bobpw1234")
@@ -82,7 +82,7 @@ func TestPageImages_FullFlow(t *testing.T) {
 		t.Fatalf("POST happy resp = %+v", first)
 	}
 	var dbCount int
-	if err := d.QueryRow(`SELECT COUNT(*) FROM page_images WHERE page_id = ? AND content_hash = ?`,
+	if err := d.QueryRow(`SELECT COUNT(*) FROM page_images WHERE page_id = $1 AND content_hash = $2`,
 		pageID, first.Hash).Scan(&dbCount); err != nil {
 		t.Fatalf("count after POST: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestPageImages_FullFlow(t *testing.T) {
 	if second.ID != first.ID {
 		t.Fatalf("idempotent id = %d want %d", second.ID, first.ID)
 	}
-	_ = d.QueryRow(`SELECT COUNT(*) FROM page_images WHERE page_id = ?`, pageID).Scan(&dbCount)
+	_ = d.QueryRow(`SELECT COUNT(*) FROM page_images WHERE page_id = $1`, pageID).Scan(&dbCount)
 	if dbCount != 1 {
 		t.Fatalf("after idempotent count=%d want 1", dbCount)
 	}

@@ -9,31 +9,21 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/zcag/tela/backend/internal/auth"
-	"github.com/zcag/tela/backend/internal/db"
+	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// newWiredServerOnDisk is the on-disk variant of newWiredServer. Required for
-// bearer-auth tests because LookupAPIKey kicks off an async goroutine to
-// stamp last_used_at — modernc.org/sqlite's `:memory:` is per-connection, so
-// the async goroutine sees a fresh empty DB without the api_keys table. The
-// on-disk file is shared across every connection in the pool.
+// newWiredServerOnDisk returns a wired httptest.Server backed by a fresh
+// throwaway Postgres database. (The name is retained because callers depend on
+// it; the old "modernc :memory: is per-connection" rationale is obsolete now
+// that every test gets its own real Postgres database shared across the pool.)
 func newWiredServerOnDisk(t *testing.T) (*httptest.Server, *sql.DB) {
 	t.Helper()
 	t.Setenv("TELA_SHARE_SECRET", "tela-test-share-secret-fixed-32-byte!")
-	dir := t.TempDir()
-	d, err := db.Open(filepath.Join(dir, "tela.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
-	if err := db.Migrate(context.Background(), d); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	d := testdb.New(t)
 	ts := httptest.NewServer(Handler(d))
 	t.Cleanup(ts.Close)
 	return ts, d
@@ -142,8 +132,6 @@ func TestAPIKeys_CreateThenListReturnsKeyOnce(t *testing.T) {
 func TestAPIKeys_RevokeIsSoftAndIdempotent(t *testing.T) {
 	t.Setenv("TELA_API_KEY_SECRET", "deadbeef00112233445566778899aabbccddeeff00112233445566778899aabb")
 	auth.ResetAPIKeySecretCache()
-	// Bearer auth at end of test → on-disk required for the async last_used_at
-	// goroutine (see newWiredServerOnDisk for the modernc.org/sqlite caveat).
 	ts, d := newWiredServerOnDisk(t)
 	seedUser(t, d, "admin", "adminpw12", true)
 	adminC := loginClient(t, ts, "admin", "adminpw12")
@@ -195,15 +183,12 @@ func TestAPIKeys_RevokeIsSoftAndIdempotent(t *testing.T) {
 func TestAPIKeys_BearerReadScopeBlocksWrite(t *testing.T) {
 	t.Setenv("TELA_API_KEY_SECRET", "deadbeef00112233445566778899aabbccddeeff00112233445566778899aabb")
 	auth.ResetAPIKeySecretCache()
-	// On-disk DB: bearer middleware's async last_used_at goroutine spawns a
-	// second connection — modernc.org/sqlite's `:memory:` is per-connection
-	// so the goroutine wouldn't see the api_keys table.
 	ts, d := newWiredServerOnDisk(t)
 	uid := seedUser(t, d, "admin", "adminpw12", true)
 	rawKey, prefix, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
 	if _, err := d.ExecContext(context.Background(), `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
-		VALUES (?, 'k', ?, ?, 'read', NULL)`,
+		VALUES ($1, 'k', $2, $3, 'read', NULL)`,
 		uid, prefix, auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey)); err != nil {
 		t.Fatalf("seed key: %v", err)
 	}
@@ -244,7 +229,7 @@ func TestAPIKeys_BearerSpaceRestrictionGatesPageAccess(t *testing.T) {
 	rawKey, prefix, _, _ := auth.NewAPIKey(auth.LoadAPIKeySecret())
 	if _, err := d.ExecContext(context.Background(), `
 		INSERT INTO api_keys (user_id, name, key_prefix, key_hmac, scope, space_id)
-		VALUES (?, 'spaceA-only', ?, ?, 'write', ?)`,
+		VALUES ($1, 'spaceA-only', $2, $3, 'write', $4)`,
 		uid, prefix, auth.HMACAPIKey(auth.LoadAPIKeySecret(), rawKey), spaceA); err != nil {
 		t.Fatalf("seed key: %v", err)
 	}

@@ -51,10 +51,10 @@ func (s *Server) GetSpaceAccess(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT u.id, u.username, u.email, sm.role AS role,
-		       'direct' AS source_kind, NULL AS source_name
+		       'direct' AS source_kind, NULL::text AS source_name
 		  FROM space_members sm
 		  JOIN users u ON u.id = sm.user_id
-		 WHERE sm.space_id = ?
+		 WHERE sm.space_id = $1
 		UNION ALL
 		SELECT u.id, u.username, u.email, sg.role,
 		       'org' AS source_kind, o.name AS source_name
@@ -62,7 +62,7 @@ func (s *Server) GetSpaceAccess(w http.ResponseWriter, r *http.Request) {
 		  JOIN org_members om ON om.org_id = sg.principal_id
 		  JOIN orgs o ON o.id = sg.principal_id
 		  JOIN users u ON u.id = om.user_id
-		 WHERE sg.space_id = ? AND sg.principal_kind = 'org'
+		 WHERE sg.space_id = $2 AND sg.principal_kind = 'org'
 		UNION ALL
 		SELECT u.id, u.username, u.email, sg.role,
 		       'group' AS source_kind, g.name AS source_name
@@ -70,7 +70,7 @@ func (s *Server) GetSpaceAccess(w http.ResponseWriter, r *http.Request) {
 		  JOIN group_members gm ON gm.group_id = sg.principal_id
 		  JOIN groups g ON g.id = sg.principal_id
 		  JOIN users u ON u.id = gm.user_id
-		 WHERE sg.space_id = ? AND sg.principal_kind = 'group'`, spaceID, spaceID, spaceID)
+		 WHERE sg.space_id = $3 AND sg.principal_kind = 'group'`, spaceID, spaceID, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "resolve access failed")
 		return

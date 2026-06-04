@@ -102,17 +102,17 @@ func (s *Server) ListPageBodies(w http.ResponseWriter, r *http.Request) {
 	args := []any{spaceID}
 	stmt := `SELECT id, space_id, title, body, updated_at
 	           FROM pages
-	          WHERE space_id = ?`
+	          WHERE space_id = $1`
 	if sinceStr != "" {
-		stmt += ` AND updated_at > ?`
 		args = append(args, sinceStr)
+		stmt += ` AND updated_at > $` + strconv.Itoa(len(args))
 	}
 	if cursor > 0 {
-		stmt += ` AND id > ?`
 		args = append(args, cursor)
+		stmt += ` AND id > $` + strconv.Itoa(len(args))
 	}
-	stmt += ` ORDER BY id ASC LIMIT ?`
 	args = append(args, fetch)
+	stmt += ` ORDER BY id ASC LIMIT $` + strconv.Itoa(len(args))
 
 	rows, err := s.DB.QueryContext(r.Context(), stmt, args...)
 	if err != nil {
@@ -171,7 +171,7 @@ func (s *Server) GetSpaceIndexVersion(w http.ResponseWriter, r *http.Request) {
 
 	var maxUpdated sql.NullString
 	if err := s.DB.QueryRowContext(r.Context(),
-		`SELECT MAX(updated_at) FROM pages WHERE space_id = ?`, spaceID,
+		`SELECT MAX(updated_at) FROM pages WHERE space_id = $1`, spaceID,
 	).Scan(&maxUpdated); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "lookup index version failed")
 		return

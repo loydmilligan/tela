@@ -81,7 +81,7 @@ func (s *Server) ListComments(w http.ResponseWriter, r *http.Request) {
 		  FROM comments c
 		  JOIN users author ON author.id = c.author_id
 		  LEFT JOIN users resolver ON resolver.id = c.resolved_by
-		 WHERE c.page_id = ? AND c.deleted_at IS NULL
+		 WHERE c.page_id = $1 AND c.deleted_at IS NULL
 		 ORDER BY c.created_at ASC, c.id ASC`, pageID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list comments failed")
@@ -205,7 +205,7 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 		var parentParentID sql.NullInt64
 		var parentDeleted sql.NullString
 		err := tx.QueryRowContext(ctx,
-			`SELECT page_id, parent_id, deleted_at FROM comments WHERE id = ?`, *req.ParentID).
+			`SELECT page_id, parent_id, deleted_at FROM comments WHERE id = $1`, *req.ParentID).
 			Scan(&parentPageID, &parentParentID, &parentDeleted)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "comment_not_found", "parent comment not found")
@@ -242,20 +242,16 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 		parentArg = *req.ParentID
 	}
 
-	res, err := tx.ExecContext(ctx, `
+	var id int64
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO comments
 		  (page_id, parent_id, author_id, body,
 		   anchor_prefix, anchor_exact, anchor_suffix,
 		   resolved, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
-		pageID, parentArg, u.ID, body, anchorPrefix, anchorExact, anchorSuffix)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 0, tela_now(), tela_now()) RETURNING id`,
+		pageID, parentArg, u.ID, body, anchorPrefix, anchorExact, anchorSuffix).Scan(&id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "create comment failed")
-		return
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create comment: last insert id failed")
 		return
 	}
 	c, err := selectCommentByIDTx(ctx, tx, id)
@@ -310,14 +306,14 @@ func (s *Server) PatchComment(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	var (
-		pageID     int64
-		authorID   int64
-		parentID   sql.NullInt64
-		resolved   int
-		deletedAt  sql.NullString
+		pageID    int64
+		authorID  int64
+		parentID  sql.NullInt64
+		resolved  int
+		deletedAt sql.NullString
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT page_id, author_id, parent_id, resolved, deleted_at FROM comments WHERE id = ?`, id).
+		`SELECT page_id, author_id, parent_id, resolved, deleted_at FROM comments WHERE id = $1`, id).
 		Scan(&pageID, &authorID, &parentID, &resolved, &deletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "comment_not_found", "comment not found")
@@ -370,7 +366,7 @@ func (s *Server) PatchComment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE comments SET body = ?, updated_at = datetime('now') WHERE id = ?`,
+			`UPDATE comments SET body = $1, updated_at = tela_now() WHERE id = $2`,
 			body, id); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "update comment failed")
 			return
@@ -395,9 +391,9 @@ func (s *Server) PatchComment(w http.ResponseWriter, r *http.Request) {
 		if desired == 1 {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE comments
-				   SET resolved = 1, resolved_at = datetime('now'), resolved_by = ?,
-				       updated_at = datetime('now')
-				 WHERE id = ?`, u.ID, id); err != nil {
+				   SET resolved = 1, resolved_at = tela_now(), resolved_by = $1,
+				       updated_at = tela_now()
+				 WHERE id = $2`, u.ID, id); err != nil {
 				writeError(w, http.StatusInternalServerError, "internal", "resolve comment failed")
 				return
 			}
@@ -405,8 +401,8 @@ func (s *Server) PatchComment(w http.ResponseWriter, r *http.Request) {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE comments
 				   SET resolved = 0, resolved_at = NULL, resolved_by = NULL,
-				       updated_at = datetime('now')
-				 WHERE id = ?`, id); err != nil {
+				       updated_at = tela_now()
+				 WHERE id = $1`, id); err != nil {
 				writeError(w, http.StatusInternalServerError, "internal", "reopen comment failed")
 				return
 			}
@@ -451,7 +447,7 @@ func (s *Server) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		deletedAt sql.NullString
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT page_id, author_id, deleted_at FROM comments WHERE id = ?`, id).
+		`SELECT page_id, author_id, deleted_at FROM comments WHERE id = $1`, id).
 		Scan(&pageID, &authorID, &deletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "comment_not_found", "comment not found")
@@ -494,7 +490,7 @@ func (s *Server) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE comments SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
+		`UPDATE comments SET deleted_at = tela_now(), updated_at = tela_now() WHERE id = $1`,
 		id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete comment failed")
 		return
@@ -519,7 +515,7 @@ func selectCommentByIDTx(ctx context.Context, tx *sql.Tx, id int64) (models.Comm
 		  FROM comments c
 		  JOIN users author ON author.id = c.author_id
 		  LEFT JOIN users resolver ON resolver.id = c.resolved_by
-		 WHERE c.id = ?`, id)
+		 WHERE c.id = $1`, id)
 	return scanCommentFromRow(row)
 }
 

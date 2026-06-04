@@ -43,7 +43,7 @@ func (s *Server) ListSpaceMembers(w http.ResponseWriter, r *http.Request) {
 		SELECT sm.user_id, u.username, sm.role, sm.created_at, sm.updated_at
 		  FROM space_members sm
 		  JOIN users u ON u.id = sm.user_id
-		 WHERE sm.space_id = ?
+		 WHERE sm.space_id = $1
 		 ORDER BY sm.role ASC, u.username ASC`, spaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list members failed")
@@ -104,7 +104,7 @@ func (s *Server) AddSpaceMember(w http.ResponseWriter, r *http.Request) {
 		targetID int64
 	)
 	err := s.DB.QueryRowContext(ctx,
-		`SELECT id FROM users WHERE username = ? AND is_active = 1`, username).Scan(&targetID)
+		`SELECT id FROM users WHERE username = $1 AND is_active = 1`, username).Scan(&targetID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
@@ -115,7 +115,7 @@ func (s *Server) AddSpaceMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.DB.ExecContext(ctx,
-		`INSERT INTO space_members (space_id, user_id, role) VALUES (?, ?, ?)`,
+		`INSERT INTO space_members (space_id, user_id, role) VALUES ($1, $2, $3)`,
 		spaceID, targetID, req.Role); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "conflict", "user is already a member")
@@ -173,7 +173,7 @@ func (s *Server) PatchSpaceMember(w http.ResponseWriter, r *http.Request) {
 
 	var existingRole string
 	err = tx.QueryRowContext(ctx,
-		`SELECT role FROM space_members WHERE space_id = ? AND user_id = ?`, spaceID, userID).
+		`SELECT role FROM space_members WHERE space_id = $1 AND user_id = $2`, spaceID, userID).
 		Scan(&existingRole)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "member not found")
@@ -196,8 +196,8 @@ func (s *Server) PatchSpaceMember(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE space_members
-		   SET role = ?, updated_at = datetime('now')
-		 WHERE space_id = ? AND user_id = ?`, req.Role, spaceID, userID); err != nil {
+		   SET role = $1, updated_at = tela_now()
+		 WHERE space_id = $2 AND user_id = $3`, req.Role, spaceID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "update member failed")
 		return
 	}
@@ -249,7 +249,7 @@ func (s *Server) DeleteSpaceMember(w http.ResponseWriter, r *http.Request) {
 
 	var existingRole string
 	err = tx.QueryRowContext(ctx,
-		`SELECT role FROM space_members WHERE space_id = ? AND user_id = ?`, spaceID, targetID).
+		`SELECT role FROM space_members WHERE space_id = $1 AND user_id = $2`, spaceID, targetID).
 		Scan(&existingRole)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "member not found")
@@ -271,7 +271,7 @@ func (s *Server) DeleteSpaceMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM space_members WHERE space_id = ? AND user_id = ?`, spaceID, targetID); err != nil {
+		`DELETE FROM space_members WHERE space_id = $1 AND user_id = $2`, spaceID, targetID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "delete member failed")
 		return
 	}
@@ -293,7 +293,7 @@ func wouldLeaveZeroOwnersTx(ctx context.Context, tx *sql.Tx, spaceID, excludeUse
 	var n int
 	err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM space_members
-		 WHERE space_id = ? AND role = 'owner' AND user_id != ?`, spaceID, excludeUserID).Scan(&n)
+		 WHERE space_id = $1 AND role = 'owner' AND user_id != $2`, spaceID, excludeUserID).Scan(&n)
 	if err != nil {
 		return false, err
 	}
@@ -306,7 +306,7 @@ func selectSpaceMember(ctx context.Context, d *sql.DB, spaceID, userID int64) (s
 		SELECT sm.user_id, u.username, sm.role, sm.created_at, sm.updated_at
 		  FROM space_members sm
 		  JOIN users u ON u.id = sm.user_id
-		 WHERE sm.space_id = ? AND sm.user_id = ?`, spaceID, userID).
+		 WHERE sm.space_id = $1 AND sm.user_id = $2`, spaceID, userID).
 		Scan(&dto.UserID, &dto.Username, &dto.Role, &dto.CreatedAt, &dto.UpdatedAt)
 	return dto, err
 }
@@ -317,7 +317,7 @@ func selectSpaceMemberTx(ctx context.Context, tx *sql.Tx, spaceID, userID int64)
 		SELECT sm.user_id, u.username, sm.role, sm.created_at, sm.updated_at
 		  FROM space_members sm
 		  JOIN users u ON u.id = sm.user_id
-		 WHERE sm.space_id = ? AND sm.user_id = ?`, spaceID, userID).
+		 WHERE sm.space_id = $1 AND sm.user_id = $2`, spaceID, userID).
 		Scan(&dto.UserID, &dto.Username, &dto.Role, &dto.CreatedAt, &dto.UpdatedAt)
 	return dto, err
 }
