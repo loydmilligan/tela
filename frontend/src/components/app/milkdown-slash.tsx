@@ -16,6 +16,7 @@ import {
 import { insertTableCommand } from '@milkdown/kit/preset/gfm'
 import { COLLAPSIBLE_DEFAULT_SUMMARY } from './milkdown-collapsibles'
 import { insertExcalidraw } from './milkdown-excalidraw'
+import { insertTaskList } from './milkdown-task-list'
 
 export const slashPlugin = slashFactory('tela-slash')
 
@@ -62,6 +63,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     hint: 'Ordered list',
     keywords: ['numbered', 'ordered', 'list', 'ol'],
     run: (ctx) => ctx.get(commandsCtx).call(wrapInOrderedListCommand.key),
+  },
+  {
+    id: 'task-list',
+    label: 'To-do list',
+    hint: 'Checkbox / task list',
+    keywords: ['todo', 'to-do', 'task', 'checkbox', 'checklist', 'check'],
+    run: insertTaskList,
   },
   {
     id: 'quote',

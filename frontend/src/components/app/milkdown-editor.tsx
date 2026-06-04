@@ -36,6 +36,7 @@ import { decodeSyncInit } from '../../lib/collab/encode'
 import { cursorBuilder, selectionBuilder } from '../../lib/collab/cursor-builder'
 import { useLeaderElection } from '../../lib/collab/use-leader-election'
 import { slashPlugin, SlashView } from './milkdown-slash'
+import { taskCheckboxPlugin } from './milkdown-task-list'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
   calloutInputRule,
@@ -545,6 +546,10 @@ function MilkdownEditorInner({
       })
       .use(commonmark)
       .use(gfm)
+      // GFM task lists: schema + input rule (`[ ] `) ship in the preset above;
+      // this adds the click-to-toggle on the CSS checkbox. See
+      // milkdown-task-list.ts.
+      .use(taskCheckboxPlugin)
       .use(history)
       .use(clipboard)
       .use(listener)
