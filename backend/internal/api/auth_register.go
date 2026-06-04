@@ -211,7 +211,7 @@ func (s *Server) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 		raw, terr := createEmailToken(ctx, s.DB, userID, "reset", resetTokenTTL)
 		if terr != nil {
 			log.Printf("create reset token for %d: %v", userID, terr)
-		} else if serr := s.Mailer.Send(ctx, mailer.ResetPassword(username, resetLink(raw))); serr != nil {
+		} else if serr := s.Mailer.Send(ctx, mailer.ResetPassword(email, username, resetLink(raw))); serr != nil {
 			log.Printf("send reset email to %s: %v", email, serr)
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -294,7 +294,7 @@ func (s *Server) sendVerification(ctx context.Context, userID int64, username, e
 		log.Printf("create verify token for %d: %v", userID, err)
 		return
 	}
-	if err := s.Mailer.Send(ctx, mailer.VerifyEmail(username, verifyLink(raw))); err != nil {
+	if err := s.Mailer.Send(ctx, mailer.VerifyEmail(email, username, verifyLink(raw))); err != nil {
 		log.Printf("send verify email to %s: %v", email, err)
 	}
 }

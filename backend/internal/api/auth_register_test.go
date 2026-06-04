@@ -95,6 +95,10 @@ func TestRegisterVerifyLogin(t *testing.T) {
 	if cm.count() != 1 {
 		t.Fatalf("expected 1 verification email, got %d", cm.count())
 	}
+	// The recipient must be addressed (a real SMTP driver rejects an empty To).
+	if m, _ := cm.last(); m.To != "sam@example.com" {
+		t.Fatalf("verification email To = %q, want sam@example.com", m.To)
+	}
 
 	// Unverified login is blocked with email_unverified.
 	resp = authPost(t, ts, "/api/auth/login", `{"identifier":"sam","password":"hunter2hunter"}`)
@@ -219,6 +223,9 @@ func TestPasswordResetFlow(t *testing.T) {
 	rr.Body.Close()
 
 	resetMsg, _ := cm.last()
+	if resetMsg.To != "rita@example.com" {
+		t.Fatalf("reset email To = %q, want rita@example.com", resetMsg.To)
+	}
 	resetToken := tokenFromMessage(t, resetMsg)
 	pr := authPost(t, ts, "/api/auth/reset-password",
 		`{"token":"`+resetToken+`","password":"brandnewpass9"}`)

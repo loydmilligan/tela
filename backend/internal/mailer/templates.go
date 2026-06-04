@@ -23,22 +23,24 @@ const (
 	clrIndigo = "#4f46e5"
 )
 
-// VerifyEmail builds the "confirm your email" message. verifyURL is the full
-// link carrying the raw token.
-func VerifyEmail(username, verifyURL string) Message {
+// VerifyEmail builds the "confirm your email" message addressed to `to`.
+// verifyURL is the full link carrying the raw token.
+func VerifyEmail(to, username, verifyURL string) Message {
 	intro := fmt.Sprintf("Welcome to tela, %s. Confirm this address to activate your account and start writing.", username)
 	return Message{
+		To:      to,
 		Subject: "Confirm your tela account",
 		HTML:    layoutHTML("Confirm your email", intro, "Confirm email", verifyURL, "This link expires in 24 hours. If you didn't create a tela account, you can ignore this email."),
 		Text:    layoutText(intro, "Confirm email", verifyURL, "This link expires in 24 hours. If you didn't create a tela account, you can ignore this email."),
 	}
 }
 
-// ResetPassword builds the "reset your password" message. resetURL carries the
-// raw token.
-func ResetPassword(username, resetURL string) Message {
+// ResetPassword builds the "reset your password" message addressed to `to`.
+// resetURL carries the raw token.
+func ResetPassword(to, username, resetURL string) Message {
 	intro := fmt.Sprintf("We received a request to reset the password for your tela account, %s. Choose a new one below.", username)
 	return Message{
+		To:      to,
 		Subject: "Reset your tela password",
 		HTML:    layoutHTML("Reset your password", intro, "Reset password", resetURL, "This link expires in 1 hour. If you didn't request this, your password is unchanged and you can ignore this email."),
 		Text:    layoutText(intro, "Reset password", resetURL, "This link expires in 1 hour. If you didn't request this, your password is unchanged and you can ignore this email."),
