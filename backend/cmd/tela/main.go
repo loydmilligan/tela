@@ -61,6 +61,10 @@ func main() {
 		}
 	}
 
+	// Assign TELA_ADMIN_EMAIL to a pre-email-auth bootstrap admin (no-op once
+	// set, or when the env is unset).
+	auth.BackfillAdminEmailFromEnv(context.Background(), d)
+
 	// Every user gets a private, one-member personal space as their default
 	// writing home (docs/visibility-model.md). Backfills the bootstrap admin
 	// and any pre-existing users; non-fatal so a hiccup never blocks boot.

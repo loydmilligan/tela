@@ -32,7 +32,7 @@ func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 		t.Fatalf("seed spaces: %v", err)
 	}
 
-	res1, err := BootstrapAdmin(ctx, d, "", "", rand.Reader)
+	res1, err := BootstrapAdmin(ctx, d, "", "", "", rand.Reader)
 	if err != nil {
 		t.Fatalf("first BootstrapAdmin: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 		t.Fatalf("generated password did not verify")
 	}
 
-	res2, err := BootstrapAdmin(ctx, d, "", "", rand.Reader)
+	res2, err := BootstrapAdmin(ctx, d, "", "", "", rand.Reader)
 	if err != nil {
 		t.Fatalf("second BootstrapAdmin: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestBootstrapAdmin_UsesEnvPasswordAndUsername(t *testing.T) {
 
 	const username = "root"
 	const password = "S3cr3t!Provided"
-	res, err := BootstrapAdmin(ctx, d, username, password, rand.Reader)
+	res, err := BootstrapAdmin(ctx, d, username, password, "", rand.Reader)
 	if err != nil {
 		t.Fatalf("BootstrapAdmin: %v", err)
 	}

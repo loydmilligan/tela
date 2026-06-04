@@ -45,6 +45,11 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/login", srv.Login)
 	mux.HandleFunc("POST /api/auth/logout", srv.Logout)
 	mux.HandleFunc("GET /api/auth/me", srv.Me)
+	mux.HandleFunc("POST /api/auth/register", srv.Register)
+	mux.HandleFunc("POST /api/auth/verify-email", srv.VerifyEmail)
+	mux.HandleFunc("POST /api/auth/resend-verification", srv.ResendVerification)
+	mux.HandleFunc("POST /api/auth/request-password-reset", srv.RequestPasswordReset)
+	mux.HandleFunc("POST /api/auth/reset-password", srv.ResetPassword)
 
 	mux.HandleFunc("GET /api/spaces", srv.ListSpaces)
 	mux.HandleFunc("POST /api/spaces", srv.CreateSpace)

@@ -25,9 +25,12 @@ const SessionMaxAge = 30 * 24 * time.Hour
 const sessionIDBytes = 32
 
 // User is the subset of the users row that authenticated handlers need.
+// Email is "" for legacy username-only rows (and the bootstrap admin until
+// TELA_ADMIN_EMAIL is set).
 type User struct {
 	ID              int64
 	Username        string
+	Email           string
 	IsInstanceAdmin bool
 }
 
@@ -70,15 +73,16 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 	var (
 		userID   int64
 		username string
+		email    sql.NullString
 		isAdmin  int
 	)
 	err := d.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.is_instance_admin
+		SELECT u.id, u.username, u.email, u.is_instance_admin
 		  FROM sessions s
 		  JOIN users u ON u.id = s.user_id
 		 WHERE s.id = ?
 		   AND s.expires_at > datetime('now')
-		   AND u.is_active = 1`, sessionID).Scan(&userID, &username, &isAdmin)
+		   AND u.is_active = 1`, sessionID).Scan(&userID, &username, &email, &isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidSession
 	}
@@ -93,7 +97,7 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 		log.Printf("auth: session slide failed for %s: %v", sessionID, err)
 	}
 
-	return &User{ID: userID, Username: username, IsInstanceAdmin: isAdmin == 1}, nil
+	return &User{ID: userID, Username: username, Email: email.String, IsInstanceAdmin: isAdmin == 1}, nil
 }
 
 // CreateSession inserts a fresh session row for userID. The id is base64url

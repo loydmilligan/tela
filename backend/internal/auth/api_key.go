@@ -226,17 +226,19 @@ func LookupAPIKey(ctx context.Context, d *sql.DB, secret []byte, rawKey string) 
 func userForAPIKey(ctx context.Context, d *sql.DB, userID int64) (*User, error) {
 	var (
 		u       User
+		email   sql.NullString
 		isAdmin int
 	)
 	err := d.QueryRowContext(ctx,
-		`SELECT id, username, is_instance_admin FROM users WHERE id = ? AND is_active = 1`,
-		userID).Scan(&u.ID, &u.Username, &isAdmin)
+		`SELECT id, username, email, is_instance_admin FROM users WHERE id = ? AND is_active = 1`,
+		userID).Scan(&u.ID, &u.Username, &email, &isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidAPIKey
 	}
 	if err != nil {
 		return nil, err
 	}
+	u.Email = email.String
 	u.IsInstanceAdmin = isAdmin == 1
 	return &u, nil
 }

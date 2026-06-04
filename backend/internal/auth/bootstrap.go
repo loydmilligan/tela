@@ -7,7 +7,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"strings"
+	"time"
 )
 
 // BootstrapResult describes what BootstrapAdmin did, for the caller's
@@ -37,7 +40,7 @@ type BootstrapResult struct {
 //
 // randSrc is used for the generated-password path; pass crypto/rand.Reader
 // in production. Tests can inject deterministic readers.
-func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv string, randSrc io.Reader) (BootstrapResult, error) {
+func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv, emailEnv string, randSrc io.Reader) (BootstrapResult, error) {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("auth: begin bootstrap tx: %w", err)
@@ -73,10 +76,19 @@ func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv str
 		return BootstrapResult{}, fmt.Errorf("auth: hash bootstrap password: %w", err)
 	}
 
+	// A bootstrap email is treated as pre-confirmed (the operator set it), so
+	// the admin can sign in immediately. Empty → NULL email, a username-only
+	// admin that is exempt from the login email gate.
+	var email, verifiedAt any
+	if e := strings.ToLower(strings.TrimSpace(emailEnv)); e != "" {
+		email = e
+		verifiedAt = nowStamp()
+	}
+
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO users (username, password_hash, is_instance_admin, is_active)
-		VALUES (?, ?, 1, 1)
-	`, username, hash)
+		INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
+		VALUES (?, ?, ?, ?, 1, 1)
+	`, username, email, verifiedAt, hash)
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("auth: insert bootstrap admin: %w", err)
 	}
@@ -114,8 +126,44 @@ func generatePassword(r io.Reader, byteLen int) (string, error) {
 }
 
 // BootstrapFromEnv is the convenience wrapper used from main.go.
-// Reads TELA_ADMIN_USERNAME / TELA_ADMIN_PASSWORD, calls BootstrapAdmin
-// with crypto/rand.Reader, and returns the result.
+// Reads TELA_ADMIN_USERNAME / TELA_ADMIN_PASSWORD / TELA_ADMIN_EMAIL, calls
+// BootstrapAdmin with crypto/rand.Reader, and returns the result.
 func BootstrapFromEnv(ctx context.Context, d *sql.DB) (BootstrapResult, error) {
-	return BootstrapAdmin(ctx, d, os.Getenv("TELA_ADMIN_USERNAME"), os.Getenv("TELA_ADMIN_PASSWORD"), rand.Reader)
+	return BootstrapAdmin(ctx, d,
+		os.Getenv("TELA_ADMIN_USERNAME"), os.Getenv("TELA_ADMIN_PASSWORD"), os.Getenv("TELA_ADMIN_EMAIL"),
+		rand.Reader)
+}
+
+// BackfillAdminEmailFromEnv assigns TELA_ADMIN_EMAIL to the bootstrap admin on
+// an instance that was created before email auth existed. No-op when the env is
+// unset, or when the admin already has an email, or when the address is already
+// taken (the unique index rejects it — logged, not fatal). Idempotent.
+func BackfillAdminEmailFromEnv(ctx context.Context, d *sql.DB) {
+	email := strings.ToLower(strings.TrimSpace(os.Getenv("TELA_ADMIN_EMAIL")))
+	if email == "" {
+		return
+	}
+	username := os.Getenv("TELA_ADMIN_USERNAME")
+	if username == "" {
+		username = "admin"
+	}
+	res, err := d.ExecContext(ctx, `
+		UPDATE users
+		   SET email = ?, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
+		 WHERE username = ? AND is_instance_admin = 1 AND email IS NULL`,
+		email, nowStamp(), nowStamp(), username)
+	if err != nil {
+		log.Printf("auth: backfill admin email: %v", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("auth: assigned TELA_ADMIN_EMAIL to admin %q", username)
+	}
+}
+
+// nowStamp is the UTC timestamp format the rest of the schema uses
+// (datetime('now') equivalent), so values inserted from Go sort/compare
+// against SQLite-generated ones.
+func nowStamp() string {
+	return time.Now().UTC().Format("2006-01-02 15:04:05")
 }

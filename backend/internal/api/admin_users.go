@@ -20,16 +20,19 @@ const (
 // adminUserDTO is the wire shape for admin user listings + writes. Mirrors
 // the users row except password_hash (never exposed).
 type adminUserDTO struct {
-	ID              int64  `json:"id"`
-	Username        string `json:"username"`
-	IsInstanceAdmin bool   `json:"is_instance_admin"`
-	IsActive        bool   `json:"is_active"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
+	ID              int64   `json:"id"`
+	Username        string  `json:"username"`
+	Email           *string `json:"email"`
+	EmailVerified   bool    `json:"email_verified"`
+	IsInstanceAdmin bool    `json:"is_instance_admin"`
+	IsActive        bool    `json:"is_active"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
 }
 
 type adminUserCreateRequest struct {
 	Username        string `json:"username"`
+	Email           string `json:"email"`
 	Password        string `json:"password"`
 	IsInstanceAdmin *bool  `json:"is_instance_admin"`
 }
@@ -47,7 +50,7 @@ func (s *Server) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT id, username, is_instance_admin, is_active, created_at, updated_at
+		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
 		  FROM users
 		 ORDER BY username ASC`)
 	if err != nil {
@@ -93,6 +96,17 @@ func (s *Server) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "password must be at least 8 characters")
 		return
 	}
+	// Email is optional for admin-created users. When present it must be valid;
+	// admin-created accounts are treated as pre-confirmed (no verify email).
+	var email, verifiedAt any
+	if raw := normalizeEmail(req.Email); raw != "" {
+		if !validEmail(raw) {
+			writeError(w, http.StatusBadRequest, "bad_request", "email must be a valid address")
+			return
+		}
+		email = raw
+		verifiedAt = nowStamp()
+	}
 	isAdmin := 0
 	if req.IsInstanceAdmin != nil && *req.IsInstanceAdmin {
 		isAdmin = 1
@@ -106,11 +120,11 @@ func (s *Server) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	res, err := s.DB.ExecContext(ctx, `
-		INSERT INTO users (username, password_hash, is_instance_admin, is_active)
-		VALUES (?, ?, ?, 1)`, username, hash, isAdmin)
+		INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
+		VALUES (?, ?, ?, ?, ?, 1)`, username, email, verifiedAt, hash, isAdmin)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
-			writeError(w, http.StatusConflict, "conflict", "username already exists")
+			writeError(w, http.StatusConflict, "conflict", "username or email already exists")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "create user failed")
@@ -354,11 +368,14 @@ type adminUserScanner interface {
 func scanAdminUserRow(s adminUserScanner) (adminUserDTO, error) {
 	var (
 		dto             adminUserDTO
+		email, verified sql.NullString
 		isAdmin, active int
 	)
-	if err := s.Scan(&dto.ID, &dto.Username, &isAdmin, &active, &dto.CreatedAt, &dto.UpdatedAt); err != nil {
+	if err := s.Scan(&dto.ID, &dto.Username, &email, &verified, &isAdmin, &active, &dto.CreatedAt, &dto.UpdatedAt); err != nil {
 		return adminUserDTO{}, err
 	}
+	dto.Email = nullableString(email)
+	dto.EmailVerified = verified.Valid
 	dto.IsInstanceAdmin = isAdmin == 1
 	dto.IsActive = active == 1
 	return dto, nil
@@ -366,14 +383,14 @@ func scanAdminUserRow(s adminUserScanner) (adminUserDTO, error) {
 
 func selectAdminUserByID(ctx context.Context, d *sql.DB, id int64) (adminUserDTO, error) {
 	row := d.QueryRowContext(ctx, `
-		SELECT id, username, is_instance_admin, is_active, created_at, updated_at
+		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
 		  FROM users WHERE id = ?`, id)
 	return scanAdminUserRow(row)
 }
 
 func selectAdminUserByIDTx(ctx context.Context, tx *sql.Tx, id int64) (adminUserDTO, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, username, is_instance_admin, is_active, created_at, updated_at
+		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
 		  FROM users WHERE id = ?`, id)
 	return scanAdminUserRow(row)
 }

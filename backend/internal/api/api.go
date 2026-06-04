@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/mailer"
 )
 
 // Server bundles dependencies shared across HTTP handlers.
@@ -13,6 +14,16 @@ type Server struct {
 	rooms        *roomRegistry
 	shareSecret  []byte
 	shareLimiter *shareRateLimiter
+
+	// Mailer sends transactional email (verify / reset). Defaults to the
+	// env-selected driver (SMTP, or a log fallback when unconfigured) so it is
+	// never nil; tests overwrite it with a capturing fake after New().
+	Mailer mailer.Mailer
+
+	// authLimiter throttles the unauthenticated, email-sending endpoints
+	// (register / resend / forgot-password) per client IP so the relay can't
+	// be turned into a mail bomb.
+	authLimiter *authRateLimiter
 
 	// auditWriter buffers bearer-authed audit-log writes. M16.A.2: every
 	// request that resolved to a valid api_keys row is recorded here
@@ -31,12 +42,15 @@ func New(db *sql.DB) *Server {
 		shareSecret:  loadOrGenerateShareSecret(),
 		shareLimiter: newShareRateLimiter(),
 		auditWriter:  auth.NewAuditWriter(db),
+		Mailer:       mailer.FromEnv(),
+		authLimiter:  newAuthRateLimiter(),
 	}
 	// Sweep stale share-rate-limit buckets every shareRateWindow so the
 	// limiter map cannot grow unbounded under adversarial load. Tied to
 	// context.Background() — the goroutine outlives non-graceful tests, which
 	// is fine: each test process is short-lived.
 	go s.shareLimiter.sweepLoop(context.Background())
+	go s.authLimiter.sweepLoop(context.Background())
 	return s
 }
 

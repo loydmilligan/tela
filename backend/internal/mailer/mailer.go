@@ -1,0 +1,58 @@
+// Package mailer is tela's transactional email subsystem: a small Mailer
+// interface plus two drivers. The SMTP driver (smtp.go) is provider-agnostic —
+// it speaks to any SMTP relay (Resend, Postmark, SES, self-hosted Postfix),
+// keeping tela self-hostable. When no SMTP host is configured the LogMailer
+// fallback prints the message (and any action link) to the server log so the
+// register/verify/reset flows work out-of-the-box in dev and on first boot.
+package mailer
+
+import (
+	"context"
+	"log"
+)
+
+// Message is one transactional email. Text is the plaintext fallback; HTML is
+// the rendered body. Both are sent as a multipart/alternative so every client
+// renders something.
+type Message struct {
+	To      string
+	Subject string
+	HTML    string
+	Text    string
+}
+
+// Mailer sends transactional email. Implementations must be safe for
+// concurrent use by multiple request handlers.
+type Mailer interface {
+	Send(ctx context.Context, msg Message) error
+}
+
+// FromEnv selects a driver from the environment. TELA_SMTP_HOST present →
+// the SMTP driver; otherwise the LogMailer dev fallback. Never returns nil, so
+// callers can depend on a non-nil Mailer without guarding.
+//
+//	TELA_SMTP_HOST       relay hostname (empty → LogMailer)
+//	TELA_SMTP_PORT       default 587
+//	TELA_SMTP_USERNAME   SMTP auth user (Resend: "resend")
+//	TELA_SMTP_PASSWORD   SMTP auth pass (Resend: your API key)
+//	TELA_SMTP_FROM       envelope/from, e.g. `tela <tela@example.com>`
+//	TELA_SMTP_TLS        starttls (default) | ssl | none
+func FromEnv() Mailer {
+	cfg, ok := smtpConfigFromEnv()
+	if !ok {
+		log.Printf("mailer: TELA_SMTP_HOST unset — using log fallback (emails printed, not sent)")
+		return &LogMailer{}
+	}
+	log.Printf("mailer: SMTP relay %s:%d (tls=%s, from=%s)", cfg.host, cfg.port, cfg.tls, cfg.from)
+	return &smtpMailer{cfg: cfg}
+}
+
+// LogMailer prints emails to the server log instead of sending them. Used when
+// no SMTP relay is configured — the verify/reset links land in the log so a
+// developer or first-time self-hoster can complete the flow without a relay.
+type LogMailer struct{}
+
+func (m *LogMailer) Send(_ context.Context, msg Message) error {
+	log.Printf("mailer(log): to=%q subject=%q\n--- text ---\n%s\n--- end ---", msg.To, msg.Subject, msg.Text)
+	return nil
+}

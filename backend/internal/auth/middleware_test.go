@@ -109,7 +109,7 @@ func TestMiddleware_HappyPathSlidesSessionAndAttachesUser(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
-	res, err := BootstrapAdmin(ctx, d, "admin", "pw-1234567890", rand.Reader)
+	res, err := BootstrapAdmin(ctx, d, "admin", "pw-1234567890", "", rand.Reader)
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestMiddleware_RejectsInactiveUser(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
-	if _, err := BootstrapAdmin(ctx, d, "admin", "pw", rand.Reader); err != nil {
+	if _, err := BootstrapAdmin(ctx, d, "admin", "pw", "", rand.Reader); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	var adminID int64
@@ -204,7 +204,7 @@ func TestLoadSessionAndSlide_RejectsExpired(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
-	if _, err := BootstrapAdmin(ctx, d, "admin", "pw", rand.Reader); err != nil {
+	if _, err := BootstrapAdmin(ctx, d, "admin", "pw", "", rand.Reader); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	var adminID int64
@@ -242,7 +242,7 @@ func TestLoadSessionAndSlide_Concurrent(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	if _, err := BootstrapAdmin(ctx, d, "admin", "pw-1234567890", rand.Reader); err != nil {
+	if _, err := BootstrapAdmin(ctx, d, "admin", "pw-1234567890", "", rand.Reader); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	var adminID int64
@@ -296,7 +296,7 @@ func TestMiddleware_ReturnsInternalOnDBError(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
-	if _, err := BootstrapAdmin(ctx, d, "admin", "pw-1234567890", rand.Reader); err != nil {
+	if _, err := BootstrapAdmin(ctx, d, "admin", "pw-1234567890", "", rand.Reader); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	var adminID int64
