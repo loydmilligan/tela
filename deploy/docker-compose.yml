@@ -36,6 +36,13 @@ services:
       TELA_SMTP_USERNAME:  ${TELA_SMTP_USERNAME:-}
       TELA_SMTP_PASSWORD:  ${TELA_SMTP_PASSWORD:-}
       TELA_SMTP_FROM:      ${TELA_SMTP_FROM:-}
+      # RAG semantic retrieval (internal/rag). Unset → feature is dark
+      # (/api/rag/* return 503). The embed host must be reachable from THIS
+      # container's network — on archer the tailnet name `tardis` resolves
+      # inside containers (host DNS), so http://tardis:11434 works directly.
+      TELA_RAG_EMBED_URL:    ${TELA_RAG_EMBED_URL:-}
+      TELA_RAG_EMBED_MODEL:  ${TELA_RAG_EMBED_MODEL:-}
+      TELA_RAG_EMBED_DIM:    ${TELA_RAG_EMBED_DIM:-}
     expose:
       - "8080"
     depends_on:
