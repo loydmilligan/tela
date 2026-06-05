@@ -338,8 +338,11 @@ explicitly in code per section 5.
 
 Submit/manage from the Platform Dashboard: **`https://platform.openai.com/apps-manage`**
 
-- [ ] **Org identity verification** — verify in the Platform Dashboard as an **individual or
-      business**; the verified name is what the app publishes under. Unverified = rejection.
+- [ ] **Org identity verification** — at **`https://platform.openai.com/settings/organization/general`**
+      (CONFIRMED 2026-06-05 — this is the right page; "Settings" is behind the gear icon / org
+      name top-right on `platform.openai.com`, NOT the consumer ChatGPT UI). Scroll to **"Verify
+      Organization"**. Government ID via Persona (physical ID only, no digital); ~30 min to update;
+      must be an **org owner**. Verify under a **non-EU** org/project. Started; Cagdas to finish.
 - [ ] **`api.apps.write` permission** — the submitting account needs it. Org **owners** have
       it by default; if submitting as a non-owner, grant it first.
 - [ ] **Global (non-EU) data-residency project** — EU-residency projects **cannot** submit

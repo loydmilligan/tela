@@ -26,7 +26,7 @@ pair; full-bleed connector icon + server branding.
 - ✅ **Submission payloads drafted:** `docs/mcp-submission-claude.md`, `docs/mcp-submission-chatgpt.md`.
 - ✅ **Demo account CREATED + populated:** `mcp-demo` / `mcp-demo@cagdas.io` (email-verified via archer DB, no MFA, not admin); space "Demo" (id 4) seeded with 5 pages. Reusable seed: `scripts/seed-demo.py`. Password held outside the repo (paste into the submission form).
 - ✅ **Cloudflare allowlist APPLIED & live** — ruleset `0b545114` (skip WAF/rate-limit/bot for `160.79.104.0/21` on `tela.cagdas.io`); terraform in zcag/dotty, state drift-free.
-- ⬜ **CAGDAS-ONLY:** OpenAI org identity verification + `api.apps.write`; global/non-EU residency project; the final form submits (Claude + ChatGPT).
+- 🟡 **CAGDAS (in progress):** OpenAI org identity verification at `platform.openai.com/settings/organization/general` (confirmed correct page; gear-icon/org-name top-right, not the consumer ChatGPT UI) — **Cagdas continuing later**. Then: `api.apps.write` (org owner), global/non-EU residency project, final form submits (Claude + ChatGPT).
 - ⬜ **In-host only (other agent):** re-enable the widget `_meta` (blank-iframe/bridge bug) + capture ChatGPT widget screenshots. Not a Claude blocker (widgets optional there).
 - **Critical path now:** **Claude is fully unblocked — submit it** at `clau.de/mcp-directory-submission` (paste the demo password into the form). Then ChatGPT: OpenAI org verification + global-residency project + widget render/screenshots → submit.
 
