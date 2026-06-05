@@ -98,8 +98,22 @@ export class TelaProvider {
       window.clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    // Detach EVERY awareness observer before mutating awareness below. The
+    // editor's y-prosemirror yCursorPlugin observes this awareness and, on any
+    // change, schedules a deferred view.dispatch via eventloop.timeout(0)
+    // (y-prosemirror's setMeta/updateMetas). During React teardown that timer
+    // fires ~tens of ms later — after Milkdown's async editor.destroy() has
+    // removed the editorState ctx — so the dispatch throws "Context
+    // editorState not found" on every page switch. updateMetas only guards on
+    // the ySync binding being destroyed, which hasn't happened yet, so we have
+    // to stop the change from being observed at all. Clearing the lib0
+    // Observable's listener map means sendAwarenessRemoval()/awareness.destroy()
+    // below notify nobody locally, while the removal frame still reaches peers
+    // over the ws. (We own this awareness instance; it's being torn down.)
+    const obs = (this.awareness as unknown as { _observers?: Map<string, unknown> })
+      ._observers
+    if (obs && typeof obs.clear === 'function') obs.clear()
     this.sendAwarenessRemoval()
-    this.awareness.off('update', this.onAwarenessUpdate)
     this.doc.off('update', this.onDocUpdate)
     this.awareness.destroy()
     if (this.ws) {
