@@ -6,6 +6,7 @@ import (
 
 	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/mailer"
+	"github.com/zcag/tela/backend/internal/rag"
 )
 
 // Server bundles dependencies shared across HTTP handlers.
@@ -33,6 +34,12 @@ type Server struct {
 	// assert. Owned by New() so it always exists — never nil — which keeps
 	// the dependency injection trivial.
 	auditWriter *auth.AuditWriter
+
+	// rag is the semantic-retrieval service (chunk index + hybrid search).
+	// Constructed from env (TELA_RAG_EMBED_URL); disabled — but never nil —
+	// when unconfigured, so handlers can `if !s.rag.Enabled()` → 503. Tests
+	// inject a fake embedder by overwriting this field.
+	rag *rag.Service
 }
 
 func New(db *sql.DB) *Server {
@@ -44,6 +51,7 @@ func New(db *sql.DB) *Server {
 		auditWriter:  auth.NewAuditWriter(db),
 		Mailer:       mailer.FromEnv(),
 		authLimiter:  newAuthRateLimiter(),
+		rag:          rag.NewService(db, rag.ConfigFromEnv()),
 	}
 	// Sweep stale share-rate-limit buckets every shareRateWindow so the
 	// limiter map cannot grow unbounded under adversarial load. Tied to
