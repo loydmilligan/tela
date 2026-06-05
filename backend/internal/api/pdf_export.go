@@ -287,14 +287,20 @@ func footerHTML(title string) string {
 	if t == "" {
 		t = "Untitled"
 	}
+	// Brand is the "tela" wordmark in brand indigo, centered. The folded-paper
+	// mark is deliberately NOT an inline SVG/image here: gotenberg's headless-
+	// Chrome footer template renders in a restricted context where SVG/external
+	// images are unreliable, so the wordmark is the robust choice.
 	return `<html><head><meta charset="utf-8"><style>
   body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
        font-size:8px;color:#9a9aa6;width:100%;-webkit-print-color-adjust:exact;}
   .f{display:flex;justify-content:space-between;align-items:center;
      width:100%;box-sizing:border-box;padding:0 1.5cm;}
-  .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;}
+  .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%;}
+  .b{font-weight:700;letter-spacing:-0.02em;color:#6366f1;}
 </style></head><body>
   <div class="f"><span class="t">` + t + `</span>
+  <span class="b">tela</span>
   <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>
 </body></html>`
 }

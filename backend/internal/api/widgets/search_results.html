@@ -43,11 +43,26 @@
   .snippet mark { background: var(--mark-bg); color: var(--mark-fg); border-radius: 3px;
                   padding: 0 2px; }
   .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+  .tela-by { display: flex; align-items: center; gap: 6px; margin-top: 14px;
+             padding-top: 10px; border-top: 1px solid var(--border);
+             color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: -0.01em; }
+  .tela-by svg { width: 15px; height: 15px; border-radius: 4px; display: block; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <div class="list" id="list"></div>
+    <div class="tela-by" aria-label="tela">
+      <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="512" height="512" rx="112" fill="#4f46e5"/>
+        <g transform="translate(-2.5,-38.5)">
+          <path fill="#ffffff" d="M150 240 L196 188 Q205 178 218 178 H356 Q378 178 366 200 L332 240 Q325 250 312 250 H162 Q140 250 150 240 Z"/>
+          <path fill="#ffffff" d="M238 250 H296 Q300 250 300 268 V396 Q300 414 281 410 L245 402 Q226 398 226 380 V272 Q226 252 238 250 Z"/>
+          <path fill="#1e1b4b" fill-opacity="0.4" d="M250 250 H312 Q325 250 332 240 L304 270 Q297 278 297 290 V324 Z"/>
+        </g>
+      </svg>
+      tela
+    </div>
   </div>
 
 <!--TELA_BRIDGE-->
