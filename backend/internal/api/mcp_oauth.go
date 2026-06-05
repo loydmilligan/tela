@@ -82,9 +82,13 @@ func newMCPOAuth(ctx context.Context, issuer, resource, jwksURL string) (*mcpOAu
 		return nil, err
 	}
 	prm := &oauthex.ProtectedResourceMetadata{
-		Resource:               resource,
-		AuthorizationServers:   []string{issuer},
-		ScopesSupported:        []string{"openid", "email"},
+		Resource:             resource,
+		AuthorizationServers: []string{issuer},
+		// offline_access is advertised so the client requests it and WorkOS issues
+		// a refresh token — without it the access token silently expires after its
+		// TTL and the host's "reload tools" 401s with no way to refresh (forcing a
+		// full reconnect). The verifier gates on iss/aud/sig only, never on scope.
+		ScopesSupported:        []string{"openid", "email", "offline_access"},
 		BearerMethodsSupported: []string{"header"},
 	}
 	return &mcpOAuth{
