@@ -16,6 +16,15 @@ pair; full-bleed connector icon + server branding.
 
 ---
 
+## Status (2026-06-05, PM)
+- ✅ **Privacy policy + public MCP docs pages BUILT** (`/privacy`, `/mcp` in `landing/`, gate-green). ⏳ **not live until `make deploy-landing`** (apex still serves the old landing without these routes).
+- 🔴 **WorkOS OAuth server STILL DOWN** — every `pleasing-puzzle-31-staging.authkit.app/oauth2/*` + discovery endpoint 404s. Hard blocker: no Connect → nothing in-host testable → can't pass MCP Inspector → can't submit either directory. **Cagdas-only fix in the WorkOS dashboard** (re-enable the hosted OAuth server, likely toggled off when Standalone mode was configured).
+- ⬜ **Remaining shared non-code:** populated no-MFA demo account; Cloudflare allowlist Anthropic egress `160.79.104.0/21`; MCP Inspector pass (gated behind WorkOS).
+- ⬜ **ChatGPT-only:** OpenAI org identity verification + `api.apps.write`; global/non-EU residency project; `openWorldHint` audit + justifications; screenshots; web+mobile test pass.
+- **Critical path:** WorkOS fix → `make deploy-landing` → Inspector pass → Claude submit → ChatGPT submit.
+
+---
+
 ## TL;DR — what's actually blocking each
 
 | | Claude | ChatGPT |
@@ -46,8 +55,8 @@ docs page, populated demo account, finalize branding) → submit **Claude first*
 - [x] **First-party API, server domain matches service** — *met* (tela.cagdas.io).
 - [ ] **Actionable errors, sized responses (≤25k tokens tool result)** — *verify* error payloads carry codes/messages (they do via the `{error,code,status}` envelope) and large pages don't blow the cap.
 - [ ] **Reachable from Anthropic egress `160.79.104.0/21`** — **allowlist this range in Cloudflare** so OAuth/tool calls from Anthropic's servers aren't blocked (known rejection cause).
-- [ ] **Privacy policy at a public HTTPS URL** — **BLOCKING. Missing/incomplete = immediate rejection.**
-- [ ] **Public documentation page** (blog post or help-center article; can share privately during review) — **BLOCKING.**
+- [x] **Privacy policy at a public HTTPS URL** — built at `/privacy` (pending deploy).
+- [x] **Public documentation page** — built at `/mcp` (pending deploy).
 - [ ] **Test account with sample data + setup steps** — **provision a populated demo space/account** (empty accounts are a rejection cause).
 - [ ] **Branding: logo SVG/URL + favicon verification** — connector icon done; provide a logo asset + verify favicon.
 - [ ] **MCP Inspector pass** — exercise every tool via `npx @modelcontextprotocol/inspector` and as a custom connector before submitting.
@@ -73,7 +82,7 @@ docs page, populated demo account, finalize branding) → submit **Claude first*
 - [x] **Verb-led unique tool names; descriptions match; no fair-play / model-steering text** — *met* (audit clean).
 - [ ] **`readOnlyHint`/`destructiveHint`/`openWorldHint` + per-tool justification** — read/write hints done; **add `openWorldHint`** where a tool touches external/public state (currently only `import_mira`) and write the justifications. (Most tela tools are closed-world → `openWorldHint:false` is correct; confirm none "post to the public internet".)
 - [x] **`outputSchema` for structured tools** — *met* (typed Out on every tool).
-- [ ] **Privacy policy** (published; data categories/purposes/recipients/retention) — **BLOCKING.** No PCI/PHI/gov-ID/secrets collection.
+- [x] **Privacy policy** (published; data categories/purposes/recipients/retention) — built at `/privacy` (pending deploy). States no PCI/PHI/gov-ID/secrets collection.
 - [ ] **App name/logo/screenshots (required dims) + test prompts** that **pass on ChatGPT web AND mobile** — **BLOCKING.**
 - [~] **Interactive widget / "meaningful interaction"** — guidelines reject "static frames with no meaningful interaction"; we now have widgets → satisfied (strongly recommended, not a literal hard gate).
 - [ ] **Global (non-EU) data-residency submitting project** — EU-residency projects can't submit; create/use a global one.
@@ -91,8 +100,8 @@ After approval you **Publish**, which makes the app **searchable by exact name +
 ---
 
 ## Shared do-once checklist (both hosts)
-- [ ] **Privacy policy** at a public HTTPS URL (covers what tela's MCP reads/writes, recipients = WorkOS + the host, retention).  ← blocks BOTH
-- [ ] **Public documentation page** (what tela MCP is, the tools/resources, how to connect, auth) at a public URL.  ← blocks BOTH
+- [x] **Privacy policy** at a public HTTPS URL — **BUILT** at `/privacy` (`landing/src/pages/privacy.astro`); covers what tela's MCP reads/writes, recipients = WorkOS + the host, retention. ⏳ goes live on `make deploy-landing`.
+- [x] **Public documentation page** — **BUILT** at `/mcp` (`landing/src/pages/mcp.astro`); endpoint, transport, auth, the 20 tools, resources, widgets, how to connect (Claude/ChatGPT/npm proxy). ⏳ goes live on `make deploy-landing`.
 - [ ] **Populated demo account** with sample spaces/pages + step-by-step reviewer setup; login path with **no MFA**.  ← blocks BOTH
 - [ ] **Branding**: logo (SVG/URL), verify favicon, tagline, description; screenshots of the widgets for the listings.
 - [ ] **Cloudflare**: allowlist Anthropic egress `160.79.104.0/21` (Claude reviewer + runtime reachability).
