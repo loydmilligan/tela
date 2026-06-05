@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/submission-assets/logo-lockup-dark.svg">
+  <img alt="tela" src="docs/submission-assets/logo-lockup-light.svg" width="184">
+</picture>
+
 # tela
 
 A self-hostable, markdown-native team wiki — spaces, nested pages, a Milkdown editor, full-text search, live collaboration, comments, page history, public sharing, and a first-class MCP server so AI agents are first-class citizens alongside humans.
