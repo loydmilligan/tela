@@ -131,6 +131,7 @@ describe.skipIf(!hasBuild)("stdio smoke", () => {
           "list_spaces",
           "search",
           "search_bodies",
+          "semantic_search",
           "submit_feedback",
           "update_page",
           "update_space",

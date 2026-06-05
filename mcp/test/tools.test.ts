@@ -5,6 +5,7 @@ import { listPages } from "../src/tools/list-pages.js";
 import { getPage } from "../src/tools/get-page.js";
 import { search } from "../src/tools/search.js";
 import { searchBodies } from "../src/tools/search-bodies.js";
+import { semanticSearch } from "../src/tools/semantic-search.js";
 import { listBacklinks } from "../src/tools/list-backlinks.js";
 import { makeFlakyClient, makeMockClient } from "./fixtures.js";
 
@@ -121,6 +122,42 @@ describe("search", () => {
     const out = await search(client, { query: "term", limit: 5 });
     expect(out.results).toEqual([{ id: 12, title: "Hit", snippet: "before <mark>term</mark> after" }]);
     expect(requests[0].url).toContain("q=term");
+    expect(requests[0].url).toContain("limit=5");
+  });
+});
+
+describe("semantic_search", () => {
+  it("forwards q/mode/limit and projects citation fields", async () => {
+    const { client, requests } = makeMockClient({
+      body: {
+        results: [
+          {
+            chunk_id: 9,
+            page_id: 12,
+            space_id: 1,
+            title: "Deploy Guide",
+            heading_path: "Shipping > Production",
+            snippet: "run make deploy…",
+            score: 0.031,
+            updated_at: "2026-06-05 09:00:00",
+          },
+        ],
+      },
+    });
+    const out = await semanticSearch(client, { query: "how do we ship", mode: "hybrid", limit: 5 });
+    expect(out.results).toEqual([
+      {
+        page_id: 12,
+        title: "Deploy Guide",
+        heading_path: "Shipping > Production",
+        snippet: "run make deploy…",
+        score: 0.031,
+        updated_at: "2026-06-05 09:00:00",
+      },
+    ]);
+    expect(requests[0].url).toContain("/api/rag/search");
+    expect(requests[0].url).toContain("q=how");
+    expect(requests[0].url).toContain("mode=hybrid");
     expect(requests[0].url).toContain("limit=5");
   });
 });
