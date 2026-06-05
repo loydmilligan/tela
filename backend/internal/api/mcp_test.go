@@ -619,16 +619,27 @@ func TestMCP_Widgets(t *testing.T) {
 		t.Errorf("widget mime: %q", rr.Contents[0].MIMEType)
 	}
 
-	// Tool→widget _meta is currently disabled (Claude's live iframe stays blank),
-	// so neither get_page nor search should advertise an outputTemplate. The
-	// resources above stay registered (bridge inlined) for when it's re-enabled.
+	// get_page + search advertise the widget link _meta.
 	tools, err := sess.ListTools(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	wantTemplate := map[string]string{
+		"get_page": "ui://tela/page-reader/openai",
+		"search":   "ui://tela/search-results/openai",
+	}
+	seen := map[string]bool{}
 	for _, tl := range tools.Tools {
-		if (tl.Name == "get_page" || tl.Name == "search") && tl.Meta["openai/outputTemplate"] != nil {
-			t.Errorf("%s should not advertise a widget outputTemplate while disabled: %v", tl.Name, tl.Meta)
+		if want, ok := wantTemplate[tl.Name]; ok {
+			seen[tl.Name] = true
+			if tl.Meta["openai/outputTemplate"] != want {
+				t.Errorf("%s _meta outputTemplate = %v, want %q", tl.Name, tl.Meta["openai/outputTemplate"], want)
+			}
+		}
+	}
+	for name := range wantTemplate {
+		if !seen[name] {
+			t.Errorf("tool %q not advertised", name)
 		}
 	}
 }
