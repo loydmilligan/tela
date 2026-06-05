@@ -88,12 +88,22 @@ func TestMCP_SpikeListSpaces(t *testing.T) {
 		t.Errorf("list_spaces has no output schema")
 	}
 	// Every tool needs a Title (Claude directory eligibility) and annotations.
+	// openWorldHint MUST be set explicitly (the SDK omitempty default is "true",
+	// i.e. open-world — wrong for tela's closed DB). Only import_mira is open.
+	// Both directories reject hints that don't match behavior, so guard them.
+	openWorld := map[string]bool{"import_mira": true}
 	for _, tl := range tools.Tools {
 		if tl.Title == "" {
 			t.Errorf("tool %q has no Title", tl.Name)
 		}
 		if tl.Annotations == nil {
 			t.Errorf("tool %q has no Annotations", tl.Name)
+			continue
+		}
+		if tl.Annotations.OpenWorldHint == nil {
+			t.Errorf("tool %q: OpenWorldHint unset (defaults to open-world)", tl.Name)
+		} else if *tl.Annotations.OpenWorldHint != openWorld[tl.Name] {
+			t.Errorf("tool %q: OpenWorldHint=%v, want %v", tl.Name, *tl.Annotations.OpenWorldHint, openWorld[tl.Name])
 		}
 	}
 	// Drift guard: the full expected tool roster is advertised (catches an

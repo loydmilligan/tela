@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -32,7 +33,13 @@ func mcpResultWithLinks(out any, links ...mcp.Content) *mcp.CallToolResult {
 // schema + structured content. Write tools additionally gate on key scope via
 // mcpRequireWrite (the public-path mount defers method-scope to the tool).
 func (s *Server) registerMCPTools(server *mcp.Server) {
-	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
+	// Hints default to OPEN/DESTRUCTIVE when absent (MCP spec: OpenWorldHint and
+	// DestructiveHint default true), so every tool sets them explicitly — both
+	// directories reject tools whose advertised hints don't match behavior. tela
+	// is a closed world (its own DB) except import_mira, which fetches external
+	// URLs. *bool so the value survives the SDK's omitempty.
+	no, yes := false, true
+	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &no}
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_spaces",
@@ -112,76 +119,78 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpFetch)
 
 	// ---- write tools (gate on write/admin scope via mcpRequireWrite) ----
+	// Writes are closed-world (OpenWorldHint:false) and additive (DestructiveHint:
+	// false) unless noted; deletes set DestructiveHint:true, idempotent patches
+	// set IdempotentHint:true.
 
-	yes := true
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_page",
 		Title:       "Create page",
 		Description: "Create a page in a space (editor+). Body is markdown; tela://page/{id} links are indexed as backlinks.",
-		Annotations: &mcp.ToolAnnotations{},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpCreatePage)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_page",
 		Title:       "Update page",
 		Description: "Patch a page's title and/or body (editor+). A body change auto-snapshots a revision.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpUpdatePage)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_page",
 		Title:       "Delete page",
 		Description: "Delete a page (editor+). Backlinks from other pages are preserved with the last-known title.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes, OpenWorldHint: &no},
 	}, s.mcpDeletePage)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "move_page",
 		Title:       "Move page",
 		Description: "Move a page: reparent (parent_id), detach to top-level (make_root), reorder (position), and/or relocate to another space (space_id). Editor+ in both source and target space. Provide at least one of space_id / parent_id / make_root / position.",
-		Annotations: &mcp.ToolAnnotations{},
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpMovePage)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_comment",
 		Title:       "Add comment",
 		Description: "Attach a root comment to a page, anchored by a {prefix, exact, suffix} text triplet (editor+).",
-		Annotations: &mcp.ToolAnnotations{},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpAddComment)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_space",
 		Title:       "Create space",
 		Description: "Create a space. The caller becomes its owner. slug is derived from name when omitted.",
-		Annotations: &mcp.ToolAnnotations{},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpCreateSpace)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_space",
 		Title:       "Update space",
 		Description: "Patch a space's name and/or slug (editor+).",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpUpdateSpace)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_space",
 		Title:       "Delete space",
 		Description: "Delete a space AND all its pages, comments, revisions and share links. Owner only. Irreversible.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes, OpenWorldHint: &no},
 	}, s.mcpDeleteSpace)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "import_mira",
 		Title:       "Import mira page",
 		Description: "Import a single mira page into a space as a new page (editor+). Provide source_url (https, allowlisted host, fetched server-side) OR an inline payload (raw mira block JSON) — exactly one. A password-protected source returns an unlock link.",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &yes},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &yes},
 	}, s.mcpImportMira)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_feedback",
 		Title:       "Submit feedback",
 		Description: "Submit free-text feedback about tela / tela-mcp itself (friction, bugs, missing capabilities). NOT for page content — use add_comment for that.",
-		Annotations: &mcp.ToolAnnotations{},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpSubmitFeedback)
 }
 
@@ -191,7 +200,27 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 // so the body + metadata fields are promoted verbatim.
 type mcpPage struct {
 	models.Page
-	URL string `json:"url"`
+	URL       string `json:"url"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// mcpBodyCap bounds a tool-result body so a single huge page can't blow the
+// host's tool-result token budget (Claude Code truncates at ~25k tokens). At
+// ~4 chars/token, 80k chars ≈ 20k tokens, leaving headroom for the envelope.
+// On truncation it appends a pointer to the paging tools and returns ok=false.
+const mcpBodyCap = 80_000
+
+func mcpCapBody(body string) (string, bool) {
+	if len(body) <= mcpBodyCap {
+		return body, true
+	}
+	// Trim to the cap on a rune boundary, then add a machine- and human-readable
+	// marker so the agent knows to page the rest via read_chunk/semantic_search.
+	cut := mcpBodyCap
+	for cut > 0 && !utf8.RuneStart(body[cut]) {
+		cut--
+	}
+	return body[:cut] + "\n\n…[truncated: page exceeds the tool-result size cap. Use semantic_search + read_chunk to read specific sections, or open the page URL.]", false
 }
 
 func mcpPageURL(p models.Page) string {
@@ -308,7 +337,9 @@ func (s *Server) mcpGetPage(ctx context.Context, req *mcp.CallToolRequest, in ge
 	if ae != nil {
 		return mcpErr(ae), getPageOut{}, nil
 	}
-	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
+	body, whole := mcpCapBody(p.Body)
+	p.Body = body
+	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p), Truncated: !whole}}
 	return mcpResultWithLinks(out, pageResourceLink(p.ID, p.Title)), out, nil
 }
 
@@ -489,12 +520,13 @@ func (s *Server) mcpFetch(ctx context.Context, req *mcp.CallToolRequest, in fetc
 	if ae != nil {
 		return mcpErr(ae), fetchOut{}, nil
 	}
+	text, whole := mcpCapBody(p.Body)
 	return nil, fetchOut{
 		ID:       in.ID,
 		Title:    p.Title,
-		Text:     p.Body,
+		Text:     text,
 		URL:      mcpPageURL(p),
-		Metadata: map[string]any{"space_id": p.SpaceID},
+		Metadata: map[string]any{"space_id": p.SpaceID, "truncated": !whole},
 	}, nil
 }
 
