@@ -1,7 +1,7 @@
 {
   "name": "tela-mcp",
-  "version": "0.6.0",
-  "description": "MCP server for Tela — exposes spaces, pages, search, and backlinks to MCP-capable agents (Claude Code, etc.) over stdio.",
+  "version": "0.7.0",
+  "description": "Thin stdio↔HTTP proxy to a Tela instance's built-in MCP server ({TELA_BASE_URL}/api/mcp). For stdio-only hosts; modern hosts can use HTTP transport directly.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -17,18 +17,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
-    "test": "vitest run",
-    "test:smoke": "vitest run --config vitest.smoke.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "semver": "^7.6.0",
-    "zod": "^4.0.0"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@types/semver": "^7.5.8",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   }

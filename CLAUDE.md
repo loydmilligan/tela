@@ -12,7 +12,7 @@ A self-hostable, markdown-native team wiki: Go + PostgreSQL backend, React/TS fr
 
 - `backend/` — Go. Module `github.com/zcag/tela/backend`, entry `cmd/tela`. `internal/{api,auth,db,mdimport,miraimport,models,testdb}`. **PostgreSQL** via the `pgx/v5` stdlib driver — DB access is hand-written `database/sql` (positional `$1` placeholders), **no sqlc, no ORM**. Migrations are embedded `NNNN_name.sql` files (forward-only, no down) in `internal/db/migrations`, run automatically by `db.Migrate()` on boot. `0001_init.sql` is a Postgres baseline squashed from the retired SQLite migration history (the live DB held no data worth keeping). Datetimes are TEXT in `'YYYY-MM-DD HH:MM:SS'` UTC (default `tela_now()`), booleans are INTEGER 0/1 — both kept from the SQLite era so Go scans + the frontend `parseSqliteTs` path are unchanged.
 - `frontend/` — React 19 + Vite + TS + Tailwind v4 + Radix + Milkdown (`@milkdown/kit`) + TanStack Query + TanStack Router + Orama + cmdk + Lucide + Storybook. `src/{components,lib,routes,styles}` + `App.tsx`/`main.tsx`. State is TanStack Query (zustand is in package.json but **unused**).
-- `mcp/` — TypeScript MCP server, thin client over the REST API. Published as `tela-mcp` on npm. See `mcp/README.md`.
+- `mcp/` — **thin stdio↔HTTP proxy** to the backend's built-in MCP server (`/api/mcp`). As of v0.7 the tool/resource surface lives in the Go backend (`internal/api/mcp*.go`), NOT here — this package is a dumb pipe that forwards the MCP protocol over stdio with the PAT as a bearer header (so there's no second implementation to drift). Published as `tela-mcp` on npm. Modern hosts skip it and use HTTP transport directly. See `mcp/README.md` + `docs/mcp-rewrite.md`.
 - `deploy/` — docker-compose + `proxy/Caddyfile`. `.env` is gitignored (narrow line, not `*.env`); `.env.example` is committed.
 - `landing/` — standalone **marketing landing page** (Astro + Tailwind v4 + OKLCH tokens, self-hosted Geist). Separate static build from the app; `backend/`+`frontend/` are untouched. Locked contracts at repo root: `CONTENT.md` (copy), `DESIGN.md` (look), `ACCEPTANCE.md` (gates). Targets: `make landing-dev` / `landing-build` / `landing-gate`. Tokens in `landing/src/styles/tokens.css` are its own source of truth — never hardcode color/px (the token-conformance gate enforces it). See `landing/README.md`. Caddy serves `landing/dist/` at the apex `/` (the app keeps `/login`, `/spaces`, `/share/*`, `/api/*`); ship it with `make deploy-landing` (builds + recreates the proxy so it re-reads the static mount).
 
@@ -27,7 +27,7 @@ A self-hostable, markdown-native team wiki: Go + PostgreSQL backend, React/TS fr
   4. `@layer tokens, base, components, utilities` ordering is locked.
   5. Every new UI element uses owned primitives + tokens; missing primitive → build it (with a Storybook story) first.
   6. **Yjs is scoped:** imports allowed ONLY in `src/lib/collab/*` and the collab branch of `milkdown-editor.tsx`. Everything else explores pure-markdown / pure-SQL first.
-- **MCP:** tools wrap REST endpoints; row-returning write tools wrap the row in a named envelope (`{ page: ... }`, `{ space: ... }`, `{ comment: ... }`, `{ feedback: ... }`); sentinel returns use `{ ok: true }`. Publish flow + hazards in `docs/architecture.md` (MCP section).
+- **MCP:** tools live in the backend (`internal/api/mcp_tools.go`) and call the same `xCore` funcs the REST routes do; row-returning tools wrap the row in a named envelope (`{ page: ... }`, `{ space: ... }`, `{ comment: ... }`, `{ feedback: ... }`) as typed output; sentinel returns use `{ ok: true }`. Per-tool scope via `mcpRequireWrite`; `/api/mcp` is on `IsPublicPath` and self-authenticates (bearer verifier). The npm `tela-mcp` proxy publish flow + hazards are in `docs/architecture.md` (MCP section).
 
 ## Run / dev
 
@@ -45,7 +45,7 @@ The backend requires **Postgres** — `make dev` / `make be-dev` boot a local co
 ## Tests
 
 - Backend: `make test` (boots the dev Postgres, then `go test ./...`). Or run `go test ./...` directly with `TELA_TEST_DATABASE_URL` set to a maintenance DSN (a reachable db like `postgres`). Each test gets its own throwaway database via `internal/testdb.New(t)` (CREATE DATABASE → migrate → drop on cleanup) — full isolation, and the old `:memory:`-is-per-connection hazard is gone (a pool against one real PG is shared across connections). HTTP tests via `Handler(d)` + helpers `newWiredServer(t)`, `loginClient`, `newWiredServerOnDisk` (the on-disk variants are now aliases — kept for callers).
-- MCP: `cd mcp && npm test` (mocked fetch) / `npm run test:smoke` / `test:integration` (needs live backend; `make test-mcp-integration` boots one). CI runs the integration suite.
+- MCP: the backend MCP surface is tested in Go (`backend/internal/api/mcp_test.go`, run by `make test`). The `mcp/` proxy has one live E2E (`npm run test:integration`, needs a running backend; `make test-mcp-integration` boots one). CI runs the integration suite.
 - Frontend: **no test infra** (no jsdom/vitest). FE unit-test briefs bounce until a config is added.
 
 ## Gotchas (learned the hard way — full list in docs/architecture.md)

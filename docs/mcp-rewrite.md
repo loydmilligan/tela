@@ -496,11 +496,13 @@ Status of the full-functionality surface. ✅ done · ⬜ todo · 🟡 partial �
 - ⬜ Completions: single `ServerOptions.CompletionHandler`; branch on `Ref`/`Argument.Name` for space names, page titles, chunk ids
 - ⬜ Elicitation (selective): disambiguate space when omitted + user in multiple; confirm `delete_space` cascade. Requires stateful session; degrade gracefully
 
-### Phase 4 — collapse the npm package
-- ⬜ Convert `tela-mcp` to a thin stdio↔HTTP proxy (no tool logic) OR deprecate in favor of `--transport http`
-- ⬜ Delete the TS 18-tool implementation + its unit/smoke/integration suites
-- ⬜ Update `mcp/README.md` + `docs/` to point at the HTTP endpoint
-- ⬜ Decide: publish proxy as a new major, or sunset the package
+### Phase 4 — collapse the npm package 🟡 (code done; publish pending)
+- ✅ `tela-mcp` v0.7.0 is now a ~40-line stdio↔HTTP proxy over the official SDK transports (forwards the whole protocol; bearer header covers POST + GET-SSE + DELETE; sniffs initialize for `MCP-Protocol-Version`). No tool knowledge → drift-proof.
+- ✅ Deleted the TS 18-tool implementation (`src/tools`, `src/resources`, `client.ts`, `slug.ts`, `version-check.ts`) + the unit/smoke suites + `semver`/`zod` deps
+- ✅ Rewrote `mcp/README.md` (HTTP-first; proxy for stdio-only) + updated `CLAUDE.md`
+- ✅ New live E2E (`test/proxy.live.test.ts`) — client→stdio-proxy→HTTP→backend roundtrip (tools/list, list_spaces, get_page structured content, resource read). Verified green against a local backend.
+- ⬜ **Publish** `tela-mcp@0.7.0` to npm (`make release-mcp BUMP=minor`) — do alongside/after deploy
+- ⬜ Decision taken: keep the package (proxy) for stdio-only hosts; modern hosts use `--transport http`
 
 ### Phase 5 — OAuth (Connect button, hosted instance)
 - ⬜ RFC 9728 Protected Resource Metadata at `/.well-known/oauth-protected-resource`
