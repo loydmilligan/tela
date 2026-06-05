@@ -57,37 +57,47 @@ func (s *Server) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "could not parse request body")
 		return
 	}
+	k, _ := auth.APIKeyFromContext(r.Context())
+	dto, ae := s.feedbackCore(r.Context(), u, k, req)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"feedback": dto})
+}
+
+// feedbackCore is the transport-agnostic core behind POST /api/feedback and the
+// MCP submit_feedback tool: validate subject + body, stamp the provenance
+// (user always; api key when bearer-authed), insert, and return the row. Allowed
+// for any scope, including read (the carve-out lives in scopeAllowsRequest /
+// mcpRequireWrite is intentionally NOT called for this tool).
+func (s *Server) feedbackCore(ctx context.Context, u *auth.User, k *auth.APIKey, req feedbackCreateRequest) (feedbackDTO, *apiErr) {
 	subject := strings.TrimSpace(req.Subject)
 	if subject == "" || len(subject) > feedbackMaxSubjectLen {
-		writeError(w, http.StatusBadRequest, "bad_request", "subject must be 1-200 characters")
-		return
+		return feedbackDTO{}, &apiErr{http.StatusBadRequest, "bad_request", "subject must be 1-200 characters"}
 	}
 	body := strings.TrimSpace(req.Body)
 	if body == "" || len(body) > feedbackMaxBodyLen {
-		writeError(w, http.StatusBadRequest, "bad_request", "body must be 1-8000 characters")
-		return
+		return feedbackDTO{}, &apiErr{http.StatusBadRequest, "bad_request", "body must be 1-8000 characters"}
 	}
 
 	var apiKeyArg any = nil
-	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer {
+	if k != nil {
 		apiKeyArg = k.ID
 	}
 
-	ctx := r.Context()
 	var id int64
 	err := s.DB.QueryRowContext(ctx, `
 		INSERT INTO feedback (created_by_user_id, created_by_api_key_id, subject, body)
 		VALUES ($1, $2, $3, $4) RETURNING id`, u.ID, apiKeyArg, subject, body).Scan(&id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "insert feedback failed")
-		return
+		return feedbackDTO{}, &apiErr{http.StatusInternalServerError, "internal", "insert feedback failed"}
 	}
 	dto, err := selectFeedbackByID(ctx, s.DB, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch created feedback failed")
-		return
+		return feedbackDTO{}, &apiErr{http.StatusInternalServerError, "internal", "fetch created feedback failed"}
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"feedback": dto})
+	return dto, nil
 }
 
 func selectFeedbackByID(ctx context.Context, q *sql.DB, id int64) (feedbackDTO, error) {

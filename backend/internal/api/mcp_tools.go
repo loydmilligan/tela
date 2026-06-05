@@ -65,6 +65,57 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Description: "Fetch one chunk's full section text by chunk_id (from semantic_search). Middle granularity between a search snippet and get_page.",
 		Annotations: readOnly,
 	}, s.mcpReadChunk)
+
+	// ---- write tools (gate on write/admin scope via mcpRequireWrite) ----
+
+	yes := true
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_page",
+		Description: "Create a page in a space (editor+). Body is markdown; tela://page/{id} links are indexed as backlinks.",
+		Annotations: &mcp.ToolAnnotations{},
+	}, s.mcpCreatePage)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_page",
+		Description: "Patch a page's title and/or body (editor+). A body change auto-snapshots a revision.",
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+	}, s.mcpUpdatePage)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_page",
+		Description: "Delete a page (editor+). Backlinks from other pages are preserved with the last-known title.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes},
+	}, s.mcpDeletePage)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_comment",
+		Description: "Attach a root comment to a page, anchored by a {prefix, exact, suffix} text triplet (editor+).",
+		Annotations: &mcp.ToolAnnotations{},
+	}, s.mcpAddComment)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_space",
+		Description: "Create a space. The caller becomes its owner. slug is derived from name when omitted.",
+		Annotations: &mcp.ToolAnnotations{},
+	}, s.mcpCreateSpace)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_space",
+		Description: "Patch a space's name and/or slug (editor+).",
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+	}, s.mcpUpdateSpace)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_space",
+		Description: "Delete a space AND all its pages, comments, revisions and share links. Owner only. Irreversible.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes},
+	}, s.mcpDeleteSpace)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "submit_feedback",
+		Description: "Submit free-text feedback about tela / tela-mcp itself (friction, bugs, missing capabilities). NOT for page content — use add_comment for that.",
+		Annotations: &mcp.ToolAnnotations{},
+	}, s.mcpSubmitFeedback)
 }
 
 // ---- shared output shapes ------------------------------------------------
@@ -308,4 +359,206 @@ func (s *Server) mcpReadChunk(ctx context.Context, req *mcp.CallToolRequest, in 
 		return mcpErr(&apiErr{500, "internal", "read chunk failed"}), readChunkOut{}, nil
 	}
 	return nil, readChunkOut{Chunk: *chunk}, nil
+}
+
+// ---- create_page ---------------------------------------------------------
+
+type createPageIn struct {
+	SpaceID  int64  `json:"space_id" jsonschema:"id of the space to create the page in"`
+	ParentID *int64 `json:"parent_id,omitempty" jsonschema:"optional parent page id"`
+	Title    string `json:"title" jsonschema:"page title"`
+	Body     string `json:"body" jsonschema:"markdown body"`
+}
+
+func (s *Server) mcpCreatePage(ctx context.Context, req *mcp.CallToolRequest, in createPageIn) (*mcp.CallToolResult, getPageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), getPageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	p, ae := s.createPageCore(ctx, u, k, pageCreateRequest{
+		SpaceID:  in.SpaceID,
+		ParentID: in.ParentID,
+		Title:    in.Title,
+		Body:     in.Body,
+	})
+	if ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	return nil, getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}, nil
+}
+
+// ---- update_page ---------------------------------------------------------
+
+type updatePageIn struct {
+	ID    int64   `json:"id" jsonschema:"page id to patch"`
+	Title *string `json:"title,omitempty" jsonschema:"new title (omit to leave unchanged)"`
+	Body  *string `json:"body,omitempty" jsonschema:"new markdown body (omit to leave unchanged)"`
+}
+
+func (s *Server) mcpUpdatePage(ctx context.Context, req *mcp.CallToolRequest, in updatePageIn) (*mcp.CallToolResult, getPageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), getPageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	p, ae := s.updatePageCore(ctx, u, k, in.ID, pageUpdateRequest{Title: in.Title, Body: in.Body})
+	if ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	return nil, getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}, nil
+}
+
+// ---- delete_page ---------------------------------------------------------
+
+type deletePageIn struct {
+	ID int64 `json:"id" jsonschema:"page id to delete"`
+}
+
+type okOut struct {
+	OK bool `json:"ok"`
+}
+
+func (s *Server) mcpDeletePage(ctx context.Context, req *mcp.CallToolRequest, in deletePageIn) (*mcp.CallToolResult, okOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), okOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	if ae := s.deletePageCore(ctx, u, k, in.ID); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	return nil, okOut{OK: true}, nil
+}
+
+// ---- add_comment ---------------------------------------------------------
+
+type addCommentAnchor struct {
+	Prefix string `json:"prefix" jsonschema:"text immediately before the anchored span"`
+	Exact  string `json:"exact" jsonschema:"the exact anchored span"`
+	Suffix string `json:"suffix" jsonschema:"text immediately after the anchored span"`
+}
+
+type addCommentIn struct {
+	PageID int64            `json:"page_id" jsonschema:"page to comment on"`
+	Anchor addCommentAnchor `json:"anchor" jsonschema:"text-quote anchor locating the comment in the body"`
+	Body   string           `json:"body" jsonschema:"comment text (1-10000 chars)"`
+}
+
+type addCommentOut struct {
+	Comment models.Comment `json:"comment"`
+}
+
+func (s *Server) mcpAddComment(ctx context.Context, req *mcp.CallToolRequest, in addCommentIn) (*mcp.CallToolResult, addCommentOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), addCommentOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), addCommentOut{}, nil
+	}
+	c, ae := s.createCommentCore(ctx, u, k, in.PageID, commentCreateRequest{
+		Body:         in.Body,
+		AnchorPrefix: &in.Anchor.Prefix,
+		AnchorExact:  &in.Anchor.Exact,
+		AnchorSuffix: &in.Anchor.Suffix,
+	})
+	if ae != nil {
+		return mcpErr(ae), addCommentOut{}, nil
+	}
+	return nil, addCommentOut{Comment: c}, nil
+}
+
+// ---- create_space / update_space / delete_space --------------------------
+
+type createSpaceIn struct {
+	Name string `json:"name" jsonschema:"space name (1-200 chars)"`
+	Slug string `json:"slug,omitempty" jsonschema:"optional url slug; derived from name when omitted"`
+}
+
+type spaceOut struct {
+	Space models.Space `json:"space"`
+}
+
+func (s *Server) mcpCreateSpace(ctx context.Context, req *mcp.CallToolRequest, in createSpaceIn) (*mcp.CallToolResult, spaceOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), spaceOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), spaceOut{}, nil
+	}
+	sp, ae := s.createSpaceCore(ctx, u, in.Name, in.Slug)
+	if ae != nil {
+		return mcpErr(ae), spaceOut{}, nil
+	}
+	return nil, spaceOut{Space: sp}, nil
+}
+
+type updateSpaceIn struct {
+	ID   int64   `json:"id" jsonschema:"space id to patch"`
+	Name *string `json:"name,omitempty" jsonschema:"new name (omit to leave unchanged)"`
+	Slug *string `json:"slug,omitempty" jsonschema:"new slug (omit to leave unchanged)"`
+}
+
+func (s *Server) mcpUpdateSpace(ctx context.Context, req *mcp.CallToolRequest, in updateSpaceIn) (*mcp.CallToolResult, spaceOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), spaceOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), spaceOut{}, nil
+	}
+	sp, ae := s.updateSpaceCore(ctx, u, k, in.ID, spaceUpdateRequest{Name: in.Name, Slug: in.Slug})
+	if ae != nil {
+		return mcpErr(ae), spaceOut{}, nil
+	}
+	return nil, spaceOut{Space: sp}, nil
+}
+
+type deleteSpaceIn struct {
+	ID int64 `json:"id" jsonschema:"space id to delete (cascades)"`
+}
+
+func (s *Server) mcpDeleteSpace(ctx context.Context, req *mcp.CallToolRequest, in deleteSpaceIn) (*mcp.CallToolResult, okOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), okOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	if ae := s.deleteSpaceCore(ctx, u, k, in.ID); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	return nil, okOut{OK: true}, nil
+}
+
+// ---- submit_feedback (any scope, no mcpRequireWrite) ---------------------
+
+type submitFeedbackIn struct {
+	Subject string `json:"subject" jsonschema:"short subject (1-200 chars)"`
+	Body    string `json:"body" jsonschema:"feedback body (1-8000 chars)"`
+}
+
+type submitFeedbackOut struct {
+	Feedback feedbackDTO `json:"feedback"`
+}
+
+func (s *Server) mcpSubmitFeedback(ctx context.Context, req *mcp.CallToolRequest, in submitFeedbackIn) (*mcp.CallToolResult, submitFeedbackOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), submitFeedbackOut{}, nil
+	}
+	dto, ae := s.feedbackCore(ctx, u, k, feedbackCreateRequest{Subject: in.Subject, Body: in.Body})
+	if ae != nil {
+		return mcpErr(ae), submitFeedbackOut{}, nil
+	}
+	return nil, submitFeedbackOut{Feedback: dto}, nil
 }

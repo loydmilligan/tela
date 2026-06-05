@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/models"
 )
 
@@ -147,48 +148,53 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "could not parse request body")
 		return
 	}
+	k, _ := auth.APIKeyFromContext(r.Context())
+	c, ae := s.createCommentCore(r.Context(), u, k, pageID, req)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"comment": c})
+}
+
+// createCommentCore is the transport-agnostic core behind POST
+// /api/pages/{id}/comments and the MCP add_comment tool: inserts a root (all
+// three anchor_* required) or a reply (parent_id of a root on the same page).
+// Editor+ on the page's space required. The MCP tool only creates roots.
+func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, req commentCreateRequest) (models.Comment, *apiErr) {
 	body := strings.TrimSpace(req.Body)
 	if body == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "body is required")
-		return
+		return models.Comment{}, &apiErr{http.StatusBadRequest, "bad_request", "body is required"}
 	}
 	if len(body) > maxCommentBodyLen {
-		writeError(w, http.StatusBadRequest, "bad_request", "body exceeds 10000 characters")
-		return
+		return models.Comment{}, &apiErr{http.StatusBadRequest, "bad_request", "body exceeds 10000 characters"}
 	}
 
-	ctx := r.Context()
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
 	page, err := selectPageByIDTx(ctx, tx, pageID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Comment{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
+		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
-	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
-		return
+	if ae := apiKeySpaceScopeErr(k, page.SpaceID); ae != nil {
+		return models.Comment{}, ae
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Comment{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
+		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
 	}
 	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
-		return
+		return models.Comment{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
 
 	isReply := req.ParentID != nil
@@ -198,8 +204,7 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	if isReply {
 		if *req.ParentID <= 0 {
-			writeError(w, http.StatusBadRequest, "bad_request", "parent_id must be a positive integer")
-			return
+			return models.Comment{}, &apiErr{http.StatusBadRequest, "bad_request", "parent_id must be a positive integer"}
 		}
 		var parentPageID int64
 		var parentParentID sql.NullInt64
@@ -208,29 +213,23 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 			`SELECT page_id, parent_id, deleted_at FROM comments WHERE id = $1`, *req.ParentID).
 			Scan(&parentPageID, &parentParentID, &parentDeleted)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "comment_not_found", "parent comment not found")
-			return
+			return models.Comment{}, &apiErr{http.StatusNotFound, "comment_not_found", "parent comment not found"}
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "lookup parent comment failed")
-			return
+			return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "lookup parent comment failed"}
 		}
 		if parentDeleted.Valid {
-			writeError(w, http.StatusNotFound, "comment_not_found", "parent comment not found")
-			return
+			return models.Comment{}, &apiErr{http.StatusNotFound, "comment_not_found", "parent comment not found"}
 		}
 		if parentPageID != pageID {
-			writeError(w, http.StatusBadRequest, "bad_request", "parent comment belongs to a different page")
-			return
+			return models.Comment{}, &apiErr{http.StatusBadRequest, "bad_request", "parent comment belongs to a different page"}
 		}
 		if parentParentID.Valid {
-			writeError(w, http.StatusBadRequest, "comment_reply_to_reply", "replies must target a root comment")
-			return
+			return models.Comment{}, &apiErr{http.StatusBadRequest, "comment_reply_to_reply", "replies must target a root comment"}
 		}
 	} else {
 		if !anchorTriplePopulated(req.AnchorPrefix, req.AnchorExact, req.AnchorSuffix) {
-			writeError(w, http.StatusBadRequest, "comment_no_anchor", "root comments require anchor_prefix, anchor_exact, anchor_suffix")
-			return
+			return models.Comment{}, &apiErr{http.StatusBadRequest, "comment_no_anchor", "root comments require anchor_prefix, anchor_exact, anchor_suffix"}
 		}
 		anchorPrefix = *req.AnchorPrefix
 		anchorExact = *req.AnchorExact
@@ -251,19 +250,16 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, $4, $5, $6, $7, 0, tela_now(), tela_now()) RETURNING id`,
 		pageID, parentArg, u.ID, body, anchorPrefix, anchorExact, anchorSuffix).Scan(&id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create comment failed")
-		return
+		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "create comment failed"}
 	}
 	c, err := selectCommentByIDTx(ctx, tx, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch created comment failed")
-		return
+		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "fetch created comment failed"}
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"comment": c})
+	return c, nil
 }
 
 // PatchComment handles two mutually-exclusive operations on a comment:

@@ -266,57 +266,58 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
+	k, _ := auth.APIKeyFromContext(r.Context())
+	page, ae := s.createPageCore(r.Context(), u, k, req)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"page": page})
+}
 
+// createPageCore is the transport-agnostic core behind POST /api/pages and the
+// MCP create_page tool: validate, gate on editor+ membership (bearer space-scope
+// first), then insert the page and sync its outgoing wikilinks in one tx.
+func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKey, req pageCreateRequest) (models.Page, *apiErr) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
-		writeError(w, http.StatusBadRequest, "invalid_title", "title is required")
-		return
+		return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title is required"}
 	}
 	if len(title) > maxPageTitleLen {
-		writeError(w, http.StatusBadRequest, "invalid_title", "title exceeds 500 characters")
-		return
+		return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title exceeds 500 characters"}
 	}
 	if req.SpaceID <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_space_id", "space_id is required")
-		return
+		return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_space_id", "space_id is required"}
 	}
 	if req.ParentID != nil && *req.ParentID <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_parent_id", "parent_id must be a positive integer or null")
-		return
+		return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_parent_id", "parent_id must be a positive integer or null"}
 	}
 
-	ctx := r.Context()
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
-	if !enforceAPIKeySpaceScope(w, r, req.SpaceID) {
-		return
+	if ae := apiKeySpaceScopeErr(k, req.SpaceID); ae != nil {
+		return models.Page{}, ae
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, req.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
 	}
 	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
 
 	if err := verifySpaceExistsTx(ctx, tx, req.SpaceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusBadRequest, "space_not_found", "space does not exist")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "space_not_found", "space does not exist"}
 		}
-		writeError(w, http.StatusInternalServerError, "internal", "lookup space failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup space failed"}
 	}
 
 	if req.ParentID != nil {
@@ -324,16 +325,13 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 		err := tx.QueryRowContext(ctx,
 			`SELECT space_id FROM pages WHERE id = $1`, *req.ParentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusBadRequest, "parent_not_found", "parent page does not exist")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "parent_not_found", "parent page does not exist"}
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "lookup parent failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup parent failed"}
 		}
 		if parentSpaceID != req.SpaceID {
-			writeError(w, http.StatusBadRequest, "parent_space_mismatch", "parent page is in a different space")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "parent_space_mismatch", "parent page is in a different space"}
 		}
 	}
 
@@ -346,8 +344,7 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, req.SpaceID, *req.ParentID).Scan(&maxPos)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "compute position failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "compute position failed"}
 	}
 	var position int64
 	if maxPos.Valid {
@@ -358,25 +355,23 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 	if err := tx.QueryRowContext(ctx,
 		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 		req.SpaceID, nullableInt64(req.ParentID), title, req.Body, position).Scan(&id); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "create page failed"}
 	}
 	if err := syncPageLinks(ctx, tx, id, req.Body); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "sync page_links failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "sync page_links failed"}
 	}
 	page, err := selectPageByIDTx(ctx, tx, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch created page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "fetch created page failed"}
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
 	// Index the new page's content (debounced, async; no-op when RAG is off).
+	// Lives in the core so both POST /api/pages and the MCP create_page tool
+	// enqueue a reindex.
 	s.rag.QueueReindex(id)
-	writeJSON(w, http.StatusCreated, map[string]any{"page": page})
+	return page, nil
 }
 
 func (s *Server) GetPage(w http.ResponseWriter, r *http.Request) {
@@ -435,9 +430,21 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
-	if req.Title == nil && req.Body == nil {
-		writeError(w, http.StatusBadRequest, "no_fields", "at least one of title, body must be provided")
+	k, _ := auth.APIKeyFromContext(r.Context())
+	p, ae := s.updatePageCore(r.Context(), u, k, id, req)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"page": p})
+}
+
+// updatePageCore is the transport-agnostic core behind PATCH /api/pages/{id} and
+// the MCP update_page tool: patch title and/or body under editor+ membership,
+// re-sync wikilinks when the body changes, and snapshot a revision after commit.
+func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req pageUpdateRequest) (models.Page, *apiErr) {
+	if req.Title == nil && req.Body == nil {
+		return models.Page{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of title, body must be provided"}
 	}
 
 	sets := make([]string, 0, 3)
@@ -446,12 +453,10 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	if req.Title != nil {
 		title := strings.TrimSpace(*req.Title)
 		if title == "" {
-			writeError(w, http.StatusBadRequest, "invalid_title", "title cannot be empty")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title cannot be empty"}
 		}
 		if len(title) > maxPageTitleLen {
-			writeError(w, http.StatusBadRequest, "invalid_title", "title exceeds 500 characters")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title exceeds 500 characters"}
 		}
 		args = append(args, title)
 		sets = append(sets, "title = $"+strconv.Itoa(len(args)))
@@ -463,71 +468,56 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	sets = append(sets, "updated_at = tela_now()")
 	args = append(args, id)
 
-	ctx := r.Context()
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
 	existing, err := selectPageByIDTx(ctx, tx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Collapse missing-page to 403 so non-members cannot tell
-		// "exists in another space" from "truly gone".
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
-	if !enforceAPIKeySpaceScope(w, r, existing.SpaceID) {
-		return
+	if ae := apiKeySpaceScopeErr(k, existing.SpaceID); ae != nil {
+		return models.Page{}, ae
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
 	}
 	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
 
 	stmt := "UPDATE pages SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(len(args))
 	res, err := tx.ExecContext(ctx, stmt, args...)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "update page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "update page failed"}
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "update page: rows affected failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "update page: rows affected failed"}
 	}
 	if n == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "page not found")
-		return
+		return models.Page{}, &apiErr{http.StatusNotFound, "not_found", "page not found"}
 	}
 	if req.Body != nil {
 		if err := syncPageLinks(ctx, tx, id, *req.Body); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "sync page_links failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "sync page_links failed"}
 		}
 	}
 	p, err := selectPageByIDTx(ctx, tx, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch updated page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "fetch updated page failed"}
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
 	// M9.0 snapshot-on-save: every persisted PATCH that actually changes body
 	// or title writes a page_revisions row. Runs AFTER commit so a failure
@@ -541,7 +531,7 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		// so reindex on either change (debounced, async; no-op when RAG is off).
 		s.rag.QueueReindex(id)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"page": p})
+	return p, nil
 }
 
 func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
@@ -553,40 +543,43 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx := r.Context()
+	k, _ := auth.APIKeyFromContext(r.Context())
+	if ae := s.deletePageCore(r.Context(), u, k, id); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deletePageCore is the transport-agnostic core behind DELETE /api/pages/{id}
+// and the MCP delete_page tool: editor+ gated; caches the live title onto
+// incoming backlinks before deleting, and clears the page's outgoing links.
+func (s *Server) deletePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64) *apiErr {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
 	existing, err := selectPageByIDTx(ctx, tx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Collapse missing-page to 403 so non-members cannot tell
-		// "exists in another space" from "truly gone".
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
-	if !enforceAPIKeySpaceScope(w, r, existing.SpaceID) {
-		return
+	if ae := apiKeySpaceScopeErr(k, existing.SpaceID); ae != nil {
+		return ae
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
 	}
 	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
-		return
+		return &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
 
 	// Cache the live title onto any incoming page_links rows so backlinks
@@ -595,37 +588,31 @@ func (s *Server) DeletePage(w http.ResponseWriter, r *http.Request) {
 		`UPDATE page_links
 		   SET last_known_title = COALESCE((SELECT title FROM pages WHERE id = $1), last_known_title)
 		 WHERE target_id = $2`, id, id); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "cache page_links titles failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "cache page_links titles failed"}
 	}
 
 	res, err := tx.ExecContext(ctx, `DELETE FROM pages WHERE id = $1`, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "delete page failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "delete page failed"}
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "delete page: rows affected failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "delete page: rows affected failed"}
 	}
 	if n == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "page not found")
-		return
+		return &apiErr{http.StatusNotFound, "not_found", "page not found"}
 	}
 
 	// Explicitly clear outgoing rows for the deleted source — no FK / no
 	// triggers; nothing else would remove them.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = $1`, id); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "delete page_links source rows failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "delete page_links source rows failed"}
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {

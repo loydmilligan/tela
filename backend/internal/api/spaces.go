@@ -123,29 +123,37 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 	var req spaceCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		writeError(w, http.StatusBadRequest, "invalid_name", "name is required")
+	sp, ae := s.createSpaceCore(r.Context(), u, req.Name, req.Slug)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"space": sp})
+}
+
+// createSpaceCore is the transport-agnostic core behind POST /api/spaces and the
+// MCP create_space tool: validate name + (derived-or-given) slug, then insert
+// the space and the creator's owner-membership row in one tx so a crash can't
+// lock the creator out (M6.1 auto-own).
+func (s *Server) createSpaceCore(ctx context.Context, u *auth.User, rawName, rawSlug string) (models.Space, *apiErr) {
+	name := strings.TrimSpace(rawName)
+	if name == "" {
+		return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_name", "name is required"}
 	}
 	if len(name) > maxSpaceNameLen {
-		writeError(w, http.StatusBadRequest, "invalid_name", "name exceeds 200 characters")
-		return
+		return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_name", "name exceeds 200 characters"}
 	}
 
-	slug := strings.TrimSpace(req.Slug)
+	slug := strings.TrimSpace(rawSlug)
 	if slug == "" {
 		slug = normalizeSlug(name)
 		if slug == "" {
-			writeError(w, http.StatusBadRequest, "invalid_name", "cannot derive a slug from the given name")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_name", "cannot derive a slug from the given name"}
 		}
 		if len(slug) > maxSpaceSlugLen {
 			slug = slug[:maxSpaceSlugLen]
@@ -153,23 +161,16 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if len(slug) > maxSpaceSlugLen {
-			writeError(w, http.StatusBadRequest, "invalid_slug", "slug exceeds 100 characters")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_slug", "slug exceeds 100 characters"}
 		}
 		if !slugValidRe.MatchString(slug) {
-			writeError(w, http.StatusBadRequest, "invalid_slug", "slug must be lowercase alphanumeric segments joined by '-'")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_slug", "slug must be lowercase alphanumeric segments joined by '-'"}
 		}
 	}
 
-	// Wrap the space insert + creator-owner membership row in one tx so a
-	// crash between the two can't leave the caller locked out of the space
-	// they just created (M6.1 auto-own carry-over from #36).
-	ctx := r.Context()
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
@@ -178,28 +179,23 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		`INSERT INTO spaces(name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
-			writeError(w, http.StatusConflict, "slug_conflict", "a space with that slug already exists")
-			return
+			return models.Space{}, &apiErr{http.StatusConflict, "slug_conflict", "a space with that slug already exists"}
 		}
-		writeError(w, http.StatusInternalServerError, "internal", "create space failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "create space failed"}
 	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO space_members(space_id, user_id, role) VALUES ($1, $2, 'owner')`,
 		id, u.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "assign space owner failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "assign space owner failed"}
 	}
 	sp, err := selectSpaceByIDTx(ctx, tx, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch created space failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "fetch created space failed"}
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"space": sp})
+	return sp, nil
 }
 
 func (s *Server) GetSpace(w http.ResponseWriter, r *http.Request) {
@@ -227,23 +223,36 @@ func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	role, ok := s.requireMembership(w, r, id)
+	u, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
-		return
-	}
-
 	var req spaceUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
-	if req.Name == nil && req.Slug == nil {
-		writeError(w, http.StatusBadRequest, "no_fields", "at least one of name, slug must be provided")
+	k, _ := auth.APIKeyFromContext(r.Context())
+	sp, ae := s.updateSpaceCore(r.Context(), u, k, id, req)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"space": sp})
+}
+
+// updateSpaceCore is the transport-agnostic core behind PATCH /api/spaces/{id}
+// and the MCP update_space tool: editor+ gated patch of name and/or slug.
+func (s *Server) updateSpaceCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req spaceUpdateRequest) (models.Space, *apiErr) {
+	role, ae := s.membershipCore(ctx, u, k, id)
+	if ae != nil {
+		return models.Space{}, ae
+	}
+	if !canEdit(role) {
+		return models.Space{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
+	}
+	if req.Name == nil && req.Slug == nil {
+		return models.Space{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of name, slug must be provided"}
 	}
 
 	sets := make([]string, 0, 3)
@@ -253,12 +262,10 @@ func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			writeError(w, http.StatusBadRequest, "invalid_name", "name cannot be empty")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_name", "name cannot be empty"}
 		}
 		if len(name) > maxSpaceNameLen {
-			writeError(w, http.StatusBadRequest, "invalid_name", "name exceeds 200 characters")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_name", "name exceeds 200 characters"}
 		}
 		argN++
 		sets = append(sets, "name = $"+strconv.Itoa(argN))
@@ -267,16 +274,13 @@ func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.Slug != nil {
 		slug := strings.TrimSpace(*req.Slug)
 		if slug == "" {
-			writeError(w, http.StatusBadRequest, "invalid_slug", "slug cannot be empty")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_slug", "slug cannot be empty"}
 		}
 		if len(slug) > maxSpaceSlugLen {
-			writeError(w, http.StatusBadRequest, "invalid_slug", "slug exceeds 100 characters")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_slug", "slug exceeds 100 characters"}
 		}
 		if !slugValidRe.MatchString(slug) {
-			writeError(w, http.StatusBadRequest, "invalid_slug", "slug must be lowercase alphanumeric segments joined by '-'")
-			return
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_slug", "slug must be lowercase alphanumeric segments joined by '-'"}
 		}
 		argN++
 		sets = append(sets, "slug = $"+strconv.Itoa(argN))
@@ -287,30 +291,25 @@ func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	args = append(args, id)
 
 	stmt := "UPDATE spaces SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(argN)
-	res, err := s.DB.ExecContext(r.Context(), stmt, args...)
+	res, err := s.DB.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
-			writeError(w, http.StatusConflict, "slug_conflict", "a space with that slug already exists")
-			return
+			return models.Space{}, &apiErr{http.StatusConflict, "slug_conflict", "a space with that slug already exists"}
 		}
-		writeError(w, http.StatusInternalServerError, "internal", "update space failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "update space failed"}
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "update space: rows affected failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "update space: rows affected failed"}
 	}
 	if n == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "space not found")
-		return
+		return models.Space{}, &apiErr{http.StatusNotFound, "not_found", "space not found"}
 	}
-	sp, err := selectSpaceByID(r.Context(), s.DB, id)
+	sp, err := selectSpaceByID(ctx, s.DB, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch updated space failed")
-		return
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "fetch updated space failed"}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"space": sp})
+	return sp, nil
 }
 
 func (s *Server) DeleteSpace(w http.ResponseWriter, r *http.Request) {
@@ -318,29 +317,41 @@ func (s *Server) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	role, ok := s.requireMembership(w, r, id)
+	u, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	if role != roleOwner {
-		writeError(w, http.StatusForbidden, "forbidden", "owner role required")
-		return
-	}
-	res, err := s.DB.ExecContext(r.Context(), `DELETE FROM spaces WHERE id = $1`, id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "delete space failed")
-		return
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "delete space: rows affected failed")
-		return
-	}
-	if n == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "space not found")
+	k, _ := auth.APIKeyFromContext(r.Context())
+	if ae := s.deleteSpaceCore(r.Context(), u, k, id); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteSpaceCore is the transport-agnostic core behind DELETE /api/spaces/{id}
+// and the MCP delete_space tool: owner-only; cascades to all pages, comments,
+// revisions and share links via FKs.
+func (s *Server) deleteSpaceCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64) *apiErr {
+	role, ae := s.membershipCore(ctx, u, k, id)
+	if ae != nil {
+		return ae
+	}
+	if role != roleOwner {
+		return &apiErr{http.StatusForbidden, "forbidden", "owner role required"}
+	}
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM spaces WHERE id = $1`, id)
+	if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete space failed"}
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete space: rows affected failed"}
+	}
+	if n == 0 {
+		return &apiErr{http.StatusNotFound, "not_found", "space not found"}
+	}
+	return nil
 }
 
 // attachSpacePrincipals fills each space's Principals with the orgs/groups it's

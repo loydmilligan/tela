@@ -268,6 +268,104 @@ func TestMCP_ReadToolCrossSpaceDenied(t *testing.T) {
 	}
 }
 
+// TestMCP_WriteTools exercises the Phase-1 write surface end-to-end: create_space,
+// create_page, update_page, add_comment, delete_page, delete_space, plus the
+// read-scope rejection (mcpRequireWrite) and submit_feedback's any-scope allowance.
+func TestMCP_WriteTools(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeWrite))
+
+	// create_space → alice owns it.
+	var sp spaceOut
+	mcpCallJSON(t, ctx, sess, "create_space", map[string]any{"name": "Engineering"}, &sp)
+	if sp.Space.ID == 0 || sp.Space.Slug != "engineering" {
+		t.Fatalf("create_space: %+v", sp.Space)
+	}
+	spaceID := sp.Space.ID
+
+	// create_page in it.
+	var pg getPageOut
+	mcpCallJSON(t, ctx, sess, "create_page", map[string]any{
+		"space_id": spaceID, "title": "Runbook", "body": "step one",
+	}, &pg)
+	if pg.Page.Title != "Runbook" || pg.Page.URL == "" {
+		t.Fatalf("create_page: %+v", pg.Page)
+	}
+	pageID := pg.Page.ID
+
+	// update_page body → snapshot + new body.
+	var up getPageOut
+	mcpCallJSON(t, ctx, sess, "update_page", map[string]any{"id": pageID, "body": "step one\nstep two"}, &up)
+	if up.Page.Body != "step one\nstep two" {
+		t.Fatalf("update_page: %+v", up.Page)
+	}
+
+	// add_comment (root, anchored).
+	var cm addCommentOut
+	mcpCallJSON(t, ctx, sess, "add_comment", map[string]any{
+		"page_id": pageID,
+		"anchor":  map[string]any{"prefix": "step ", "exact": "one", "suffix": "\nstep"},
+		"body":    "is this still accurate?",
+	}, &cm)
+	if cm.Comment.ID == 0 || cm.Comment.Body != "is this still accurate?" {
+		t.Fatalf("add_comment: %+v", cm.Comment)
+	}
+
+	// submit_feedback works on a write key too.
+	var fb submitFeedbackOut
+	mcpCallJSON(t, ctx, sess, "submit_feedback", map[string]any{"subject": "nice", "body": "the mcp is great"}, &fb)
+	if fb.Feedback.ID == 0 {
+		t.Fatalf("submit_feedback: %+v", fb.Feedback)
+	}
+
+	// delete_page → ok.
+	var del okOut
+	mcpCallJSON(t, ctx, sess, "delete_page", map[string]any{"id": pageID}, &del)
+	if !del.OK {
+		t.Fatalf("delete_page: %+v", del)
+	}
+
+	// delete_space → ok.
+	var dels okOut
+	mcpCallJSON(t, ctx, sess, "delete_space", map[string]any{"id": spaceID}, &dels)
+	if !dels.OK {
+		t.Fatalf("delete_space: %+v", dels)
+	}
+}
+
+// TestMCP_WriteToolReadKeyDenied asserts a read-scope key is refused at a write
+// tool (mcpRequireWrite → api_key_scope) but allowed at submit_feedback.
+func TestMCP_WriteToolReadKeyDenied(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	space := seedSpace(t, d, "Docs", "docs", alice)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeRead))
+
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "create_page", Arguments: map[string]any{
+		"space_id": space, "title": "X", "body": "y",
+	}})
+	if err != nil {
+		t.Fatalf("call create_page: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected read key to be denied at create_page")
+	}
+
+	// submit_feedback is the read-scope carve-out → must succeed.
+	var fb submitFeedbackOut
+	mcpCallJSON(t, ctx, sess, "submit_feedback", map[string]any{"subject": "s", "body": "b"}, &fb)
+	if fb.Feedback.ID == 0 {
+		t.Fatalf("submit_feedback under read key should succeed: %+v", fb.Feedback)
+	}
+}
+
 // TestMCP_SpikeRejectsNoToken asserts the transport refuses an unauthenticated
 // connection (the bearer verifier 401s with WWW-Authenticate).
 func TestMCP_SpikeRejectsNoToken(t *testing.T) {
