@@ -18,10 +18,16 @@ pair; full-bleed connector icon + server branding.
 
 ## Status (2026-06-05, PM — WorkOS recreated, OAuth back UP)
 - ✅ **OAuth Connect chain LIVE & verified end-to-end.** WorkOS team was recreated → new issuer **`https://decisive-relation-32-staging.authkit.app`** (old `pleasing-puzzle-31` is dead — that's all last session's "down" was). Verified live: PRM → AS discovery 200 · DCR `POST /oauth2/register` → **201 + client_id, accepts `https://claude.ai/api/mcp/auth_callback`** · PKCE **S256** · grants `authorization_code`+`refresh_token` (no `client_credentials`) · `/api/mcp` 401 → correct `WWW-Authenticate` → path-suffixed PRM 200 (CORS `*`) · authorize 302 → tela Standalone bridge `/oauth/workos/login`. **The exact DCR step that failed last session now works.**
-- ✅ **Privacy policy + public MCP docs pages BUILT** (`/privacy`, `/mcp` in `landing/`, gate-green). ⏳ **not live until `make deploy-landing`**.
-- ⬜ **Remaining shared non-code:** populated no-MFA demo account; Cloudflare allowlist Anthropic egress `160.79.104.0/21`; MCP Inspector pass (now unblocked); logo asset + widget screenshots.
-- ⬜ **ChatGPT-only:** OpenAI org identity verification + `api.apps.write`; global/non-EU residency project; per-tool `openWorldHint` justifications (hint already set on `import_mira`); screenshots; web+mobile test pass.
-- **Critical path (unblocked):** `make deploy-landing` → MCP Inspector pass → Claude submit → ChatGPT submit.
+- ✅ **Privacy policy + public MCP docs pages LIVE** at https://tela.cagdas.io/privacy/ and /mcp/ (deployed 86ee942).
+- ✅ **Code fixes shipped (prod @ 86ee942):** all 20 tools now carry explicit `openWorldHint`/`destructiveHint` (the SDK omitempty-default had them advertising as open-world/destructive — a directory-reject trigger); `get_page`/`fetch` bodies capped at 80k chars (~20k tokens) so a huge page can't blow the ~25k-token result budget; `mcp_test` guards the openWorldHint roster.
+- ✅ **MCP Inspector pass (live, 86ee942):** `tools/list` shows the correct hint matrix over the wire (reads=readOnly+closed, import_mira the only open-world, deletes destructive, updates/move idempotent); `tools/call list_spaces` OK; both resource templates + all 4 widget resources advertised. Write tools proven by Go `TestMCP_WriteTools` over the real transport.
+- ✅ **Privacy + docs LIVE:** https://tela.cagdas.io/privacy/ and /mcp/ both 200 with real content.
+- ✅ **Branding asset:** `https://tela.cagdas.io/icon-512.png` (512²) + `/favicon.svg` already served — covers the logo upload.
+- ✅ **Submission payloads drafted:** `docs/mcp-submission-claude.md`, `docs/mcp-submission-chatgpt.md`.
+- ⬜ **CAGDAS-ONLY (dashboard/account):** Cloudflare allowlist Anthropic egress `160.79.104.0/21`; OpenAI org identity verification + `api.apps.write`; global/non-EU residency project; the final form submits.
+- ⬜ **Demo account:** needs a no-MFA login Cagdas creates (email verification needs an inbox I can't read) — I'll seed it with sample spaces/pages once it exists.
+- ⬜ **In-host only:** re-enable the `get_page`/`search` widget `_meta` (disabled for a blank-iframe/bridge-bootstrap bug) — needs a live host to verify the render; then capture widget screenshots for ChatGPT. Not a Claude blocker (widgets optional there).
+- **Critical path now:** Cagdas does Cloudflare allowlist + (for ChatGPT) org verification/residency → fill demo login into `mcp-submission-claude.md` → **submit Claude** (everything else is green) → debug widget render in-host → submit ChatGPT.
 
 ---
 
@@ -53,13 +59,13 @@ docs page, populated demo account, finalize branding) → submit **Claude first*
 - [x] **Per-tool `title` + `readOnlyHint`/`destructiveHint`; no read/write mixing; names ≤64** — *met* (audited: 20 tools, ≤15 chars, clean split).
 - [x] **Narrow descriptions, no behavioral directives, no Claude-memory access** — *met* (descriptions are factual; nothing reads chat history/memory).
 - [x] **First-party API, server domain matches service** — *met* (tela.cagdas.io).
-- [ ] **Actionable errors, sized responses (≤25k tokens tool result)** — *verify* error payloads carry codes/messages (they do via the `{error,code,status}` envelope) and large pages don't blow the cap.
+- [x] **Actionable errors, sized responses (≤25k tokens tool result)** — error payloads carry `{error,code,status}`; `get_page`/`fetch` now cap bodies at 80k chars (~20k tokens) with a `truncated` flag + pointer to `read_chunk`/`semantic_search` (shipped 86ee942).
 - [ ] **Reachable from Anthropic egress `160.79.104.0/21`** — **allowlist this range in Cloudflare** so OAuth/tool calls from Anthropic's servers aren't blocked (known rejection cause).
-- [x] **Privacy policy at a public HTTPS URL** — built at `/privacy` (pending deploy).
-- [x] **Public documentation page** — built at `/mcp` (pending deploy).
+- [x] **Privacy policy at a public HTTPS URL** — LIVE at https://tela.cagdas.io/privacy/.
+- [x] **Public documentation page** — LIVE at https://tela.cagdas.io/mcp/.
 - [ ] **Test account with sample data + setup steps** — **provision a populated demo space/account** (empty accounts are a rejection cause).
-- [ ] **Branding: logo SVG/URL + favicon verification** — connector icon done; provide a logo asset + verify favicon.
-- [ ] **MCP Inspector pass** — exercise every tool via `npx @modelcontextprotocol/inspector` and as a custom connector before submitting.
+- [x] **Branding: logo SVG/URL + favicon verification** — connector icon (data-URI) + `https://tela.cagdas.io/icon-512.png` (512²) + `/favicon.svg` all served.
+- [x] **MCP Inspector pass** — done live (86ee942): `tools/list` hint matrix correct over the wire, `tools/call list_spaces` OK, resource templates + 4 widget resources advertised; write tools proven by Go `TestMCP_WriteTools`. (Re-run as a custom connector once a demo login exists.)
 
 **Review:** reviewers functionally test every tool + run a policy scan; timeline varies (no SLA). Top rejections: missing/mismatched annotations, read+write in one tool, vague/behavioral descriptions, **WAF blocking egress during OAuth**, JSON-only `/token`, generic errors, **empty test accounts**.
 
@@ -77,10 +83,10 @@ docs page, populated demo account, finalize branding) → submit **Claude first*
 - [ ] **Identity verification** in the Platform Dashboard (individual *or* business) for the publish name — **BLOCKING** (publishing under an unverified name = rejection).
 - [ ] **`api.apps.write`** permission to submit (org owners have it).
 - [x] Public MCP server — *met*.
-- [ ] **CSP defined** — submission requires the widget CSP. tela sets `openai/widgetCSP` (`connect_domains`/`resource_domains`) on the widget resources. **Verify** the exact key the submission expects (`_meta.ui.csp` vs `openai/widgetCSP`) and casing against the live Apps SDK reference.
+- [x] **CSP defined** — VERIFIED: ChatGPT expects `openai/widgetCSP` with snake_case `connect_domains`/`resource_domains`; `mcp_widgets.go` sets exactly that. No change needed (see `mcp-submission-chatgpt.md` finding A).
 - [ ] **OAuth with a fully-featured demo account, NO 2FA/SMS/email-verification/new-signup** — WorkOS OAuth is fine, but **provide reviewers a plain populated demo login** that doesn't force MFA/email steps.
 - [x] **Verb-led unique tool names; descriptions match; no fair-play / model-steering text** — *met* (audit clean).
-- [ ] **`readOnlyHint`/`destructiveHint`/`openWorldHint` + per-tool justification** — read/write hints done; **add `openWorldHint`** where a tool touches external/public state (currently only `import_mira`) and write the justifications. (Most tela tools are closed-world → `openWorldHint:false` is correct; confirm none "post to the public internet".)
+- [x] **`readOnlyHint`/`destructiveHint`/`openWorldHint` + per-tool justification** — all 20 tools set explicit hints (shipped 86ee942, verified live); 20 justification lines drafted in `mcp-submission-chatgpt.md`. Only `import_mira` is open-world.
 - [x] **`outputSchema` for structured tools** — *met* (typed Out on every tool).
 - [x] **Privacy policy** (published; data categories/purposes/recipients/retention) — built at `/privacy` (pending deploy). States no PCI/PHI/gov-ID/secrets collection.
 - [ ] **App name/logo/screenshots (required dims) + test prompts** that **pass on ChatGPT web AND mobile** — **BLOCKING.**
