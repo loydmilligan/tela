@@ -20,6 +20,7 @@ import { getPage, getPageInputSchema } from "./tools/get-page.js";
 import { search, searchInputSchema } from "./tools/search.js";
 import { searchBodies, searchBodiesInputSchema } from "./tools/search-bodies.js";
 import { semanticSearch, semanticSearchInputSchema } from "./tools/semantic-search.js";
+import { readChunk, readChunkInputSchema } from "./tools/read-chunk.js";
 import { listBacklinks, listBacklinksInputSchema } from "./tools/list-backlinks.js";
 import { createPage, createPageInputSchema } from "./tools/create-page.js";
 import { updatePage, updatePageInputSchema } from "./tools/update-page.js";
@@ -174,6 +175,22 @@ export function buildServer(client: TelaClient, version: string): McpServer {
     async (args) => {
       try {
         return ok(await semanticSearch(client, args));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "read_chunk",
+    {
+      description:
+        "Fetch one chunk's full section text by chunk_id (from a semantic_search result). The middle granularity between a search snippet and the whole-page get_page — token-budgeted: returns just that section, not the entire page.",
+      inputSchema: readChunkInputSchema,
+    },
+    async (args) => {
+      try {
+        return ok(await readChunk(client, args));
       } catch (err) {
         return fail(err);
       }

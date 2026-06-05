@@ -54,7 +54,8 @@ A `tela://page/{id}` resource template is also registered, matching the wikilink
 | `get_page`       | Full markdown body + metadata for a numeric page id.                         | read           |
 | `search`         | Full-text search over title + body. Returns snippet-highlighted hits.        | read           |
 | `search_bodies`  | Per-space fuzzy body search (no snippets). Re-fetch via `get_page`.          | read           |
-| `semantic_search`| Meaning-aware chunk search (vector+keyword, RRF). Returns citations (page id + heading path). 503 unless the server has an embedder configured. | read           |
+| `semantic_search`| Meaning-aware chunk search (vector+keyword, RRF). Returns ranked chunks with `chunk_id` + citations (page id + heading path). 503 unless the server has an embedder configured. | read           |
+| `read_chunk`     | Fetch one chunk's full section text by `chunk_id` (from `semantic_search`). Token-budgeted middle granularity between snippet and `get_page`.       | read           |
 | `list_backlinks` | Pages that link to a given page via `[[wikilink]]` / `tela://page/{id}`.     | read           |
 | `create_page`    | Create a page. `{space_id, parent_id?, title, body}` → returns the new row.  | write          |
 | `update_page`    | Patch `title` and/or `body`. Auto-snapshots a revision when body changes.    | write          |

@@ -37,9 +37,11 @@ interface SemanticSearchResponse {
   results: ChunkHitRow[];
 }
 
-// Each hit is a citeable chunk: page_id + heading_path locate the source so a
-// downstream answer is verifiable. Re-fetch full context with get_page.
+// Each hit is a citeable chunk: chunk_id identifies it for read_chunk, page_id +
+// heading_path locate the source so a downstream answer is verifiable. Read the
+// full section with read_chunk(chunk_id), or the whole page with get_page.
 export interface SemanticSearchHit {
+  chunk_id: number;
   page_id: number;
   title: string;
   heading_path: string;
@@ -58,6 +60,7 @@ export async function semanticSearch(
   if (args.mode !== undefined) params.mode = args.mode;
   const res = await client.getJSON<SemanticSearchResponse>("/api/rag/search", params);
   const results = (res.results ?? []).map((h) => ({
+    chunk_id: h.chunk_id,
     page_id: h.page_id,
     title: h.title,
     heading_path: h.heading_path,

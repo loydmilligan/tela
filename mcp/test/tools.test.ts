@@ -6,6 +6,7 @@ import { getPage } from "../src/tools/get-page.js";
 import { search } from "../src/tools/search.js";
 import { searchBodies } from "../src/tools/search-bodies.js";
 import { semanticSearch } from "../src/tools/semantic-search.js";
+import { readChunk } from "../src/tools/read-chunk.js";
 import { listBacklinks } from "../src/tools/list-backlinks.js";
 import { makeFlakyClient, makeMockClient } from "./fixtures.js";
 
@@ -147,6 +148,7 @@ describe("semantic_search", () => {
     const out = await semanticSearch(client, { query: "how do we ship", mode: "hybrid", limit: 5 });
     expect(out.results).toEqual([
       {
+        chunk_id: 9,
         page_id: 12,
         title: "Deploy Guide",
         heading_path: "Shipping > Production",
@@ -159,6 +161,29 @@ describe("semantic_search", () => {
     expect(requests[0].url).toContain("q=how");
     expect(requests[0].url).toContain("mode=hybrid");
     expect(requests[0].url).toContain("limit=5");
+  });
+});
+
+describe("read_chunk", () => {
+  it("fetches a chunk by id and returns the { chunk } envelope", async () => {
+    const { client, requests } = makeMockClient({
+      body: {
+        chunk: {
+          chunk_id: 9,
+          page_id: 12,
+          space_id: 1,
+          title: "Deploy Guide",
+          heading_path: "Shipping > Production",
+          content: "run make deploy to push the release to production…",
+          updated_at: "2026-06-05 09:00:00",
+        },
+      },
+    });
+    const out = await readChunk(client, { chunk_id: 9 });
+    expect(out.chunk.content).toContain("make deploy");
+    expect(out.chunk.page_id).toBe(12);
+    expect(requests[0].url).toContain("/api/rag/chunk");
+    expect(requests[0].url).toContain("chunk_id=9");
   });
 });
 

@@ -129,6 +129,7 @@ describe.skipIf(!hasBuild)("stdio smoke", () => {
           "list_backlinks",
           "list_pages",
           "list_spaces",
+          "read_chunk",
           "search",
           "search_bodies",
           "semantic_search",
