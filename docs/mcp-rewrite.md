@@ -515,13 +515,13 @@ against its Postgres, then calls WorkOS `…/authkit/oauth2/complete` with
 — no user migration, no email mapping. PAT-bearer stays the universal baseline;
 self-hosters can stay PAT-only.
 
-**5a — RS-side, env-gated, build + unit-test NOW (no WorkOS account needed):**
-- ⬜ PRM (RFC 9728) via `auth.ProtectedResourceMetadataHandler(oauthex.ProtectedResourceMetadata{Resource, AuthorizationServers:[issuer], ScopesSupported})`; serve at BOTH `/.well-known/oauth-protected-resource` AND the path-scoped `/.well-known/oauth-protected-resource/api/mcp` (Claude probes both). Public + static.
-- ⬜ Add well-known prefix to `auth.IsPublicPath`; route it through Caddy (`deploy/proxy/Caddyfile` — new top-level path) preserving the SDK's `Access-Control-Allow-Origin: *`.
-- ⬜ Fill `RequireBearerTokenOptions{ResourceMetadataURL: ".../.well-known/oauth-protected-resource/api/mcp", Scopes}` so 401 emits `WWW-Authenticate: Bearer resource_metadata="…"`.
-- ⬜ Dual-mode `mcpVerifier`: `tela_pat_*` → existing path; else WorkOS **JWT** verified via JWKS (`MicahParks/keyfunc/v3` + `golang-jwt/jwt/v5`) enforcing `iss`, **`aud == TELA_MCP_RESOURCE`** (RFC 8707 replay defense), `RS256`, 60s leeway. `sub` → `ParseInt` → tela user; synthesize `*auth.APIKey{Scope:write}` so the whole tool layer (`mcpIdentity`/`mcpRequireWrite`) works unchanged. Decide connector scope policy (not admin).
-- ⬜ Whole OAuth layer **gated on `TELA_WORKOS_ISSUER` set** (inert like the RAG embedder when unconfigured). Unit-test JWT branch with a local RSA keypair + in-test JWKS.
-- ⬜ Env: `TELA_WORKOS_ISSUER`, `TELA_MCP_RESOURCE`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID` (+ `.env.example`).
+**5a — RS-side, env-gated ✅ (on main; inert until `TELA_WORKOS_ISSUER` set):**
+- ✅ PRM (RFC 9728) via `auth.ProtectedResourceMetadataHandler` (`mcp_oauth.go`), served at BOTH well-known paths (`ServePRM`); 404s when OAuth disabled. CORS `*` from the SDK handler.
+- ✅ Well-known prefix on `auth.IsPublicPath`; Caddy route added (`deploy/proxy/Caddyfile`).
+- ✅ `RequireBearerTokenOptions.ResourceMetadataURL` filled when OAuth enabled → 401 emits `WWW-Authenticate: Bearer resource_metadata="…"`.
+- ✅ Dual-mode `mcpVerifier`: `tela_pat_*` → `verifyPAT`; else WorkOS JWT (`verifyWorkOSToken`) via JWKS (`keyfunc/v3` + `golang-jwt/v5`) enforcing `iss`, **`aud == TELA_MCP_RESOURCE`** (RFC 8707 replay defense), RS256/ES256, 60s leeway. `sub` → tela user; synthesizes `*auth.APIKey{Scope:write}` so the tool layer is unchanged. Connector tokens never admin.
+- ✅ Gated on `TELA_WORKOS_ISSUER` (`Server.oauth` / `loadMCPOAuth`); unit-tested with a local RSA keypair + in-test JWKS (PAT still works, valid JWT connects, wrong-aud rejected, PRM 404-when-disabled).
+- ✅ Env wired: `.env.example` + `docker-compose.yml` (`TELA_WORKOS_ISSUER` / `TELA_MCP_RESOURCE` / `WORKOS_API_KEY` / `WORKOS_CLIENT_ID`).
 
 **5b — login bridge + dashboard (needs the WorkOS account; touches login):**
 - ⬜ **WorkOS dashboard setup (Cagdas's action — see checklist below).**

@@ -43,6 +43,13 @@ services:
       TELA_RAG_EMBED_URL:    ${TELA_RAG_EMBED_URL:-}
       TELA_RAG_EMBED_MODEL:  ${TELA_RAG_EMBED_MODEL:-}
       TELA_RAG_EMBED_DIM:    ${TELA_RAG_EMBED_DIM:-}
+      # MCP OAuth (Phase 5). Unset → /api/mcp stays PAT-only and OAuth is dark
+      # (Protected Resource Metadata 404s). Set TELA_WORKOS_ISSUER to enable the
+      # Claude.ai/ChatGPT Connect flow via WorkOS AuthKit. See .env.example.
+      TELA_WORKOS_ISSUER:    ${TELA_WORKOS_ISSUER:-}
+      TELA_MCP_RESOURCE:     ${TELA_MCP_RESOURCE:-}
+      WORKOS_API_KEY:        ${WORKOS_API_KEY:-}
+      WORKOS_CLIENT_ID:      ${WORKOS_CLIENT_ID:-}
     expose:
       - "8080"
     depends_on:

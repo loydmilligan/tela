@@ -29,6 +29,16 @@
 		reverse_proxy backend:8080
 	}
 
+	# OAuth Protected Resource Metadata (RFC 9728) for the MCP endpoint — a new
+	# top-level path (not under /api), so it needs its own route to the backend.
+	# The backend serves the static discovery JSON (or 404s when OAuth is
+	# unconfigured) and sets the public Access-Control-Allow-Origin so Claude.ai /
+	# ChatGPT can fetch it cross-origin during the Connect flow. noindex.
+	handle /.well-known/oauth-protected-resource* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy backend:8080
+	}
+
 	# #3 ".pdf on a share URL" trick → server-rendered PDF. These MUST precede the
 	# /share/* OG/SPA handlers below so the pretty URL lands on the backend, which
 	# rewrites it to the public /api/share/{token}/pdf endpoint (descendant pages

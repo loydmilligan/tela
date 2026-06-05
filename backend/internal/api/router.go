@@ -49,6 +49,14 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// in the handlers, not by HTTP method). Method-less pattern matches all verbs.
 	mux.Handle("/api/mcp", srv.MCPHandler())
 
+	// OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint.
+	// Public + static (see auth.IsPublicPath); 404s when OAuth is unconfigured.
+	// Served at BOTH the root well-known and the path-scoped variant — Claude
+	// probes `/.well-known/oauth-protected-resource/<mcp-path>` then falls back
+	// to the root. Must be routed through Caddy in prod (new top-level path).
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource", srv.ServePRM)
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource/api/mcp", srv.ServePRM)
+
 	mux.HandleFunc("POST /api/auth/login", srv.Login)
 	mux.HandleFunc("POST /api/auth/logout", srv.Logout)
 	mux.HandleFunc("GET /api/auth/me", srv.Me)

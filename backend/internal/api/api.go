@@ -40,6 +40,11 @@ type Server struct {
 	// when unconfigured, so handlers can `if !s.rag.Enabled()` → 503. Tests
 	// inject a fake embedder by overwriting this field.
 	rag *rag.Service
+
+	// oauth is the MCP endpoint's OAuth 2.1 Resource-Server config (WorkOS JWT
+	// acceptance + Protected Resource Metadata). nil = disabled (PAT-only),
+	// unless TELA_WORKOS_ISSUER is set. Tests inject a configured one.
+	oauth *mcpOAuth
 }
 
 func New(db *sql.DB) *Server {
@@ -52,6 +57,7 @@ func New(db *sql.DB) *Server {
 		Mailer:       mailer.FromEnv(),
 		authLimiter:  newAuthRateLimiter(),
 		rag:          rag.NewService(db, rag.ConfigFromEnv()),
+		oauth:        loadMCPOAuth(context.Background()),
 	}
 	// Sweep stale share-rate-limit buckets every shareRateWindow so the
 	// limiter map cannot grow unbounded under adversarial load. Tied to

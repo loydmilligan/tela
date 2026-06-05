@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -33,7 +34,14 @@ func (s *Server) MCPHandler() http.Handler {
 	server := s.newMCPServer()
 	streamable := mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server }, nil)
-	return sdkauth.RequireBearerToken(s.mcpVerifier, &sdkauth.RequireBearerTokenOptions{})(streamable)
+	opts := &sdkauth.RequireBearerTokenOptions{}
+	if s.oauth != nil {
+		// On 401, point clients at our Protected Resource Metadata so the OAuth
+		// "Connect" flow can bootstrap. (No Scopes here — that gate applies to
+		// ALL tokens incl. PATs, which don't carry openid/email.)
+		opts.ResourceMetadataURL = s.oauth.resourceMetadataURL()
+	}
+	return sdkauth.RequireBearerToken(s.mcpVerifier, opts)(streamable)
 }
 
 // newMCPServer constructs the MCP server and registers the tool + resource
@@ -46,10 +54,23 @@ func (s *Server) newMCPServer() *mcp.Server {
 	return server
 }
 
-// mcpVerifier validates a bearer token as a tela PAT and resolves it to a
-// TokenInfo carrying the tela *User + *APIKey. UserID is set so the SDK's
-// Streamable-HTTP transport can pin a session to one user (anti-hijack).
+// mcpVerifier is the dual-mode bearer verifier for /api/mcp: a `tela_pat_*`
+// token takes the PAT path; anything else is tried as a WorkOS OAuth JWT (only
+// when OAuth is configured). Both resolve to a TokenInfo carrying the tela
+// *User + *APIKey, so the tool layer is identical for either credential.
 func (s *Server) mcpVerifier(ctx context.Context, token string, _ *http.Request) (*sdkauth.TokenInfo, error) {
+	if strings.HasPrefix(token, auth.TokenPrefix) {
+		return s.verifyPAT(ctx, token)
+	}
+	if s.oauth != nil {
+		return s.verifyWorkOSToken(ctx, token)
+	}
+	return nil, sdkauth.ErrInvalidToken
+}
+
+// verifyPAT resolves a tela PAT to a TokenInfo. UserID is set so the SDK's
+// Streamable-HTTP transport can pin a session to one user (anti-hijack).
+func (s *Server) verifyPAT(ctx context.Context, token string) (*sdkauth.TokenInfo, error) {
 	secret := auth.LoadAPIKeySecret()
 	k, err := auth.LookupAPIKey(ctx, s.DB, secret, token)
 	if err != nil {

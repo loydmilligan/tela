@@ -209,6 +209,13 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/mcp") {
 		return true
 	}
+	// OAuth Protected Resource Metadata (RFC 9728) for the MCP endpoint — public
+	// discovery doc, served as static JSON by api.ServePRM (which self-gates on
+	// whether OAuth is configured). Clients fetch it unauthenticated to bootstrap
+	// the Connect flow.
+	if strings.HasPrefix(p, "/.well-known/oauth-protected-resource") {
+		return true
+	}
 	if strings.HasPrefix(p, "/api/share/") {
 		return true
 	}
