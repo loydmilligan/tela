@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
 import { useShareTree, type SharePublicMeta } from '../../lib/queries/share'
 import { useShareExpanded } from '../../lib/useShareExpanded'
 import { ThemeSwitcher } from '../ThemeSwitcher'
+import { BrandMark } from '../BrandMark'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
 
@@ -43,8 +44,9 @@ export function ShareLayout({ token, share, children }: ShareLayoutProps) {
           <a
             href="/"
             aria-label="tela home"
-            className="inline-block rounded-[var(--radius-xs)] text-[var(--text-primary)] no-underline transition-opacity duration-[var(--duration-fast)] hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            className="inline-flex items-center gap-[var(--space-2)] rounded-[var(--radius-xs)] text-[var(--text-primary)] no-underline transition-opacity duration-[var(--duration-fast)] hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
+            <BrandMark size={20} />
             tela
           </a>
         </h1>

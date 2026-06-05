@@ -3,11 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>tela</title>
+    <style>
+      /* Boot splash — the tela mark, shown until React mounts and replaces
+         #root's children. Pure inline CSS so it paints with zero JS/bundle. */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #0c0e16;
+      }
+      @media (prefers-color-scheme: light) {
+        #boot { background: #f6f6fb; }
+      }
+      #boot svg { width: 72px; height: 72px; animation: boot-pulse 1.4s ease-in-out infinite; }
+      @keyframes boot-pulse {
+        0%, 100% { opacity: 0.6; transform: scale(0.98); }
+        50% { opacity: 1; transform: scale(1); }
+      }
+      @media (prefers-reduced-motion: reduce) { #boot svg { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot" aria-hidden="true">
+        <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="512" height="512" rx="112" fill="#4f46e5" />
+          <g transform="translate(-2.5,-38.5)">
+            <path fill="#ffffff" d="M150 240 L196 188 Q205 178 218 178 H356 Q378 178 366 200 L332 240 Q325 250 312 250 H162 Q140 250 150 240 Z" />
+            <path fill="#ffffff" d="M238 250 H296 Q300 250 300 268 V396 Q300 414 281 410 L245 402 Q226 398 226 380 V272 Q226 252 238 250 Z" />
+            <path fill="#1e1b4b" fill-opacity="0.4" d="M250 250 H312 Q325 250 332 240 L304 270 Q297 278 297 290 V324 Z" />
+          </g>
+        </svg>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

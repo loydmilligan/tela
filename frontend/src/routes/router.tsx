@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-router'
 import { FilePlus, Plus } from 'lucide-react'
 import { AppCommandHost } from '../components/app/AppCommandHost'
+import { BrandMark } from '../components/BrandMark'
 import { NewSpaceDialog } from '../components/app/NewSpaceDialog'
 import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
@@ -62,6 +63,22 @@ function ensureMe(): Promise<AuthUser | null> {
 const rootRoute = createRootRoute({
   component: function Root() {
     return <Outlet />
+  },
+  notFoundComponent: function NotFound() {
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-[var(--space-4)] bg-[var(--surface-1)] text-[var(--text-primary)] p-[var(--space-7)] text-center">
+        <BrandMark size={48} />
+        <div className="flex flex-col gap-[var(--space-1)]">
+          <p className="m-0 text-[length:var(--text-2xl)] font-semibold">Page not found</p>
+          <p className="m-0 text-[var(--text-muted)]">
+            That page doesn’t exist or you don’t have access to it.
+          </p>
+        </div>
+        <Button asChild variant="primary" size="lg">
+          <Link to="/">Back to tela</Link>
+        </Button>
+      </div>
+    )
   },
 })
 
@@ -233,6 +250,7 @@ const indexRoute = createRoute({
       <div className="flex-1 flex items-center justify-center p-[var(--space-7)]">
         <Card className="w-full max-w-[28rem] text-center">
           <CardHeader className="items-center">
+            <BrandMark size={40} className="mb-[var(--space-2)]" />
             <CardTitle className="text-[length:var(--text-2xl)]">
               Welcome to tela
             </CardTitle>

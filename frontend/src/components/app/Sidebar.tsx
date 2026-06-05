@@ -1,8 +1,9 @@
-import { useParams } from '@tanstack/react-router'
+import { Link, useParams } from '@tanstack/react-router'
 import { FilePlus, Search } from 'lucide-react'
 import { PagesTree } from './PagesTree'
 import { SpacesList } from './SpacesList'
 import { UserMenu } from './UserMenu'
+import { BrandMark } from '../BrandMark'
 import { Button } from '../ui/button'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { emitOpenPalette } from '../../lib/paletteEvent'
@@ -27,6 +28,14 @@ export function Sidebar() {
       className="flex flex-col w-[var(--sidebar-width)] shrink-0 border-r border-[var(--border-subtle)] bg-[var(--surface-2)] overflow-hidden"
     >
       <div className="px-[var(--space-3)] pt-[var(--space-4)] flex flex-col gap-[var(--space-1)]">
+        <Link
+          to="/"
+          aria-label="tela — home"
+          className="mb-[var(--space-2)] inline-flex items-center gap-[var(--space-2)] px-[var(--space-1)] text-[length:var(--text-base)] font-medium leading-none tracking-[-0.01em] text-[var(--text-primary)] no-underline transition-opacity duration-[var(--duration-fast)] hover:opacity-80"
+        >
+          <BrandMark size={20} />
+          tela
+        </Link>
         <Button
           variant="secondary"
           size="sm"
