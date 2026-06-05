@@ -36,10 +36,13 @@ func (s *Server) MCPHandler() http.Handler {
 	return sdkauth.RequireBearerToken(s.mcpVerifier, &sdkauth.RequireBearerTokenOptions{})(streamable)
 }
 
-// newMCPServer constructs the MCP server and registers the tool surface.
+// newMCPServer constructs the MCP server and registers the tool + resource
+// surface. Capabilities (tools / resources / completions) are inferred by the
+// SDK from what's registered.
 func (s *Server) newMCPServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: mcpServerName, Version: Version}, nil)
 	s.registerMCPTools(server)
+	s.registerMCPResources(server)
 	return server
 }
 
@@ -72,9 +75,11 @@ func (s *Server) mcpVerifier(ctx context.Context, token string, _ *http.Request)
 }
 
 // mcpIdentity pulls the tela identity that mcpVerifier stashed into the
-// per-request TokenInfo. Returns (nil, nil) if somehow unauthenticated — tools
-// must treat that as an error rather than acting anonymously.
-func mcpIdentity(req *mcp.CallToolRequest) (*auth.User, *auth.APIKey) {
+// per-request TokenInfo. Accepts any server request (tool call, resource read,
+// prompt get, …) via the GetExtra() method they all share. Returns (nil, nil)
+// if somehow unauthenticated — callers must treat that as an error rather than
+// acting anonymously.
+func mcpIdentity(req interface{ GetExtra() *mcp.RequestExtra }) (*auth.User, *auth.APIKey) {
 	ex := req.GetExtra()
 	if ex == nil || ex.TokenInfo == nil {
 		return nil, nil

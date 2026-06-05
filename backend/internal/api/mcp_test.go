@@ -366,6 +366,77 @@ func TestMCP_WriteToolReadKeyDenied(t *testing.T) {
 	}
 }
 
+// TestMCP_Resources exercises Phase 2: the tela://page/{id} resource template
+// (list + read, with cross-space denial) and resource links in tool results.
+func TestMCP_Resources(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	space := seedSpace(t, d, "Docs", "docs", alice)
+	bob := seedUser(t, d, "bob", "bobpw1234", false)
+	bobSpace := seedSpace(t, d, "Bob", "bob", bob)
+
+	var pageID int64
+	if err := d.QueryRowContext(context.Background(),
+		`INSERT INTO pages (space_id, parent_id, title, body, position) VALUES ($1, NULL, 'Alpha', 'hello world', 0) RETURNING id`,
+		space).Scan(&pageID); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	var bobPage int64
+	if err := d.QueryRowContext(context.Background(),
+		`INSERT INTO pages (space_id, parent_id, title, body, position) VALUES ($1, NULL, 'Secret', 'x', 0) RETURNING id`,
+		bobSpace).Scan(&bobPage); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeRead))
+
+	// The page template is advertised.
+	tmpls, err := sess.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		t.Fatalf("list templates: %v", err)
+	}
+	var hasPage bool
+	for _, tm := range tmpls.ResourceTemplates {
+		if tm.URITemplate == "tela://page/{id}" {
+			hasPage = true
+		}
+	}
+	if !hasPage {
+		t.Fatalf("tela://page/{id} template not advertised: %+v", tmpls.ResourceTemplates)
+	}
+
+	// Read alice's page → markdown with title + body.
+	rr, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tela://page/" + strconv.FormatInt(pageID, 10)})
+	if err != nil {
+		t.Fatalf("read resource: %v", err)
+	}
+	if len(rr.Contents) != 1 || rr.Contents[0].Text != "# Alpha\n\nhello world" {
+		t.Fatalf("resource contents: %+v", rr.Contents)
+	}
+
+	// Reading bob's page → not found (membership-gated, collapsed).
+	if _, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tela://page/" + strconv.FormatInt(bobPage, 10)}); err == nil {
+		t.Fatalf("expected cross-space resource read to fail")
+	}
+
+	// get_page tool result carries a resource link to the page.
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "get_page", Arguments: map[string]any{"id": pageID}})
+	if err != nil {
+		t.Fatalf("get_page: %v", err)
+	}
+	var gotLink bool
+	for _, c := range res.Content {
+		if rl, ok := c.(*mcp.ResourceLink); ok && rl.URI == "tela://page/"+strconv.FormatInt(pageID, 10) {
+			gotLink = true
+		}
+	}
+	if !gotLink {
+		t.Fatalf("get_page result missing resource link: %+v", res.Content)
+	}
+}
+
 // TestMCP_SpikeRejectsNoToken asserts the transport refuses an unauthenticated
 // connection (the bearer verifier 401s with WWW-Authenticate).
 func TestMCP_SpikeRejectsNoToken(t *testing.T) {

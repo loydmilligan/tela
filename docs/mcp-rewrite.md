@@ -483,10 +483,11 @@ Status of the full-functionality surface. ✅ done · ⬜ todo · 🟡 partial �
 - ⬜ **import_markdown** — REDESIGN for remote: `local_path` is meaningless on the server. Options: accept inline `{path, content}[]` array, or a base64 zip arg. Decide shape, then core + tool. (Until then, the tool is absent — flag in docs.)
 - ⬜ Consider exposing **move_page** (REST `MovePage` exists; old TS MCP omitted it) and **get_space** — decide if agents need them
 
-### Phase 2 — resources + links (NEXT)
-- ⬜ `tela://page/{id}` resource template (read → markdown `# title\n\nbody`); re-parse `{id}` from `req.Params.URI` (SDK doesn't parse template vars); gate on membership; `ResourceNotFoundError`/403-collapse
-- ⬜ Resource links in tool results: get_page, search, semantic_search, create_page return `&mcp.ResourceLink{URI, Name, MIMEType}` alongside structured output
-- ⬜ (optional) `tela://space/{id}` resource
+### Phase 2 — resources + links ✅ (on main)
+- ✅ `tela://page/{id}` resource template (read → markdown `# title\n\nbody`); re-parses `{id}` from `req.Params.URI`; membership-gated; failures collapse to `ResourceNotFoundError`
+- ✅ Resource links in tool results: get_page, create_page, search, semantic_search return `&mcp.ResourceLink` alongside structured output (via `mcpResultWithLinks`, preserving JSON text + structuredContent)
+- ✅ `mcpIdentity` generalized to any request (tools + resources share it)
+- ⬜ (optional, deferred) `tela://space/{id}` resource
 - ❌ `resources/list_changed` on page mutations — NOT applicable: template is static, SDK only fires list_changed on Add/Remove of SDK objects, not data changes. Skip.
 - ❌ Resource subscriptions — low host support, high state cost. Skip.
 
