@@ -501,8 +501,9 @@ Status of the full-functionality surface. ✅ done · ⬜ todo · 🟡 partial �
 - ✅ Deleted the TS 18-tool implementation (`src/tools`, `src/resources`, `client.ts`, `slug.ts`, `version-check.ts`) + the unit/smoke suites + `semver`/`zod` deps
 - ✅ Rewrote `mcp/README.md` (HTTP-first; proxy for stdio-only) + updated `CLAUDE.md`
 - ✅ New live E2E (`test/proxy.live.test.ts`) — client→stdio-proxy→HTTP→backend roundtrip (tools/list, list_spaces, get_page structured content, resource read). Verified green against a local backend.
-- ⬜ **Publish** `tela-mcp@0.7.0` to npm (`make release-mcp BUMP=minor`) — do alongside/after deploy
-- ⬜ Decision taken: keep the package (proxy) for stdio-only hosts; modern hosts use `--transport http`
+- ✅ **Deployed** — `/api/mcp` is LIVE at `https://tela.cagdas.io/api/mcp` (commit cb823b1; verified 401-without-token, route mounted + bearer verifier gating)
+- ⬜ **Publish** `tela-mcp@0.7.0` to npm (`make release-mcp BUMP=minor`) — endpoint is live so the proxy works; the old v0.6.0 (REST tools) still works for existing users until they upgrade. *Pending explicit go — public/permanent action.*
+- ✅ Decision taken: keep the package (proxy) for stdio-only hosts; modern hosts use `--transport http`
 
 ### Phase 5 — OAuth (Connect button, hosted instance)
 - ⬜ RFC 9728 Protected Resource Metadata at `/.well-known/oauth-protected-resource`
