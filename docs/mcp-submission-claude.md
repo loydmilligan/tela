@@ -119,7 +119,7 @@ Concrete agent workflows, each grounded in the actual tools:
 |---|---|
 | **Documentation** | `https://tela.cagdas.io/mcp` |
 | **Privacy policy** | `https://tela.cagdas.io/privacy` |
-| **Support channel** | `robot@cagdas.io` |
+| **Support channel** | `tela@cagdas.io` |
 | **Source** | `https://github.com/zcag/tela` |
 | **npm proxy** | `tela-mcp` (`https://www.npmjs.com/package/tela-mcp`) |
 | **Review escalation (Anthropic)** | `mcp-review@anthropic.com` |

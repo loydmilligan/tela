@@ -216,7 +216,7 @@ Sources: [Define tools](https://developers.openai.com/apps-sdk/plan/tools) ·
   uses OAuth.
 - **Company / docs URL:** `https://tela.cagdas.io/mcp`
 - **Privacy policy URL:** `https://tela.cagdas.io/privacy`
-- **Support:** `robot@cagdas.io`
+- **Support:** `tela@cagdas.io`
 - **Source:** `https://github.com/zcag/tela`
 
 ### Test prompts (must pass on ChatGPT web AND mobile)

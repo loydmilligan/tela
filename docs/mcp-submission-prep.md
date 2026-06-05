@@ -14,7 +14,7 @@ Legend: ✅ done · 🔨 I can do now · 👤 Cagdas (account/dashboard) · 🖥
 | Privacy policy (public URL) | mandatory | mandatory | ✅ `tela.cagdas.io/privacy` |
 | **Terms of Service (public URL, same domain)** | form attestation (Page 6) | required form field | ✅ `tela.cagdas.io/terms` |
 | Public documentation | mandatory | (docs link) | ✅ `tela.cagdas.io/mcp` — now includes Troubleshooting + Limitations |
-| Support contact | mandatory | mandatory | ✅ `robot@cagdas.io` |
+| Support contact | mandatory | mandatory | ✅ `tela@cagdas.io` |
 | Security vulnerability reporting mechanism | mandatory (ongoing) | — | ✅ security-report line in /privacy + /mcp |
 
 ## B. Assets
