@@ -31,11 +31,29 @@ func NewOllamaEmbedder(base, model string) *OllamaEmbedder {
 
 func (e *OllamaEmbedder) Model() string { return e.model }
 
+// maxEmbedChars hard-caps embed input length (in runes) as a backstop against
+// the model's context window. mxbai-embed-large rejects (HTTP 400, not silently
+// truncates) inputs past ~512 tokens (~1700 chars of dense markdown). Chunks are
+// already sized under this (maxChunkChars), but a single very long line can
+// overshoot — so we truncate here rather than let one chunk fail a whole
+// reindex. Only the embedded text is clipped; the stored chunk content (and its
+// lexical index) keeps the full text. The contextual prefix sits at the head, so
+// truncation only drops the tail of a long section.
+const maxEmbedChars = 1500
+
+func clampEmbedInput(text string) string {
+	r := []rune(text)
+	if len(r) <= maxEmbedChars {
+		return text
+	}
+	return string(r[:maxEmbedChars])
+}
+
 // Embed returns the embedding for text via POST /api/embed {model, input}. The
 // current Ollama API returns {"embeddings": [[...]]} (one row per input); we
 // send a single string and take the first row.
 func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	body, _ := json.Marshal(map[string]any{"model": e.model, "input": text})
+	body, _ := json.Marshal(map[string]any{"model": e.model, "input": clampEmbedInput(text)})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.base+"/api/embed", bytes.NewReader(body))
 	if err != nil {
 		return nil, err

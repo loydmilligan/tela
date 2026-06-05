@@ -16,10 +16,13 @@ type Chunk struct {
 
 var headingRE = regexp.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
 
-// maxChunkChars caps a section before a forced flush. ~2000 chars ≈ ~500
-// tokens — the recursive-split sweet spot. Heading boundaries flush earlier;
-// long sections split into multiple chunks sharing a heading path.
-const maxChunkChars = 2000
+// maxChunkChars caps a section before a forced flush. Kept well under the
+// embedding model's context window: mxbai-embed-large tops out at 512 tokens
+// (~1700 chars of dense markdown), and the contextual prefix (title + heading
+// path) is added on top — so 1400 leaves headroom. The embedder also hard-caps
+// its input as a backstop (see maxEmbedChars), so an overshooting single line
+// can never fail a reindex.
+const maxChunkChars = 1400
 
 // ChunkMarkdown splits a page body into heading-aware chunks. Each chunk carries
 // the heading breadcrumb it lives under; the page title + breadcrumb is folded
