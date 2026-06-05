@@ -149,6 +149,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// is unconfigured (TELA_RAG_EMBED_URL unset) so the routes register
 	// unconditionally. Session OR bearer-read for search; membership for reindex.
 	mux.HandleFunc("GET /api/rag/search", srv.RAGSearch)
+	mux.HandleFunc("GET /api/rag/chunk", srv.RAGReadChunk)
 	mux.HandleFunc("POST /api/rag/reindex", srv.RAGReindex)
 
 	mux.HandleFunc("GET /api/admin/users", srv.ListAdminUsers)

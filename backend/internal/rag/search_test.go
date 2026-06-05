@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"hash/fnv"
 	"math"
 	"strings"
@@ -166,6 +167,56 @@ func TestSearch_Modes(t *testing.T) {
 		if len(hits) == 0 {
 			t.Errorf("%s search returned no hits", mode)
 		}
+	}
+}
+
+func TestReadChunk_FoundAndScoped(t *testing.T) {
+	d := testdb.New(t)
+	ctx := context.Background()
+	alice := newUser(t, d, "alice")
+	bob := newUser(t, d, "bob")
+	s1 := newSpace(t, d, "alpha", alice)
+	s2 := newSpace(t, d, "bravo", bob) // alice not a member
+
+	newPage(t, d, s1, "Runbook", "## Deploy\nrun make deploy to ship to production")
+	newPage(t, d, s2, "Secret", "## Plans\nthe secret roadmap")
+
+	svc := NewServiceWithEmbedder(d, &fakeEmbedder{})
+	if _, _, err := svc.ReindexSpace(ctx, s1); err != nil {
+		t.Fatalf("reindex s1: %v", err)
+	}
+	if _, _, err := svc.ReindexSpace(ctx, s2); err != nil {
+		t.Fatalf("reindex s2: %v", err)
+	}
+
+	// Find a chunk alice can see, then read it back in full.
+	hits, err := svc.Search(ctx, alice, "deploy", nil, 5, "hybrid")
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("search: %v (hits=%d)", err, len(hits))
+	}
+	got, err := svc.ReadChunk(ctx, alice, hits[0].ChunkID, nil)
+	if err != nil {
+		t.Fatalf("read own chunk: %v", err)
+	}
+	if got.PageID != hits[0].PageID || got.Content == "" {
+		t.Errorf("read chunk mismatch: %+v", got)
+	}
+	if got.SpaceID != s1 {
+		t.Errorf("chunk space = %d, want %d", got.SpaceID, s1)
+	}
+
+	// Find bob's chunk id (as bob), then confirm alice CANNOT read it.
+	bobHits, err := svc.Search(ctx, bob, "secret roadmap", nil, 5, "hybrid")
+	if err != nil || len(bobHits) == 0 {
+		t.Fatalf("bob search: %v", err)
+	}
+	if _, err := svc.ReadChunk(ctx, alice, bobHits[0].ChunkID, nil); !errors.Is(err, ErrChunkNotFound) {
+		t.Fatalf("LEAK: alice read bob's chunk %d (err=%v)", bobHits[0].ChunkID, err)
+	}
+
+	// Missing id → not found, not a different error.
+	if _, err := svc.ReadChunk(ctx, alice, 999999, nil); !errors.Is(err, ErrChunkNotFound) {
+		t.Errorf("missing chunk: err=%v, want ErrChunkNotFound", err)
 	}
 }
 

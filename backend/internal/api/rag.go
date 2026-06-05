@@ -1,10 +1,12 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/rag"
 )
 
 // RAG (semantic retrieval) handlers. Thin wrappers over the internal/rag
@@ -49,6 +51,42 @@ func (s *Server) RAGSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": hits})
+}
+
+// RAGReadChunk handles GET /api/rag/chunk?chunk_id=
+// Returns one chunk's full section text (the chunk-granularity read between a
+// search snippet and the whole-page get_page). Scoped to the caller's
+// space_access; 404 when the chunk doesn't exist or is out of scope.
+func (s *Server) RAGReadChunk(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.rag.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
+		return
+	}
+
+	chunkID, err := strconv.ParseInt(r.URL.Query().Get("chunk_id"), 10, 64)
+	if err != nil || chunkID <= 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "chunk_id must be a positive integer")
+		return
+	}
+	var spaceID *int64
+	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
+		spaceID = k.SpaceID
+	}
+
+	chunk, err := s.rag.ReadChunk(r.Context(), u.ID, chunkID, spaceID)
+	if errors.Is(err, rag.ErrChunkNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "chunk not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "read chunk failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"chunk": chunk})
 }
 
 // RAGReindex handles POST /api/rag/reindex?space_id=

@@ -20,7 +20,8 @@ TELA_RAG_EMBED_MODEL=mxbai-embed-large   # default; 1024-d
 
 | Route | Scope | Purpose |
 |---|---|---|
-| `GET /api/rag/search?q=&space_id=&limit=&mode=` | session / bearer-read | hybrid chunk search; `mode` = `hybrid` (default) \| `lexical` \| `semantic` |
+| `GET /api/rag/search?q=&space_id=&limit=&mode=` | session / bearer-read | hybrid chunk search; `mode` = `hybrid` (default) \| `lexical` \| `semantic`. Hits carry `chunk_id`. |
+| `GET /api/rag/chunk?chunk_id=` | session / bearer-read | one chunk's full section text (the read between snippet and whole-page get_page); 404 when out of scope |
 | `POST /api/rag/reindex?space_id=` | membership / bearer-write | chunk + embed every page in a space |
 
 ## Invariants (do not break)

@@ -113,6 +113,69 @@ func TestRAG_ReindexThenSearchScoped(t *testing.T) {
 	}
 }
 
+func TestRAG_ReadChunkScoped(t *testing.T) {
+	ts, d, _ := newRagServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	bob := seedUser(t, d, "bob", "bobpw1234", false)
+	aSpace := seedSpace(t, d, "Alpha", "alpha", alice)
+	bSpace := seedSpace(t, d, "Bravo", "bravo", bob)
+	mustPage(t, d, aSpace, "Guide", "## Shipping\nrun make deploy to push the release")
+	mustPage(t, d, bSpace, "Secret", "## Plans\nthe secret deployment roadmap")
+
+	svc := rag.NewServiceWithEmbedder(d, fakeEmb{})
+	if _, _, err := svc.ReindexSpace(context.Background(), aSpace); err != nil {
+		t.Fatalf("index a: %v", err)
+	}
+	if _, _, err := svc.ReindexSpace(context.Background(), bSpace); err != nil {
+		t.Fatalf("index b: %v", err)
+	}
+
+	c := loginClient(t, ts, "alice", "alicepw12")
+
+	// Search → take a chunk_id → read it back in full.
+	resp, _ := c.Get(ts.URL + "/api/rag/search?q=deploy+release")
+	var sr struct {
+		Results []rag.Hit `json:"results"`
+	}
+	json.NewDecoder(resp.Body).Decode(&sr)
+	resp.Body.Close()
+	if len(sr.Results) == 0 {
+		t.Fatal("no search results")
+	}
+	cid := sr.Results[0].ChunkID
+
+	resp, err := c.Get(ts.URL + "/api/rag/chunk?chunk_id=" + strconv.FormatInt(cid, 10))
+	if err != nil {
+		t.Fatalf("read chunk: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("read chunk status = %d", resp.StatusCode)
+	}
+	var rr struct {
+		Chunk rag.ChunkRead `json:"chunk"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if rr.Chunk.Content == "" || rr.Chunk.SpaceID != aSpace {
+		t.Errorf("unexpected chunk: %+v", rr.Chunk)
+	}
+
+	// A bob chunk id must 404 for alice (find it by indexing bob's space and
+	// scanning a high id range is overkill — instead assert a known-out-of-scope
+	// id behaves as not-found via a probe of bob's chunk).
+	var bobChunk int64
+	if err := d.QueryRow(`SELECT pc.id FROM page_chunks pc JOIN pages p ON p.id=pc.page_id WHERE p.space_id=$1 LIMIT 1`, bSpace).Scan(&bobChunk); err != nil {
+		t.Fatalf("find bob chunk: %v", err)
+	}
+	resp2, _ := c.Get(ts.URL + "/api/rag/chunk?chunk_id=" + strconv.FormatInt(bobChunk, 10))
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("LEAK: alice read bob's chunk %d → status %d (want 404)", bobChunk, resp2.StatusCode)
+	}
+}
+
 func mustPage(t *testing.T, d *sql.DB, spaceID int64, title, body string) int64 {
 	t.Helper()
 	var id int64
