@@ -1,6 +1,6 @@
 {
   "name": "tela-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "MCP server for Tela — exposes spaces, pages, search, and backlinks to MCP-capable agents (Claude Code, etc.) over stdio.",
   "license": "MIT",
   "type": "module",
