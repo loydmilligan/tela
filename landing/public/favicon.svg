@@ -1,26 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="tela">
-  <!-- Rounded square in accent indigo -->
-  <rect width="256" height="256" rx="56" fill="#4f46e5"/>
-
-  <!--
-    Woven mark: two vertical + two horizontal strands, checkerboard over/under.
-    "tela" = fabric / canvas / cloth. The pattern is the brand.
-  -->
-  <g fill="#fbfaf6">
-    <!-- Vertical strands (drawn first → under by default) -->
-    <rect x="64"  y="40" width="32" height="176" rx="16"/>
-    <rect x="160" y="40" width="32" height="176" rx="16"/>
-
-    <!-- Horizontal strands (drawn after → over the verticals everywhere) -->
-    <rect x="40" y="64"  width="176" height="32" rx="16"/>
-    <rect x="40" y="160" width="176" height="32" rx="16"/>
-
-    <!--
-      Weave: restore vertical OVER horizontal at TL and BR.
-      Pattern reads:   V  H
-                       H  V
-    -->
-    <rect x="64"  y="64"  width="32" height="32"/>
-    <rect x="160" y="160" width="32" height="32"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="tela">
+  <rect width="512" height="512" rx="112" fill="#4f46e5"/>
+  <path fill="#ffffff" d="M150 240 L196 188 Q205 178 218 178 H356 Q378 178 366 200 L332 240 Q325 250 312 250 H162 Q140 250 150 240 Z"/>
+  <path fill="#ffffff" d="M238 250 H296 Q300 250 300 268 V396 Q300 414 281 410 L245 402 Q226 398 226 380 V272 Q226 252 238 250 Z"/>
+  <path fill="#1e1b4b" fill-opacity="0.40" d="M250 250 H312 Q325 250 332 240 L304 270 Q297 278 297 290 V324 Z"/>
 </svg>
