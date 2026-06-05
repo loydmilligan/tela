@@ -96,6 +96,22 @@ func TestMCP_SpikeListSpaces(t *testing.T) {
 			t.Errorf("tool %q has no Annotations", tl.Name)
 		}
 	}
+	// Drift guard: the full expected tool roster is advertised (catches an
+	// accidentally-dropped or renamed tool).
+	got := map[string]bool{}
+	for _, tl := range tools.Tools {
+		got[tl.Name] = true
+	}
+	for _, want := range []string{
+		"list_spaces", "get_space", "list_pages", "get_page", "list_backlinks",
+		"search", "search_bodies", "semantic_search", "read_chunk",
+		"create_page", "update_page", "delete_page", "move_page", "add_comment",
+		"create_space", "update_space", "delete_space", "import_mira", "submit_feedback",
+	} {
+		if !got[want] {
+			t.Errorf("tool %q not advertised", want)
+		}
+	}
 
 	// tools/call returns alice's space (and only hers) as structured output.
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_spaces"})
