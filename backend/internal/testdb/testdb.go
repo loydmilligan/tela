@@ -33,7 +33,7 @@ import (
 )
 
 // defaultBaseDSN matches the throwaway Postgres `make test` boots locally.
-const defaultBaseDSN = "postgres://tela:tela@localhost:55432/postgres?sslmode=disable"
+const defaultBaseDSN = "postgres://tela:tela@localhost:55433/postgres?sslmode=disable"
 
 var (
 	maintOnce sync.Once

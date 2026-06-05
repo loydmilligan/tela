@@ -13,11 +13,11 @@ EXPORT_BUILD := TELA_VERSION=$(TELA_VERSION) TELA_COMMIT=$(TELA_COMMIT)
 # single throwaway container shared by `be-dev` and `make test`; it persists
 # between runs (just `docker start` if it already exists). `make test` provisions
 # isolated throwaway databases on it (see internal/testdb), so it never collides
-# with the `tela` dev database. Port 55432 avoids clashing with a host Postgres.
+# with the `tela` dev database. Port 55433 avoids clashing with a host Postgres.
 DEV_PG_CONTAINER := tela-dev-pg
-DEV_DATABASE_URL := postgres://tela:tela@localhost:55432/tela?sslmode=disable
+DEV_DATABASE_URL := postgres://tela:tela@localhost:55433/tela?sslmode=disable
 # Maintenance DSN the test harness connects to in order to CREATE/DROP per-test DBs.
-TEST_DATABASE_URL := postgres://tela:tela@localhost:55432/postgres?sslmode=disable
+TEST_DATABASE_URL := postgres://tela:tela@localhost:55433/postgres?sslmode=disable
 
 # ── Remote deploy (build-on-archer, no registry) ────────────────────────────
 # Prod lives on `archer` at ~/proj/tela; deploy = git pull + make on that host.
@@ -56,7 +56,7 @@ help:
 	@echo "  make be-dev     # run backend in dev mode (go run; boots a local Postgres)"
 	@echo "  make fe-dev     # run frontend in dev mode (vite)"
 	@echo "  make test       # backend tests against a throwaway Postgres (boots dev-db)"
-	@echo "  make dev-db     # boot the local dev/test Postgres container (:55432)"
+	@echo "  make dev-db     # boot the local dev/test Postgres container (:55433)"
 	@echo "  make storybook  # run Storybook for the frontend"
 	@echo "  make test-mcp-integration  # live MCP <-> backend E2E (boots stack, runs tests, tears down)"
 	@echo "  make landing-dev    # run the marketing landing (Astro) dev server on :4321"
@@ -108,7 +108,7 @@ dev-db:
 	@docker start $(DEV_PG_CONTAINER) >/dev/null 2>&1 || \
 	  docker run -d --name $(DEV_PG_CONTAINER) \
 	    -e POSTGRES_USER=tela -e POSTGRES_PASSWORD=tela -e POSTGRES_DB=tela \
-	    -p 55432:5432 pgvector/pgvector:pg17 >/dev/null
+	    -p 55433:5432 pgvector/pgvector:pg17 >/dev/null
 	@echo "waiting for postgres…"; \
 	for i in $$(seq 1 30); do \
 	  docker exec $(DEV_PG_CONTAINER) pg_isready -U tela -d tela >/dev/null 2>&1 && break; \
