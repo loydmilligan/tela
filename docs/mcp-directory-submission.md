@@ -25,10 +25,10 @@ pair; full-bleed connector icon + server branding.
 - ✅ **Branding asset:** `https://tela.cagdas.io/icon-512.png` (512²) + `/favicon.svg` already served — covers the logo upload.
 - ✅ **Submission payloads drafted:** `docs/mcp-submission-claude.md`, `docs/mcp-submission-chatgpt.md`.
 - ✅ **Demo account CREATED + populated:** `mcp-demo` / `mcp-demo@cagdas.io` (email-verified via archer DB, no MFA, not admin); space "Demo" (id 4) seeded with 5 pages. Reusable seed: `scripts/seed-demo.py`. Password held outside the repo (paste into the submission form).
-- 🟡 **Cloudflare allowlist — terraform WRITTEN + validated + plan-clean** (`~/dotty/common/.config/cloudflare/waf-tela-mcp.tf`, committed to zcag/dotty). **Apply blocked:** the CF API token lacks WAF/Firewall edit scope — add **`Zone → WAF → Edit`** to the token, then `terraform apply` (I can finish it once the token has the scope).
+- ✅ **Cloudflare allowlist APPLIED & live** — ruleset `0b545114` (skip WAF/rate-limit/bot for `160.79.104.0/21` on `tela.cagdas.io`); terraform in zcag/dotty, state drift-free.
 - ⬜ **CAGDAS-ONLY:** OpenAI org identity verification + `api.apps.write`; global/non-EU residency project; the final form submits (Claude + ChatGPT).
 - ⬜ **In-host only (other agent):** re-enable the widget `_meta` (blank-iframe/bridge bug) + capture ChatGPT widget screenshots. Not a Claude blocker (widgets optional there).
-- **Critical path now:** add WAF scope to CF token → I apply the allowlist → **submit Claude** (everything else green) → (ChatGPT) org verification/residency + widget render → submit ChatGPT.
+- **Critical path now:** **Claude is fully unblocked — submit it** at `clau.de/mcp-directory-submission` (paste the demo password into the form). Then ChatGPT: OpenAI org verification + global-residency project + widget render/screenshots → submit.
 
 ---
 
@@ -61,7 +61,7 @@ docs page, populated demo account, finalize branding) → submit **Claude first*
 - [x] **Narrow descriptions, no behavioral directives, no Claude-memory access** — *met* (descriptions are factual; nothing reads chat history/memory).
 - [x] **First-party API, server domain matches service** — *met* (tela.cagdas.io).
 - [x] **Actionable errors, sized responses (≤25k tokens tool result)** — error payloads carry `{error,code,status}`; `get_page`/`fetch` now cap bodies at 80k chars (~20k tokens) with a `truncated` flag + pointer to `read_chunk`/`semantic_search` (shipped 86ee942).
-- [~] **Reachable from Anthropic egress `160.79.104.0/21`** — terraform allowlist written + plan-clean (`dotty/common/.config/cloudflare/waf-tela-mcp.tf`); apply pending the CF token gaining `Zone → WAF → Edit`.
+- [x] **Reachable from Anthropic egress `160.79.104.0/21`** — Cloudflare skip-rule APPLIED & live (ruleset `0b545114`, terraform in zcag/dotty).
 - [x] **Privacy policy at a public HTTPS URL** — LIVE at https://tela.cagdas.io/privacy/.
 - [x] **Public documentation page** — LIVE at https://tela.cagdas.io/mcp/.
 - [x] **Test account with sample data + setup steps** — `mcp-demo` / `mcp-demo@cagdas.io`, email-verified, no MFA; space "Demo" with 5 pages (see `mcp-submission-claude.md` §7). Password out-of-repo.
