@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,58 +32,85 @@ func NewOllamaEmbedder(base, model string) *OllamaEmbedder {
 
 func (e *OllamaEmbedder) Model() string { return e.model }
 
-// maxEmbedChars hard-caps embed input length (in runes) as a backstop against
-// the model's context window. mxbai-embed-large rejects (HTTP 400, not silently
-// truncates) inputs past ~512 tokens (~1700 chars of dense markdown). Chunks are
-// already sized under this (maxChunkChars), but a single very long line can
-// overshoot — so we truncate here rather than let one chunk fail a whole
-// reindex. Only the embedded text is clipped; the stored chunk content (and its
-// lexical index) keeps the full text. The contextual prefix sits at the head, so
-// truncation only drops the tail of a long section.
-const maxEmbedChars = 1500
+// maxEmbedChars is the initial rune cap on embed input — a first-pass guard so
+// most chunks embed in one shot. It is intentionally loose because token density
+// varies wildly (symbol-heavy markdown can be <2 chars/token), so a char cap
+// can't reliably predict the model's 512-token limit. The real guarantee is the
+// shrink-retry loop in Embed.
+const maxEmbedChars = 1600
 
-func clampEmbedInput(text string) string {
+// embedMinChars is the floor below which we stop shrinking and surface the error
+// rather than embed a near-empty fragment.
+const embedMinChars = 64
+
+func clampRunes(text string, n int) string {
 	r := []rune(text)
-	if len(r) <= maxEmbedChars {
+	if len(r) <= n {
 		return text
 	}
-	return string(r[:maxEmbedChars])
+	return string(r[:n])
 }
 
 // Embed returns the embedding for text via POST /api/embed {model, input}. The
-// current Ollama API returns {"embeddings": [[...]]} (one row per input); we
-// send a single string and take the first row.
+// Ollama API returns {"embeddings": [[...]]}; we send one string and take row 0.
+//
+// mxbai-embed-large rejects (HTTP 400 — it does NOT silently truncate) input
+// past its 512-token context, and token density isn't predictable from char
+// count. So on a context-overflow 400 we shrink the input 25% and retry until it
+// fits (down to embedMinChars). Only the embedded text shrinks; the stored chunk
+// content + lexical index keep the full text, and the contextual prefix sits at
+// the head, so we only ever drop the tail of an over-long section.
 func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	body, _ := json.Marshal(map[string]any{"model": e.model, "input": clampEmbedInput(text)})
+	input := clampRunes(text, maxEmbedChars)
+	for {
+		vec, overflow, err := e.embedOnce(ctx, input)
+		if err == nil {
+			return vec, nil
+		}
+		n := len([]rune(input))
+		if !overflow || n <= embedMinChars {
+			return nil, err
+		}
+		input = clampRunes(input, n*3/4)
+	}
+}
+
+// embedOnce does a single embed request. overflow is true when the model
+// rejected the input for exceeding its context window (the retryable case).
+func (e *OllamaEmbedder) embedOnce(ctx context.Context, input string) (vec []float32, overflow bool, err error) {
+	body, _ := json.Marshal(map[string]any{"model": e.model, "input": input})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.base+"/api/embed", bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("ollama embed: %w", err)
+		return nil, false, fmt.Errorf("ollama embed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama embed: status %d", resp.StatusCode)
+		over := resp.StatusCode == http.StatusBadRequest && strings.Contains(string(raw), "context length")
+		return nil, over, fmt.Errorf("ollama embed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
 	var out struct {
 		Embeddings [][]float32 `json:"embeddings"`
 		Error      string      `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("ollama decode: %w", err)
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, false, fmt.Errorf("ollama decode: %w", err)
 	}
 	if out.Error != "" {
-		return nil, fmt.Errorf("ollama embed: %s", out.Error)
+		return nil, false, fmt.Errorf("ollama embed: %s", out.Error)
 	}
 	if len(out.Embeddings) == 0 || len(out.Embeddings[0]) == 0 {
-		return nil, fmt.Errorf("ollama embed: empty embedding for model %q", e.model)
+		return nil, false, fmt.Errorf("ollama embed: empty embedding for model %q", e.model)
 	}
-	return out.Embeddings[0], nil
+	return out.Embeddings[0], false, nil
 }
 
 // vecLiteral formats a float32 slice as a pgvector text literal ("[0.1,0.2]").
