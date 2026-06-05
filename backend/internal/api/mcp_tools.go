@@ -39,6 +39,12 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpListSpaces)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_space",
+		Description: "Fetch a single space's metadata (id, name, slug) by id.",
+		Annotations: readOnly,
+	}, s.mcpGetSpace)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_pages",
 		Description: "Flat page listing in a space. Optional parent_id for direct children (omit for top-level pages).",
 		Annotations: readOnly,
@@ -173,6 +179,24 @@ func (s *Server) mcpListSpaces(ctx context.Context, req *mcp.CallToolRequest, _ 
 		out.Spaces[i] = mcpSpace{ID: sp.ID, Name: sp.Name, Slug: sp.Slug}
 	}
 	return nil, out, nil
+}
+
+// ---- get_space -----------------------------------------------------------
+
+type getSpaceIn struct {
+	ID int64 `json:"id" jsonschema:"space id"`
+}
+
+func (s *Server) mcpGetSpace(ctx context.Context, req *mcp.CallToolRequest, in getSpaceIn) (*mcp.CallToolResult, spaceOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), spaceOut{}, nil
+	}
+	sp, ae := s.getSpaceCore(ctx, u, k, in.ID)
+	if ae != nil {
+		return mcpErr(ae), spaceOut{}, nil
+	}
+	return nil, spaceOut{Space: sp}, nil
 }
 
 // ---- list_pages ----------------------------------------------------------

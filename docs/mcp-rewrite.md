@@ -481,14 +481,14 @@ Status of the full-functionality surface. ✅ done · ⬜ todo · 🟡 partial �
 - ✅ Write cores enqueue `rag.QueueReindex` (so MCP writes reindex too)
 - ⬜ **import_mira** — extract `importMiraCore`; keep SSRF allowlist + https-only + no-redirects; source_url XOR inline payload (payload as typed arg, not MaxBytesReader)
 - ⬜ **move_page** tool — IN. Extract `movePageCore` from `MovePage`; reparent / reorder / move across spaces (editor+ in both source and target space)
-- ⬜ **get_space** tool — IN. Single space fetch by id, membership-gated (extract `getSpaceCore`)
+- ✅ **get_space** tool — single space fetch by id, membership-gated (`getSpaceCore`)
 - 🟡 **import_markdown** — DEFERRED (decide later). `local_path` is meaningless on a remote server; if revived, redesign to take inline `{path, content}[]` and feed the existing bulk-import pipeline. Absent from the surface until then.
 
 ### Phase 2 — resources + links ✅ (on main)
 - ✅ `tela://page/{id}` resource template (read → markdown `# title\n\nbody`); re-parses `{id}` from `req.Params.URI`; membership-gated; failures collapse to `ResourceNotFoundError`
 - ✅ Resource links in tool results: get_page, create_page, search, semantic_search return `&mcp.ResourceLink` alongside structured output (via `mcpResultWithLinks`, preserving JSON text + structuredContent)
 - ✅ `mcpIdentity` generalized to any request (tools + resources share it)
-- ⬜ `tela://space/{id}` resource — IN. Read a space → metadata + child page list, membership-gated
+- ✅ `tela://space/{id}` resource — read a space → name + linked page index, membership-gated
 - ❌ **Resource notifications — NONE (firm).** `list_changed` is the wrong signal (it tracks the resource *set*; our page template is static, so it never changes — and the SDK only fires it on Add/Remove of SDK objects, not data changes). `resources/updated` + subscriptions (the real "this page's content changed" signal) is OUT: stateful per-session, thin host support, zero value for read-on-demand agents. **Clients get fresh content by re-reading `tela://page/{id}`.** Reconsider only if a host-side "watch this page" UX materializes.
 
 ### Phase 3 — prompts + completions + elicitation

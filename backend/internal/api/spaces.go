@@ -203,19 +203,33 @@ func (s *Server) GetSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := s.requireMembership(w, r, id); !ok {
+	u, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
-	sp, err := selectSpaceByID(r.Context(), s.DB, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "space not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch space failed")
+	k, _ := auth.APIKeyFromContext(r.Context())
+	sp, ae := s.getSpaceCore(r.Context(), u, k, id)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"space": sp})
+}
+
+// getSpaceCore is the transport-agnostic core behind GET /api/spaces/{id} and
+// the MCP get_space tool: membership-gated fetch of one space by id.
+func (s *Server) getSpaceCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64) (models.Space, *apiErr) {
+	if _, ae := s.membershipCore(ctx, u, k, id); ae != nil {
+		return models.Space{}, ae
+	}
+	sp, err := selectSpaceByID(ctx, s.DB, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Space{}, &apiErr{http.StatusNotFound, "not_found", "space not found"}
+	}
+	if err != nil {
+		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "fetch space failed"}
+	}
+	return sp, nil
 }
 
 func (s *Server) UpdateSpace(w http.ResponseWriter, r *http.Request) {

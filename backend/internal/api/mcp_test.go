@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -434,6 +435,28 @@ func TestMCP_Resources(t *testing.T) {
 	}
 	if !gotLink {
 		t.Fatalf("get_page result missing resource link: %+v", res.Content)
+	}
+
+	// get_space tool → metadata for the space.
+	var gs spaceOut
+	mcpCallJSON(t, ctx, sess, "get_space", map[string]any{"id": space}, &gs)
+	if gs.Space.ID != space || gs.Space.Slug != "docs" {
+		t.Fatalf("get_space: %+v", gs.Space)
+	}
+
+	// tela://space/{id} resource → markdown index linking the page.
+	sr, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tela://space/" + strconv.FormatInt(space, 10)})
+	if err != nil {
+		t.Fatalf("read space resource: %v", err)
+	}
+	wantLink := "[Alpha](tela://page/" + strconv.FormatInt(pageID, 10) + ")"
+	if len(sr.Contents) != 1 || !strings.Contains(sr.Contents[0].Text, "# Docs") || !strings.Contains(sr.Contents[0].Text, wantLink) {
+		t.Fatalf("space resource contents: %q", sr.Contents[0].Text)
+	}
+
+	// Cross-space space resource read → denied.
+	if _, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tela://space/" + strconv.FormatInt(bobSpace, 10)}); err == nil {
+		t.Fatalf("expected cross-space space-resource read to fail")
 	}
 }
 
