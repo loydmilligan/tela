@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ThemeSwitcher } from '../ThemeSwitcher'
+import { BrandMark } from '../BrandMark'
 
 // Shared chrome for the unauthenticated auth surfaces (login / register /
 // verify / forgot / reset). Mirrors the original login page layout so all the
@@ -12,8 +13,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <Link
           to="/login"
           aria-label="tela"
-          className="m-0 text-[length:var(--text-lg)] leading-[var(--leading-tight)] font-[family-name:var(--font-sans)] text-[var(--text-primary)] no-underline"
+          className="m-0 inline-flex items-center gap-[var(--space-2)] text-[length:var(--text-lg)] leading-[var(--leading-tight)] font-[family-name:var(--font-sans)] text-[var(--text-primary)] no-underline"
         >
+          <BrandMark size={22} />
           tela
         </Link>
         <ThemeSwitcher />
