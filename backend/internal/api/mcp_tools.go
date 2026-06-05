@@ -54,7 +54,10 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Title:       "Get page",
 		Description: "Full markdown body + metadata for a numeric page id.",
 		Annotations: readOnly,
-		Meta:        widgetToolMeta(uiPageReaderOpenAI, uiPageReaderMCPApp, "Renders the page as formatted markdown.", "Opening page…", "Page ready"),
+		// Widget _meta disabled again — the bridge renders in a spec-accurate
+		// harness but Claude's live iframe stays blank (its MCP-Apps transport
+		// differs from the published SEP-1865 handshake). Re-enable once verified
+		// against the real host. See widgetToolMeta / mcp_widgets.go.
 	}, s.mcpGetPage)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -69,7 +72,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Title:       "Search",
 		Description: "Ranked full-text search over title + body, snippet-highlighted. Optional space_id narrows to one space.",
 		Annotations: readOnly,
-		Meta:        widgetToolMeta(uiSearchOpenAI, uiSearchMCPApp, "Renders search hits as a clickable result list.", "Searching…", "Results ready"),
+		// Widget _meta disabled again — see get_page above / mcp_widgets.go.
 	}, s.mcpSearch)
 
 	mcp.AddTool(server, &mcp.Tool{
