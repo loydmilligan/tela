@@ -3,6 +3,7 @@ package mailer
 import (
 	"fmt"
 	"html"
+	"net/url"
 	"strings"
 )
 
@@ -52,6 +53,14 @@ func ResetPassword(to, username, resetURL string) Message {
 // button, the raw URL as a copy-paste fallback, and a footer note.
 func layoutHTML(heading, intro, ctaLabel, ctaURL, footer string) string {
 	h := html.EscapeString
+	// Logo: point at the deploying instance's own /icon-64.png (same origin as
+	// the CTA link), so it works for tela.cagdas.io and self-hosters alike. If
+	// the URL can't be parsed we fall back to the wordmark alone.
+	logo, spanMargin := "", ""
+	if o := originOf(ctaURL); o != "" {
+		logo = `<img src="` + h(o) + `/icon-64.png" width="26" height="26" alt="" style="vertical-align:middle;border-radius:7px;display:inline-block;">`
+		spanMargin = "margin-left:9px;"
+	}
 	return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:` + clrVoid + `;">
@@ -59,7 +68,7 @@ func layoutHTML(heading, intro, ctaLabel, ctaURL, footer string) string {
 <tr><td align="center">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:` + clrCard + `;border:1px solid ` + clrRule + `;border-radius:12px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <tr><td style="padding:28px 32px 0 32px;">
-      <span style="font-size:18px;font-weight:700;letter-spacing:-0.01em;color:` + clrText + `;">tela</span>
+      ` + logo + `<span style="font-size:18px;font-weight:700;letter-spacing:-0.01em;color:` + clrText + `;vertical-align:middle;` + spanMargin + `">tela</span>
     </td></tr>
     <tr><td style="padding:20px 32px 0 32px;">
       <h1 style="margin:0;font-size:22px;line-height:1.3;font-weight:650;color:` + clrText + `;">` + h(heading) + `</h1>
@@ -81,6 +90,16 @@ func layoutHTML(heading, intro, ctaLabel, ctaURL, footer string) string {
 </td></tr>
 </table>
 </body></html>`
+}
+
+// originOf returns scheme://host for a full URL, or "" when it can't be parsed.
+// Used to point the email logo at the deploying instance's own /icon-64.png.
+func originOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // layoutText is the plaintext alternative — same content, no markup.
