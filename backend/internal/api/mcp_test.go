@@ -509,19 +509,18 @@ func TestMCP_Resources(t *testing.T) {
 		t.Fatalf("expected cross-space resource read to fail")
 	}
 
-	// get_page tool result carries a resource link to the page.
+	// get_page tool result carries no ResourceLink content blocks — hosts (Claude)
+	// surface them as "Resource links are not currently supported" noise, and the
+	// data is already in structuredContent. The tela://page/{id} resource template
+	// (asserted above) remains the click-through / @-mention path.
 	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "get_page", Arguments: map[string]any{"id": pageID}})
 	if err != nil {
 		t.Fatalf("get_page: %v", err)
 	}
-	var gotLink bool
 	for _, c := range res.Content {
-		if rl, ok := c.(*mcp.ResourceLink); ok && rl.URI == "tela://page/"+strconv.FormatInt(pageID, 10) {
-			gotLink = true
+		if _, ok := c.(*mcp.ResourceLink); ok {
+			t.Fatalf("get_page result should not carry ResourceLink blocks: %+v", res.Content)
 		}
-	}
-	if !gotLink {
-		t.Fatalf("get_page result missing resource link: %+v", res.Content)
 	}
 
 	// get_space tool → metadata for the space.

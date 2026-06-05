@@ -14,19 +14,6 @@ import (
 	"github.com/zcag/tela/backend/internal/rag"
 )
 
-// mcpResultWithLinks builds a tool result that preserves the JSON-text rendering
-// the SDK auto-fills when Content is empty, then appends resource links so hosts
-// get click-through chips. The typed Out is still returned separately by the
-// handler and populates structuredContent regardless of Content.
-func mcpResultWithLinks(out any, links ...mcp.Content) *mcp.CallToolResult {
-	content := make([]mcp.Content, 0, len(links)+1)
-	if b, err := json.Marshal(out); err == nil {
-		content = append(content, &mcp.TextContent{Text: string(b)})
-	}
-	content = append(content, links...)
-	return &mcp.CallToolResult{Content: content}
-}
-
 // registerMCPTools wires the tela tool surface onto the MCP server. Each tool
 // reads identity from the request (mcpIdentity), calls the shared xCore that
 // also backs the REST route, and returns a typed Out so the SDK emits an output
@@ -340,7 +327,7 @@ func (s *Server) mcpGetPage(ctx context.Context, req *mcp.CallToolRequest, in ge
 	body, whole := mcpCapBody(p.Body)
 	p.Body = body
 	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p), Truncated: !whole}}
-	return mcpResultWithLinks(out, pageResourceLink(p.ID, p.Title)), out, nil
+	return nil, out, nil
 }
 
 // ---- list_backlinks ------------------------------------------------------
@@ -387,11 +374,7 @@ func (s *Server) mcpSearch(ctx context.Context, req *mcp.CallToolRequest, in sea
 		return mcpErr(ae), searchOut{}, nil
 	}
 	out := searchOut{Results: results}
-	links := make([]mcp.Content, 0, len(results))
-	for _, h := range results {
-		links = append(links, pageResourceLink(h.PageID, h.Title))
-	}
-	return mcpResultWithLinks(out, links...), out, nil
+	return nil, out, nil
 }
 
 // ---- search_bodies -------------------------------------------------------
@@ -449,16 +432,7 @@ func (s *Server) mcpSemanticSearch(ctx context.Context, req *mcp.CallToolRequest
 		return mcpErr(&apiErr{500, "internal", "semantic search failed"}), semanticSearchOut{}, nil
 	}
 	out := semanticSearchOut{Results: hits}
-	// One resource link per distinct page (chunks collapse to their page).
-	seen := make(map[int64]bool, len(hits))
-	links := make([]mcp.Content, 0, len(hits))
-	for _, h := range hits {
-		if !seen[h.PageID] {
-			seen[h.PageID] = true
-			links = append(links, pageResourceLink(h.PageID, h.Title))
-		}
-	}
-	return mcpResultWithLinks(out, links...), out, nil
+	return nil, out, nil
 }
 
 // ---- read_chunk ----------------------------------------------------------
@@ -557,7 +531,7 @@ func (s *Server) mcpCreatePage(ctx context.Context, req *mcp.CallToolRequest, in
 		return mcpErr(ae), getPageOut{}, nil
 	}
 	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
-	return mcpResultWithLinks(out, pageResourceLink(p.ID, p.Title)), out, nil
+	return nil, out, nil
 }
 
 // ---- update_page ---------------------------------------------------------
@@ -581,7 +555,7 @@ func (s *Server) mcpUpdatePage(ctx context.Context, req *mcp.CallToolRequest, in
 		return mcpErr(ae), getPageOut{}, nil
 	}
 	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
-	return mcpResultWithLinks(out, pageResourceLink(p.ID, p.Title)), out, nil
+	return nil, out, nil
 }
 
 // ---- delete_page ---------------------------------------------------------
@@ -651,7 +625,7 @@ func (s *Server) mcpMovePage(ctx context.Context, req *mcp.CallToolRequest, in m
 		return mcpErr(ae), getPageOut{}, nil
 	}
 	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
-	return mcpResultWithLinks(out, pageResourceLink(p.ID, p.Title)), out, nil
+	return nil, out, nil
 }
 
 // ---- add_comment ---------------------------------------------------------
@@ -789,7 +763,7 @@ func (s *Server) mcpImportMira(ctx context.Context, req *mcp.CallToolRequest, in
 		return mcpErr(ae), getPageOut{}, nil
 	}
 	out := getPageOut{Page: mcpPage{Page: page, URL: mcpPageURL(page)}}
-	return mcpResultWithLinks(out, pageResourceLink(page.ID, page.Title)), out, nil
+	return nil, out, nil
 }
 
 // ---- submit_feedback (any scope, no mcpRequireWrite) ---------------------
