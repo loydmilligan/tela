@@ -1,0 +1,145 @@
+---
+import Prose from '../layouts/Prose.astro';
+
+// Tool roster mirrors backend/internal/api/mcp_tools.go (20 tools, 10 read / 10
+// write). Keep in sync when the tool surface changes.
+const readTools = [
+  ['list_spaces', 'List the spaces you can access.'],
+  ['get_space', 'Read a space and its metadata.'],
+  ['list_pages', 'List pages in a space, as a tree.'],
+  ['get_page', 'Read a page (canonical markdown).'],
+  ['list_backlinks', 'Pages that link to a given page.'],
+  ['read_chunk', 'Read a slice of a large page.'],
+  ['search', 'Full-text search across pages.'],
+  ['search_bodies', 'Search returning matching page bodies.'],
+  ['semantic_search', 'Vector search over page content.'],
+  ['fetch', 'Fetch a document by id (Deep Research).'],
+];
+const writeTools = [
+  ['create_space', 'Create a new space.'],
+  ['update_space', 'Rename or edit a space.'],
+  ['delete_space', 'Delete a space.'],
+  ['create_page', 'Create a page from markdown.'],
+  ['update_page', 'Edit a page body or title.'],
+  ['move_page', 'Re-parent or reorder a page.'],
+  ['delete_page', 'Delete a page.'],
+  ['add_comment', 'Comment on a page.'],
+  ['import_mira', 'Import an external URL as a page.'],
+  ['submit_feedback', 'Send feedback to the maintainers.'],
+];
+---
+
+<Prose
+  title="tela MCP server — docs"
+  description="Connect Claude, ChatGPT or any MCP client to tela: a markdown wiki your agents can read, search and write over HTTP with OAuth."
+  kicker="Documentation"
+  heading="The tela MCP server"
+  updated="June 5, 2026"
+>
+  <p class="lead">
+    tela ships a built-in <a href="https://modelcontextprotocol.io">Model Context
+    Protocol</a> server, so AI agents are first-class users of your wiki — they
+    read, search, and write the same markdown your team does. This page is the
+    public reference for connecting to it.
+  </p>
+
+  <h2>Endpoint</h2>
+  <dl>
+    <dt>URL</dt>
+    <dd><code>https://tela.cagdas.io/api/mcp</code></dd>
+    <dt>Transport</dt>
+    <dd>Streamable HTTP (the current MCP transport; SSE is not used).</dd>
+    <dt>Auth</dt>
+    <dd>OAuth 2.1 with PKCE (via WorkOS AuthKit), or a Personal Access Token as a bearer header.</dd>
+  </dl>
+
+  <h2>Connecting</h2>
+
+  <h3>Claude</h3>
+  <p>
+    In Claude, add tela as a custom connector and point it at the endpoint URL
+    above. Claude runs the OAuth flow — you sign in to tela and consent, and the
+    tools become available in chat. No manual token handling.
+  </p>
+
+  <h3>ChatGPT</h3>
+  <p>
+    In ChatGPT's connector / Developer Mode settings, add a connector with the
+    endpoint URL above and complete the OAuth sign-in. tela also exposes the
+    <code>search</code> + <code>fetch</code> pair used by Deep Research.
+  </p>
+
+  <h3>Any MCP client (npm proxy)</h3>
+  <p>
+    For stdio-based hosts, the published <code>tela-mcp</code> package is a thin
+    proxy that forwards stdio to the HTTP endpoint with your token:
+  </p>
+  <pre tabindex="0" aria-label="tela-mcp client configuration"><code>{`{
+  "mcpServers": {
+    "tela": {
+      "command": "npx",
+      "args": ["-y", "tela-mcp"],
+      "env": {
+        "TELA_URL": "https://tela.cagdas.io",
+        "TELA_TOKEN": "<your personal access token>"
+      }
+    }
+  }
+}`}</code></pre>
+  <p>
+    Modern hosts that speak Streamable HTTP can skip the proxy and connect to
+    <code>/api/mcp</code> directly.
+  </p>
+
+  <h2>Tools</h2>
+  <p>
+    Twenty tools, with read and write cleanly separated. Every tool carries a
+    human-readable title and read/write annotations; writes are scoped by your
+    token's permissions.
+  </p>
+
+  <h3>Read</h3>
+  <ul class="tool-grid">
+    {readTools.map(([name, desc]) => (
+      <li><code>{name}</code><span class="desc">{desc}</span></li>
+    ))}
+  </ul>
+
+  <h3>Write</h3>
+  <ul class="tool-grid">
+    {writeTools.map(([name, desc]) => (
+      <li><code>{name}</code><span class="desc">{desc}</span></li>
+    ))}
+  </ul>
+
+  <h2>Resources</h2>
+  <p>tela exposes pages and spaces as MCP resource templates, so agents can reference them by URI:</p>
+  <ul>
+    <li><code>tela://page/&#123;id&#125;</code> — a page by id.</li>
+    <li><code>tela://space/&#123;id&#125;</code> — a space by id.</li>
+  </ul>
+
+  <h2>Interactive widgets</h2>
+  <p>
+    On hosts that support MCP Apps / interactive UI, tela returns two embedded
+    widgets — a <strong>page reader</strong> and <strong>search-results
+    cards</strong> — so results render as interactive components instead of raw
+    text.
+  </p>
+
+  <h2>Permissions &amp; safety</h2>
+  <ul>
+    <li>Agent tool calls run with your account's permissions — an agent can only touch what you can.</li>
+    <li>Write tools are gated separately from read tools; read-only connections never mutate content.</li>
+    <li>Page bodies are canonical markdown — what an agent writes is exactly what your team sees.</li>
+    <li>See the <a href="/privacy">privacy policy</a> for what is collected and shared.</li>
+  </ul>
+
+  <h2>Source &amp; support</h2>
+  <p>
+    tela is open-source at
+    <a href="https://github.com/zcag/tela">github.com/zcag/tela</a>; the MCP
+    proxy is <a href="https://www.npmjs.com/package/tela-mcp">tela-mcp</a> on
+    npm. Questions: <a href="mailto:robot@cagdas.io">robot@cagdas.io</a>.
+  </p>
+</Prose>

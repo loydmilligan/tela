@@ -1,0 +1,177 @@
+---
+// Prose — shared layout for standalone long-form pages (privacy, MCP docs).
+// Reuses Base (head/SEO/theme) + the site header/footer, and supplies a
+// token-driven reading column. Token-only: no raw hex / off-scale values
+// (the landing-gate enforces it). Pages pass title + description for <head>.
+import Base from './Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  heading: string;
+  kicker: string;
+  updated: string;
+}
+
+const { title, description, heading, kicker, updated } = Astro.props;
+---
+
+<Base title={title} description={description}>
+  <SiteHeader />
+  <main id="main" class="prose-page">
+    <header class="prose-head">
+      <p class="kicker">{kicker}</p>
+      <h1>{heading}</h1>
+      <p class="updated">Last updated {updated}</p>
+    </header>
+    <div class="prose">
+      <slot />
+    </div>
+  </main>
+  <SiteFooter />
+</Base>
+
+<style>
+  .prose-page {
+    max-width: var(--col-max);
+    margin-inline: auto;
+    padding: 5rem var(--space-gutter) var(--section-y);
+  }
+  .prose-head {
+    max-width: var(--measure);
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-kicker);
+    text-transform: uppercase;
+    color: var(--brand);
+    margin-bottom: 1rem;
+  }
+  .prose-head h1 {
+    font-size: var(--text-4xl);
+    letter-spacing: var(--tracking-display);
+    line-height: var(--leading-tight);
+  }
+  .updated {
+    margin-top: 1rem;
+    font-size: var(--text-sm);
+    color: var(--fg-faint);
+  }
+
+  .prose {
+    max-width: var(--measure);
+    color: var(--fg-soft);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+  }
+</style>
+
+<style is:global>
+  /* Prose element styling — scoped under .prose so it only touches long-form
+     pages. Token-only (color + spacing on the 4px grid). */
+  .prose :where(h2) {
+    font-size: var(--text-2xl);
+    color: var(--fg);
+    margin-top: 3.5rem;
+    margin-bottom: 1rem;
+    scroll-margin-top: 5rem;
+  }
+  .prose :where(h3) {
+    font-size: var(--text-xl);
+    color: var(--fg);
+    margin-top: 2.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .prose :where(p) { margin-bottom: 1.25rem; }
+  .prose :where(ul, ol) {
+    margin-bottom: 1.25rem;
+    padding-left: 1.5rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .prose :where(li) { padding-left: 0.25rem; }
+  .prose :where(ul) { list-style: disc; }
+  .prose :where(ol) { list-style: decimal; }
+  .prose :where(li)::marker { color: var(--fg-faint); }
+  .prose :where(strong) { color: var(--fg); font-weight: 600; }
+  /* Inline links sit inside body text, so they must be distinguishable without
+     relying on color (WCAG 1.4.1) — underline them. */
+  .prose :where(a) { color: var(--brand); text-decoration: underline; text-underline-offset: 0.18em; }
+  .prose :where(a:hover) { color: var(--brand-strong); }
+  .prose :where(code) {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--border);
+  }
+  .prose :where(.lead) {
+    font-size: var(--text-lg);
+    color: var(--fg);
+    margin-bottom: 2rem;
+  }
+  .prose :where(.note) {
+    margin: 2rem 0;
+    padding: 1.25rem 1.5rem;
+    background: var(--surface-sunk);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--brand);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+  }
+  .prose :where(.note p:last-child) { margin-bottom: 0; }
+  .prose :where(.tool-grid) {
+    display: grid;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding-left: 0;
+    list-style: none;
+    grid-template-columns: 1fr;
+  }
+  .prose :where(.tool-grid li) {
+    padding: 0.875rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+  }
+  .prose :where(.tool-grid code) {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--brand-strong);
+    font-size: var(--text-sm);
+  }
+  .prose :where(.tool-grid .desc) { color: var(--fg-faint); display: block; margin-top: 0.25rem; }
+  @media (min-width: 640px) {
+    .prose :where(.tool-grid) { grid-template-columns: 1fr 1fr; }
+  }
+  .prose :where(pre) {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    overflow-x: auto;
+    font-size: var(--text-sm);
+    line-height: var(--leading-code);
+    margin-bottom: 1.5rem;
+  }
+  .prose :where(pre code) {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+  }
+  .prose :where(dl) { margin-bottom: 1.25rem; }
+  .prose :where(dt) { color: var(--fg); font-weight: 600; margin-top: 1rem; }
+  .prose :where(dd) { margin-left: 0; margin-bottom: 0.5rem; }
+</style>
