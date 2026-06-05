@@ -305,6 +305,29 @@ func TestMCP_WriteTools(t *testing.T) {
 		t.Fatalf("update_page: %+v", up.Page)
 	}
 
+	// create a second page, then move_page it under the first (reparent).
+	var pg2 getPageOut
+	mcpCallJSON(t, ctx, sess, "create_page", map[string]any{"space_id": spaceID, "title": "Child", "body": "c"}, &pg2)
+	var mv getPageOut
+	mcpCallJSON(t, ctx, sess, "move_page", map[string]any{"id": pg2.Page.ID, "parent_id": pageID}, &mv)
+	if mv.Page.ParentID == nil || *mv.Page.ParentID != pageID {
+		t.Fatalf("move_page reparent: %+v", mv.Page)
+	}
+	// move_page detach back to root.
+	var mv2 getPageOut
+	mcpCallJSON(t, ctx, sess, "move_page", map[string]any{"id": pg2.Page.ID, "make_root": true}, &mv2)
+	if mv2.Page.ParentID != nil {
+		t.Fatalf("move_page make_root: %+v", mv2.Page)
+	}
+	// parent_id + make_root together is rejected.
+	if res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "move_page", Arguments: map[string]any{
+		"id": pg2.Page.ID, "parent_id": pageID, "make_root": true,
+	}}); err != nil {
+		t.Fatalf("move_page conflict call: %v", err)
+	} else if !res.IsError {
+		t.Fatalf("expected parent_id+make_root to be rejected")
+	}
+
 	// add_comment (root, anchored).
 	var cm addCommentOut
 	mcpCallJSON(t, ctx, sess, "add_comment", map[string]any{

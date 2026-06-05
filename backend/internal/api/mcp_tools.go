@@ -108,6 +108,12 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpDeletePage)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "move_page",
+		Description: "Move a page: reparent (parent_id), detach to top-level (make_root), reorder (position), and/or relocate to another space (space_id). Editor+ in both source and target space. Provide at least one of space_id / parent_id / make_root / position.",
+		Annotations: &mcp.ToolAnnotations{},
+	}, s.mcpMovePage)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_comment",
 		Description: "Attach a root comment to a page, anchored by a {prefix, exact, suffix} text triplet (editor+).",
 		Annotations: &mcp.ToolAnnotations{},
@@ -465,7 +471,8 @@ func (s *Server) mcpUpdatePage(ctx context.Context, req *mcp.CallToolRequest, in
 	if ae != nil {
 		return mcpErr(ae), getPageOut{}, nil
 	}
-	return nil, getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}, nil
+	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
+	return mcpResultWithLinks(out, pageResourceLink(p.ID, p.Title)), out, nil
 }
 
 // ---- delete_page ---------------------------------------------------------
@@ -490,6 +497,52 @@ func (s *Server) mcpDeletePage(ctx context.Context, req *mcp.CallToolRequest, in
 		return mcpErr(ae), okOut{}, nil
 	}
 	return nil, okOut{OK: true}, nil
+}
+
+// ---- move_page -----------------------------------------------------------
+
+type movePageIn struct {
+	ID       int64  `json:"id" jsonschema:"page to move"`
+	SpaceID  *int64 `json:"space_id,omitempty" jsonschema:"relocate to this space (omit to keep)"`
+	ParentID *int64 `json:"parent_id,omitempty" jsonschema:"new parent page id (omit to keep; mutually exclusive with make_root)"`
+	MakeRoot bool   `json:"make_root,omitempty" jsonschema:"detach to top-level (mutually exclusive with parent_id)"`
+	Position *int64 `json:"position,omitempty" jsonschema:"new 0-based position among siblings (omit to keep)"`
+}
+
+func (s *Server) mcpMovePage(ctx context.Context, req *mcp.CallToolRequest, in movePageIn) (*mcp.CallToolResult, getPageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), getPageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	if in.MakeRoot && in.ParentID != nil {
+		return mcpErr(&apiErr{400, "bad_request", "parent_id and make_root are mutually exclusive"}), getPageOut{}, nil
+	}
+	var mv pageMoveParams
+	if in.SpaceID != nil {
+		mv.SpaceIDSet = true
+		mv.NewSpaceID = *in.SpaceID
+	}
+	switch {
+	case in.MakeRoot:
+		mv.ParentIDSet = true
+		mv.ParentIDIsNull = true
+	case in.ParentID != nil:
+		mv.ParentIDSet = true
+		mv.NewParentID = *in.ParentID
+	}
+	if in.Position != nil {
+		mv.PositionSet = true
+		mv.NewPosition = *in.Position
+	}
+	p, ae := s.movePageCore(ctx, u, k, in.ID, mv)
+	if ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
+	return mcpResultWithLinks(out, pageResourceLink(p.ID, p.Title)), out, nil
 }
 
 // ---- add_comment ---------------------------------------------------------

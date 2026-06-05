@@ -480,7 +480,7 @@ Status of the full-functionality surface. ✅ done · ⬜ todo · 🟡 partial �
 - ✅ All via shared `xCore` funcs (REST + MCP); typed output schemas; annotations; per-tool scope
 - ✅ Write cores enqueue `rag.QueueReindex` (so MCP writes reindex too)
 - ⬜ **import_mira** — extract `importMiraCore`; keep SSRF allowlist + https-only + no-redirects; source_url XOR inline payload (payload as typed arg, not MaxBytesReader)
-- ⬜ **move_page** tool — IN. Extract `movePageCore` from `MovePage`; reparent / reorder / move across spaces (editor+ in both source and target space)
+- ✅ **move_page** tool — `movePageCore` extracted from `MovePage`; reparent / make_root / reorder / relocate across spaces (editor+ both spaces, cycle check)
 - ✅ **get_space** tool — single space fetch by id, membership-gated (`getSpaceCore`)
 - 🟡 **import_markdown** — DEFERRED (decide later). `local_path` is meaningless on a remote server; if revived, redesign to take inline `{path, content}[]` and feed the existing bulk-import pipeline. Absent from the surface until then.
 

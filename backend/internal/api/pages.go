@@ -615,6 +615,22 @@ func (s *Server) deletePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	return nil
 }
 
+// pageMoveParams is the normalized move request shared by the REST MovePage
+// handler and the MCP move_page tool. Each "Set" flag distinguishes "field
+// omitted" from "field provided" so parent_id can be set to null (detach to
+// root) distinctly from "leave parent unchanged".
+type pageMoveParams struct {
+	SpaceIDSet bool
+	NewSpaceID int64
+
+	ParentIDSet    bool
+	ParentIDIsNull bool
+	NewParentID    int64
+
+	PositionSet bool
+	NewPosition int64
+}
+
 func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDParam(w, r, "id")
 	if !ok {
@@ -631,115 +647,107 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaceIDSet := false
-	var newSpaceID int64
+	var mv pageMoveParams
 	if v, ok := rawMap["space_id"]; ok {
-		spaceIDSet = true
-		if err := json.Unmarshal(v, &newSpaceID); err != nil || newSpaceID <= 0 {
+		mv.SpaceIDSet = true
+		if err := json.Unmarshal(v, &mv.NewSpaceID); err != nil || mv.NewSpaceID <= 0 {
 			writeError(w, http.StatusBadRequest, "invalid_space_id", "space_id must be a positive integer")
 			return
 		}
 	}
-	parentIDSet := false
-	parentIDIsNull := false
-	var newParentID int64
 	if v, ok := rawMap["parent_id"]; ok {
-		parentIDSet = true
+		mv.ParentIDSet = true
 		if string(v) == "null" {
-			parentIDIsNull = true
-		} else {
-			if err := json.Unmarshal(v, &newParentID); err != nil || newParentID <= 0 {
-				writeError(w, http.StatusBadRequest, "invalid_parent_id", "parent_id must be a positive integer or null")
-				return
-			}
+			mv.ParentIDIsNull = true
+		} else if err := json.Unmarshal(v, &mv.NewParentID); err != nil || mv.NewParentID <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_parent_id", "parent_id must be a positive integer or null")
+			return
 		}
 	}
-	positionSet := false
-	var newPosition int64
 	if v, ok := rawMap["position"]; ok {
-		positionSet = true
-		if err := json.Unmarshal(v, &newPosition); err != nil || newPosition < 0 {
+		mv.PositionSet = true
+		if err := json.Unmarshal(v, &mv.NewPosition); err != nil || mv.NewPosition < 0 {
 			writeError(w, http.StatusBadRequest, "invalid_position", "position must be a non-negative integer")
 			return
 		}
 	}
-	if !spaceIDSet && !parentIDSet && !positionSet {
-		writeError(w, http.StatusBadRequest, "no_fields", "at least one of space_id, parent_id, position must be provided")
+
+	k, _ := auth.APIKeyFromContext(r.Context())
+	moved, ae := s.movePageCore(r.Context(), u, k, id, mv)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"page": moved})
+}
 
-	ctx := r.Context()
+// movePageCore is the transport-agnostic core behind POST /api/pages/{id}/move
+// and the MCP move_page tool: reparent / reorder / relocate a page (and its
+// subtree) under editor+ membership in both the source and target space, with
+// cycle detection and sibling renumbering.
+func (s *Server) movePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, mv pageMoveParams) (models.Page, *apiErr) {
+	if !mv.SpaceIDSet && !mv.ParentIDSet && !mv.PositionSet {
+		return models.Page{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of space_id, parent_id, position must be provided"}
+	}
+
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
 	page, err := selectPageByIDTx(ctx, tx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Collapse missing-page to 403 so non-members cannot tell
-		// "exists in another space" from "truly gone".
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
-	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
-		return
+	if ae := apiKeySpaceScopeErr(k, page.SpaceID); ae != nil {
+		return models.Page{}, ae
 	}
 
 	sourceRole, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
 	}
 	if !canEdit(sourceRole) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
-		return
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
 
 	targetSpaceID := page.SpaceID
-	if spaceIDSet {
-		targetSpaceID = newSpaceID
+	if mv.SpaceIDSet {
+		targetSpaceID = mv.NewSpaceID
 		if err := verifySpaceExistsTx(ctx, tx, targetSpaceID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusBadRequest, "space_not_found", "target space does not exist")
-				return
+				return models.Page{}, &apiErr{http.StatusBadRequest, "space_not_found", "target space does not exist"}
 			}
-			writeError(w, http.StatusInternalServerError, "internal", "lookup target space failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup target space failed"}
 		}
 		if targetSpaceID != page.SpaceID {
-			if !enforceAPIKeySpaceScope(w, r, targetSpaceID) {
-				return
+			if ae := apiKeySpaceScopeErr(k, targetSpaceID); ae != nil {
+				return models.Page{}, ae
 			}
 			targetRole, err := spaceRoleTx(ctx, tx, u.ID, targetSpaceID)
 			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusForbidden, "forbidden", "not a member of target space")
-				return
+				return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member of target space"}
 			}
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal", "lookup target membership failed")
-				return
+				return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup target membership failed"}
 			}
 			if !canEdit(targetRole) {
-				writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required in target space")
-				return
+				return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required in target space"}
 			}
 		}
 	}
 
 	var targetParentID *int64
-	if parentIDSet {
-		if !parentIDIsNull {
-			parent := newParentID
+	if mv.ParentIDSet {
+		if !mv.ParentIDIsNull {
+			parent := mv.NewParentID
 			targetParentID = &parent
 		}
 	} else {
@@ -751,23 +759,18 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 		err := tx.QueryRowContext(ctx,
 			`SELECT space_id FROM pages WHERE id = $1`, *targetParentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusBadRequest, "parent_not_found", "parent page does not exist")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "parent_not_found", "parent page does not exist"}
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "lookup parent failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup parent failed"}
 		}
 		if parentSpaceID != targetSpaceID {
-			writeError(w, http.StatusBadRequest, "parent_space_mismatch", "parent page is in a different space")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "parent_space_mismatch", "parent page is in a different space"}
 		}
 		if cyclic, err := wouldCreateCycle(ctx, tx, id, *targetParentID); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "cycle check failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "cycle check failed"}
 		} else if cyclic {
-			writeError(w, http.StatusBadRequest, "cycle", "move would create a cycle")
-			return
+			return models.Page{}, &apiErr{http.StatusBadRequest, "cycle", "move would create a cycle"}
 		}
 	}
 
@@ -775,13 +778,12 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 
 	newSiblingIDs, err := siblingIDsExcluding(ctx, tx, targetSpaceID, targetParentID, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "list new siblings failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "list new siblings failed"}
 	}
 
 	insertAt := int64(len(newSiblingIDs))
-	if positionSet && newPosition < insertAt {
-		insertAt = newPosition
+	if mv.PositionSet && mv.NewPosition < insertAt {
+		insertAt = mv.NewPosition
 	}
 
 	finalList := make([]int64, 0, len(newSiblingIDs)+1)
@@ -792,50 +794,43 @@ func (s *Server) MovePage(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE pages SET space_id = $1, parent_id = $2, updated_at = tela_now() WHERE id = $3`,
 		targetSpaceID, nullableInt64(targetParentID), id); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "move page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "move page failed"}
 	}
 
 	if page.SpaceID != targetSpaceID {
 		if err := updateDescendantsSpaceID(ctx, tx, id, targetSpaceID); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "propagate space_id to descendants failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "propagate space_id to descendants failed"}
 		}
 	}
 
 	for i, sid := range finalList {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE pages SET position = $1 WHERE id = $2`, int64(i), sid); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "renumber new siblings failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "renumber new siblings failed"}
 		}
 	}
 
 	if !sameGroup {
 		oldSiblingIDs, err := siblingIDsExcluding(ctx, tx, page.SpaceID, page.ParentID, id)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "list old siblings failed")
-			return
+			return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "list old siblings failed"}
 		}
 		for i, sid := range oldSiblingIDs {
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE pages SET position = $1 WHERE id = $2`, int64(i), sid); err != nil {
-				writeError(w, http.StatusInternalServerError, "internal", "renumber old siblings failed")
-				return
+				return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "renumber old siblings failed"}
 			}
 		}
 	}
 
 	moved, err := selectPageByIDTx(ctx, tx, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch moved page failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "fetch moved page failed"}
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"page": moved})
+	return moved, nil
 }
 
 func buildPageTree(ctx context.Context, db *sql.DB, spaceID int64) ([]*pageNode, error) {
