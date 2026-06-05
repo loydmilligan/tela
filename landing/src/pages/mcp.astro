@@ -135,11 +135,37 @@ const writeTools = [
     <li>See the <a href="/privacy">privacy policy</a> for what is collected and shared.</li>
   </ul>
 
-  <h2>Source &amp; support</h2>
+  <h2>Limitations</h2>
+  <ul>
+    <li><strong>Semantic search needs an embedder.</strong> <code>semantic_search</code> and <code>read_chunk</code> return <code>503</code> if the instance has no embedding model configured. Full-text <code>search</code> and <code>search_bodies</code> always work.</li>
+    <li><strong>Large pages are capped.</strong> <code>get_page</code> and <code>fetch</code> truncate bodies beyond ~80k characters and set <code>truncated: true</code>; read specific sections with <code>semantic_search</code> + <code>read_chunk</code>.</li>
+    <li><strong>Writes need editor permission.</strong> Create/update/delete tools require editor access on the target space; a read-scoped token or a viewer account can't write.</li>
+    <li><strong>import_mira is allowlisted.</strong> It fetches only operator-configured hosts over HTTPS, server-side, following no redirects.</li>
+  </ul>
+
+  <h2>Troubleshooting</h2>
+  <dl>
+    <dt>Connect fails / "couldn't register"</dt>
+    <dd>The host couldn't complete OAuth. Re-add the connector with the exact URL <code>https://tela.cagdas.io/api/mcp</code>, then sign in and consent when the tela login screen appears.</dd>
+    <dt>401 / tools don't appear</dt>
+    <dd>The token is missing or invalid. For the OAuth flow, reconnect; for the npm proxy, check <code>TELA_TOKEN</code> is a current Personal Access Token.</dd>
+    <dt>Tool returns <code>503 rag_disabled</code></dt>
+    <dd>Semantic search isn't configured on this instance — use <code>search</code> / <code>search_bodies</code> instead.</dd>
+    <dt>A page comes back truncated</dt>
+    <dd>Expected for very large pages (<code>truncated: true</code>). Use <code>semantic_search</code> to find the relevant section, then <code>read_chunk</code>.</dd>
+    <dt>Write tool returns a permission error</dt>
+    <dd>Your account or token lacks editor access to that space.</dd>
+  </dl>
+  <p>Still stuck? Email <a href="mailto:robot@cagdas.io">robot@cagdas.io</a> or open an issue on <a href="https://github.com/zcag/tela">GitHub</a>.</p>
+
+  <h2>Source, support &amp; security</h2>
   <p>
     tela is open-source at
     <a href="https://github.com/zcag/tela">github.com/zcag/tela</a>; the MCP
     proxy is <a href="https://www.npmjs.com/package/tela-mcp">tela-mcp</a> on
-    npm. Questions: <a href="mailto:robot@cagdas.io">robot@cagdas.io</a>.
+    npm. Questions and support: <a href="mailto:robot@cagdas.io">robot@cagdas.io</a>.
+    Report security vulnerabilities privately to
+    <a href="mailto:robot@cagdas.io">robot@cagdas.io</a> — please don't open a
+    public issue for security reports.
   </p>
 </Prose>

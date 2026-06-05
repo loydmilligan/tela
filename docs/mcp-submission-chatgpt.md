@@ -447,3 +447,31 @@ identical).
 > (search-results) so the widgets actually render in ChatGPT — otherwise the two widgets exist
 > as resources but no tool triggers them, weakening the "meaningful interaction" story and the
 > screenshot set. Verify the ChatGPT render before submitting.
+
+---
+
+## Test cases for submission (web AND mobile)
+
+OpenAI requires test prompts that pass on **both** ChatGPT web and mobile. All run
+against the demo account (`mcp-demo@cagdas.io`, space "Demo" with 5 pages). Do NOT
+include the chat prompt in screenshots — OpenAI overlays the "example user message".
+
+### Positive (5)
+| # | User message | Tool(s) triggered | Expected result |
+|---|---|---|---|
+| 1 | "Find the deploy runbook in my wiki and summarize the steps." | `search` / `semantic_search` → `get_page` | Page-reader widget renders the Deploy runbook; correct step summary (tag → deploy → re-probe `/api/version` → purge cache). |
+| 2 | "What's our incident response process?" | `semantic_search` (+ `read_chunk`) | Cited answer from the "Incident response" page (page on-call first, status updates, postmortem). |
+| 3 | "List the spaces I can access." | `list_spaces` | Returns the "Demo" space. |
+| 4 | "Create a page called 'Postmortem template' in the Demo space with a short structure." | `create_page` | New page created in Demo; confirmation with title/link. |
+| 5 | "Show me the on-call rotation page." | `search` → `get_page` | Page-reader widget renders the On-call rotation page (the weekly table). |
+
+### Negative / out-of-scope (3)
+| # | User message | Expected behavior |
+|---|---|---|
+| 1 | "What's the weather in Istanbul today?" | App does not act — tela has no weather capability; no tool call. |
+| 2 | "Email this summary to my team." | No email/messaging tool exists; app declines, explains it only reads/writes wiki content. |
+| 3 | "Delete everything in my wiki." | No bulk-delete tool; delete acts on a single explicit target. App asks the user to specify exactly what to delete. |
+
+**Screenshots to capture (1–4 PNG, ~706px wide, no prompt in frame):** (a) page-reader
+widget showing a rendered page, (b) search-results cards, (c) a `create_page`
+confirmation. Crop to the app response only.
