@@ -523,10 +523,14 @@ self-hosters can stay PAT-only.
 - ✅ Gated on `TELA_WORKOS_ISSUER` (`Server.oauth` / `loadMCPOAuth`); unit-tested with a local RSA keypair + in-test JWKS (PAT still works, valid JWT connects, wrong-aud rejected, PRM 404-when-disabled).
 - ✅ Env wired: `.env.example` + `docker-compose.yml` (`TELA_WORKOS_ISSUER` / `TELA_MCP_RESOURCE` / `WORKOS_API_KEY` / `WORKOS_CLIENT_ID`).
 
-**5b — login bridge + dashboard (needs the WorkOS account; touches login):**
-- ⬜ **WorkOS dashboard setup (Cagdas's action — see checklist below).**
-- ⬜ Standalone login bridge: tela's login accepts `external_auth_id`, authenticates the user (reuse existing login), then `POST https://api.workos.com/authkit/oauth2/complete` with `{external_auth_id, user:{id,email,…}}`. Touches FE login + a backend handler.
-- ⬜ End-to-end: decode a real WorkOS token (confirm claim keys / signing alg — flagged unknowns), then click "Connect" in Claude.ai/ChatGPT.
+**5b — login bridge (code ✅; dashboard + enable pending):**
+- ✅ Standalone login bridge `GET /oauth/workos/login` (`WorkOSLogin` + `completeStandalone` in `mcp_oauth.go`): reads `external_auth_id`, authenticates via tela's session (bounces through `/login?next=` when absent), POSTs `{external_auth_id, user:{id,email}}` to `…/authkit/oauth2/complete` (Bearer `WORKOS_API_KEY`), redirects to the returned `redirect_uri`. `sub` = tela user id.
+- ✅ FE: `login.tsx` hard-redirects (`window.location`) for `/oauth/*` next paths (backend route, not SPA). Route + `IsPublicPath` + Caddy `/oauth/*` added.
+- ✅ Tested: missing eid → 400, no-session → `/login` bounce, authed+email → mocked complete → redirect (body carries sub=tela id + email).
+- ✅ Creds in hand (staging): issuer `pleasing-puzzle-31-staging.authkit.app`, api key, client id — saved to `~/Sync/.secrets/workos.env`; issuer/jwks confirmed against the AS discovery doc.
+- ⬜ **WorkOS dashboard (Cagdas):** Connect → Configuration → **Login URI** = `https://tela.cagdas.io/oauth/workos/login`; add **Resource Indicator** `https://tela.cagdas.io/api/mcp`; enable **DCR + CIMD**; register redirect URIs (claude.ai/claude.com/chatgpt).
+- ⬜ Set the 4 env vars on archer `deploy/.env` + recreate → enable OAuth on prod.
+- ⬜ End-to-end: click "Connect" in Claude.ai; decode a real token to confirm claim keys / signing alg.
 
 **WorkOS dashboard checklist (Cagdas):**
 1. Create WorkOS account + an AuthKit project (free ≤ 1M MAU; MCP OAuth connections are free).

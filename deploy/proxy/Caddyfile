@@ -39,6 +39,14 @@
 		reverse_proxy backend:8080
 	}
 
+	# WorkOS Standalone login bridge (MCP OAuth Connect flow). New top-level path
+	# → route to the backend, which authenticates via tela's session and completes
+	# the OAuth dance. The /login bounce it issues falls through to the SPA. noindex.
+	handle /oauth/* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy backend:8080
+	}
+
 	# #3 ".pdf on a share URL" trick → server-rendered PDF. These MUST precede the
 	# /share/* OG/SPA handlers below so the pretty URL lands on the backend, which
 	# rewrites it to the public /api/share/{token}/pdf endpoint (descendant pages

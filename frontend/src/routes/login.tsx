@@ -43,6 +43,13 @@ export function LoginPage() {
     try {
       await login.mutateAsync({ identifier: id, password })
       const next = sanitizeNextPath(search.next) ?? '/'
+      // The WorkOS OAuth bridge (/oauth/workos/login) is a BACKEND route, not an
+      // SPA route — hard-navigate so the browser hits the server (which completes
+      // the Connect flow), not the client router.
+      if (next.startsWith('/oauth/')) {
+        window.location.assign(next)
+        return
+      }
       // Cast: `next` is an in-app path validated by sanitizeNextPath; the
       // router's typed route tree doesn't know it as a literal.
       void navigate({ to: next as never })

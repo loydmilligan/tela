@@ -216,6 +216,12 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/.well-known/oauth-protected-resource") {
 		return true
 	}
+	// WorkOS Standalone login bridge (Phase 5b) — self-authenticates (reads the
+	// session cookie itself, redirects to /login when absent), so it must bypass
+	// the middleware's blanket 401.
+	if strings.HasPrefix(p, "/oauth/workos/") {
+		return true
+	}
 	if strings.HasPrefix(p, "/api/share/") {
 		return true
 	}
