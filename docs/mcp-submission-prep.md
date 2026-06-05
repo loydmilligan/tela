@@ -23,7 +23,7 @@ Legend: ✅ done · 🔨 I can do now · 👤 Cagdas (account/dashboard) · 🖥
 | Square logo SVG (Claude) | 1:1 SVG, served at a URL | ✅ `tela.cagdas.io/favicon.svg` |
 | Favicon verification (Claude) | `s2/favicons?domain=tela.cagdas.io&sz=64` must show tela's mark | ✅ raster `favicon.ico`+PNG added & linked (Google cache may lag a few days) |
 | App icon 64×64 PNG (ChatGPT) | 64×64 PNG | ✅ `landing/public/icon-64.png` |
-| Widget screenshots | Claude: 3–5 PNG ≥1000px, cropped to the app response. ChatGPT: 1–4 PNG (~706px wide, unconfirmed), **no chat prompt in frame** | 🖥️ capture page-reader + search-results in a live host |
+| Widget screenshots | Claude: 3–5 PNG ≥1000px. ChatGPT: 1–4 PNG, no chat prompt | ✅ 4 PNGs (page-reader + search-results, light/dark, 1640px) in `docs/submission-assets/` |
 | Promo/demo (optional) | Drive link; ChatGPT may want an MP4 demo on same domain | 👤/🖥️ optional |
 
 ## C. Account / dashboard
@@ -64,5 +64,5 @@ Transport (Streamable HTTP) · OAuth chain · 20 annotated tools · resources ·
 
 ## The actual gap list (what's genuinely left to *prepare*)
 **Done this pass (✅):** Terms of Service `/terms` · Troubleshooting + Limitations in `/mcp` · security-contact line · 64×64 icon · raster favicon · ChatGPT test-cases · both verifies (Origin = bearer-auth-satisfied, data-min = clean). All deployed live.
-**In-host (🖥️):** widget screenshots (both directories).
-**Cagdas (👤):** finish OpenAI org verification + billing + residency project + `api.apps.write`; verify the favicon; the two final submits.
+**In-host (🖥️):** _none — widget screenshots done (rendered from the real bundles, `docs/submission-assets/`)._
+**Cagdas (👤):** finish OpenAI org verification + billing + residency project + `api.apps.write`; the two final submits. (Favicon fixed; Google cache may lag.)
