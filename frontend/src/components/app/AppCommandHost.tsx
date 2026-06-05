@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Clock, Search } from 'lucide-react'
+import { ArrowRight, Clock, Search, Sparkles } from 'lucide-react'
 import {
   CommandPalette,
   prefixForMode,
@@ -32,6 +32,7 @@ import { NewPageDialog } from './NewPageDialog'
 import { readRecentPages, type RecentPage } from '../../lib/recentPages'
 import { useTier1TitleHits } from '../../lib/useTier1TitleHits'
 import { useTier2SearchResults } from '../../lib/useTier2SearchResults'
+import { useSemanticHits } from '../../lib/useSemanticHits'
 import { useCommandPaletteState } from '../../lib/useCommandPaletteState'
 import { pageHitToCommandItem, navigateToPage } from '../../lib/pageHitItem'
 
@@ -96,6 +97,10 @@ export function AppCommandHost() {
   const titleHits = useTier1TitleHits(trimmedQuery, open)
   const searchResults = useTier2SearchResults(trimmedQuery)
   const bodyHits = useTier3BodyHits(debouncedQuery.trim(), open)
+  // Semantic "Smart results" tier — debounced, server-embedded; streams in
+  // after the instant tiers. No-ops (returns undefined) when the instance has
+  // no embedder configured. See useSemanticHits.
+  const semanticHits = useSemanticHits(debouncedQuery.trim(), open)
 
   // Snapshot recently-viewed pages each time the palette opens so a navigation
   // away and back surfaces the freshly-visited page without remounting the
@@ -294,6 +299,36 @@ export function AppCommandHost() {
     return items
   }, [bodyHits, titleHits, searchResults, spacesData, trimmedQuery])
 
+  // Tier-4 semantic "Smart results": meaning-matched chunks the keyword tiers
+  // missed. Chunk-level, so we dedupe to one row per page (results arrive
+  // score-ordered, so the first chunk per page is its best) AND drop pages
+  // already surfaced by tiers 1-3 — this section is purely the *additional*
+  // discoveries meaning-search contributes. heading_path is the section
+  // breadcrumb; the snippet is plain text (no <mark>).
+  const smartItems = useMemo<CommandItem[]>(() => {
+    if (!semanticHits || semanticHits.length === 0) return []
+    const shown = new Set<number>([
+      ...titleHits.map((h) => h.pageId),
+      ...(searchResults ?? []).map((r) => r.page_id),
+      ...bodyHits.map((h) => h.id),
+    ])
+    const seen = new Set<number>()
+    const items: CommandItem[] = []
+    for (const hit of semanticHits) {
+      if (shown.has(hit.page_id) || seen.has(hit.page_id)) continue
+      seen.add(hit.page_id)
+      items.push({
+        id: `page-sem:${hit.page_id}`,
+        title: hit.title || 'Untitled',
+        subtitle: hit.snippet ? <span>{hit.snippet}</span> : undefined,
+        breadcrumb: hit.heading_path || undefined,
+        icon: <Sparkles aria-hidden width={14} height={14} />,
+        onSelect: () => navigateToPage(hit.space_id, hit.page_id),
+      })
+    }
+    return items
+  }, [semanticHits, titleHits, searchResults, bodyHits])
+
   const pagesItems = useMemo<PagesItems>(() => {
     if (trimmedQuery.length === 0) return recentsItems
     // Grouped form: tier-1 under "Titles" at the top, tier-2 under "All
@@ -311,8 +346,11 @@ export function AppCommandHost() {
     if (bodyItems.length > 0) {
       groups.push({ label: 'Body matches', items: bodyItems })
     }
+    if (smartItems.length > 0) {
+      groups.push({ label: 'Smart results', items: smartItems })
+    }
     return groups
-  }, [trimmedQuery, recentsItems, titleItems, searchItems, bodyItems])
+  }, [trimmedQuery, recentsItems, titleItems, searchItems, bodyItems, smartItems])
 
   const pagesEmptyMessage = useMemo<string | undefined>(() => {
     if (trimmedQuery.length === 0) {
@@ -320,9 +358,10 @@ export function AppCommandHost() {
         ? undefined
         : 'Recently viewed pages will appear here. Type to search.'
     }
-    // If tier-1 / tier-3 has results we don't show empty messaging even while
-    // tier-2 is still in flight — the user sees something instantly.
-    if (titleItems.length > 0 || bodyItems.length > 0) return undefined
+    // If any tier has results we don't show empty messaging even while others
+    // are still in flight — the user sees something instantly.
+    if (titleItems.length > 0 || bodyItems.length > 0 || smartItems.length > 0)
+      return undefined
     // Loading state — only visible on the very first query for a key, since
     // keepPreviousData keeps stale data around through subsequent re-queries.
     if (searchResults == null) return 'Searching…'
@@ -334,6 +373,7 @@ export function AppCommandHost() {
     searchResults,
     titleItems.length,
     bodyItems.length,
+    smartItems.length,
   ])
 
   return (

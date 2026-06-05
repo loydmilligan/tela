@@ -117,3 +117,28 @@ export function searchPages(
     { signal },
   )
 }
+
+// A semantic (RAG) chunk hit — meaning-aware, chunk-level. heading_path is the
+// section breadcrumb; chunk_id can feed a future read_chunk. The server returns
+// 503 when no embedder is configured (feature dark) — callers treat that as "no
+// smart results", not an error.
+export interface SemanticHit {
+  chunk_id: number
+  page_id: number
+  space_id: number
+  title: string
+  heading_path: string
+  snippet: string
+  score: number
+  updated_at: string
+}
+
+export function searchSemantic(
+  q: string,
+  signal?: AbortSignal,
+): Promise<{ results: SemanticHit[] }> {
+  return api<{ results: SemanticHit[] }>(
+    `/api/rag/search?q=${encodeURIComponent(q)}&mode=hybrid`,
+    { signal },
+  )
+}
