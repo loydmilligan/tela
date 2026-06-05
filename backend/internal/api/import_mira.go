@@ -15,7 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/miraimport"
+	"github.com/zcag/tela/backend/internal/models"
 )
 
 // M18-MiraImport.A.3. Wraps the miraimport package (A.1+A.2) behind a single
@@ -80,127 +82,119 @@ func (s *Server) ImportMira(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasURL := strings.TrimSpace(req.SourceURL) != ""
-	hasPayload := len(req.Payload) > 0 && string(req.Payload) != "null"
-	if hasURL == hasPayload {
-		writeError(w, http.StatusBadRequest, "bad_request", "exactly one of source_url or payload required")
+	k, _ := auth.APIKeyFromContext(r.Context())
+	page, unlock, ae := s.importMiraCore(r.Context(), u, k, spaceID, req.ParentID, req.SourceURL, []byte(req.Payload))
+	if unlock != "" {
+		// Password-protected source: a non-error JSON carrying the unlock link.
+		writeJSON(w, ae.Status, map[string]any{"error": ae.Message, "code": ae.Code, "unlock": unlock})
 		return
 	}
-	if req.ParentID != nil && *req.ParentID <= 0 {
-		writeError(w, http.StatusBadRequest, "bad_request", "parent_id must be a positive integer")
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"page": page})
+}
+
+// importMiraCore is the transport-agnostic core behind POST
+// /api/spaces/{id}/import-mira and the MCP import_mira tool: fetch (SSRF-guarded,
+// https-only, allowlisted, no-redirect) or take an inline mira payload, convert
+// it to markdown, and create a page (editor+). Returns a non-empty unlockURL
+// (with the accompanying *apiErr describing it) when the source mira page is
+// password-protected — neither a hard error nor a success.
+func (s *Server) importMiraCore(ctx context.Context, u *auth.User, k *auth.APIKey, spaceID int64, parentID *int64, rawSourceURL string, payload []byte) (models.Page, string, *apiErr) {
+	hasURL := strings.TrimSpace(rawSourceURL) != ""
+	hasPayload := len(payload) > 0 && string(payload) != "null"
+	if hasURL == hasPayload {
+		return models.Page{}, "", &apiErr{http.StatusBadRequest, "bad_request", "exactly one of source_url or payload required"}
+	}
+	if parentID != nil && *parentID <= 0 {
+		return models.Page{}, "", &apiErr{http.StatusBadRequest, "bad_request", "parent_id must be a positive integer"}
 	}
 
 	var (
 		payloadBytes []byte
 		sourceURL    string
 	)
-
 	if hasURL {
-		sourceURL = strings.TrimSpace(req.SourceURL)
+		sourceURL = strings.TrimSpace(rawSourceURL)
 		parsed, perr := url.Parse(sourceURL)
 		if perr != nil || parsed.Scheme != "https" || parsed.Host == "" {
-			writeError(w, http.StatusBadRequest, "bad_request", "source_url must be a valid https URL")
-			return
+			return models.Page{}, "", &apiErr{http.StatusBadRequest, "bad_request", "source_url must be a valid https URL"}
 		}
 		host := strings.ToLower(parsed.Hostname())
 		allowlist := parseAllowedMiraHosts()
 		if _, allowed := allowlist[host]; !allowed {
-			writeError(w, http.StatusForbidden, "forbidden", "source_url host is not on the mira allowlist")
-			return
+			return models.Page{}, "", &apiErr{http.StatusForbidden, "forbidden", "source_url host is not on the mira allowlist"}
 		}
-
-		bodyBytes, status, code, msg, unlock := fetchMiraSource(r.Context(), sourceURL, allowlist)
+		bodyBytes, status, code, msg, unlock := fetchMiraSource(ctx, sourceURL, allowlist)
 		if status != 0 {
-			if unlock != "" {
-				writeJSON(w, status, map[string]any{
-					"error":  msg,
-					"code":   code,
-					"unlock": unlock,
-				})
-			} else {
-				writeError(w, status, code, msg)
-			}
-			return
+			return models.Page{}, unlock, &apiErr{status, code, msg}
 		}
 		payloadBytes = bodyBytes
 	} else {
-		payloadBytes = []byte(req.Payload)
+		payloadBytes = payload
 	}
 
 	title, body, err := miraimport.Convert(payloadBytes)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid mira payload")
-		return
+		return models.Page{}, "", &apiErr{http.StatusBadRequest, "bad_request", "invalid mira payload"}
 	}
-
 	if hasURL {
 		body = body + fmt.Sprintf(miraSourceCommentTpl, sourceURL)
 	}
 
-	ctx := r.Context()
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
 	if err := verifySpaceExistsTx(ctx, tx, spaceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "space_not_found", "space not found")
-			return
+			return models.Page{}, "", &apiErr{http.StatusNotFound, "space_not_found", "space not found"}
 		}
-		writeError(w, http.StatusInternalServerError, "internal", "lookup space failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "lookup space failed"}
 	}
-	if !enforceAPIKeySpaceScope(w, r, spaceID) {
-		return
+	if ae := apiKeySpaceScopeErr(k, spaceID); ae != nil {
+		return models.Page{}, "", ae
 	}
-
 	role, err := spaceRoleTx(ctx, tx, u.ID, spaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return models.Page{}, "", &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
 	}
 	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "forbidden", "editor or owner role required")
-		return
+		return models.Page{}, "", &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
 
-	if req.ParentID != nil {
+	if parentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = $1`, *req.ParentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1`, *parentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusBadRequest, "bad_request", "parent page does not exist")
-			return
+			return models.Page{}, "", &apiErr{http.StatusBadRequest, "bad_request", "parent page does not exist"}
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "lookup parent failed")
-			return
+			return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "lookup parent failed"}
 		}
 		if parentSpaceID != spaceID {
-			writeError(w, http.StatusBadRequest, "bad_request", "parent page is in a different space")
-			return
+			return models.Page{}, "", &apiErr{http.StatusBadRequest, "bad_request", "parent page is in a different space"}
 		}
 	}
 
 	var maxPos sql.NullInt64
-	if req.ParentID == nil {
+	if parentID == nil {
 		err = tx.QueryRowContext(ctx,
 			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL`, spaceID).Scan(&maxPos)
 	} else {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, spaceID, *req.ParentID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, spaceID, *parentID).Scan(&maxPos)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "compute position failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "compute position failed"}
 	}
 	var position int64
 	if maxPos.Valid {
@@ -210,25 +204,24 @@ func (s *Server) ImportMira(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		spaceID, nullableInt64(req.ParentID), title, body, position).Scan(&id)
+		spaceID, nullableInt64(parentID), title, body, position).Scan(&id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "create page failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "create page failed"}
 	}
 	if err := syncPageLinks(ctx, tx, id, body); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "sync page_links failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "sync page_links failed"}
 	}
 	page, err := selectPageByIDTx(ctx, tx, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch created page failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "fetch created page failed"}
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"page": page})
+	// Index the imported page's content (debounced; no-op when RAG is off). The
+	// pre-extraction handler skipped this — imported pages are now searchable.
+	s.rag.QueueReindex(id)
+	return page, "", nil
 }
 
 // parseAllowedMiraHosts resolves the host allowlist on each call so tests can

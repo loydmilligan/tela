@@ -138,6 +138,12 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpDeleteSpace)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "import_mira",
+		Description: "Import a single mira page into a space as a new page (editor+). Provide source_url (https, allowlisted host, fetched server-side) OR an inline payload (raw mira block JSON) — exactly one. A password-protected source returns an unlock link.",
+		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &yes},
+	}, s.mcpImportMira)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "submit_feedback",
 		Description: "Submit free-text feedback about tela / tela-mcp itself (friction, bugs, missing capabilities). NOT for page content — use add_comment for that.",
 		Annotations: &mcp.ToolAnnotations{},
@@ -646,6 +652,41 @@ func (s *Server) mcpDeleteSpace(ctx context.Context, req *mcp.CallToolRequest, i
 		return mcpErr(ae), okOut{}, nil
 	}
 	return nil, okOut{OK: true}, nil
+}
+
+// ---- import_mira ---------------------------------------------------------
+
+type importMiraIn struct {
+	SpaceID   int64  `json:"space_id" jsonschema:"id of the space to import into"`
+	ParentID  *int64 `json:"parent_id,omitempty" jsonschema:"optional parent page id"`
+	SourceURL string `json:"source_url,omitempty" jsonschema:"https mira page URL (allowlisted host, fetched server-side); mutually exclusive with payload"`
+	Payload   any    `json:"payload,omitempty" jsonschema:"inline mira block JSON; mutually exclusive with source_url"`
+}
+
+func (s *Server) mcpImportMira(ctx context.Context, req *mcp.CallToolRequest, in importMiraIn) (*mcp.CallToolResult, getPageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), getPageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	var payload []byte
+	if in.Payload != nil {
+		payload, _ = json.Marshal(in.Payload)
+	}
+	page, unlock, ae := s.importMiraCore(ctx, u, k, in.SpaceID, in.ParentID, in.SourceURL, payload)
+	if unlock != "" {
+		// Password-protected source — surface the unlock link as a tool error so
+		// the agent can prompt the user to unlock it.
+		b, _ := json.Marshal(map[string]any{"error": ae.Message, "code": ae.Code, "status": ae.Status, "unlock": unlock})
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, getPageOut{}, nil
+	}
+	if ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	out := getPageOut{Page: mcpPage{Page: page, URL: mcpPageURL(page)}}
+	return mcpResultWithLinks(out, pageResourceLink(page.ID, page.Title)), out, nil
 }
 
 // ---- submit_feedback (any scope, no mcpRequireWrite) ---------------------

@@ -346,6 +346,24 @@ func TestMCP_WriteTools(t *testing.T) {
 		t.Fatalf("submit_feedback: %+v", fb.Feedback)
 	}
 
+	// import_mira (inline payload) → creates a page from mira block JSON.
+	var im getPageOut
+	mcpCallJSON(t, ctx, sess, "import_mira", map[string]any{
+		"space_id": spaceID,
+		"payload": map[string]any{
+			"template": "page",
+			"blocks": []any{map[string]any{
+				"type": "heading_1",
+				"heading_1": map[string]any{"rich_text": []any{map[string]any{
+					"type": "text", "text": map[string]any{"content": "Imported"},
+				}}},
+			}},
+		},
+	}, &im)
+	if im.Page.ID == 0 || im.Page.Title == "" {
+		t.Fatalf("import_mira: %+v", im.Page)
+	}
+
 	// delete_page → ok.
 	var del okOut
 	mcpCallJSON(t, ctx, sess, "delete_page", map[string]any{"id": pageID}, &del)
