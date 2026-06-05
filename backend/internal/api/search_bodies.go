@@ -14,11 +14,10 @@ import (
 // Auth: session cookie OR bearer-`read` (middleware enforces). Membership in
 // space_id required (viewer-OK).
 //
-// TODO(search): PLACEHOLDER — see the banner on Search() in search.go. This was
-// SQLite FTS5 bm25-ranked body search; it's now an unranked ILIKE substring
-// scan over title+body so the MCP tool keeps returning sane results during the
-// Postgres migration. Score is a constant 1.0 (no ranking yet). The real
-// ranked/semantic design lives in docs/search.md.
+// Ranked Postgres FTS over pages.search_tsv (migration 0004), scoped to one
+// space. score = ts_rank_cd (higher = better), replacing the old FTS5 bm25.
+// websearch_to_tsquery parses raw input forgivingly so odd punctuation can't
+// 500 the MCP tool's search loop.
 
 const (
 	searchBodiesDefaultLimit = 20
@@ -82,14 +81,14 @@ func (s *Server) SearchBodies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pattern := "%" + escapeLike(rawQuery) + "%"
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT p.id, p.title
+		SELECT p.id, p.title,
+		       ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $2)) AS score
 		  FROM pages p
 		 WHERE p.space_id = $1
-		   AND (p.title ILIKE $2 ESCAPE '\' OR p.body ILIKE $2 ESCAPE '\')
-		 ORDER BY p.updated_at DESC
-		 LIMIT $3`, spaceID, pattern, limit)
+		   AND p.search_tsv @@ websearch_to_tsquery('english', $2)
+		 ORDER BY score DESC, p.updated_at DESC
+		 LIMIT $3`, spaceID, rawQuery, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "search query failed")
 		return
@@ -101,12 +100,13 @@ func (s *Server) SearchBodies(w http.ResponseWriter, r *http.Request) {
 		var (
 			id    int64
 			title string
+			score float64
 		)
-		if err := rows.Scan(&id, &title); err != nil {
+		if err := rows.Scan(&id, &title, &score); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan search row failed")
 			return
 		}
-		results = append(results, searchBodyHit{ID: id, Title: title, Score: 1.0})
+		results = append(results, searchBodyHit{ID: id, Title: title, Score: score})
 	}
 	if err := rows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "iterate search rows failed")

@@ -1,10 +1,16 @@
-# Search (design notes — NOT yet built)
+# Search (design notes — partially built)
 
-Status: **placeholder in production.** The SQLite FTS5 search was removed during
-the Postgres switch. `GET /api/search` and `GET /api/search/bodies` currently
-run an unranked `ILIKE` substring scan (see the `TODO(search)` banners in
-`backend/internal/api/search.go` / `search_bodies.go`). This document is the
-target we design toward — do not treat the current behavior as final.
+Status: **Tier-2 server search is now ranked.** `GET /api/search` and
+`GET /api/search/bodies` run Postgres FTS over `pages.search_tsv` (migration
+`0004_pages_fts.sql`): title weighted above body, Excalidraw stripped in-SQL,
+ranked by `ts_rank_cd`, snippets via `ts_headline`, parsed with
+`websearch_to_tsquery` (forgiving of punctuation). The old unranked `ILIKE`
+placeholder is gone.
+
+Still to wire: the **semantic enrichment tier** (RAG `/api/rag/search`) streaming
+into the palette as a separate "Smart results" section on the debounce. The
+instant client-side tiers (Orama titles + bodies) are unchanged and remain the
+keystroke path. The rest of this document is the target architecture.
 
 ## Goals
 
