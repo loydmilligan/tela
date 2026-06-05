@@ -132,7 +132,7 @@ Concrete agent workflows, each grounded in the actual tools:
 
 A reviewer connects via OAuth and exercises a read→write round-trip in a demo space.
 
-**Credentials:** `‹TODO: demo login›` (email + password for a populated, no-MFA demo account with at least one space containing several pages, e.g. a "Demo" space with deploy/runbook/incident pages).
+**Credentials:** login **`mcp-demo`** / email **`mcp-demo@cagdas.io`** — password **kept out of this public repo; paste it into the submission form** (it's `Tela…2026`; ask Cagdas / see secrets). Email-verified, **no MFA** (tela has no MFA), not an admin. Already populated: space **"Demo"** with 5 pages — Deploy runbook, Incident response, Release checklist, On-call rotation, Architecture overview (so `search "deploy"` and `semantic_search` return real hits). Re-seed any time with `scripts/seed-demo.py`.
 
 **Steps:**
 
