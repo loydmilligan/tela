@@ -16,12 +16,12 @@ pair; full-bleed connector icon + server branding.
 
 ---
 
-## Status (2026-06-05, PM)
-- ✅ **Privacy policy + public MCP docs pages BUILT** (`/privacy`, `/mcp` in `landing/`, gate-green). ⏳ **not live until `make deploy-landing`** (apex still serves the old landing without these routes).
-- 🔴 **WorkOS OAuth server STILL DOWN** — every `pleasing-puzzle-31-staging.authkit.app/oauth2/*` + discovery endpoint 404s. Hard blocker: no Connect → nothing in-host testable → can't pass MCP Inspector → can't submit either directory. **Cagdas-only fix in the WorkOS dashboard** (re-enable the hosted OAuth server, likely toggled off when Standalone mode was configured).
-- ⬜ **Remaining shared non-code:** populated no-MFA demo account; Cloudflare allowlist Anthropic egress `160.79.104.0/21`; MCP Inspector pass (gated behind WorkOS).
-- ⬜ **ChatGPT-only:** OpenAI org identity verification + `api.apps.write`; global/non-EU residency project; `openWorldHint` audit + justifications; screenshots; web+mobile test pass.
-- **Critical path:** WorkOS fix → `make deploy-landing` → Inspector pass → Claude submit → ChatGPT submit.
+## Status (2026-06-05, PM — WorkOS recreated, OAuth back UP)
+- ✅ **OAuth Connect chain LIVE & verified end-to-end.** WorkOS team was recreated → new issuer **`https://decisive-relation-32-staging.authkit.app`** (old `pleasing-puzzle-31` is dead — that's all last session's "down" was). Verified live: PRM → AS discovery 200 · DCR `POST /oauth2/register` → **201 + client_id, accepts `https://claude.ai/api/mcp/auth_callback`** · PKCE **S256** · grants `authorization_code`+`refresh_token` (no `client_credentials`) · `/api/mcp` 401 → correct `WWW-Authenticate` → path-suffixed PRM 200 (CORS `*`) · authorize 302 → tela Standalone bridge `/oauth/workos/login`. **The exact DCR step that failed last session now works.**
+- ✅ **Privacy policy + public MCP docs pages BUILT** (`/privacy`, `/mcp` in `landing/`, gate-green). ⏳ **not live until `make deploy-landing`**.
+- ⬜ **Remaining shared non-code:** populated no-MFA demo account; Cloudflare allowlist Anthropic egress `160.79.104.0/21`; MCP Inspector pass (now unblocked); logo asset + widget screenshots.
+- ⬜ **ChatGPT-only:** OpenAI org identity verification + `api.apps.write`; global/non-EU residency project; per-tool `openWorldHint` justifications (hint already set on `import_mira`); screenshots; web+mobile test pass.
+- **Critical path (unblocked):** `make deploy-landing` → MCP Inspector pass → Claude submit → ChatGPT submit.
 
 ---
 
@@ -49,7 +49,7 @@ docs page, populated demo account, finalize branding) → submit **Claude first*
 
 ### Hard requirements + tela status
 - [x] **Transport** Streamable HTTP (SSE deprecated) — *met*.
-- [ ] **OAuth 2.1 + PKCE S256, user-consent, no `client_credentials`; `/token` accepts `application/x-www-form-urlencoded`; DCR** — WorkOS provides all this. **Verify:** register redirect URI `https://claude.ai/api/mcp/auth_callback` (+ `https://claude.com/api/mcp/auth_callback`) in WorkOS; confirm `/token` form-encoding + DCR work end-to-end.
+- [x] **OAuth 2.1 + PKCE S256, user-consent, no `client_credentials`; `/token` accepts `application/x-www-form-urlencoded`; DCR** — **VERIFIED LIVE 2026-06-05** against issuer `decisive-relation-32-staging.authkit.app`: DCR 201 + accepts the Claude redirect URI, S256, form token endpoint, correct grant set. (DCR registers redirect URIs dynamically — no manual per-host registration needed; `claude.com` callback registers the same way.)
 - [x] **Per-tool `title` + `readOnlyHint`/`destructiveHint`; no read/write mixing; names ≤64** — *met* (audited: 20 tools, ≤15 chars, clean split).
 - [x] **Narrow descriptions, no behavioral directives, no Claude-memory access** — *met* (descriptions are factual; nothing reads chat history/memory).
 - [x] **First-party API, server domain matches service** — *met* (tela.cagdas.io).
