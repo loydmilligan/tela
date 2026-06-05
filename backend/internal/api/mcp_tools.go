@@ -113,7 +113,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_page",
 		Title:       "Create page",
-		Description: "Create a page in a space (editor+). Body is markdown; tela://page/{id} links are indexed as backlinks.",
+		Description: "Create a page in a space (editor+). Body is markdown; tela://page/{id} links and [[Page Title]] wikilinks (resolved by title within the space) are indexed as backlinks.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpCreatePage)
 

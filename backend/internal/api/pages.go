@@ -1085,16 +1085,106 @@ func parseWikiLinks(body string) []int64 {
 	return ids
 }
 
+// wikiBracketRE matches Obsidian-style `[[Name]]` wikilinks (Name has no nested
+// brackets). `[[Name|alias]]` and `[[Name#heading]]` are supported — the alias /
+// heading suffix is trimmed before resolution.
+var wikiBracketRE = regexp.MustCompile(`\[\[([^\[\]]+?)\]\]`)
+
+// parseWikiTitleSlugs extracts `[[Name]]` wikilink names from body and reduces
+// each to a page slug, so `[[Route Analyze]]`, `[[route-analyze]]` and
+// `[[route-analyze|alias]]` all normalise to "route-analyze". Returns unique,
+// non-empty slugs; the canonical `tela://page/{id}` links are parsed separately
+// by parseWikiLinks.
+func parseWikiTitleSlugs(body string) []string {
+	matches := wikiBracketRE.FindAllStringSubmatch(body, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		name := m[1]
+		if i := strings.IndexAny(name, "|#"); i >= 0 {
+			name = name[:i]
+		}
+		s := pageSlug(name)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+// resolveWikiTitleSlugs maps each `[[Name]]` slug to a target page id within
+// sourceID's space, matching on the slug-normalised page title (lowest id wins
+// on a title clash). Resolution is space-scoped so a name can't link across a
+// membership boundary; names that match no page are dropped (nothing to link).
+func resolveWikiTitleSlugs(ctx context.Context, tx *sql.Tx, sourceID int64, slugs []string) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, title FROM pages
+		WHERE space_id = (SELECT space_id FROM pages WHERE id = $1)
+		ORDER BY id ASC`, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("load space pages for wikilink resolution: %w", err)
+	}
+	defer rows.Close()
+	bySlug := make(map[string]int64)
+	for rows.Next() {
+		var id int64
+		var title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return nil, fmt.Errorf("scan page for wikilink resolution: %w", err)
+		}
+		if s := pageSlug(title); s != "" {
+			if _, ok := bySlug[s]; !ok { // ORDER BY id ASC → lowest id wins
+				bySlug[s] = id
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pages for wikilink resolution: %w", err)
+	}
+	out := make([]int64, 0, len(slugs))
+	for _, s := range slugs {
+		if id, ok := bySlug[s]; ok {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
 // syncPageLinks rebuilds the outgoing page_links rows for sourceID from
 // body: deletes existing rows, then inserts one row per unique wikilink
-// target. last_known_title is the live target title, or an empty string
-// when the target does not exist — that's how a freshly broken link is
-// recorded.
+// target. Targets come from canonical `tela://page/{id}` links (parseWikiLinks)
+// plus Obsidian-style `[[Name]]` links resolved by title within the same space.
+// last_known_title is the live target title, or an empty string when the target
+// does not exist — that's how a freshly broken link is recorded.
 func syncPageLinks(ctx context.Context, tx *sql.Tx, sourceID int64, body string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = $1`, sourceID); err != nil {
 		return fmt.Errorf("delete outgoing page_links: %w", err)
 	}
 	targets := parseWikiLinks(body)
+	if slugs := parseWikiTitleSlugs(body); len(slugs) > 0 {
+		resolved, err := resolveWikiTitleSlugs(ctx, tx, sourceID, slugs)
+		if err != nil {
+			return err
+		}
+		seen := make(map[int64]struct{}, len(targets))
+		for _, id := range targets {
+			seen[id] = struct{}{}
+		}
+		for _, id := range resolved {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				targets = append(targets, id)
+			}
+		}
+	}
 	if len(targets) == 0 {
 		return nil
 	}
