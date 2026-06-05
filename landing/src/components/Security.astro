@@ -1,0 +1,142 @@
+---
+// §8 — Security & team. The trust pillar that replaces the old self-host pillar.
+// SSO, orgs + groups, per-space RBAC, scoped + audited keys, hardened import.
+// Ends with the short self-host escape hatch (demoted, present, not headline).
+const tiles = [
+  { t: 'Org-wide, a team, or private', d: 'Share a space with your whole organization, limit it to one group, or keep it private to you.', accent: false },
+  { t: 'Agents stay in scope', d: 'An agent in Claude or ChatGPT only ever sees what your account can. It can’t reach a space you’re not in.', accent: true },
+  { t: 'Roles per space', d: 'Give each person owner, editor, or viewer access. Access can be added but never silently lowered.', accent: false },
+  { t: 'Single sign-on', d: 'Sign in with the SSO your team already uses. Accounts are email-verified.', accent: false },
+  { t: 'Scoped agent keys', d: 'For code agents, each key is read-only or read-write, can expire, and can be pinned to one space.', accent: false },
+  { t: 'Password-protected sharing', d: 'Public links can require a password and an expiry date. Every key request is logged.', accent: false },
+];
+---
+<section id="security" class="section">
+  <div class="section-head reveal-up">
+    <p class="kicker"><span class="kicker-dot"></span>Security &amp; team</p>
+    <h2 class="h2">Built for a team you can trust it with.</h2>
+    <p class="lede">
+      Every space can be shared with your whole organization, opened to a specific team, or kept
+      private to you. People get owner, editor, or viewer access — and <strong>an agent connected
+      through Claude or ChatGPT can only ever see what your own account can</strong>.
+    </p>
+  </div>
+
+  <div class="sec-grid reveal-up">
+    {tiles.map((t) => (
+      <div class:list={['sec-tile', { accent: t.accent }]}>
+        <span class="sec-dot" aria-hidden="true"></span>
+        <h3 class="sec-t" set:html={t.t}></h3>
+        <p class="sec-d" set:html={t.d}></p>
+      </div>
+    ))}
+  </div>
+
+  <div class="selfhost reveal-up">
+    <div class="sh-copy">
+      <h3 class="sh-t">Self-host it if you prefer</h3>
+      <p class="sh-d">
+        tela is open-source and runs on your own server with Docker Compose — your Postgres, your
+        disk, your data. Self-hosting is optional; the hosted instance is ready to use.
+      </p>
+      <a class="sh-link" href="https://github.com/zcag/tela#readme" target="_blank" rel="noopener">Read the docs →</a>
+    </div>
+    <pre class="sh-code" tabindex="0" aria-label="self-host quickstart"><code><span class="c"># your server, your data</span>
+cp deploy/.env.example deploy/.env
+docker compose up</code></pre>
+  </div>
+
+  <p class="sec-honest reveal-up">
+    Honest caveats: orgs are admin-provisioned (not open self-service signup) and social login
+    isn't wired yet — by design for now. The access model is documented and the auth code is open.
+  </p>
+</section>
+
+<style>
+  .section-head .lede strong { color: var(--fg); font-weight: 600; }
+
+  .sec-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+  .sec-tile {
+    position: relative;
+    padding: 1.25rem 1.3rem 1.3rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .sec-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-wash);
+    margin-bottom: 0.85rem;
+  }
+  .sec-tile.accent {
+    border-color: var(--brand);
+    background: var(--brand-wash);
+  }
+  .sec-tile.accent .sec-dot { background: var(--brand-strong); box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 22%, transparent); }
+  .sec-t {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--fg);
+    letter-spacing: var(--tracking-tight);
+  }
+  .sec-d { margin-top: 0.4rem; font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
+
+  .selfhost {
+    margin-top: 1.5rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    align-items: center;
+    padding: 1.5rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface-sunk);
+  }
+  .sh-t {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--fg);
+    letter-spacing: var(--tracking-tight);
+  }
+  .sh-d { margin-top: 0.6rem; max-width: var(--measure); color: var(--fg-soft); font-size: var(--text-base); line-height: var(--leading-normal); }
+  .sh-link { display: inline-block; margin-top: 1rem; color: var(--brand); font-size: var(--text-base); }
+  .sh-link:hover { color: var(--brand-strong); text-decoration: underline; }
+  .sh-code {
+    margin: 0;
+    padding: 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.85;
+    color: var(--fg);
+    overflow-x: auto;
+  }
+  .sh-code .c { color: var(--fg-faint); }
+
+  .sec-honest {
+    margin-top: 1.5rem;
+    max-width: var(--measure-wide);
+    color: var(--fg-faint);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+  }
+
+  @media (min-width: 720px) {
+    .sec-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 960px) {
+    .sec-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .selfhost { grid-template-columns: 1.1fr 0.9fr; gap: 2rem; }
+  }
+</style>

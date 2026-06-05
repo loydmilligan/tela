@@ -2,12 +2,13 @@
 // §11 — FAQ. Question-led, answer-first prose. Native <details> (keyboard-accessible,
 // no JS). No FAQPage schema (rich results retired 2026).
 const qs = [
-  { q: 'Is the MCP integration real or a demo?', a: 'Real. tela-mcp is published on npm with 17 tools over the live REST API. The full tool catalog and the .mcp.json config are in mcp/README.md, and the code is open.' },
-  { q: 'Do I need Postgres or Elasticsearch?', a: 'No. Storage and full-text search are both SQLite + FTS5 inside the single Go binary. The only services in the stack are the backend, the frontend, and a Caddy proxy.' },
-  { q: 'Can I get my content out?', a: 'Yes. Pages are canonical plain markdown. Bulk-import a directory and export anytime; there’s no proprietary format to convert away from.' },
-  { q: 'How do agents authenticate?', a: 'Each agent uses a scoped personal access token (tela_pat_…) issued in Settings → API Keys. Keys are read, write, or admin, and can be pinned to a single space.' },
-  { q: 'Is it multiplayer?', a: 'Yes — live collaborative editing over Yjs, with concurrent cursors and edits rebased onto the markdown on save.' },
-  { q: 'How is this different from Notion or Confluence?', a: 'Your data is plain markdown on your own server, and agents get a real read/write API through a built-in MCP server — not a chat sidebar bolted onto a closed document store.' },
+  { q: 'Does it work inside Claude and ChatGPT?', a: 'Yes. tela runs a remote MCP server with OAuth sign-in; add it as a connector in Claude or ChatGPT (it’s submitted to both directories) and your agent searches, reads, and writes your wiki — scoped to your account. Code agents like Claude Code or Cursor point at the same URL with a token.' },
+  { q: 'How is search different from a normal wiki?', a: 'tela ranks results by meaning as well as by keyword, so a search returns the section that answers your question even when it doesn’t contain the exact words. Your team searches from the command palette; Claude and ChatGPT search the same way through the connector and get a link back to the source.' },
+  { q: 'Do I need to run anything extra for that?', a: 'Only if you self-host, and only for meaning-based search — you point tela at an embedding model (the hosted instance is already set up). Keyword search always works on its own.' },
+  { q: 'Is it really markdown, with all that block editing?', a: 'Yes. The editor is full block editing — drag, slash menu, turn-into, tables, diagrams — but pages.body is plain markdown. There is no block table; reordering a block reorders markdown lines. Import a directory, export anytime.' },
+  { q: 'How do agents sign in?', a: 'Through the Claude and ChatGPT connectors they sign in once with OAuth — no token to handle. For code agents like Claude Code or Cursor, you create an access key that’s scoped to read or write, can expire, and can be limited to a single space.' },
+  { q: 'Is my team’s data access-controlled?', a: 'Yes — SSO, organizations and groups, and per-space roles (owner / editor / viewer) with hard invariants. Keys are scoped and audited. The access model is documented and open.' },
+  { q: 'Can I self-host it?', a: 'Yes. It’s open and self-hostable with Docker Compose (Postgres, plus an optional embedder for semantic search). Your data on your disk, your markdown exportable. Self-host is the option, not the requirement — the hosted instance is ready to use now.' },
 ];
 ---
 <section class="section section--tight">

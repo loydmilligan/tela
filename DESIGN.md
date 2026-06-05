@@ -6,10 +6,18 @@
 
 # Design Contract — tela landing
 
+> 2026-06 REPOSITION: content thesis is now "the wiki your AI reasons over" — semantic
+> retrieval (RAG) + a real MCP connector inside Claude & ChatGPT. The aesthetic, tokens,
+> and woven-grid signature are UNCHANGED. What changed: the agent/MCP section AND a new
+> retrieval section are co-centerpieces; the signature moment shows the agent *reasoning
+> over* the wiki (retrieve → cite → write), not just writing; self-host is demoted from a
+> visual pillar to a quiet line inside the Security section. NEVER render the stale facts
+> "SQLite / FTS5 / single binary" anywhere in chrome, code blocks, or captions.
+
 ## Aesthetic Direction
 - **Tone:** Refined developer-tool — Linear / Vercel tier. Dark-first, precise, engineer-credible. Not loud, not editorial, not warm.
-- **One-line intent:** A near-black indigo-ink canvas where the real product UI and real code are the heroes, and a faint **woven grid** — tela's loom — runs under everything, lighting up only when an agent writes to the wiki.
-- **Brand origin:** For small technical teams already running coding agents (Claude Code, Cursor) who refuse to hand their docs to closed SaaS. The feeling is a quiet, confident dev tool you'd trust with your data — the register of the terminal and the editor, not the marketing deck. *tela* = woven cloth; the site is literally built on a grid you can see.
+- **One-line intent:** A near-black indigo-ink canvas where the real product UI and real code are the heroes, and a faint **woven grid** — tela's loom — runs under everything, lighting up only when an agent reasons over and writes to the wiki.
+- **Brand origin:** For small technical teams already running AI agents (Claude, ChatGPT, Cursor, Claude Code) who want those agents to actually search and write their shared docs. The feeling is a quiet, confident dev tool you'd trust your team's knowledge to — the register of the terminal and the editor, not the marketing deck. *tela* = woven cloth; the site is literally built on a grid you can see.
 
 ## Negative Constraints (never — the anti-slop fingerprint)
 - No Inter / Roboto / Arial / system-ui / Space Grotesk (Geist family only; Inter is the *product* font, deliberately not reused here).
@@ -17,7 +25,7 @@
 - No centered-hero + single-CTA cliché. Hero is **left-aligned, asymmetric**: copy left, the agent-write signature moment right.
 - No three-icon-box feature grid with cute line icons. Pillars are **text-led cards with a code/mono detail**, not iconography.
 - No rounded-everything (crisp 6–10px radii; the woven grid and rules are 0px). No flat `0.1` black shadows — depth shadows + one earned indigo glow.
-- No stock isometric illustrations, no fake dashboards, no fabricated customer logos, no "trusted by thousands". Real screenshots, real tool names, real `.mcp.json`.
+- No stock isometric illustrations, no fake dashboards, no fabricated customer logos, no "trusted by thousands". Real editor mocks, real tool names, the real connector URL + remote-transport config (NOT an npx command).
 - Containers nest ≤ 2 levels. Indigo is **rare and earned** — most of the page is ink + white text; indigo marks the CTA, the live thread, code keywords, the agent-write moment.
 
 ## Inspiration  (pulled live via Steel — decomposed, never replicated)
@@ -42,12 +50,12 @@
 ## Signature woven-grid device  (the carved-out moment — exempt from page motion throttling)
 - **The motif:** `tela` = loom/cloth. A faint **woven grid** of interlaced warp/weft threads (`--weave-thread` lit / `--weave-ground` dim, `--weave-cell 28px`). Rendered as a **CSS layered-gradient weave** (two repeating-linear-gradients offset to read as over/under interlacing) or a tiled SVG `<pattern>` for crisper threads — static, near-invisible, technical not craftsy.
 - **Where it appears:** hero background (dim, behind the copy), as **section dividers** (a single lit thread-row between sections), and inside the hero wow moment.
-- **Hero wow moment — "the agent weaving a page" (ties to CONTENT.md §1):** Left card = a compact MCP **tool-call** (`create_page` / `update_page` / `search`, real catalog names, real `tela_pat_…` shape, no fake data) typing out as a terminal/tool-call card. Right = the **tela editor** with the woven grid faintly visible; as the call "commits," **threads in the grid light up and resolve left-to-right into the page's markdown lines** materializing in the editor — the weave literally *weaves the page into being*. Must read in <5s as *"the AI is editing the wiki, not chatting about it."* A live "writing" dot uses `--live-dot` (cyan). Loops on a `--dur-weave 3200ms` timeline.
+- **Hero wow moment — "the agent reasoning over the wiki" (ties to CONTENT.md §1):** Left card = a compact MCP **tool-call** (`semantic_search` returning a cited chunk, then `update_page` — real catalog names, real `tela_pat_…`/connector shape, no fake data) typing out as a terminal/tool-call card; a small `claude · mcp` / `chatgpt · mcp` label sells the in-chat origin. Right = the **tela editor** with the woven grid faintly visible; as the call "commits," **threads in the grid light up and resolve left-to-right into the page's markdown lines** materializing in the editor — the weave literally *weaves the page into being*. Must read in <5s as *"the AI is retrieving from and editing the wiki, not chatting about it."* A live "writing" dot uses `--live-dot` (cyan). Loops on a `--dur-weave 3200ms` timeline.
 - **Build flags:** Hand off to the `wow` skill. This single moment is **exempt from page-level motion throttling**; everything else stays subtle. `prefers-reduced-motion` → render the **final resolved frame** (tool-call done + page present + grid static), no animation.
 
 ## Spacing & Layout
 - Base grid **4px**; `--col-max 1200` (tight dev-tool frame, not 1240+ editorial); `--section-y 120` vertical rhythm; prose `--measure 66ch`.
-- **Composition:** asymmetric, left-anchored. Hero = copy-left / signature-right split. The **agent/MCP section is the visual centerpiece** (Tier 1): full-bleed-ish, the `.mcp.json` code block large and crisp, the 8-of-17 tool catalog grouped by scope (`read`/`write`/`admin`) as mono tags. Product UI (§4) and code (§2, §6) are framed first-class: screenshots in a `--radius-lg` frame with `--shadow-frame`; code in `--radius-md` wells (`--code-bg`) with indigo keyword / cyan string tokens. Pillars (§3) = three text-led cards, not icon boxes. Final CTA (Tier 1) re-lights the woven grid.
+- **Composition:** asymmetric, left-anchored. Hero = copy-left / signature-right split. Two **co-centerpieces** (Tier 1): the **agent/MCP section** (the connect-flow as 3 crisp steps + the remote-transport config block + the 9-of-20 tool catalog grouped by scope `read`/`write`/`admin` as mono tags) and the **retrieval section** (a query → ranked *chunk* cards with a mono `heading path`, snippet, and score — the same index labelled "for humans / for agents"). Product UI and code are framed first-class: editor mocks in a `--radius-lg` frame with `--shadow-frame`; code in `--radius-md` wells (`--code-bg`) with indigo keyword / cyan string tokens. The editor section shows the WYSIWYG↔markdown equivalence side by side. Final CTA (Tier 1) re-lights the woven grid. The Security section reads as calm proof tiles, not alarm.
 
 ## Motion
 - **Signature moment:** the woven page-write (above) — the one orchestrated, high-impact gesture.

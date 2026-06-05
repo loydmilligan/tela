@@ -3,235 +3,258 @@
   Source of truth for WHAT the page says and HOW it's phrased. Copy below is final and
   shippable — the build uses it verbatim (copywriting + voice skills enforce it).
   Content hierarchy here drives the visual hierarchy in DESIGN.md.
-  STATUS: LOCKED. Positioning angle, voice, and section order were agreed with the user.
+  STATUS: LOCKED. Repositioned 2026-06 around the RAG + MCP thesis (see header note).
+
+  2026-06 REPOSITION (agreed with the user):
+  - THESIS now: "RAG + MCP = superpowers on your data." The biggest win is that your
+    team's knowledge becomes something your AI can actually reason over — semantic
+    retrieval (RAG) + a real read/write API (MCP) — usable right inside Claude and
+    ChatGPT, not just a local CLI proxy.
+  - Self-host is NO LONGER a headline pillar. It survives as a short reassurance +
+    "you can even self-host" escape hatch. The hosted instance is the primary path.
+  - Security / org is the trust pillar that replaces the old self-host pillar.
+  - FACT CORRECTIONS (the app changed; the old copy was stale):
+      * Storage is PostgreSQL + pgvector — NOT "SQLite". NOT "single binary, no Postgres".
+      * Keyword search is Postgres native full-text (tsvector + GIN, ranked) — NOT "FTS5".
+      * MCP is a remote Streamable-HTTP server with OAuth — NOT just a local npx proxy.
+      * 20 MCP tools — NOT 17.
+  - These corrections are HARD: never reintroduce "SQLite", "FTS5", or "single binary".
+
+  2026-06 COPY REFINEMENT (post-repositioning, agreed with the user):
+  - Voice is PLAIN and capability-first — state what tela does; no story/sales framing
+    ("Stop pasting…", "Made a mess?"), no cute tile labels ("Agents on a leash"), no hype.
+  - User-facing VISUALS show real UI (a chat exchange, a search box) — NEVER JSON, tool-call
+    code, or relevance scores. Users never see JSON, so the page doesn't either.
+  - The agent angle leads with placement: "Already in Claude and ChatGPT" (tela goes to where
+    your AI already is, vs a chat bolted into a wiki you'd have to open).
+  - The landing COMPONENTS hold the authoritative final word-level wording; the section copy
+    below captures intent/direction and may trail the components by a refinement pass.
 -->
 
 # Content Contract — tela  (LOCKED)
 
-One-page marketing landing page. Standalone, anchored sections. Public instance: https://tela.cagdas.io
+One-page marketing landing page. Standalone, anchored sections. Hosted instance + product: https://tela.cagdas.io
 
 ---
 
 ## Positioning  (Dunford — 5 components)
 
-- **Competitive alternatives:** Notion / Confluence (SaaS wikis — closed data, no real agent access, an "AI" feature bolted on top); a folder of markdown files in a git repo + grep; Obsidian/Logseq (single-player, local); "we keep docs in Slack/Google Docs and can't find anything." For the agent angle specifically, the alternative is *pasting context into the chat by hand* every session.
+- **Competitive alternatives:** Notion / Confluence (closed SaaS wikis — proprietary block store, "AI" bolted on as a chat sidebar, no real agent read/write); a folder of markdown in a git repo + grep; Obsidian/Logseq (single-player, local); "we keep docs in Slack/Google Docs and can't find anything." For the agent angle specifically, the alternative is *pasting context into the chat by hand every session* and hoping the model finds the right doc by keyword.
 - **Unique attributes (+ proof):**
-  - **Built-in MCP server, not a chat bolt-on.** Ships `tela-mcp` (published on npm). Agents bearer-auth with a scoped PAT and get 17 tools that wrap the same REST API the UI uses — create / read / update / search / comment / import / manage spaces. Read, write, and admin scopes; keys can be pinned to one space. *Proof: the tool catalog and `.mcp.json` are public in `mcp/README.md`; the code is open.*
-  - **Markdown is canonical forever.** `pages.body` is plain markdown text — there is no block model, no proprietary document format. The Milkdown WYSIWYG editor reads and writes markdown directly. *Proof: "no block table" is an architectural rule; bulk markdown import/export is a first-class tool.*
-  - **Self-hosted single binary + SQLite.** Go compiles to one binary; storage and full-text search are SQLite + FTS5 — no Postgres, no Elasticsearch, no external search service. Docker Compose, one host port, your data on your disk. *Proof: stack table in the README; `make up`.*
-  - **Real multiplayer.** Live collaborative editing over Yjs — concurrent cursors and edits, rebased onto the canonical markdown on save. *Proof: custom WebSocket transport in `lib/collab`.*
-  - **Comments that survive edits.** Comments anchor to a `{prefix, exact, suffix}` text window, never to a character offset, so they don't drift when the doc is reflowed. *Proof: anchoring model in architecture.md.*
-- **Value themes (4):** (1) Your agents are first-class teammates, not a sidebar. (2) Your knowledge stays in plain markdown you own. (3) One binary you run yourself — no SaaS, no lock-in. (4) Live, fast, and searchable for the humans too.
-- **Who cares most (ICP):** Small technical teams, engineers, and AI-forward builders who already work *with* coding agents (Claude Code, Cursor) every day, want a shared knowledge base those agents can actually read and write, and refuse to hand their docs to a closed SaaS. Circumstance: they've started running agents on real work and hit the wall where the agent has no durable, shared memory of the team's docs.
-- **Market category:** "Agent-native team wiki." Self-hosted markdown wiki is the familiar frame; *agent-native* is the wedge that makes the value obvious. **Style:** new-category wedge inside a known category (wiki) — lead with the new thing (agents), anchor on the known thing (wiki) so it's instantly legible.
-- **Why now:** Coding agents went mainstream in 2025–26 and MCP became the default way to give them tools. Teams now have agents but no shared place those agents can persist and retrieve knowledge. tela is that place.
+  - **Your agents search your docs by meaning, not just keywords.** tela chunks every page (heading-aware), embeds it, and serves **hybrid retrieval** — keyword (Postgres full-text) and vector similarity (pgvector) fused with reciprocal-rank fusion. Agents call `semantic_search` and `read_chunk` to pull the *right section*, with citations, instead of the whole document. *Proof: the RAG service is open (`internal/rag`); `semantic_search` is a live MCP tool.*
+  - **A real remote MCP server — usable inside Claude and ChatGPT.** Not a local CLI shim. `https://tela.cagdas.io/api/mcp` is a Streamable-HTTP MCP server with OAuth 2.1 sign-in (one click, no token to paste) and **20 scoped tools** that wrap the same API the UI uses. Submitted to the Claude and ChatGPT connector directories. *Proof: the OAuth + tool surface is open (`internal/api/mcp*.go`); the connector signs you in with your tela account.*
+  - **Markdown is canonical forever — under a block editor that feels like Notion.** `pages.body` is plain markdown text; there is no block table, no proprietary format. The editor is full block-editing — drag-to-reorder, slash menu, turn-into, callouts, tables, diagrams — and every block operation round-trips straight back to clean markdown. *Proof: "no block table" is an architectural rule; drag = a markdown line reorder; bulk import/export is first-class.*
+  - **Secure and team-shaped out of the box.** Single sign-on (WorkOS), email-verified accounts (Argon2id), organizations and sub-team groups, per-space roles with hard invariants, and scoped API keys that are HMAC-stored, expiring, space-pinnable, and fully audited. *Proof: the access model is documented (`docs/access-model.md`) and the auth/key code is open.*
+  - **Real multiplayer + comments that survive edits.** Live collaborative editing over Yjs, rebased onto the canonical markdown on save; comments anchor to a `{prefix, exact, suffix}` text window so they don't drift when the doc is reflowed. *Proof: collab transport in `lib/collab`; anchoring model in architecture.md.*
+- **Value themes (4):** (1) Your AI reasons over your team's knowledge — by meaning, with citations. (2) It works where you already work — inside Claude and ChatGPT. (3) Your knowledge stays plain markdown you can take with you. (4) Secure, team-shaped, hosted for you — or self-hosted if you want.
+- **Who cares most (ICP):** Small-to-mid technical teams and AI-forward builders who already work *with* agents (Claude, ChatGPT, Cursor, Claude Code) every day, want a shared knowledge base those agents can actually search and write, and are tired of re-pasting context and getting keyword-miss answers. Circumstance: they've put agents on real work and hit the wall where the agent has no durable, searchable, shared memory of the team's docs.
+- **Market category:** "Agent-native team wiki." The familiar frame is *team wiki*; the wedge is *your AI can reason over it* — semantic retrieval + MCP, from inside the chat apps. **Style:** new-category wedge inside a known category — lead with the new thing (AI that reasons over your docs), anchor on the known thing (wiki).
+- **Why now:** Agents went mainstream in 2025–26 and MCP became the default way to give them tools and data; remote MCP connectors landed in Claude and ChatGPT. Teams now have agents in the browser but no shared place those agents can semantically retrieve and persist team knowledge. tela is that place.
 
 ## The customer  (JTBD + VPC)
 
-- **Job story:** When my team and I are running coding agents on real work, I want a shared wiki my agents can read and write through MCP — without me hand-pasting context every session — so the agent has durable team memory and I keep our docs in plain markdown on my own server.
-- **Ranked pains (top → nice-to-have):** agent has no shared memory across sessions → I re-paste the same context constantly · our knowledge base is closed SaaS the agent can't truly reach · "AI" features are a shallow chat bolt-on, not real read/write access · docs locked in a proprietary block format I can't export cleanly · search is slow or needs a separate service · don't want our internal docs living on someone else's servers.
-- **Ranked gains (top → nice-to-have):** an agent that reads and writes the wiki itself · knowledge in plain markdown I own outright · runs on my own box with one command · instant full-text search with nothing extra to operate · real-time multiplayer for the human team · public share links when I need them.
-- **Forces:** push `agents with no durable memory; closed wiki the agent can't use; re-pasting context every time` · pull `a wiki with a real MCP server; markdown I own; one self-hosted binary` · habit `Notion/Confluence is already set up; markdown-in-a-git-repo works fine` · anxiety `is self-hosting a hassle? is the MCP integration real or a demo? will I lose my data / get locked in?`
+- **Job story:** When my team is running AI agents on real work, I want a shared wiki my agents can *search by meaning and write back to* — from inside Claude or ChatGPT, without me hand-pasting context — so the agent reasons over our actual docs and the next session picks up where the last left off.
+- **Ranked pains (top → nice-to-have):** the agent can't see our knowledge, so I re-paste context constantly · keyword search misses the doc that actually answers the question · "AI" in our wiki is a shallow chat sidebar, not real retrieval + write access · the agent lives in a CLI, not the Claude/ChatGPT app my team uses · docs locked in a proprietary block format · I don't want a free-for-all on who can read what.
+- **Ranked gains (top → nice-to-have):** an agent that retrieves the right section by meaning and cites it · read/write access from the chat app we already use · knowledge in plain markdown we own · SSO, roles, and an audit trail so sharing is safe · real-time multiplayer for the humans · take-it-with-you export, and self-host if we ever want to.
+- **Forces:** push `agents that can't see our docs; keyword search that misses; re-pasting context every session` · pull `semantic retrieval over our wiki; a real MCP connector in Claude/ChatGPT; markdown we own; SSO + roles` · habit `Notion/Confluence is already set up; markdown-in-git works fine` · anxiety `is the retrieval real or a demo? is my data secure and access-controlled? will I get locked in?`
 
 ## Core message & hierarchy
 
-- **ONE core message (hero promise):** *The team wiki your AI agents can actually read and write — through a built-in MCP server, on markdown you self-host.*
-  - Parity test ("who else could say this?"): Notion can't (closed data, chat bolt-on, no self-host). A git-repo-of-markdown can't (no live editing, no real search, no agent API, single-player). Obsidian can't (single-player, no team MCP server). It passes.
-- **One-liner (BrandScript):** Technical teams running AI agents struggle with a knowledge base their agents can't actually use; tela gives them a self-hosted markdown wiki with a built-in MCP server, so their agents read, write, and search alongside the team instead of starting from zero every session.
+- **ONE core message (hero promise):** *The team wiki your AI actually reasons over — semantic search + a built-in MCP server, usable right inside Claude and ChatGPT, on markdown you own.*
+  - Parity test ("who else could say this?"): Notion can't (proprietary store, chat sidebar, no semantic MCP read/write for your agent). A git-repo-of-markdown can't (no retrieval, no live editing, no agent API). Obsidian can't (single-player, no team MCP server). It passes.
+- **One-liner (BrandScript):** Technical teams running AI agents struggle because their knowledge base is something the agent can't actually search or write; tela is a markdown team wiki with semantic retrieval and a built-in MCP server, so agents reason over the team's docs — by meaning, with citations — from inside Claude and ChatGPT, instead of starting from zero every session.
 - **Supporting pillars (4 — each → one page section):**
-  1. **Agent-native — built-in MCP server.** `tela-mcp` on npm; 17 scoped tools over the same REST API; agents create / read / update / search / comment. Proof: public tool catalog + `.mcp.json`.
-  2. **Markdown you own.** Plain markdown is canonical forever — no block model, no proprietary format; bulk import/export. Proof: "no block table" architectural rule.
-  3. **Self-hosted, single binary.** Go binary + SQLite/FTS5, Docker Compose, one host port, your server. No SaaS, no external search. Proof: stack table; `make up`.
-  4. **Live and fast for humans too.** Yjs multiplayer editing, instant FTS5 search, text-anchored comments, page history, public share links, Excalidraw diagrams. Proof: feature set in architecture.md.
-- **Awareness stage (dominant visitor):** **Solution-aware → Product-aware.** They know they want a wiki and they know they want agents to use it; they don't yet know a tool exists that does both. → **Page leads with the differentiated outcome + immediate proof** (the agent-native hook, then show the MCP tools and code).
+  1. **The agent layer — MCP, inside Claude & ChatGPT.** Remote Streamable-HTTP MCP server, OAuth one-click connect, 20 scoped tools over the same API. Proof: open MCP code; live connector.
+  2. **Retrieval that reasons — semantic + keyword, fused.** Heading-aware chunking, embeddings, hybrid (pgvector + Postgres full-text) RRF retrieval; agents pull the right section with citations. Proof: open `internal/rag`; `semantic_search` tool.
+  3. **A real wiki underneath.** Notion-grade block editing on canonical markdown; live multiplayer; text-anchored comments; history; sharing. Proof: "no block table" rule; collab transport.
+  4. **Secure, team-shaped, yours.** SSO, orgs + groups, per-space RBAC, scoped + audited keys; hosted for you, self-host if you want. Proof: open access model + auth code.
+- **Awareness stage (dominant visitor):** **Solution-aware → Product-aware.** They want a wiki and they want their agents to use it; they don't yet know one tool does semantic retrieval *and* a real MCP connector in Claude/ChatGPT. → **Page leads with the differentiated outcome + immediate proof** (the agent reasoning over the wiki from Claude/ChatGPT, then the retrieval, then the tools).
 - **Objections → reassurance:**
-  - "Is the agent integration real, or a demo?" → Show the actual `.mcp.json` and the 17-tool catalog; link to the published npm package and the open code. *Show, don't claim.*
-  - "Is self-hosting going to be a pain?" → One binary, `make up`, SQLite — no Postgres/Elasticsearch to run. Single host port.
-  - "Will I get locked in / lose my data?" → Canonical plain markdown, bulk export, your own disk. Leaving = copying files.
-  - "Is this mature?" → Open code, live public instance you can use right now, versioned MCP package. Be honest about stage (v0) rather than inflating.
-- **Cut list (parity / table-stakes — demote or drop):** generic "powerful editor", "beautiful UI", "boost productivity", role-based access as a headline (mention inline only), uptime/perf adjectives without numbers, anything Notion could also say.
+  - "Is the retrieval/agent integration real, or a demo?" → Show the connect flow, the 20-tool catalog, `semantic_search` returning a cited chunk; link the open code and the live connector. *Show, don't claim.*
+  - "Is my data secure / access-controlled?" → SSO, email-verified accounts, orgs + groups, per-space roles, scoped + audited keys, SSRF-hardened import. Recent independent-style security pass.
+  - "Will I get locked in / lose my data?" → Canonical plain markdown, bulk export, and you can self-host the whole thing. Leaving = copying files.
+  - "Is this mature?" → Open code, a live instance you can use now, a versioned connector. Honest about stage (v0) rather than inflating.
+- **Cut list (parity / table-stakes — demote or drop):** generic "powerful editor", "beautiful UI", "boost productivity", uptime/perf adjectives without numbers, self-host-as-headline, anything Notion could also say. **Banned facts (stale):** "SQLite", "FTS5", "single binary", "no Postgres".
 
 ## Voice  (constant) & Tone (flexes by surface)
 
 **We are precise, dev-credible, and quietly confident — we are NOT hypey, salesy, or vague.**
 
-Write like an engineer wrote it for other engineers: claims are falsifiable, specifics over adjectives, show the code instead of describing it. Confidence comes from proof, not volume.
+Write like an engineer wrote it for other engineers: claims are falsifiable, specifics over adjectives, show the thing instead of describing it. Confidence comes from proof, not volume. (The internal shorthand "superpowers on your data" is the *spirit*; in copy it shows up as concrete mechanisms — semantic retrieval, 20 tools, a connector you click — never as the word "superpower".)
 
 | Trait | Do | Don't |
 |---|---|---|
-| Precise | Name the real thing: "17 MCP tools", "SQLite + FTS5", "one binary", "`tela_pat_`". | Round off into vibes ("tons of integrations", "blazing fast"). |
-| Dev-credible | Show the `.mcp.json`, the tool table, the `make up`. Link to the open code. | Marketing screenshots with fake data; claims you won't show. |
-| Confident, low-hype | State the differentiator flatly and let proof carry it. | Exclamation marks, "revolutionary", "the future of…". |
+| Precise | Name the real thing: "20 MCP tools", "hybrid retrieval", "pgvector", "`tela_pat_`", "`semantic_search`". | Round off into vibes ("tons of integrations", "blazing fast", "supercharge"). |
+| Dev-credible | Show the connect flow, the tool catalog, a cited chunk. Link the open code. | Marketing screenshots with fake data; claims you won't show. |
+| Confident, low-hype | State the differentiator flatly and let proof carry it. | Exclamation marks, "revolutionary", "superpower", "the future of…". |
 | Concrete | Every benefit ties to a mechanism the reader can verify. | Abstract outcomes ("work smarter", "unlock productivity"). |
-| Honest | Say "self-hostable", "open", "v0" plainly; admit what's early. | Imply scale/maturity that isn't there; fake logos. |
+| Honest | Say "v0", "open", "semantic search needs an embedder endpoint" plainly. | Imply scale/maturity that isn't there; fake logos. |
 
 - **Tone dimensions:** formal↔casual `mid — relaxed but technical, never corporate` · serious↔funny `serious; at most one dry aside` · respectful↔irreverent `respectful, lightly opinionated (closed SaaS is a fair foil)` · matter-of-fact↔enthusiastic `matter-of-fact; enthusiasm shows as specificity, not adjectives`
 - **Vocabulary:**
-  - **Use:** agent-native · MCP server · markdown-native · self-hostable · single binary · canonical markdown · FTS5 / full-text search · multiplayer · scoped PAT · spaces · your server / your data · read and write.
+  - **Use:** agent-native · MCP server · semantic search · hybrid retrieval · retrieval-augmented · embeddings · pgvector · markdown-native · canonical markdown · block editing · multiplayer · scoped PAT · single sign-on · orgs / groups / roles · audit · spaces · read, write, and search · your data.
   - **Brand motif (sparing):** *tela* = fabric/canvas/woven cloth. A woven-grid metaphor may appear at most once if it earns its place. Never force it; never explain the etymology in body copy.
-  - **Ban — anti-slop kill-list (hard):** revolutionize · seamless · unleash · supercharge · game-changer · unlock · elevate · empower · leverage · robust · cutting-edge · best-in-class · world-class · next-level · transformative · innovative · "solutions" (noun) · ecosystem · synergy · holistic · curated · turnkey · "in today's fast-paced world" · "take your X to the next level" · "we help teams grow" · "the possibilities are endless" · "not just a wiki, it's…" · em-dash confetti · forced rule-of-three.
+  - **Ban — anti-slop kill-list (hard):** revolutionize · seamless · unleash · supercharge · superpower(s) · game-changer · unlock · elevate · empower · leverage · robust · cutting-edge · best-in-class · world-class · next-level · transformative · innovative · "solutions" (noun) · ecosystem · synergy · holistic · curated · turnkey · "in today's fast-paced world" · "take your X to the next level" · "we help teams grow" · "the possibilities are endless" · "not just a wiki, it's…" · em-dash confetti · forced rule-of-three. **Plus the stale-fact ban:** SQLite · FTS5 · "single binary" · "no Postgres".
 
 ## Information architecture
 
-- **Site type:** single-page marketing landing (developer-tool tier — Linear/Vercel register). **In-page anchor nav (≤6):** Agents · Features · Compare · Self-host · Search · Get started. Pinned header: wordmark + GitHub link + primary CTA. (Anchor `Features` → §4 showcase; `Compare` → §5 comparison.)
-- **Page:** one page. **Dominant search intent:** commercial-investigation / navigational ("MCP wiki", "self-hosted Notion alternative for AI agents", "agent-native wiki", "tela").
+- **Site type:** single-page marketing landing (developer-tool tier — Linear/Vercel register). **In-page anchor nav (≤6):** Agents · Search · Editor · Compare · Security. Pinned header: wordmark + GitHub link + theme toggle + primary CTA (`Get started`) + secondary (`Log in`).
+- **Page:** one page. **Dominant search intent:** commercial-investigation / navigational ("MCP wiki", "wiki Claude can search", "RAG wiki for agents", "ChatGPT connector wiki", "agent-native wiki", "tela").
 
 ## Page plan  (content model — visual hierarchy MUST mirror this priority)
 
 Section order is the narrative arc. Tier = visual prominence (1 = hero/max, 4 = footer/min).
 
 ### 1. Hero  — Tier 1  (BAB: the after-state, stated flatly)
-- **Eyebrow:** `Agent-native team wiki · self-hosted · open`
-- **Headline (H1):** `The wiki your agents can write to.`
-- **Subhead:** `tela is a self-hostable, markdown-native team wiki with a built-in MCP server — so Claude, Cursor, and any MCP client read, write, and search your docs as first-class teammates. Live multiplayer for the humans. Your data on your own server.`
-- **Signature / wow moment (described for the build):** A live, looping "agent writing into the wiki" moment beside the hero. Left: an MCP client calling a tool (`create_page` / `update_page` / `search`) as a compact terminal/tool-call card. Right: the corresponding page materializing in the tela editor in real time — the woven-grid motif can surface subtly as the page renders in. It must read in under 5 seconds as *"the AI is editing the wiki, not chatting about it."* Real tool names from the catalog, no fake data. (Hand off to `wow` skill — this is the carved-out signature moment.)
-- **Primary CTA:** `Self-host it` → repo / quickstart (`make up`).  **Secondary CTA:** `Try the live instance` → https://tela.cagdas.io
-- **Friction microcopy under CTA:** `One binary + SQLite. docker compose up. Your server.`
-- 5-second test: a stranger learns *what* (self-hosted markdown wiki) + *why it's different* (agents read/write it via MCP) in one glance.
+- **Eyebrow:** `Agent-native team wiki · semantic search · in Claude & ChatGPT`
+- **Headline (H1):** `The wiki your agents reason over.`  (accent the words "reason over")
+- **Subhead:** `tela is a markdown team wiki with semantic search and a built-in MCP server — so Claude, ChatGPT, and any agent search your docs by meaning, then read, write, and cite them. Real-time editing for the humans. SSO, scoped access, and an audit trail for the team.`
+- **Signature / wow moment (described for the build):** A looping "agent reasoning over the wiki" moment beside the hero. Left: a chat-style turn — a question, then an MCP tool-call (`semantic_search` → a cited chunk, or `update_page`) shown as a compact tool-call card with real catalog names and a `tela_pat_…`/connector shape. Right: the corresponding page in the tela editor; as the call commits, the woven-grid threads light up left-to-right and the page/answer materializes. It must read in under 5 seconds as *"the AI is reasoning over and editing the wiki, not chatting about it."* Real tool names, no fake data. (Carved-out signature moment — hand to the `wow` skill.)
+- **Primary CTA:** `Get started` → https://tela.cagdas.io (hosted, free to start).  **Secondary CTA:** `Add to Claude or ChatGPT` → the MCP/connect section (`#agents`).
+- **Friction microcopy under CTA:** `Free to start · your markdown, exportable anytime · self-host if you'd rather.`
+- 5-second test: a stranger learns *what* (markdown team wiki) + *why it's different* (the AI searches it by meaning and reads/writes it from Claude/ChatGPT) in one glance.
 
-### 2. The agent section — "Your agents get a real API, not a chat box."  — Tier 1  (THE STAR; FAB)
-- **Purpose:** Prove the headline. This is the section that wins or loses the page.
-- **Headline (H2, question-led for AEO):** `What can an agent actually do in tela?`
-- **Answer-first block (40–60 words):** `Everything your team can. tela ships tela-mcp, a published MCP server that gives agents 17 scoped tools over the same REST API the UI uses: create, read, update, and search pages, leave anchored comments, import markdown, and manage spaces. Agents authenticate with a scoped personal access token — read, write, or admin.`
-- **Show the config (code block, verbatim from mcp/README.md):**
+### 2. The agent layer — "Use it inside Claude and ChatGPT."  — Tier 1  (THE STAR; FAB)
+- **Purpose:** Prove the headline. The section that wins or loses the page.
+- **Headline (H2, question-led for AEO):** `What can an agent actually do with tela?`
+- **Answer-first block (40–60 words):** `Everything your team can. tela runs a remote MCP server with 20 scoped tools over the same API the UI uses: search by meaning, read pages and sections, create and update, move, comment, manage spaces. Connect it in Claude or ChatGPT with one OAuth sign-in — no token to paste — or point any MCP client at the same URL.`
+- **Show the connect flow (3 steps, real):**
+  1. In Claude or ChatGPT, add a connector → `https://tela.cagdas.io/api/mcp`
+  2. Sign in with your tela account (OAuth 2.1 — PKCE, no token pasted)
+  3. The agent now searches, reads, and writes your wiki — scoped to what your account can see.
+  - Caption: `Submitted to the Claude and ChatGPT connector directories.`
+- **Show the config for code agents (code block — modern remote transport, NO npx):**
   ```json
   {
     "mcpServers": {
       "tela": {
-        "command": "npx",
-        "args": ["-y", "tela-mcp@latest"],
-        "env": {
-          "TELA_BASE_URL": "https://tela.cagdas.io",
-          "TELA_API_KEY": "tela_pat_..."
-        }
+        "url": "https://tela.cagdas.io/api/mcp",
+        "headers": { "Authorization": "Bearer tela_pat_..." }
       }
     }
   }
   ```
-  - Caption: `Drop this in your .mcp.json. That's the whole integration.`
-- **Tool catalog (compact, real names — pick ~8 to show, group by scope):**
-  - `read` — `search` (FTS5 over title + body, snippet-highlighted) · `get_page` · `list_pages` · `list_backlinks`
-  - `write` — `create_page` · `update_page` (auto-snapshots a revision) · `add_comment` (text-anchored) · `import_markdown` (bulk)
+  - Caption: `For Claude Code, Cursor, or your own agent. Scoped token, same server.`
+- **Tool catalog (compact, real names — pick ~9 to show, group by scope):**
+  - `read` — `semantic_search` (meaning + keyword, fused) · `search` (full-text, ranked) · `read_chunk` · `get_page` · `list_pages` · `list_backlinks`
+  - `write` — `create_page` · `update_page` (auto-snapshots a revision) · `add_comment` (text-anchored) · `move_page`
   - `admin` — space + key management
-  - Footnote: `17 tools total. Keys are scoped read / write / admin and can be pinned to a single space.`
-- **Why-you-care line (FAB benefit):** `Your agent stops starting from zero every session. It reads the team's docs, writes back what it learns, and the next session — human or agent — picks up where it left off.`
-- **CTA (transitional):** `See the tool catalog` → `mcp/README.md` on GitHub.
+  - Footnote: `20 tools total. Keys are scoped read / write / admin and can be pinned to a single space. Interactive result cards render in-chat.`
+- **Why-you-care line (FAB benefit):** `Your agent stops starting from zero. It retrieves the right section of the team's docs by meaning, cites it, writes back what it learns — and the next session, human or agent, picks up there.`
+- **CTA (transitional):** `See the tool catalog` → `mcp/README.md` (or `/mcp`) on the site/GitHub.
 
-### 3. Not-just-AI pivot — "The agent only matters because the wiki is real."  — Tier 2  (reassurance pivot)
-- **Purpose:** The skeptical reader just saw the MCP star and is bracing for "an AI gimmick stapled to a thin note app." Disarm it: the MCP server sits *on top of* a real, well-built wiki — not the other way around. One beat, then move straight into proof.
-- **Headline (H2):** `The MCP server is the part that's new. The wiki under it is the part that's done.`
-- **Body (1–2 lines):** `tela isn't an AI feature looking for a wiki to live in. It's a real markdown wiki — multiplayer editing, instant search, comments, history, sharing — and the agent API is one more way in. Take the agents away and you still have a wiki you'd want to use.`
-- **Transition line into the showcase:** `Here's what's actually in the box.`
+### 3. Retrieval — "Your agents search by meaning."  — Tier 1  (CO-STAR; the biggest single win; FAB)
+- **Purpose:** This is the thesis. Keyword search misses; tela retrieves the right section by meaning. Make it concrete.
+- **Headline (H2, question-led):** `How does search work?`
+- **Answer-first block:** `Two ways, fused. Every page is split into heading-aware chunks, embedded, and indexed. A query runs keyword full-text (Postgres) and vector similarity (pgvector) in parallel, then reciprocal-rank fusion blends them — so a search for "rollback steps" finds the runbook section that never says "rollback". Agents call semantic_search to get ranked chunks with citations, then read_chunk for the full section.`
+- **Show it (visual for the build):** a query → ranked **chunk** results, each with its `heading path` (e.g. `Deploy ▸ Production`), a snippet, and a score; a small note that the same retrieval powers the human command palette *and* the agent's `semantic_search` tool. Real-feeling content, never lorem.
+- **Two-line "for humans / for agents" split:**
+  - **For humans:** `Instant search in the command palette — titles, bodies, and meaning. Jump anywhere.`
+  - **For agents:** `semantic_search + read_chunk over the same index — the agent pulls the section that answers the question, with a citation back to the page.`
+- **Honesty note (build + copy):** semantic/vector retrieval runs against an embedding endpoint you point tela at (an Ollama-compatible embedder; `mxbai-embed-large` in the live instance). Keyword full-text needs nothing extra. Say this plainly — "semantic search needs an embedder endpoint; on the hosted instance it's already on." Never imply embeddings run with zero setup on a fresh self-host.
+- No CTA (momentum carries to the pivot).
 
-### 4. Feature showcase — "What's actually in the box."  — Tier 2  (scannable grid, FAB cards)
-- **Purpose:** Prove the pivot. A scannable grid of real capabilities so the reader stops worrying it's thin. Cards carry a `real` | `planned` flag; planned cards get a small **Planned** tag in the copy and never imply they ship today. Recommend 9 cards: 7 shipped, 2 planned (kept honestly minority so the grid reads as "mostly real, a little roadmap").
-- **Section intro (optional H2 already above):** keep the headline; no extra intro line.
-- **Cards (title · one-line description · flag):**
-  - **`real`** — **Markdown all the way down.** `Every page is plain markdown — no block model, no proprietary format. Grep it, diff it, export it, walk away with it.`
-  - **`real`** — **WYSIWYG that writes markdown.** `The Milkdown editor is fully WYSIWYG; the file underneath stays clean markdown. No mode-switching, no export step.`
-  - **`real`** — **Real-time multiplayer.** `Live collaborative editing over Yjs — concurrent cursors and edits, rebased onto the canonical markdown on save.`
-  - **`real`** — **Instant full-text search.** `SQLite FTS5 over titles and bodies, snippet-highlighted, plus a command palette to jump anywhere. No Elasticsearch to run.`
-  - **`real`** — **Comments that don't drift.** `Comments anchor to the surrounding text (prefix · exact · suffix), so they stay put when the page is edited and reflowed.`
-  - **`real`** — **History and one-click revisions.** `Every body change auto-snapshots a revision. Read any past version, diff it, roll back in a click.`
-  - **`real`** — **Share links, your way.** `Publish any page at a public link with optional password gating — same code, no extra service. Excalidraw diagrams render inline.`
-  - **`planned` (Planned)** — **The link graph.** `Backlinks already exist on every page. The graph view that draws them — your wiki as a map you can navigate — is on the roadmap.`
-  - **`planned` (Planned)** — **Mermaid, rendered.** `Mermaid blocks are preserved as code today and survive every round-trip. Rendering them inline is on the roadmap.`
-- **Honesty note for the build:** the two `planned` cards MUST be visually distinct (muted + a small "Planned" tag) and must never be styled identically to shipped cards. Do not move a planned feature into the shipped set without updating this contract.
+### 4. Not-just-AI pivot — "The retrieval only matters because the wiki is real."  — Tier 2  (reassurance pivot)
+- **Purpose:** The skeptic just saw the agent + retrieval stars and is bracing for "an AI gimmick on a thin note app." Disarm it: the MCP server and RAG sit *on top of* a real, well-built wiki. One beat, then proof.
+- **Headline (H2):** `The retrieval is the new part. The wiki under it is the part that's done.`
+- **Body (1–2 lines):** `tela isn't an AI feature looking for a wiki to live in. It's a real markdown wiki — block editing, multiplayer, comments, history, sharing — and the agent layer is one more way in. Take the agents away and you still have a wiki you'd want to use.`
+- **Transition line into the editor/showcase:** `Here's what's actually in the box.`
+
+### 5. The editor — "Block editing. Plain markdown underneath."  — Tier 2  (visual proof; the big editor win)
+- **Purpose:** Show the new block-editing experience and resolve the apparent tension with "markdown canonical."
+- **Headline (H2):** `Edits like a block editor. Saves like a markdown file.`
+- **Body:** `Drag a block to reorder it. Hit / for a slash menu — headings, lists, tasks, callouts, tables, code, diagrams, math. "Turn into" changes a block's type in place. It feels like Notion. The difference: every block operation round-trips to clean markdown on disk. Reordering a block reorders markdown lines; there is no block table, no proprietary format to escape from.`
+- **Detail chips (real, shipped):** `slash menu` · `drag-to-reorder` · `turn-into` · `callouts` · `tables` · `task lists` · `Mermaid` · `KaTeX math` · `Excalidraw inline` · `paste-to-unfurl`.
+- **Visual:** the tela editor with a block being dragged / the slash menu open, beside the same content as raw markdown — the "WYSIWYG ↔ markdown" equivalence shown, not told. Real content.
+- No CTA.
+
+### 6. Feature showcase — "What's actually in the box."  — Tier 2  (scannable bento, FAB cells)
+- **Purpose:** Prove the pivot. A scannable grid of real capabilities. Cells carry a `real` | `planned` flag; planned cells get a muted style + a small **Planned** tag and never imply they ship today. ~9 cells, majority shipped.
+- **Cells (title · one-line description · flag):**
+  - **`real`** — **Real-time multiplayer.** `Live cursors and edits over Yjs, rebased onto canonical markdown on save.`
+  - **`real`** — **Comments that don't drift.** `Comments anchor to the surrounding text (prefix · exact · suffix), so they stay put when the page is reflowed.`
+  - **`real`** — **Block editing → markdown.** `Drag, slash, turn-into — Notion-style editing; the file underneath stays clean markdown.`
+  - **`real`** — **History & one-click revisions.** `Every change auto-snapshots. Read any version, diff it, roll back.`
+  - **`real`** — **Diagrams & math inline.** `Excalidraw renders in the page; KaTeX math and Mermaid round-trip as markdown.`
+  - **`real`** — **Bring your markdown — and take it back.** `Import a directory; export anytime. Plain files in, plain files out.`
+  - **`real`** — **Share links, your way.** `Publish any page at a public link with optional password gating and expiry.`
+  - **`planned` (Planned)** — **The link graph.** `Backlinks exist on every page today. The graph view that draws them is on the roadmap.`
+  - **`planned` (Planned)** — **Templates.** `Scaffold runbooks, RFCs, and postmortems in a click. On the roadmap.`
+- **Honesty note for the build:** `planned` cells MUST be visually distinct (muted + a "Planned" tag) and never styled identically to shipped cells. Do not promote a planned feature without updating this contract.
 - No CTA (momentum carries to the comparison).
 
-### 5. Honest comparison — "How tela stacks up. Honestly."  — Tier 2  (head-to-head, NOT smug)
-- **Purpose:** The reader is mentally comparing tela to what they already use. Beat them to it — and concede the one thing each alternative genuinely does better. Conceding builds more trust than a clean sweep; the synthesis line lands harder because the column above it is honest.
-- **Format (recommended):** **head-to-head cards**, one per alternative, NOT a giant checkmark matrix. A row-×-alternative grid with green ticks for tela everywhere reads as marketing theatre to a dev audience and forces table-stakes parity rows. Cards let each comparison say one true edge and one honest concession in plain prose. Five cards, equal weight, alternative name as the card title.
+### 7. Honest comparison — "How tela compares. Honestly."  — Tier 2  (head-to-head, NOT smug)
+- **Purpose:** Beat the reader to the comparison — and concede the one thing each alternative genuinely does better. Conceding builds trust; the synthesis line lands harder.
 - **Headline (H2):** `How does tela compare?`
-- **Framing line (honest, confident, not smug):** `These are all good tools — most of them are why this category exists. Here's where tela is genuinely different, and the one thing each of these still does better.`
-- **Card structure (each card):** `Alternative name` · **`tela's edge:`** one line · **`They do better:`** one line.
-- **Cards:**
-  - **Notion** — **tela's edge:** `Your docs are plain markdown on your own server, and agents get a real read/write API — not a closed block store with a chat sidebar bolted on.` · **They do better:** `Notion's databases, templates, and all-round product polish are years ahead. If you want a relational workspace, not a wiki, use Notion.`
-  - **Confluence** — **tela's edge:** `One binary you run yourself, in minutes — no enterprise install, no per-seat pricing, and your data stays on your disk.` · **They do better:** `Deep Jira integration, granular permissions, and governance at thousand-user scale. Big orgs that live in Atlassian have reasons to stay.`
-  - **Obsidian** — **tela's edge:** `Built for a team: live multiplayer, a server everyone shares, and an agent API — not a single-player vault you sync by hand.` · **They do better:** `Local-first single-user is its whole point, and the plugin ecosystem and graph view are unmatched. Solo? Obsidian is hard to beat.`
-  - **A git repo of markdown (or GitHub wiki)** — **tela's edge:** `Live WYSIWYG editing, instant full-text search, comments, sharing, and an agent API — over the same markdown, no pull requests to read a doc.` · **They do better:** `Pure version control, free, zero infra, and Git's history is the real thing. If you just want files in a repo, you already have one.`
-  - **Outline** — **tela's edge:** `A built-in MCP server makes agents first-class, and your content is canonical markdown on a single self-hosted binary — no Postgres, no Redis, no separate search.` · **They do better:** `Outline is mature and polished, with real Slack integration and a track record tela doesn't have yet. It's the closest thing to a finished version of this.`
-- **Synthesis line (the close — what none of them combine):** `None of them put all of it in one place: an agent-native MCP server, markdown you actually own, live multiplayer, real full-text search — in a single binary you run yourself. That combination is tela.`
+- **Framing line:** `These are all good tools — most of them are why this category exists. Here's where tela is genuinely different, and the one thing each of these still does better.`
+- **Row structure (each):** `Alternative` · **`Where tela wins:`** one line · **`What it still does better:`** one line.
+- **Rows:**
+  - **Notion** — **wins:** `Plain markdown you own, semantic retrieval, and a real MCP connector your agent uses from Claude/ChatGPT — not a closed block store with a chat sidebar.` · **better:** `Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.`
+  - **Confluence** — **wins:** `Agents search and write it by meaning, your content is portable markdown, and you can run it yourself — no enterprise install, no per-seat pricing.` · **better:** `Jira integration, granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.`
+  - **Obsidian** — **wins:** `Built for a team: live multiplayer, a shared server with SSO and roles, and an agent API — not a single-player vault you sync by hand.` · **better:** `Local-first single-user is its whole point; the plugin ecosystem and graph view are unmatched. Solo? Hard to beat.`
+  - **A git repo of markdown** — **wins:** `Semantic + full-text search, block editing, comments, sharing, and an agent connector — over the same markdown, no PR to read a doc.` · **better:** `Pure version control, free, zero infra. If you just want files in a repo, you already have one.`
+  - **Notion AI / "AI" wikis** — **wins:** `Retrieval your own agent drives from Claude or ChatGPT, over markdown you can export — not a built-in chatbot you can only use in their app.` · **better:** `One-vendor convenience and a polished in-app assistant, with no embedder to think about. If you only want their chatbot, it's simpler.`
+- **Synthesis line (the close):** `None of them put all of it in one place: an agent that retrieves your docs by meaning, a real MCP connector inside Claude and ChatGPT, markdown you own, and live multiplayer — with SSO and an audit trail. That combination is tela.`
 
-### 6. Pillars strip — "Markdown you own · One binary · Live"  — Tier 2  (FAB, three cards)
-- **Section intro (optional H2):** `A wiki built on things you can grep, run, and export.`
-- **Card A — Markdown is canonical. Forever.**
-  `Every page is plain markdown text — no block model, no proprietary format. The Milkdown editor is WYSIWYG; the file underneath is markdown. Bulk-import a directory, export anytime. Leaving tela means copying files.`
-- **Card B — One binary. SQLite. Your server.**
-  `Go compiles to a single binary; storage and full-text search are SQLite + FTS5 — no Postgres, no Elasticsearch, nothing extra to operate. docker compose up, one host port, your data on your disk.`
-- **Card C — Real-time multiplayer.**
-  `Live collaborative editing over Yjs: concurrent cursors and edits, rebased onto the canonical markdown on save. Comments anchor to the surrounding text, so they don't drift when the doc is reflowed.`
+### 8. Security & team — "Secure, team-shaped, and yours."  — Tier 2  (reassurance pillar; replaces the old self-host pillar)
+- **Purpose:** Make a technical buyer comfortable putting the team's knowledge in. This is the trust pillar. End with the self-host escape hatch — present, not headline.
+- **Headline (H2):** `Built for a team you can trust it with.`
+- **Body (answer-first):** `Single sign-on (WorkOS), email-verified accounts with Argon2id password hashing, organizations and sub-team groups, and per-space roles — owner, editor, viewer — with hard invariants (a space always has a real owner; a grant can never silently lower someone's access). Agent keys are scoped read/write/admin, expiring, pinnable to one space, stored only as HMAC, and every key request is audited.`
+- **Proof chips / tiles (real, shipped):** `SSO (WorkOS)` · `Orgs + groups` · `Per-space RBAC` · `Scoped, audited API keys` · `Argon2id` · `SSRF-hardened import` · `Password-gated share links`.
+- **Self-host escape hatch (short, the demoted pillar):** `Prefer to run it yourself? You can. tela is open and self-hostable — Docker Compose, your Postgres, your disk, your markdown. Read exactly what runs before you run it.`  CTA: `Read the docs` → `docs/` / README.
+- **Honesty line:** `Orgs are admin-provisioned (not open self-service signup) and social login isn't wired yet — by design for now. The access model is documented and the auth code is open.`
 
-### 7. Show the product — "This is the editor."  — Tier 2  (visual proof)
-- **Headline (H2):** `A fast wiki the humans actually want to use.`
-- **Body:** `Spaces with nested pages. WYSIWYG markdown editing. Page history with one-click revisions. Public share links with optional password gating. Excalidraw diagrams inline. Role-based access per space.`
-- **Visual:** real screenshot / interactive snippet of the Milkdown editor with a populated space tree and a multiplayer cursor — real content, never lorem.
-- No CTA (kept clean; momentum carries to search).
-
-### 8. Search — "Find anything. No second service."  — Tier 2  (question-led, FAB)
-- **Headline (H2):** `How does search work?`
-- **Answer-first block:** `Instant full-text search runs on SQLite FTS5 in the backend — no Elasticsearch, no external search to run or pay for. The command palette searches titles and bodies with snippet highlights; an Orama index gives client-side fuzzy search per space. Agents hit the same search through the search tool.`
-
-### 9. Self-host / ownership — "Run it yourself in minutes."  — Tier 2  (PAS resolution + risk reversal)
-- **Headline (H2):** `Your wiki, on your machine.`
-- **Body:** `No SaaS account, no seat pricing, no data on someone else's servers. Clone, set three secrets, and run.`
-- **Quickstart (code block, real):**
-  ```bash
-  cp deploy/.env.example deploy/.env   # set TELA_PUBLIC_BASE_URL + 2 secrets
-  make up                              # backend + frontend + Caddy on :8780
-  ```
-- **Reassurance line:** `Your markdown lives in SQLite on a volume you control. Open code — read exactly what runs before you run it.`
-- **CTA:** `Read the docs` → `docs/` / README quickstart.
-
-### 10. Credibility — "Open. Live. Run it yourself."  — Tier 3  (transparency as proof; NO fake logos)
+### 9. Credibility — "Open. Live. In the directories."  — Tier 3  (transparency as proof; NO fake logos)
 - **Headline (H2):** `Why trust it? Don't — read it and run it.`
 - **Three proof tiles (transparency, not testimonials):**
-  - `Open code` — `The backend, frontend, and MCP server are open. See exactly what runs.` → GitHub.
-  - `Live instance` — `tela.cagdas.io runs the same code. Use it before you install it.` → live link.
-  - `Published MCP package` — `tela-mcp ships on npm, versioned against the backend it talks to.` → npm.
-- **Honesty line (builds trust with this audience):** `tela is at v0 and self-hostable today. No fabricated logos, no "trusted by thousands" — just the code, a running instance, and a spec you can read.`
+  - `Open code` — `Backend, frontend, and the MCP server are open. See exactly what runs.` → GitHub.
+  - `Live instance` — `tela.cagdas.io runs the same code. Use it before you commit.` → live link.
+  - `Connector you can add` — `A real MCP connector, submitted to the Claude and ChatGPT directories and versioned against the backend.` → `/mcp` docs.
+- **Honesty line:** `tela is at v0 and usable today. No fabricated logos, no "trusted by thousands" — just the code, a running instance, a connector you can add, and a spec you can read.`
 
-### 11. FAQ / objections  — Tier 3  (question-led H2s, answer-first prose; NO FAQPage schema)
-- `Is the MCP integration real or a demo?` → `Real. tela-mcp is published on npm with 17 tools over the live REST API. The full tool catalog and the .mcp.json config are in mcp/README.md, and the code is open.`
-- `Do I need Postgres or Elasticsearch?` → `No. Storage and full-text search are both SQLite + FTS5 inside the single Go binary. The only services in the stack are the backend, the frontend, and a Caddy proxy.`
-- `Can I get my content out?` → `Yes. Pages are canonical plain markdown. Bulk-import a directory and export anytime; there's no proprietary format to convert away from.`
-- `How do agents authenticate?` → `Each agent uses a scoped personal access token (tela_pat_…) issued in Settings → API Keys. Keys are read, write, or admin, and can be pinned to a single space.`
-- `Is it multiplayer?` → `Yes — live collaborative editing over Yjs, with concurrent cursors and edits rebased onto the markdown on save.`
-- `How is this different from Notion or Confluence?` → `Your data is plain markdown on your own server, and agents get a real read/write API through a built-in MCP server — not a chat sidebar bolted onto a closed document store.`
+### 10. FAQ / objections  — Tier 3  (question-led H2s, answer-first prose; NO FAQPage schema)
+- `Does it work inside Claude and ChatGPT?` → `Yes. tela runs a remote MCP server with OAuth sign-in; add it as a connector in Claude or ChatGPT (it's submitted to both directories) and your agent searches, reads, and writes your wiki — scoped to your account. Code agents like Claude Code or Cursor point at the same URL with a token.`
+- `How is search different from a normal wiki?` → `tela does hybrid retrieval: keyword full-text (Postgres) and vector similarity (pgvector) fused with reciprocal-rank fusion, over heading-aware chunks. Agents get semantic_search + read_chunk, so they retrieve the section that answers the question — not just keyword matches — with a citation.`
+- `Do I need to run an embedder?` → `Only for semantic/vector search, and only on self-host — point tela at an Ollama-compatible embedder (the live instance uses mxbai-embed-large). Keyword full-text needs nothing extra.`
+- `Is it really markdown, with all that block editing?` → `Yes. The editor is full block editing — drag, slash menu, turn-into, tables, diagrams — but pages.body is plain markdown. There is no block table; reordering a block reorders markdown lines. Import a directory, export anytime.`
+- `How do agents authenticate?` → `OAuth 2.1 for the Claude/ChatGPT connectors (one sign-in, no token to paste), or a scoped personal access token (tela_pat_…) for code agents. Keys are read/write/admin, expirable, pinnable to one space, and audited.`
+- `Is my team's data access-controlled?` → `Yes — SSO, organizations and groups, and per-space roles (owner/editor/viewer) with hard invariants. Keys are scoped and audited. The access model is documented and open.`
+- `Can I self-host it?` → `Yes. It's open and self-hostable with Docker Compose (Postgres + an optional embedder for semantic search). Your data on your disk, your markdown exportable. Self-host is the option, not the requirement — the hosted instance is ready to use now.`
 
-### 12. Final CTA  — Tier 1  (close)
-- **Headline:** `Give your agents a wiki they can write to.`
-- **Subhead:** `Self-host tela in a few minutes, or open the live instance first.`
-- **Primary CTA:** `Self-host it` → repo/quickstart.  **Secondary:** `Try the live instance` → https://tela.cagdas.io
-- **Friction microcopy:** `One binary. docker compose up. Your server, your markdown.`
+### 11. Final CTA  — Tier 1  (close)
+- **Headline:** `Give your agents a wiki they can reason over.`
+- **Subhead:** `Start free on the hosted instance, then connect it in Claude or ChatGPT.`
+- **Primary CTA:** `Get started` → https://tela.cagdas.io.  **Secondary:** `Add to Claude or ChatGPT` → `#agents` / `/mcp`.
+- **Friction microcopy:** `Free to start · markdown you own · self-host whenever you want.`
 
-### 13. Footer  — Tier 4  (junk drawer)
-- Wordmark + one-line descriptor: `tela — the agent-native, self-hosted markdown wiki.`
-- Links: GitHub · Docs · MCP server (npm) · Live instance (tela.cagdas.io) · License.
+### 12. Footer  — Tier 4  (junk drawer)
+- Wordmark + one-line descriptor: `tela — the agent-native team wiki your AI reasons over.`
+- Links: GitHub · MCP / connector · Docs · Live instance (tela.cagdas.io) · Privacy · License.
 - Optional, sparing: `tela — Latin for the woven cloth. A grid you build on.` (use once or not at all.)
 
-- **Primary CTA (one, repeated):** `Self-host it` · friction microcopy: `One binary + SQLite. docker compose up. Your server.`
-- **Secondary CTA (repeated):** `Try the live instance` → https://tela.cagdas.io
+- **Primary CTA (one, repeated):** `Get started` → https://tela.cagdas.io · friction: `Free to start · markdown you own · self-host whenever you want.`
+- **Secondary CTA (repeated):** `Add to Claude or ChatGPT` → `#agents` / `/mcp`.
 
 ## SEO & accessibility
 
-- **`<title>`:** `tela — the agent-native, self-hosted markdown wiki`
-- **Meta description:** `A self-hostable, markdown-native team wiki with a built-in MCP server. Your AI agents read, write, and search your docs as first-class teammates. Live multiplayer, SQLite full-text search, your data on your own server.`
-- **5-second clarity test (visitor must grasp):** *tela is a self-hosted markdown team wiki, and its standout is that your AI agents can read and write it directly through a built-in MCP server.*
-- **Headings:** one H1 (the hero promise); section H2s phrased as real queries where natural ("What can an agent actually do in tela?", "How does search work?"). Descriptive anchor text (never "click here"). Meaningful alt on the editor screenshot and the hero agent-write animation. Plain-language reading level (~8th grade) despite the technical audience — precise, not dense.
-- **JSON-LD:** `SoftwareApplication` (name, MCP/markdown/self-host description, `applicationCategory`, `operatingSystem`, open-source), plus `Organization`/`WebSite`. **No FAQPage** schema (FAQ rich results removed 2026) — answer-first prose under question H2s is the durable play.
+- **`<title>`:** `tela — the agent-native team wiki your AI reasons over`
+- **Meta description:** `A markdown team wiki with semantic search and a built-in MCP server. Your AI agents search your docs by meaning and read, write, and cite them — right inside Claude and ChatGPT. Real-time multiplayer, SSO, scoped access. Your markdown, hosted or self-hosted.`
+- **5-second clarity test (visitor must grasp):** *tela is a markdown team wiki, and its standout is that your AI agents reason over it — semantic retrieval + a real MCP connector inside Claude and ChatGPT.*
+- **Headings:** one H1 (the hero promise); section H2s phrased as real queries where natural ("What can an agent actually do with tela?", "How does search work?"). Descriptive anchor text (never "click here"). Meaningful alt on the editor visual and the hero signature moment. Plain-language reading level (~8th grade) despite the technical audience.
+- **JSON-LD:** `SoftwareApplication` (name, MCP/semantic-search/markdown description, `applicationCategory`, `operatingSystem`, open-source), plus `SoftwareSourceCode`, `Organization`/`WebSite`. **No FAQPage** schema (FAQ rich results removed 2026) — answer-first prose under question H2s is the durable play. **Remove "SQLite" from the structured-data description.**
 
 ## VoC swipe file  (verbatim language to use in copy)
 
-- "the wiki your agents can write to"
-- "first-class teammates, not a sidebar / not a chat bolt-on"
+- "the wiki your agents reason over"
+- "search your docs by meaning, not just keywords"
+- "use it inside Claude and ChatGPT"
+- "the right section, with a citation"
 - "stops starting from zero every session"
-- "read, write, and search your docs"
-- "markdown you own / canonical markdown forever"
-- "no block model, no proprietary format"
-- "leaving tela means copying files"
-- "one binary + SQLite — no Postgres, no Elasticsearch"
-- "docker compose up. Your server, your markdown."
-- "drop this in your .mcp.json — that's the whole integration"
+- "edits like a block editor, saves like a markdown file"
+- "no block table — reordering a block reorders markdown lines"
+- "markdown you own / take it back / leaving means copying files"
+- "SSO, roles, scoped and audited keys"
+- "submitted to the Claude and ChatGPT connector directories"
+- "hosted for you — self-host if you'd rather"
 - "read exactly what runs before you run it"
-- "use it before you install it"
+- "use it before you commit"

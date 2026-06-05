@@ -1,26 +1,53 @@
 ---
-// §3 — "Not an AI gimmick" + the visual feature bento, as ONE section. The
-// dismissal line leads straight into a bento of real, demonstrated features:
-// live multiplayer, instant full-text search, the link graph, canonical
-// markdown, version history, diagrams. Each cell is a token-driven visual, not
-// an icon. Planned features carry an honest "Planned" tag.
-const searchResults = [
-  { t: 'Deploy runbook', s: 'Engineering', sn: '…rebuild and <mark>deploy</mark> on :8780, then re-probe' },
-  { t: 'Incident response', s: 'Engineering', sn: 'page @on-call before <mark>deploy</mark>ing anyone else' },
-  { t: 'Release checklist', s: 'Product', sn: 'tag, <mark>deploy</mark>, verify /api/version matches' },
-  { t: 'Edge cache notes', s: 'Infra', sn: 'Cloudflare purges on every <mark>deploy</mark>' },
-];
+// §6 — The visual feature bento: a scannable grid of real, demonstrated wiki
+// features — multiplayer, sharing, canonical markdown, history, diagrams,
+// import. Each cell is a token-driven visual, not an icon. Two planned features
+// carry an honest "Planned" tag and a muted style. (Search + editor have their
+// own dedicated sections; they're intentionally not duplicated here.)
 ---
 <section id="features" class="bento-section">
   <div class="bento-head reveal-up">
     <p class="kicker"><span class="kicker-dot"></span>Features</p>
-    <h2 class="bento-title">
-      And it's not just<br /><span class="accent">“slap AI on it and call it a product.”</span>
-    </h2>
-    <p class="bento-sub">Here's what tela can do.</p>
+    <h2 class="bento-title">A rich editor, and the wiki essentials.</h2>
+    <p class="bento-sub">Far more than text — and all of it the day-to-day stuff your team actually uses.</p>
   </div>
 
   <div class="bento">
+
+    <!-- ── Rich content blocks ──────────────────────────────────────── -->
+    <article class="cell cell-blocks reveal-up">
+      <div class="viz blocks">
+        <div class="bk bk-callout"><span class="bk-cic">!</span><span>Page <b>@on-call</b> first</span></div>
+        <div class="bk bk-toggle"><span class="bk-chev">▸</span><span>Rollback steps</span></div>
+        <div class="bk bk-todo">
+          <span class="bk-row done"><span class="bk-cb"><svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>Cut release</span>
+          <span class="bk-row"><span class="bk-cb"></span>Purge cache</span>
+        </div>
+        <div class="bk bk-table">
+          <span class="bk-tr bk-th"><span>Step</span><span>Owner</span></span>
+          <span class="bk-tr"><span>Deploy</span><span>Sam</span></span>
+          <span class="bk-tr"><span>Verify</span><span>Lee</span></span>
+        </div>
+        <div class="bk bk-code"><code><span class="t">tela</span> incident open <span class="s">--sev&nbsp;2</span></code></div>
+        <div class="bk bk-math"><span class="math">p99 = √(Σ&nbsp;tᵢ²)</span></div>
+        <div class="bk bk-kanban">
+          <span class="bk-col"><span class="bk-ct">Todo</span><span class="bk-card"></span><span class="bk-card"></span></span>
+          <span class="bk-col"><span class="bk-ct">Done</span><span class="bk-card on"></span></span>
+        </div>
+        <div class="bk bk-diagram">
+          <svg viewBox="0 0 110 44" fill="none" aria-hidden="true">
+            <rect class="bd-box" x="2" y="15" width="30" height="15" rx="3"/>
+            <rect class="bd-box hl" x="42" y="15" width="30" height="15" rx="3"/>
+            <rect class="bd-box" x="82" y="15" width="26" height="15" rx="3"/>
+            <path class="bd-arr" d="M32 22.5H42"/><path class="bd-arr" d="M72 22.5H82"/>
+          </svg>
+        </div>
+      </div>
+      <div class="cap cap-wide">
+        <h3>Every kind of block</h3>
+        <p>Callouts, toggles, tables, kanban boards, code, math, Mermaid and Excalidraw diagrams, task lists — inserted from a <code>/</code> menu and stored as plain markdown.</p>
+      </div>
+    </article>
 
     <!-- ── Live multiplayer ─────────────────────────────────────────── -->
     <article class="cell cell-collab reveal-up">
@@ -41,35 +68,79 @@ const searchResults = [
         </div>
       </div>
       <div class="cap">
-        <h3>Real-time multiplayer</h3>
-        <p>Live cursors and edits over Yjs. Comments anchor to the text — they don't drift when the page is edited.</p>
+        <h3>Real-time collaboration</h3>
+        <p>Several people edit a page at once with live cursors and no save conflicts. Comments stay attached to the text they mark.</p>
       </div>
     </article>
 
-    <!-- ── Instant full-text search ─────────────────────────────────── -->
-    <article class="cell cell-search reveal-up">
-      <div class="viz srch">
-        <div class="srch-bar">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <span class="q">deploy<span class="qcaret"></span></span>
-          <kbd>FTS5</kbd>
+    <!-- ── Share links ──────────────────────────────────────────────── -->
+    <article class="cell cell-share reveal-up">
+      <div class="viz share">
+        <div class="share-card">
+          <div class="sc-row">
+            <svg class="sc-glob" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>
+            <span class="sc-url">tela.cagdas.io/share/<span class="sc-tok">a9f2…</span></span>
+            <span class="sc-copy">Copy</span>
+          </div>
+          <div class="sc-opts">
+            <span class="sc-opt on"><span class="sc-check"><svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>Password</span>
+            <span class="sc-opt on"><span class="sc-check"><svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>Expires in 7d</span>
+          </div>
         </div>
-        <ul class="srch-results">
-          {searchResults.map((r, i) => (
-            <li class:list={['srow', { active: i === 0 }]}>
-              <svg class="ic" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v5h5"/><path d="M5 3h9l5 5v13H5z"/></svg>
-              <span class="main">
-                <span class="rt">{r.t}<span class="sp">{r.s}</span></span>
-                <span class="sn" set:html={r.sn}></span>
-              </span>
-            </li>
-          ))}
-        </ul>
-        <div class="srch-foot"><span>1,240 pages</span><span>· 3&nbsp;ms · no Elasticsearch</span></div>
       </div>
       <div class="cap">
-        <h3>Instant full-text search</h3>
-        <p>SQLite FTS5 over every title and body. No Elasticsearch, no second service to run.</p>
+        <h3>Public share links</h3>
+        <p>Share any page by link, with an optional password and expiry date.</p>
+      </div>
+    </article>
+
+    <!-- ── Markdown, canonical ──────────────────────────────────────── -->
+    <article class="cell cell-md reveal-up">
+      <div class="viz mdviz">
+        <pre class="mdcode" tabindex="0" aria-label="canonical markdown source"><code><span class="k"># Incident response</span>
+
+When a service degrades, the
+<span class="b">**on-call engineer**</span> owns it.
+
+<span class="g">&gt; [!note]</span> Page @on-call first.
+
+<span class="c">`tela incident open`</span></code></pre>
+      </div>
+      <div class="cap">
+        <h3>Plain-markdown storage</h3>
+        <p>Every page is a markdown file. Search, diff, and export them; nothing is locked in a proprietary format.</p>
+      </div>
+    </article>
+
+    <!-- ── Version history ──────────────────────────────────────────── -->
+    <article class="cell cell-history reveal-up">
+      <div class="viz hist">
+        <ol class="timeline">
+          <li class="now"><span class="d"></span><span class="vmeta"><b>Now</b> · Sam</span><span class="restore">current</span></li>
+          <li><span class="d"></span><span class="vmeta">2h ago · Lee</span><span class="restore">Restore</span></li>
+          <li><span class="d"></span><span class="vmeta">Yesterday · Sam</span><span class="restore">Restore</span></li>
+          <li class="muted"><span class="d"></span><span class="vmeta">3 days ago · agent</span><span class="restore">Restore</span></li>
+        </ol>
+      </div>
+      <div class="cap">
+        <h3>Version history</h3>
+        <p>Every change is saved. Compare versions and restore any of them.</p>
+      </div>
+    </article>
+
+    <!-- ── Wikilinks & backlinks ────────────────────────────────────── -->
+    <article class="cell cell-wikilinks reveal-up">
+      <div class="viz wlink">
+        <p class="wl-line">Escalate via the <span class="wl-chip">[[On-call rotation]]</span> before paging anyone.</p>
+        <div class="wl-back">
+          <span class="wl-back-h">Linked from</span>
+          <span class="wl-b"><span class="wl-pd"></span>Incident response</span>
+          <span class="wl-b"><span class="wl-pd"></span>Deploy runbook</span>
+        </div>
+      </div>
+      <div class="cap">
+        <h3>Wikilinks &amp; backlinks</h3>
+        <p>Link pages with <code>[[…]]</code>. Every page shows what links back to it.</p>
       </div>
     </article>
 
@@ -131,123 +202,6 @@ const searchResults = [
       </div>
     </article>
 
-    <!-- ── Tasks roll-up (planned) ──────────────────────────────────── -->
-    <article class="cell cell-tasks reveal-up">
-      <span class="tag-planned">Planned</span>
-      <div class="viz tasks">
-        <div class="tasks-head"><b>12 open</b><span>· across 5 pages</span></div>
-        <ul class="tasklist">
-          <li class="done"><span class="cb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>Cut the v0.4 release<span class="pg">Release</span></li>
-          <li><span class="cb"></span>Purge the edge cache<span class="pg">Runbook</span></li>
-          <li><span class="cb"></span>Confirm on-call rotation<span class="pg">On-call</span></li>
-          <li class="done"><span class="cb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>Write the postmortem<span class="pg">Incident</span></li>
-        </ul>
-      </div>
-      <div class="cap">
-        <h3>Tasks that roll up</h3>
-        <p>Checkboxes anywhere in your markdown collect into one view. On the roadmap.</p>
-      </div>
-    </article>
-
-    <!-- ── Markdown, canonical ──────────────────────────────────────── -->
-    <article class="cell cell-md reveal-up">
-      <div class="viz mdviz">
-        <pre class="mdcode" tabindex="0" aria-label="canonical markdown source"><code><span class="k"># Incident response</span>
-
-When a service degrades, the
-<span class="b">**on-call engineer**</span> owns it.
-
-<span class="g">&gt; [!note]</span> Page @on-call first.
-
-<span class="c">`tela incident open`</span></code></pre>
-      </div>
-      <div class="cap">
-        <h3>Markdown all the way down</h3>
-        <p>Plain markdown — no block model, no lock-in. Grep it, diff it, export it.</p>
-      </div>
-    </article>
-
-    <!-- ── Version history ──────────────────────────────────────────── -->
-    <article class="cell cell-history reveal-up">
-      <div class="viz hist">
-        <ol class="timeline">
-          <li class="now"><span class="d"></span><span class="vmeta"><b>Now</b> · Sam</span><span class="restore">current</span></li>
-          <li><span class="d"></span><span class="vmeta">2h ago · Lee</span><span class="restore">Restore</span></li>
-          <li><span class="d"></span><span class="vmeta">Yesterday · Sam</span><span class="restore">Restore</span></li>
-          <li class="muted"><span class="d"></span><span class="vmeta">3 days ago · agent</span><span class="restore">Restore</span></li>
-        </ol>
-      </div>
-      <div class="cap">
-        <h3>History &amp; one-click revisions</h3>
-        <p>Every change auto-snapshots. Read any version, diff it, roll back.</p>
-      </div>
-    </article>
-
-    <!-- ── Diagrams ─────────────────────────────────────────────────── -->
-    <article class="cell cell-diagram reveal-up">
-      <div class="viz diag">
-        <svg viewBox="0 0 300 150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A flow diagram embedded in a page">
-          <defs>
-            <marker id="ah" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 6 3 0 6z" fill="currentColor"/></marker>
-          </defs>
-          <g class="flow">
-            <rect class="box" x="14"  y="58" width="74" height="34" rx="6"/>
-            <text x="51"  y="79">edit</text>
-            <rect class="box hl" x="113" y="58" width="74" height="34" rx="6"/>
-            <text x="150" y="79">save</text>
-            <rect class="box" x="212" y="20" width="74" height="34" rx="6"/>
-            <text x="249" y="41">render</text>
-            <rect class="box" x="212" y="96" width="74" height="34" rx="6"/>
-            <text x="249" y="117">commit</text>
-            <path class="arr" d="M88 75 H113" marker-end="url(#ah)"/>
-            <path class="arr" d="M187 70 C202 60 200 42 212 38" marker-end="url(#ah)"/>
-            <path class="arr" d="M187 80 C202 92 200 108 212 113" marker-end="url(#ah)"/>
-          </g>
-        </svg>
-      </div>
-      <div class="cap">
-        <h3>Diagrams inline</h3>
-        <p>Excalidraw renders in the page. Mermaid round-trips today, renders soon.</p>
-      </div>
-    </article>
-
-    <!-- ── Integrations banner (planned) ────────────────────────────── -->
-    <article class="cell cell-integrations reveal-up">
-      <span class="tag-planned">Planned</span>
-      <div class="viz integ">
-        <div class="integ-cards">
-          <div class="unfurl">
-            <span class="uf-ic" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2 22 12 12 22 2 12z" opacity="0.9"/></svg>
-            </span>
-            <span class="uf-main">
-              <span class="uf-t">PROJ-142 — Rate-limit the share API</span>
-              <span class="uf-m"><span class="uf-status">In Progress</span> · Sam</span>
-            </span>
-          </div>
-          <div class="unfurl">
-            <span class="uf-ic" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-            </span>
-            <span class="uf-main">
-              <span class="uf-t">#149 — https-only mira paste</span>
-              <span class="uf-m"><span class="uf-status merged">Merged</span> · zcag</span>
-            </span>
-          </div>
-        </div>
-        <div class="integ-chips">
-          <span class="ichip">Jira</span>
-          <span class="ichip">GitHub</span>
-          <span class="ichip">Slack</span>
-          <span class="ichip">Teams</span>
-        </div>
-      </div>
-      <div class="cap cap-wide">
-        <h3>Connects to your stack</h3>
-        <p>Paste a Jira issue, GitHub PR, or Figma link → it unfurls into a live card. Notify Slack or Teams when a page changes. On the roadmap.</p>
-      </div>
-    </article>
-
     <!-- ── Portability banner (real) ────────────────────────────────── -->
     <article class="cell cell-import reveal-up">
       <div class="viz import">
@@ -265,8 +219,8 @@ When a service degrades, the
         </div>
       </div>
       <div class="cap cap-wide">
-        <h3>Bring your markdown — and take it back</h3>
-        <p>Import a whole directory; export any time. Plain files in, plain files out — leaving tela means copying files, not a migration.</p>
+        <h3>Markdown import &amp; export</h3>
+        <p>Import a folder of markdown in one step, and export everything at any time.</p>
       </div>
     </article>
 
@@ -354,20 +308,24 @@ When a service degrades, the
 
   @media (min-width: 760px) {
     .bento { grid-template-columns: repeat(6, 1fr); grid-auto-flow: row dense; }
+    .cell-blocks    { grid-column: span 6; min-height: 0; flex-direction: row; align-items: stretch; }
+    .cell-blocks .viz { flex: 1.35; }
+    .cell-blocks .blocks { grid-template-columns: repeat(4, 1fr); }
+    .cell-blocks .cap-wide {
+      flex: 1; max-width: 40%;
+      border-top: 0; border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; justify-content: center;
+    }
     .cell-collab    { grid-column: span 4; min-height: 290px; }
-    .cell-search    { grid-column: span 2; grid-row: span 2; }
-    .cell-graph     { grid-column: span 4; min-height: 250px; }
-    .cell-templates { grid-column: span 3; }
-    .cell-tasks     { grid-column: span 3; }
-    .cell-md        { grid-column: span 2; }
+    .cell-wikilinks { grid-column: span 2; }
     .cell-history   { grid-column: span 2; }
-    .cell-diagram   { grid-column: span 2; }
-    .cell-import,
-    .cell-integrations { grid-column: span 6; min-height: 0; flex-direction: row; align-items: stretch; }
-    .cell-import .viz,
-    .cell-integrations .viz { flex: 1.1; }
-    .cell-import .cap-wide,
-    .cell-integrations .cap-wide {
+    .cell-share     { grid-column: span 2; }
+    .cell-md        { grid-column: span 2; }
+    .cell-graph     { grid-column: span 4; min-height: 250px; }
+    .cell-templates { grid-column: span 2; }
+    .cell-import    { grid-column: span 6; min-height: 0; flex-direction: row; align-items: stretch; }
+    .cell-import .viz { flex: 1.1; }
+    .cell-import .cap-wide {
       flex: 1; max-width: 48%;
       border-top: 0; border-left: 1px solid var(--border);
       display: flex; flex-direction: column; justify-content: center;
@@ -431,6 +389,104 @@ When a service degrades, the
   .imp-flow { width: 56px; flex: none; }
   .imp-p { display: flex; align-items: center; gap: 0.45rem; font-size: var(--text-sm); color: var(--fg); }
   .imp-p .pd { width: 7px; height: 7px; border-radius: 2px; background: var(--brand); flex: none; }
+
+  /* ── content-blocks sampler ───────────────────────────────────────── */
+  .blocks {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.55rem;
+    align-content: center;
+    height: 100%;
+  }
+  .bk {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunk);
+    padding: 0.55rem 0.6rem;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.3rem;
+    font-size: var(--text-xs);
+    color: var(--fg-soft);
+    overflow: hidden;
+  }
+  .bk-callout { flex-direction: row; align-items: center; gap: 0.45rem; border-left: 2px solid var(--brand); background: var(--brand-wash); color: var(--fg); }
+  .bk-callout b { color: var(--brand-strong); }
+  .bk-cic { flex: none; width: 15px; height: 15px; border-radius: var(--radius-full); background: var(--brand); color: var(--brand-fg); display: grid; place-items: center; font-weight: 700; font-size: 10px; }
+  .bk-toggle { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--fg); }
+  .bk-chev { color: var(--brand); }
+  .bk-row { display: flex; align-items: center; gap: 0.4rem; }
+  .bk-row.done { color: var(--fg-faint); text-decoration: line-through; }
+  .bk-cb { width: 13px; height: 13px; flex: none; border-radius: 3px; border: 1.5px solid var(--border-strong); display: grid; place-items: center; color: var(--brand-fg); }
+  .bk-row.done .bk-cb { background: var(--brand); border-color: var(--brand); }
+  .bk-table { gap: 0; padding: 0; }
+  .bk-tr { display: grid; grid-template-columns: 1fr 1fr; }
+  .bk-tr span { padding: 0.2rem 0.5rem; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .bk-tr span:last-child { border-right: 0; }
+  .bk-tr:last-child span { border-bottom: 0; }
+  .bk-th span { color: var(--fg); background: color-mix(in oklab, var(--surface-hi) 55%, var(--surface-sunk)); font-weight: 600; }
+  .bk-code { font-family: var(--font-mono); color: var(--fg); }
+  .bk-code .t { color: var(--code-token); }
+  .bk-code .s { color: var(--code-string); }
+  .bk-math { align-items: center; }
+  .bk-math .math { font-style: italic; font-size: var(--text-sm); color: var(--fg); }
+  .bk-kanban { flex-direction: row; gap: 0.4rem; }
+  .bk-col { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; }
+  .bk-ct { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-faint); }
+  .bk-card { height: 8px; border-radius: 2px; background: var(--surface-hi); border: 1px solid var(--border); }
+  .bk-card.on { background: var(--brand-wash); border-color: var(--pill-border); }
+  .bk-diagram { align-items: center; justify-content: center; }
+  .bk-diagram svg { width: 100%; max-width: 116px; height: auto; }
+  .bd-box { fill: var(--surface-hi); stroke: var(--border-strong); stroke-width: 1.2; }
+  .bd-box.hl { fill: var(--brand-wash); stroke: var(--brand); }
+  .bd-arr { stroke: var(--fg-faint); stroke-width: 1.2; }
+
+  /* ── wikilinks viz ─────────────────────────────────────────────────── */
+  .wlink { display: flex; flex-direction: column; gap: 0.9rem; justify-content: center; height: 100%; }
+  .wl-line { font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
+  .wl-chip { color: var(--brand); font-family: var(--font-mono); font-size: 0.9em; background: var(--brand-wash); border: 1px solid var(--pill-border); border-radius: var(--radius-xs); padding: 0.05rem 0.3rem; }
+  .wl-back { display: flex; flex-direction: column; gap: 0.4rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+  .wl-back-h { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-faint); }
+  .wl-b { display: flex; align-items: center; gap: 0.45rem; font-size: var(--text-sm); color: var(--fg); }
+  .wl-pd { width: 6px; height: 6px; border-radius: 2px; background: var(--brand); flex: none; }
+
+  /* ── share viz ────────────────────────────────────────────────────── */
+  .share { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 150px; }
+  .share-card {
+    width: 100%;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunk);
+    overflow: hidden;
+  }
+  .sc-row {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .sc-glob { color: var(--brand); flex: none; }
+  .sc-url { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sc-tok { color: var(--brand); }
+  .sc-copy {
+    margin-left: auto; flex: none;
+    font-family: var(--font-mono); font-size: 10px;
+    padding: 2px 7px; border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--fg-faint);
+  }
+  .sc-opts { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.65rem 0.7rem; }
+  .sc-opt {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: var(--text-xs); color: var(--fg-soft);
+  }
+  .sc-check {
+    width: 15px; height: 15px; flex: none;
+    border-radius: var(--radius-xs);
+    background: var(--brand); border: 1px solid var(--brand);
+    color: var(--brand-fg);
+    display: grid; place-items: center;
+  }
 
   /* ── collab viz ───────────────────────────────────────────────────── */
   .collab { display: flex; flex-direction: column; font-size: var(--text-sm); }
@@ -523,12 +579,12 @@ When a service degrades, the
   }
   .graph .labels text { fill: var(--fg); font-family: var(--font-display); font-size: 12px; font-weight: 600; text-anchor: middle; }
   .graph .labels text.sm { fill: var(--fg-faint); font-family: var(--font-mono); font-size: 9.5px; font-weight: 400; }
+  .graph .edges line:not(.dim) { stroke-dasharray: 4 4; }
   @media (prefers-reduced-motion: no-preference) {
+    /* compositor-only: pulse the hub via opacity/transform (never stroke-dashoffset) */
     .graph .hub { animation: hubpulse 3.2s var(--ease-in-out) infinite; transform-box: fill-box; transform-origin: center; }
-    .graph .edges line:not(.dim) { stroke-dasharray: 4 4; animation: dash 6s linear infinite; }
   }
-  @keyframes hubpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.78; } }
-  @keyframes dash { to { stroke-dashoffset: -16; } }
+  @keyframes hubpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.82; transform: scale(0.94); } }
 
   /* ── markdown viz ─────────────────────────────────────────────────── */
   .mdviz { padding: 0; }

@@ -1,0 +1,223 @@
+---
+// §5 — The editor. Block editing that feels like Notion, but the file underneath is
+// plain markdown. Shown as an equivalence: the WYSIWYG block view (with a drag handle
+// + an open slash menu) beside the exact same content as raw markdown on disk.
+const chips = [
+  'slash menu', 'drag-to-reorder', 'turn-into', 'callouts', 'tables',
+  'task lists', 'Mermaid', 'KaTeX math', 'Excalidraw inline', 'paste-to-unfurl',
+];
+const slash = [
+  { k: 'H1', t: 'Heading' },
+  { k: '☑', t: 'To-do list' },
+  { k: '!', t: 'Callout' },
+  { k: '⊞', t: 'Table' },
+  { k: '<>', t: 'Code block' },
+];
+---
+<section id="editor" class="section">
+  <div class="section-head reveal-up">
+    <p class="kicker"><span class="kicker-dot"></span>Editor</p>
+    <h2 class="h2">Edits like a block editor.<br />Saves like a markdown file.</h2>
+    <p class="lede">
+      Block-based editing: drag a block to reorder it, type <kbd>/</kbd> to insert headings, lists,
+      tables, callouts, diagrams, and math. Every page is stored as <strong>plain markdown</strong>
+      you can export at any time. No proprietary format.
+    </p>
+  </div>
+
+  <div class="eq reveal-up" aria-hidden="true">
+    <!-- WYSIWYG block view -->
+    <div class="pane pane-wys">
+      <div class="pane-top"><span class="pane-label">Editor</span><span class="pane-meta">WYSIWYG</span></div>
+      <div class="blocks">
+        <div class="blk">
+          <span class="handle"><svg viewBox="0 0 10 16" width="9" height="14" fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></svg></span>
+          <span class="bh1">Incident response</span>
+        </div>
+        <div class="blk dragging">
+          <span class="handle on"><svg viewBox="0 0 10 16" width="9" height="14" fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></svg></span>
+          <span class="btext">When a service degrades, the on-call engineer owns the timeline.</span>
+        </div>
+        <div class="blk">
+          <span class="handle"></span>
+          <span class="bcallout"><span class="bc-ic">!</span>Page <b>@on-call</b> before paging anyone else.</span>
+        </div>
+        <div class="blk has-slash">
+          <span class="handle"><span class="addbtn">+</span></span>
+          <span class="bslash">/</span>
+          <div class="slash-menu">
+            {slash.map((s, i) => (
+              <div class:list={['sm-row', { active: i === 1 }]}>
+                <span class="sm-k">{s.k}</span>{s.t}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="eq-sign" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9h14M5 15h14"/></svg>
+    </div>
+
+    <!-- raw markdown -->
+    <div class="pane pane-md">
+      <div class="pane-top"><span class="pane-label">pages.body</span><span class="pane-meta">on disk</span></div>
+      <pre class="md"><code><span class="k"># Incident response</span>
+
+When a service degrades, the on-call
+engineer owns the timeline.
+
+<span class="g">&gt; [!note]</span> Page <span class="b">**@on-call**</span> before
+<span class="g">&gt;</span> paging anyone else.</code></pre>
+    </div>
+  </div>
+
+  <ul class="chips reveal-up">
+    {chips.map((c) => <li class="chip">{c}</li>)}
+  </ul>
+</section>
+
+<style>
+  .section-head .lede strong { color: var(--fg); font-weight: 600; }
+  .section-head .lede kbd {
+    font-family: var(--font-mono); font-size: 0.85em;
+    padding: 1px 6px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-xs); color: var(--fg-soft);
+  }
+
+  .eq {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+    align-items: stretch;
+  }
+  .pane {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .pane-top {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-sunk);
+  }
+  .pane-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--brand); }
+  .pane-meta { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint); }
+
+  /* WYSIWYG blocks — extra bottom space so the slash-menu popover isn't clipped */
+  .blocks { padding: 1.1rem 1rem 9rem; display: flex; flex-direction: column; gap: 0.55rem; }
+  .blk { position: relative; display: flex; align-items: flex-start; gap: 0.4rem; }
+  .handle {
+    flex: none;
+    width: 16px; min-height: 1.2em;
+    display: grid; place-items: center;
+    color: var(--fg-faint);
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+  .handle.on { opacity: 1; color: var(--brand); }
+  .blk:hover .handle { opacity: 0.7; }
+  .addbtn { font-family: var(--font-mono); font-size: 13px; color: var(--fg-faint); }
+  .bh1 { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; color: var(--fg); letter-spacing: var(--tracking-tight); }
+  .btext { font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
+  .blk.dragging {
+    border: 1px solid var(--pill-border);
+    border-radius: var(--radius-sm);
+    background: var(--brand-wash);
+    padding: 0.35rem 0.45rem;
+    box-shadow: var(--shadow-pop);
+  }
+  .bcallout {
+    display: flex; align-items: center; gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--pill-border);
+    border-left: 2px solid var(--brand);
+    border-radius: var(--radius-sm);
+    background: var(--brand-wash);
+    color: var(--fg);
+    font-size: var(--text-sm);
+  }
+  .bcallout b { color: var(--brand-strong); }
+  .bc-ic {
+    flex: none; width: 16px; height: 16px;
+    border-radius: var(--radius-full);
+    background: var(--brand); color: var(--brand-fg);
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+  }
+  .bslash { font-family: var(--font-mono); color: var(--brand); font-size: var(--text-sm); }
+  .has-slash { position: relative; }
+  .slash-menu {
+    position: absolute;
+    top: 1.6rem; left: 0.9rem;
+    z-index: 4;
+    width: 180px;
+    padding: 0.3rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .sm-row {
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--fg-soft);
+  }
+  .sm-row.active { background: var(--brand-wash); color: var(--fg); }
+  .sm-k {
+    flex: none; min-width: 22px; text-align: center;
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--fg-faint);
+    border: 1px solid var(--border); border-radius: var(--radius-xs);
+    padding: 1px 0;
+  }
+  .sm-row.active .sm-k { color: var(--brand); border-color: var(--pill-border); }
+
+  .eq-sign { display: none; align-items: center; justify-content: center; color: var(--fg-faint); }
+
+  /* markdown pane */
+  .pane-md .md {
+    margin: 0;
+    padding: 1.1rem 1rem;
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    color: var(--fg-soft);
+    background: var(--surface-sunk);
+    overflow-x: auto;
+  }
+  .pane-md .k { color: var(--brand); font-weight: 500; }
+  .pane-md .g { color: var(--accent); }
+  .pane-md .b { color: var(--fg); }
+
+  .chips {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-soft);
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+  }
+
+  @media (min-width: 880px) {
+    .eq { grid-template-columns: 1fr auto 1fr; gap: 1.25rem; align-items: center; }
+    .eq-sign { display: flex; }
+  }
+</style>

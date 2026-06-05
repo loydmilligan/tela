@@ -3,18 +3,18 @@
 // names where tela genuinely wins AND the one thing that alternative still does
 // better. Stacks into labelled blocks on mobile.
 const rows = [
-  { n: 'Notion', edge: 'Plain markdown on your own server, and agents get a real read/write API — not a closed block store with a chat sidebar bolted on.', better: 'Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.' },
-  { n: 'Confluence', edge: 'One binary you run yourself in minutes — no enterprise install, no per-seat pricing, your data on your disk.', better: 'Jira integration, granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.' },
-  { n: 'Obsidian', edge: 'Built for a team: live multiplayer, a shared server, and an agent API — not a single-player vault you sync by hand.', better: 'Local-first single-user is its whole point; the plugin ecosystem and graph view are unmatched. Solo? Hard to beat.' },
-  { n: 'A git repo of markdown', edge: 'Live WYSIWYG editing, instant full-text search, comments, sharing, and an agent API — over the same markdown, no PR to read a doc.', better: 'Pure version control, free, zero infra. If you just want files in a repo, you already have one.' },
-  { n: 'Outline', edge: 'A built-in MCP server makes agents first-class, on canonical markdown in a single binary — no Postgres, no Redis, no separate search.', better: 'Mature and polished, with real Slack integration and a track record tela doesn’t have yet. The closest finished version of this.' },
+  { n: 'Notion', edge: 'Plain markdown you own, semantic retrieval, and a real MCP connector your agent drives from Claude or ChatGPT — not a closed block store with a chat sidebar.', better: 'Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.' },
+  { n: 'Confluence', edge: 'Agents search and write it by meaning, your content is portable markdown, and you can run it yourself — no enterprise install, no per-seat pricing.', better: 'Jira integration, granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.' },
+  { n: 'Obsidian', edge: 'Built for a team: live multiplayer, a shared server with SSO and roles, and an agent API — not a single-player vault you sync by hand.', better: 'Local-first single-user is its whole point; the plugin ecosystem and graph view are unmatched. Solo? Hard to beat.' },
+  { n: 'A git repo of markdown', edge: 'Semantic + full-text search, block editing, comments, sharing, and an agent connector — over the same markdown, no PR to read a doc.', better: 'Pure version control, free, zero infra. If you just want files in a repo, you already have one.' },
+  { n: 'Notion AI / “AI” wikis', edge: 'Retrieval your own agent drives from Claude or ChatGPT, over markdown you can export — not a built-in chatbot you can only use in their app.', better: 'One-vendor convenience and a polished in-app assistant, with no embedder to think about. If you only want their chatbot, it’s simpler.' },
 ];
 ---
 <section id="compare" class="section">
   <div class="section-head reveal-up">
     <p class="kicker"><span class="kicker-dot"></span>Compare</p>
     <h2 class="h2">How does tela compare?</h2>
-    <p class="lede">Good tools, all of them. Here's where tela differs — and the one thing each still does better.</p>
+    <p class="lede">Where tela differs from each — and the one thing each still does better.</p>
   </div>
 
   <div class="cmp-wrap reveal-up">
@@ -42,9 +42,8 @@ const rows = [
   </div>
 
   <p class="synth reveal-up">
-    None of them put all of it in one place: an agent-native MCP server, markdown you actually
-    own, live multiplayer, real full-text search — in a single binary you run yourself.
-    <strong>That combination is tela.</strong>
+    Only tela combines all of it: semantic search your agent uses from Claude and ChatGPT, plain
+    markdown you own, real-time editing, and SSO with roles and audit logging.
   </p>
 </section>
 
@@ -94,7 +93,7 @@ const rows = [
     color: var(--fg);
     width: 45%;
     background: var(--brand-wash);
-    border-inline: 1px solid var(--pill-border);
+    border: 1px solid var(--pill-border);
   }
   .cmp-edge span { display: inline; }
   .cmp-edge .tick {
@@ -136,7 +135,7 @@ const rows = [
       border-bottom: 1px solid var(--border);
       min-width: 0;
     }
-    .cmp-edge, .cmp-better { border-inline: 0; }
+    .cmp-edge, .cmp-better { border: 0; }
     .cmp td::before {
       content: attr(data-label);
       display: block;

@@ -1,78 +1,75 @@
 ---
 // AgentWeave — the carved-out signature moment (motion-throttle-exempt).
-// Left: a real MCP tool-call (update_page) types out. Right: tela's editor, where
-// the loom threads sweep left→right and the page materializes line-by-line as the
-// call commits. Reads in <5s as "the agent is editing the wiki, not chatting about
-// it." Reduced-motion renders the resolved static frame (no typing, no sweep).
+// Left: a real chat exchange the way a user sees it in Claude/ChatGPT — a question,
+// a "searched/updated the wiki" indicator, an answer. Right: tela's editor, where the
+// loom threads sweep and the page materializes as the assistant commits an edit.
+// Reads in <5s as "the AI is using the wiki, not chatting about it." No JSON, no code:
+// the user never sees a tool call. Reduced-motion / no-JS render the resolved frame.
 import EditorMock from './EditorMock.astro';
 
-// The tool-call script the panel types out. Tokens carry highlight classes.
-const callLines = [
-  { t: 'comment', s: '// claude · model context protocol' },
-  { t: 'call',    s: 'tela.update_page({' },
-  { t: 'arg',     s: '  space: "engineering",' },
-  { t: 'arg',     s: '  page:  "incident-response",' },
-  { t: 'arg',     s: '  body:  "# Incident response\\n\\nWhen a service…"' },
-  { t: 'call',    s: '})' },
-];
-const resultLines = [
-  '← { page: { id: "pg_8fa2c1",',
-  '    title: "Incident response",',
-  '    updated_at: "just now" } }',
+// The chat turns, exactly as they'd appear in the chat app. `tool` turns are the small
+// "used a connector" indicators; the one flagged `commit` triggers the page weave.
+const turns = [
+  { who: 'user', text: 'What are the rollback steps for an incident?' },
+  { who: 'tool', text: 'Searched the wiki — Incident response' },
+  { who: 'bot',  text: 'Revert the image tag, re-probe /api/version, then purge the edge cache. Source: Incident response → Rollback.' },
+  { who: 'user', text: 'Add a note to purge the cache first.' },
+  { who: 'tool', text: 'Updated Incident response', commit: true },
+  { who: 'bot',  text: 'Done — added it under Rollback.' },
 ];
 
-// .mcp.json sample — built as an HTML string and injected with set:html so
-// Astro doesn't parse the literal { } as template expressions.
-const k = (s: string) => `<span class="k">"${s}"</span>`;
-const v = (s: string) => `<span class="s">"${s}"</span>`;
-// Static, server-rendered tool-call frame (the resolved end state). JS resets
-// this to blank and types it out when the section scrolls into view; with no JS
-// or reduced-motion it simply stays — never a blank panel.
-const escH = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const hlH = (s: string) => escH(s).replace(/"([^"]*)"/g, (_m, g1) => `<span class="qs">"${g1}"</span>`);
-const staticCall = callLines.map((l) => `<span class="l-${l.t}">${hlH(l.s)}</span>`).join('\n')
-  + '\n\n'
-  + resultLines.map((s) => `<span class="l-result">${escH(s)}</span>`).join('\n');
-
-// real tool catalog (subset shown, grouped by scope) — names from mcp/README.md
+// real tool catalog (subset shown, grouped by scope) — names from internal/api/mcp_tools.go
 const toolScopes = [
-  { scope: 'read', tone: 'read', tools: ['search', 'get_page', 'list_pages', 'list_backlinks'] },
-  { scope: 'write', tone: 'write', tools: ['create_page', 'update_page', 'add_comment', 'import_markdown'] },
-  { scope: 'admin', tone: 'admin', tools: ['create_space', 'update_space', 'manage_keys'] },
+  { scope: 'read', tone: 'read', tools: ['semantic_search', 'search', 'read_chunk', 'get_page', 'list_pages', 'list_backlinks'] },
+  { scope: 'write', tone: 'write', tools: ['create_page', 'update_page', 'add_comment', 'move_page'] },
+  { scope: 'admin', tone: 'admin', tools: ['create_space', 'update_space', 'manage keys'] },
 ];
 
-const mcpJson = [
-  `{`,
-  `  ${k('mcpServers')}: {`,
-  `    ${k('tela')}: {`,
-  `      ${k('command')}: ${v('npx')},`,
-  `      ${k('args')}: [${v('-y')}, ${v('tela-mcp')}],`,
-  `      ${k('env')}: { ${k('TELA_URL')}: ${v('https://tela.cagdas.io')},`,
-  `              ${k('TELA_TOKEN')}: ${v('tela_pat_…')} }`,
-  `    }`,
-  `  }`,
-  `}`,
-].map((l) => `<span class="ln">${l}</span>`).join('\n');
+// how you connect the chat apps — no install, no local proxy
+const connectSteps = [
+  { n: '1', t: 'Add a connector', d: 'In Claude or ChatGPT, add tela as a connector.', code: 'tela.cagdas.io/api/mcp' },
+  { n: '2', t: 'Sign in', d: 'One sign-in with your tela account. No token to paste.', code: 'OAuth 2.1' },
+  { n: '3', t: 'Use it', d: 'The assistant searches and edits the wiki, within your permissions.', code: '20 tools' },
+];
 ---
 
 <section id="agents" class="agentweave" data-agentweave>
   <div class="head">
     <p class="eyebrow"><span class="eyebrow-dot"></span>The agent layer</p>
-    <h2 class="title">Point an agent at your wiki.<br />Watch it write the page.</h2>
+    <h2 class="title">Already in Claude and ChatGPT.</h2>
     <p class="lede">
-      A first-class <strong>MCP server</strong> — not a chat box bolted on. Agents authenticate
-      with a token and call the same API your team uses. Here's one call, start to finish.
+      Your AI already lives in the chat apps you work in, so tela connects to them — instead of
+      bolting a chat box onto a wiki you'd have to go open. Connect once and the assistant searches
+      your docs, reads and writes pages, and adds comments, limited to what your account can access.
+      Below: a question answered from the wiki, then a page edited — without leaving the chat.
     </p>
   </div>
 
   <div class="stage">
-    <!-- LEFT: the MCP tool-call panel -->
-    <div class="callpanel" aria-hidden="true">
+    <!-- LEFT: the chat, the way a user sees it -->
+    <div class="chatpanel">
       <div class="cp-top">
-        <span class="cp-tab"><span class="cp-glyph">⌘</span> MCP · stdio</span>
-        <span class="cp-status" data-cp-status data-state="done">done</span>
+        <span class="cp-tab"><span class="cp-glyph">✳</span> Claude</span>
+        <span class="cp-conn">tela connected</span>
       </div>
-      <pre class="cp-code"><code data-cp-code set:html={staticCall}></code></pre>
+      <div class="chat" data-chat aria-hidden="true">
+        {turns.map((t) => (
+          t.who === 'tool' ? (
+            <div class="turn tool" data-turn data-commit={t.commit ? 'true' : 'false'}>
+              <span class="tool-chip">
+                {t.commit
+                  ? <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                  : <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>}
+                {t.text}
+              </span>
+            </div>
+          ) : (
+            <div class:list={['turn', t.who]} data-turn>
+              <span class:list={['bubble', t.who]}>{t.text}</span>
+            </div>
+          )
+        ))}
+      </div>
     </div>
 
     <!-- RIGHT: the wiki the agent is weaving -->
@@ -82,21 +79,29 @@ const mcpJson = [
     </div>
   </div>
 
-  <!-- the real config, plainly -->
-  <div class="mcpconfig">
-    <div class="mc-head">
-      <span class="mc-label">.mcp.json</span>
-      <span class="mc-note">point any MCP client at tela — Claude, Cursor, your own agent</span>
-    </div>
-    <pre class="mc-code" tabindex="0" aria-label=".mcp.json configuration"><code set:html={mcpJson}></code></pre>
-    <p class="mc-cap">Drop this in your <code>.mcp.json</code>. That's the whole integration.</p>
+  <!-- the connect flow — the whole integration -->
+  <div class="connect reveal-up">
+    <ol class="connect-steps">
+      {connectSteps.map((s) => (
+        <li class="cstep">
+          <span class="cs-n">{s.n}</span>
+          <div class="cs-body">
+            <h3 class="cs-t">{s.t}</h3>
+            <p class="cs-d">{s.d}</p>
+            <code class="cs-code">{s.code}</code>
+          </div>
+        </li>
+      ))}
+    </ol>
+    <p class="connect-cap">Available in the <strong>Claude</strong> and <strong>ChatGPT</strong> connector directories. Nothing to install.</p>
+    <p class="codeagents">Using Claude Code, Cursor, or your own client? Connect to the same address: <code>tela.cagdas.io/api/mcp</code>.</p>
   </div>
 
   <!-- the tool catalog, grouped by scope -->
   <div class="tools reveal-up">
     <div class="tools-head">
-      <h3 class="tools-title">17 tools over the same REST API the UI uses</h3>
-      <p class="tools-sub">Scoped <code>tela_pat_…</code> keys — read, write, or admin, pinnable to a single space.</p>
+      <h3 class="tools-title">20 tools, grouped by access</h3>
+      <p class="tools-sub">Give an agent a read-only key, or one that can write. A key can be pinned to a single space.</p>
     </div>
     <div class="tools-grid">
       {toolScopes.map((g) => (
@@ -109,13 +114,11 @@ const mcpJson = [
       ))}
     </div>
     <p class="tools-why">
-      No starting from zero every session. The agent reads the team's docs and writes back what
-      it learns — the next session picks up where it left off.
+      The assistant reads from the wiki and writes back to it, so context carries from one session
+      to the next instead of being pasted in each time.
     </p>
-    <a class="tools-link" href="https://github.com/zcag/tela/blob/main/mcp/README.md" target="_blank" rel="noopener">See the full tool catalog →</a>
+    <a class="tools-link" href="/mcp">See the full tool catalog →</a>
   </div>
-
-  <script type="application/json" data-aw-data set:html={JSON.stringify({ callLines, resultLines })}></script>
 </section>
 
 <style>
@@ -163,13 +166,13 @@ const mcpJson = [
     align-items: stretch;
   }
 
-  /* call panel */
-  .callpanel {
+  /* chat panel */
+  .chatpanel {
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
-    background: var(--surface-sunk);
+    background: var(--surface);
     box-shadow: var(--shadow-card);
     overflow: hidden;
     min-height: 232px;
@@ -180,7 +183,7 @@ const mcpJson = [
     height: 36px;
     padding: 0 0.8rem;
     border-bottom: 1px solid var(--border);
-    background: color-mix(in oklab, var(--surface-sunk) 80%, var(--bg));
+    background: var(--surface-sunk);
   }
   .cp-tab {
     display: inline-flex; align-items: center; gap: 0.4rem;
@@ -189,45 +192,69 @@ const mcpJson = [
     color: var(--fg-soft);
   }
   .cp-glyph { color: var(--brand); }
-  .cp-status {
+  .cp-conn {
     margin-left: auto;
+    display: inline-flex; align-items: center; gap: 0.4rem;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--accent);
-    display: inline-flex; align-items: center; gap: 0.4rem;
   }
-  .cp-status::before {
+  .cp-conn::before {
     content: '';
     width: 6px; height: 6px;
     border-radius: var(--radius-full);
-    background: currentColor;
+    background: var(--live-dot);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
   }
-  .cp-status[data-state='done'] { color: var(--brand-strong); }
-  .cp-code {
+
+  .chat {
     flex: 1;
-    margin: 0;
-    padding: 0.9rem 1rem;
-    font-family: var(--font-mono);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+  .turn { display: flex; }
+  .turn.user { justify-content: flex-end; }
+  .turn.bot { justify-content: flex-start; }
+  .bubble {
+    max-width: 86%;
+    padding: 0.6rem 0.8rem;
     font-size: var(--text-sm);
-    line-height: 1.7;
+    line-height: var(--leading-normal);
+    border-radius: var(--radius-md);
+  }
+  .bubble.user {
+    background: var(--brand-wash);
+    border: 1px solid var(--pill-border);
     color: var(--fg);
-    white-space: pre-wrap;
-    word-break: break-word;
+    border-bottom-right-radius: var(--radius-xs);
   }
-  .cp-code :global(.l-comment) { color: var(--fg-faint); }
-  .cp-code :global(.l-call) { color: var(--fg); }
-  .cp-code :global(.l-arg) { color: var(--fg-soft); }
-  .cp-code :global(.l-arg .qs) { color: var(--code-string); }
-  .cp-code :global(.l-result) { color: var(--accent); }
-  .cp-code :global(.tcaret) {
-    display: inline-block;
-    width: 7px; height: 1.05em;
-    margin-left: 1px;
-    vertical-align: text-bottom;
-    background: var(--brand);
-    animation: tblink 1.05s steps(2, start) infinite;
+  .bubble.bot {
+    background: var(--surface-sunk);
+    border: 1px solid var(--border);
+    color: var(--fg-soft);
+    border-bottom-left-radius: var(--radius-xs);
   }
-  @keyframes tblink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+  .turn.tool { justify-content: flex-start; }
+  .tool-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface-sunk);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-faint);
+  }
+  .tool-chip svg { color: var(--brand); flex: none; }
+
+  /* sequential reveal (only while the signature is playing; SSR shows all) */
+  .turn { transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out); }
+  .chat.playing .turn { opacity: 0; transform: translateY(8px); }
+  .chat.playing .turn.show { opacity: 1; transform: none; }
 
   /* loom (editor + sweep) */
   .loomwrap { position: relative; }
@@ -265,42 +292,78 @@ const mcpJson = [
     100% { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: 0; }
   }
 
-  /* the real config card */
-  .mcpconfig {
-    margin-top: 1.25rem;
+  /* connect flow — three steps, the whole integration */
+  .connect { margin-top: 1.75rem; }
+  .connect-steps {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .cstep {
+    display: flex;
+    gap: 0.85rem;
+    padding: 1rem 1.1rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     background: var(--surface);
-    overflow: hidden;
   }
-  .mc-head {
-    display: flex;
-    align-items: baseline;
-    gap: 0.75rem;
-    padding: 0.7rem 1rem;
-    border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
-  }
-  .mc-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--brand); }
-  .mc-note { font-size: var(--text-xs); color: var(--fg-faint); }
-  .mc-code {
-    margin: 0;
-    padding: 0.9rem 1rem;
+  .cs-n {
+    flex: none;
+    width: 26px; height: 26px;
+    display: grid; place-items: center;
+    border-radius: var(--radius-full);
+    background: var(--brand-wash);
+    border: 1px solid var(--pill-border);
+    color: var(--brand);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    line-height: 1.75;
-    color: var(--fg-soft);
-    overflow-x: auto;
+    font-weight: 600;
   }
-  .mc-code .k { color: var(--code-token); }
-  .mc-code .s { color: var(--code-string); }
-  .mc-code .ln { display: block; }
-  .mc-cap {
-    padding: 0 1rem 0.9rem;
+  .cs-body { min-width: 0; }
+  .cs-t {
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--fg);
+    letter-spacing: var(--tracking-tight);
+  }
+  .cs-d { margin-top: 0.25rem; font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
+  .cs-code {
+    display: inline-block;
+    margin-top: 0.55rem;
+    font-family: var(--font-mono);
     font-size: var(--text-xs);
-    color: var(--fg-faint);
+    color: var(--fg-soft);
+    background: var(--surface-sunk);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 0.2rem 0.5rem;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
   }
-  .mc-cap code { font-family: var(--font-mono); color: var(--fg-soft); }
+  .connect-cap {
+    margin-top: 0.9rem;
+    font-size: var(--text-sm);
+    color: var(--fg-faint);
+    line-height: var(--leading-normal);
+  }
+  .connect-cap strong { color: var(--fg-soft); font-weight: 600; }
+  .codeagents {
+    margin-top: 0.5rem;
+    font-size: var(--text-sm);
+    color: var(--fg-faint);
+    line-height: var(--leading-normal);
+  }
+  .codeagents code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--fg-soft);
+    background: var(--surface-sunk);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 0.1rem 0.4rem;
+  }
 
   /* tool catalog */
   .tools { margin-top: 2.5rem; }
@@ -377,8 +440,9 @@ const mcpJson = [
   .tools-link:hover { color: var(--brand-strong); text-decoration: underline; }
 
   @media (min-width: 720px) {
-    .tools-grid { grid-template-columns: 1fr; }
     .scope { flex-wrap: nowrap; }
+    .connect-steps { grid-template-columns: repeat(3, 1fr); }
+    .cstep { flex-direction: column; gap: 0.6rem; }
   }
 
   @media (min-width: 900px) {
@@ -390,83 +454,37 @@ const mcpJson = [
 <script>
   // The signature moment. Self-contained, guarded by reduced-motion + an
   // IntersectionObserver so it only plays when scrolled into view, once.
+  // SSR renders the full chat + finished page; JS replays it on scroll.
   const section = document.querySelector<HTMLElement>('[data-agentweave]');
   if (section) {
-    const dataEl = section.querySelector<HTMLElement>('[data-aw-data]');
-    const codeEl = section.querySelector<HTMLElement>('[data-cp-code]');
-    const statusEl = section.querySelector<HTMLElement>('[data-cp-status]');
+    const chat = section.querySelector<HTMLElement>('[data-chat]');
     const loom = section.querySelector<HTMLElement>('.loomwrap');
-    const editor = section.querySelector<HTMLElement>('[data-editor]');
+    const turns = Array.from(section.querySelectorAll<HTMLElement>('[data-turn]'));
     const lines = Array.from(section.querySelectorAll<HTMLElement>('[data-line]'));
-    const data = dataEl ? JSON.parse(dataEl.textContent || '{}') : { callLines: [], resultLines: [] };
-
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    const esc = (s: string) =>
-      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    // wrap "double quoted" substrings in a string-highlight span
-    const hl = (s: string) => esc(s).replace(/&quot;|"([^"]*)"/g, (m, g1) =>
-      g1 !== undefined ? `<span class="qs">"${g1}"</span>` : m);
-
-    async function typeLine(html: string, cls: string, perChar: number) {
-      if (!codeEl) return;
-      const span = document.createElement('span');
-      span.className = cls;
-      codeEl.appendChild(span);
-      codeEl.appendChild(document.createTextNode('\n'));
-      // type by character on the raw text, then swap in highlighted html
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      const text = tmp.textContent || '';
-      const caret = document.createElement('span');
-      caret.className = 'tcaret';
-      for (let i = 0; i < text.length; i++) {
-        span.textContent = text.slice(0, i + 1);
-        span.appendChild(caret);
-        await wait(perChar);
-      }
-      span.innerHTML = html; // final highlighted form (drops caret)
-    }
-
     async function play() {
-      if (!codeEl) return;
-      // arm: hide the staged editor lines + reset the panel to blank, then type.
+      if (!chat) return;
+      // arm: hide staged editor lines (EditorMock CSS keys on .is-animating) + chat turns
       section.classList.add('is-animating');
-      statusEl?.setAttribute('data-state', 'running');
-      if (statusEl) statusEl.textContent = 'running';
-      codeEl.innerHTML = '';
-      for (const l of data.callLines) {
-        await typeLine(hl(l.s), `l-${l.t}`, l.t === 'comment' ? 8 : 16);
-        await wait(90);
-      }
-      await wait(360);
-      // commit → weave
-      loom?.classList.add('is-weaving');
-      const step = 1700 / Math.max(lines.length, 1);
-      lines.forEach((l, i) => setTimeout(() => l.classList.add('lit'), 360 + i * step));
-      await wait(1700);
-      statusEl?.setAttribute('data-state', 'done');
-      if (statusEl) statusEl.textContent = 'done';
-      codeEl.appendChild(document.createTextNode('\n'));
-      for (const s of data.resultLines) {
-        const r = document.createElement('span');
-        r.className = 'l-result';
-        r.textContent = s;
-        codeEl.appendChild(r);
-        codeEl.appendChild(document.createTextNode('\n'));
-        await wait(120);
+      chat.classList.add('playing');
+      for (const t of turns) {
+        await wait(t.classList.contains('tool') ? 520 : 760);
+        t.classList.add('show');
+        if (t.dataset.commit === 'true') {
+          loom?.classList.add('is-weaving');
+          const step = 1600 / Math.max(lines.length, 1);
+          lines.forEach((l, i) => setTimeout(() => l.classList.add('lit'), i * step));
+          await wait(1500);
+        }
       }
     }
 
-    // Reduced-motion (or no JS) keeps the server-rendered static frame as-is.
     if (!reduce) {
       const io = new IntersectionObserver((entries) => {
         for (const e of entries) {
-          if (e.isIntersecting) {
-            io.disconnect();
-            play();
-          }
+          if (e.isIntersecting) { io.disconnect(); play(); }
         }
       }, { threshold: 0.4 });
       io.observe(section);

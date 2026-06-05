@@ -7,8 +7,8 @@ interface Props {
 }
 
 const {
-  title = 'tela — the team wiki your agents can write to',
-  description = 'A self-hostable, markdown-native team wiki with a built-in MCP server, so AI agents read, write and search alongside your team. Live multiplayer editing, instant full-text search, one binary.',
+  title = 'tela — the agent-native team wiki your AI reasons over',
+  description = 'A markdown team wiki with semantic search and a built-in MCP server. Your AI agents search your docs by meaning and read, write and cite them — right inside Claude and ChatGPT. Real-time multiplayer, SSO, scoped access. Your markdown, hosted or self-hosted.',
 } = Astro.props;
 
 // Absolute OG image URL (Astro.site = https://tela.cagdas.io).
@@ -56,7 +56,7 @@ const ogImage = new URL('/og-image.png', Astro.site).href;
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="tela — the wiki your agents can write to" />
+    <meta property="og:image:alt" content="tela — the wiki your agents reason over" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
@@ -69,7 +69,7 @@ const ogImage = new URL('/og-image.png', Astro.site).href;
           '@type': 'SoftwareApplication',
           '@id': 'https://tela.cagdas.io/#software',
           name: 'tela',
-          description: 'A self-hostable, markdown-native team wiki with a built-in MCP server, so AI agents read, write and search your docs as first-class teammates. Live multiplayer, SQLite full-text search, your data on your own server.',
+          description: 'A markdown team wiki with semantic search and a built-in MCP server, so AI agents search your docs by meaning and read, write and cite them — right inside Claude and ChatGPT. Real-time multiplayer, SSO, scoped access. Your markdown, hosted or self-hosted.',
           applicationCategory: 'DeveloperApplication',
           operatingSystem: 'Linux, macOS, Docker',
           url: 'https://tela.cagdas.io',
