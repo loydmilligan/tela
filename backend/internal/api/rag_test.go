@@ -176,6 +176,50 @@ func TestRAG_ReadChunkScoped(t *testing.T) {
 	}
 }
 
+func TestRAG_Freshness(t *testing.T) {
+	ts, d, _ := newRagServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	aSpace := seedSpace(t, d, "Alpha", "alpha", alice)
+	indexed := mustPage(t, d, aSpace, "Indexed", "## A\nreal content here")
+	_ = mustPage(t, d, aSpace, "Unindexed", "## B\nnot indexed yet")
+
+	if _, err := rag.NewServiceWithEmbedder(d, fakeEmb{}).ReindexPage(context.Background(), indexed); err != nil {
+		t.Fatalf("index: %v", err)
+	}
+
+	c := loginClient(t, ts, "alice", "alicepw12")
+	resp, err := c.Get(ts.URL + "/api/rag/freshness")
+	if err != nil {
+		t.Fatalf("freshness: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var out struct {
+		Enabled bool                 `json:"enabled"`
+		Spaces  []rag.SpaceFreshness `json:"spaces"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !out.Enabled {
+		t.Error("expected enabled=true (fake embedder injected)")
+	}
+	var f *rag.SpaceFreshness
+	for i := range out.Spaces {
+		if out.Spaces[i].SpaceID == aSpace {
+			f = &out.Spaces[i]
+		}
+	}
+	if f == nil {
+		t.Fatal("alpha space missing from freshness")
+	}
+	if f.Pages != 2 || f.IndexedPages != 1 || f.StalePages != 1 {
+		t.Errorf("got pages=%d indexed=%d stale=%d, want 2/1/1", f.Pages, f.IndexedPages, f.StalePages)
+	}
+}
+
 func mustPage(t *testing.T, d *sql.DB, spaceID int64, title, body string) int64 {
 	t.Helper()
 	var id int64

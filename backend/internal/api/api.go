@@ -59,6 +59,9 @@ func New(db *sql.DB) *Server {
 	// is fine: each test process is short-lived.
 	go s.shareLimiter.sweepLoop(context.Background())
 	go s.authLimiter.sweepLoop(context.Background())
+	// Background auto-reindex worker (no-op when the embedder is unconfigured).
+	// Page writes call s.rag.QueueReindex; this drains the debounced queue.
+	s.rag.StartAutoReindex(context.Background())
 	return s
 }
 

@@ -135,6 +135,12 @@ func (s *Server) ImportSpace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 			return
 		}
+		// Index every imported page (debounced, async; no-op when RAG is off).
+		for _, p := range result.Pages {
+			if p.ID > 0 {
+				s.rag.QueueReindex(p.ID)
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, result)
 }

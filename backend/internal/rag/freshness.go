@@ -1,0 +1,102 @@
+package rag
+
+import "context"
+
+// SpaceFreshness summarizes how well-indexed one space is, for the admin
+// freshness view and the stale indicators. All counts are scoped to pages the
+// caller can access.
+type SpaceFreshness struct {
+	SpaceID      int64  `json:"space_id"`
+	Name         string `json:"name"`
+	Pages        int    `json:"pages"`         // total pages in the space
+	IndexedPages int    `json:"indexed_pages"` // pages with at least one chunk
+	StalePages   int    `json:"stale_pages"`   // non-empty pages edited since last index (or never indexed)
+	ChunkCount   int    `json:"chunk_count"`
+	LastIndexed  string `json:"last_indexed"` // max chunk updated_at across the space ("" if none)
+}
+
+// PageFreshness is the per-page status within a space.
+type PageFreshness struct {
+	PageID      int64  `json:"page_id"`
+	Title       string `json:"title"`
+	Status      string `json:"status"` // "fresh" | "stale" | "unindexed" | "empty"
+	ChunkCount  int    `json:"chunk_count"`
+	UpdatedAt   string `json:"updated_at"`
+	LastIndexed string `json:"last_indexed"` // "" if never indexed
+}
+
+// staleExpr is the SQL predicate for "this page's index is out of date": the
+// page has real content AND (it has no chunks OR it was edited after its chunks
+// were last written). Datetimes are lexically comparable TEXT. Shared so the
+// space rollup and the per-page status agree exactly.
+const staleExpr = `length(btrim(p.body)) > 0 AND (pc.cnt IS NULL OR p.updated_at > pc.idx)`
+
+// chunkAggCTE aggregates page_chunks to (page_id, chunk count, last-indexed).
+const chunkAggCTE = `pc AS (SELECT page_id, count(*) AS cnt, max(updated_at) AS idx FROM page_chunks GROUP BY page_id)`
+
+// Freshness returns per-space index health for every space userID can access.
+func (s *Service) Freshness(ctx context.Context, userID int64) ([]SpaceFreshness, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		WITH acc AS (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1),
+		     `+chunkAggCTE+`
+		SELECT sp.id, sp.name,
+		       count(p.id) AS pages,
+		       count(p.id) FILTER (WHERE pc.cnt IS NOT NULL) AS indexed_pages,
+		       count(p.id) FILTER (WHERE `+staleExpr+`) AS stale_pages,
+		       coalesce(sum(pc.cnt), 0) AS chunk_count,
+		       coalesce(max(pc.idx), '') AS last_indexed
+		  FROM acc
+		  JOIN spaces sp ON sp.id = acc.space_id
+		  LEFT JOIN pages p ON p.space_id = sp.id
+		  LEFT JOIN pc ON pc.page_id = p.id
+		 GROUP BY sp.id, sp.name
+		 ORDER BY sp.name`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SpaceFreshness{}
+	for rows.Next() {
+		var f SpaceFreshness
+		if err := rows.Scan(&f.SpaceID, &f.Name, &f.Pages, &f.IndexedPages, &f.StalePages, &f.ChunkCount, &f.LastIndexed); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// SpacePageFreshness returns the per-page index status for one space, scoped by
+// access (the caller must be able to read the space; the query joins
+// space_access so a non-member gets an empty list).
+func (s *Service) SpacePageFreshness(ctx context.Context, userID, spaceID int64) ([]PageFreshness, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		WITH acc AS (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1),
+		     `+chunkAggCTE+`
+		SELECT p.id, p.title, coalesce(pc.cnt, 0) AS chunk_count,
+		       p.updated_at, coalesce(pc.idx, '') AS last_indexed,
+		       CASE
+		         WHEN length(btrim(p.body)) = 0 THEN 'empty'
+		         WHEN pc.cnt IS NULL THEN 'unindexed'
+		         WHEN p.updated_at > pc.idx THEN 'stale'
+		         ELSE 'fresh'
+		       END AS status
+		  FROM pages p
+		  JOIN acc ON acc.space_id = p.space_id
+		  LEFT JOIN pc ON pc.page_id = p.id
+		 WHERE p.space_id = $2
+		 ORDER BY p.title`, userID, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PageFreshness{}
+	for rows.Next() {
+		var f PageFreshness
+		if err := rows.Scan(&f.PageID, &f.Title, &f.ChunkCount, &f.UpdatedAt, &f.LastIndexed, &f.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}

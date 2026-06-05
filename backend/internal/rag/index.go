@@ -3,7 +3,9 @@ package rag
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 )
 
@@ -28,6 +30,11 @@ func (s *Service) ReindexPage(ctx context.Context, pageID int64) (int, error) {
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT title, body FROM pages WHERE id = $1`, pageID,
 	).Scan(&title, &body); err != nil {
+		// Page deleted between enqueue and reindex — benign; its chunks were
+		// already removed by ON DELETE CASCADE. Nothing to index.
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
 		return 0, err
 	}
 

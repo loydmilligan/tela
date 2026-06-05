@@ -22,6 +22,8 @@ import (
 	"database/sql"
 	"os"
 	"strconv"
+	"sync"
+	"time"
 )
 
 // Config is the env-driven configuration. EmbedURL empty => feature disabled.
@@ -54,6 +56,11 @@ type Service struct {
 	db  *sql.DB
 	cfg Config
 	emb Embedder
+
+	// Auto-reindex queue (see autoreindex.go). pending maps page id → debounce
+	// deadline; nil until StartAutoReindex runs. Guarded by queueMu.
+	queueMu sync.Mutex
+	pending map[int64]time.Time
 }
 
 // NewService builds the service from config. It never fails: with no EmbedURL

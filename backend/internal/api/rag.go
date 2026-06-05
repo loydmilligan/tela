@@ -89,6 +89,39 @@ func (s *Server) RAGReadChunk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"chunk": chunk})
 }
 
+// RAGFreshness handles GET /api/rag/freshness[?space_id=]
+// Without space_id: per-space index-health summary across every space the caller
+// can access. With space_id: per-page status within that space. Always 200 with
+// an `enabled` flag (the counts are real even when the embedder is off, so the
+// admin view can show what's indexed vs what would need an embedder).
+func (s *Server) RAGFreshness(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if v := r.URL.Query().Get("space_id"); v != "" {
+		spaceID, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || spaceID <= 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "space_id must be a positive integer")
+			return
+		}
+		pages, err := s.rag.SpacePageFreshness(r.Context(), u.ID, spaceID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "freshness query failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": s.rag.Enabled(), "space_id": spaceID, "pages": pages})
+		return
+	}
+
+	spaces, err := s.rag.Freshness(r.Context(), u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "freshness query failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": s.rag.Enabled(), "spaces": spaces})
+}
+
 // RAGReindex handles POST /api/rag/reindex?space_id=
 // Chunks + embeds every page in the space. Requires membership (the same gate
 // as reading the space); synchronous — fine for a wiki-scale corpus.

@@ -340,6 +340,8 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
 	}
+	// Index the new page's content (debounced, async; no-op when RAG is off).
+	s.rag.QueueReindex(id)
 	writeJSON(w, http.StatusCreated, map[string]any{"page": page})
 }
 
@@ -486,6 +488,9 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		if _, err := insertPageRevision(ctx, s.DB, id, p.Body, p.Title, &authorID, "manual"); err != nil {
 			log.Printf("page %d snapshot revision failed: %v", id, err)
 		}
+		// Title is folded into each chunk's embed text and body is the source,
+		// so reindex on either change (debounced, async; no-op when RAG is off).
+		s.rag.QueueReindex(id)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"page": p})
 }
