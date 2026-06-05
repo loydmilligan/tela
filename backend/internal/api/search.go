@@ -27,6 +27,9 @@ type searchHit struct {
 	Title      string   `json:"title"`
 	Snippet    string   `json:"snippet"`
 	Breadcrumb []string `json:"breadcrumb"`
+	// URL is the human-shareable in-app link, used by the search-results widget
+	// (click-through) and as the ChatGPT search/fetch `url` field.
+	URL string `json:"url"`
 }
 
 // Search is the Tier-2 server-side full-text search behind the command palette.
@@ -131,6 +134,7 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			Title:      h.Title,
 			Snippet:    h.Snippet,
 			Breadcrumb: bc,
+			URL:        publicBaseURL() + pageAppPath(h.SpaceID, h.ID, h.Title),
 		})
 	}
 	return results, nil

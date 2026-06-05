@@ -71,6 +71,7 @@ func (s *Server) newMCPServer() *mcp.Server {
 	server := mcp.NewServer(impl, nil)
 	s.registerMCPTools(server)
 	s.registerMCPResources(server)
+	s.registerMCPWidgets(server)
 	return server
 }
 

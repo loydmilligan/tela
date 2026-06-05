@@ -117,10 +117,12 @@
     if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
   }
   function render(data) {
-    data = data || {};
-    document.getElementById("title").textContent = data.title || "Untitled";
-    document.getElementById("body").innerHTML = renderMarkdown(data.body_markdown || data.body || "");
-    const url = data.url || "";
+    // get_page returns structuredContent shaped { page: { title, body, url, … } };
+    // tolerate a flat shape too.
+    const p = (data && data.page) ? data.page : (data || {});
+    document.getElementById("title").textContent = p.title || "Untitled";
+    document.getElementById("body").innerHTML = renderMarkdown(p.body_markdown || p.body || "");
+    const url = p.url || "";
     const a = document.getElementById("open");
     if (/^https?:\/\//i.test(url)) { openHref = url; a.href = url; a.style.display = ""; }
     else { a.style.display = "none"; openHref = null; }

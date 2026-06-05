@@ -541,3 +541,64 @@ func TestMCP_SpikeRejectsNoToken(t *testing.T) {
 		t.Fatalf("expected connect to fail without a token")
 	}
 }
+
+// TestMCP_Widgets verifies the MCP Apps widget surface: the ui:// resources are
+// advertised + serve HTML (both MIME variants), and get_page/search carry the
+// widget _meta that links them.
+func TestMCP_Widgets(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeRead))
+
+	// All four widget resources advertised.
+	res, err := sess.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"ui://tela/page-reader/openai": false, "ui://tela/page-reader/mcp": false,
+		"ui://tela/search-results/openai": false, "ui://tela/search-results/mcp": false,
+	}
+	for _, r := range res.Resources {
+		if _, ok := want[r.URI]; ok {
+			want[r.URI] = true
+		}
+	}
+	for uri, found := range want {
+		if !found {
+			t.Errorf("widget resource %s not advertised", uri)
+		}
+	}
+
+	// Reading a widget resource returns the HTML bundle with the right MIME.
+	rr, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "ui://tela/page-reader/openai"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rr.Contents) != 1 || !strings.Contains(rr.Contents[0].Text, "window.openai") {
+		t.Fatalf("widget html unexpected")
+	}
+	if rr.Contents[0].MIMEType != "text/html+skybridge" {
+		t.Errorf("widget mime: %q", rr.Contents[0].MIMEType)
+	}
+
+	// get_page carries the widget link _meta.
+	tools, err := sess.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gp *mcp.Tool
+	for _, tl := range tools.Tools {
+		if tl.Name == "get_page" {
+			gp = tl
+		}
+	}
+	if gp == nil {
+		t.Fatal("get_page tool missing")
+	}
+	if gp.Meta["openai/outputTemplate"] != "ui://tela/page-reader/openai" {
+		t.Errorf("get_page _meta missing/incorrect outputTemplate: %v", gp.Meta)
+	}
+}

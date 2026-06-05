@@ -58,6 +58,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Title:       "Get page",
 		Description: "Full markdown body + metadata for a numeric page id.",
 		Annotations: readOnly,
+		Meta:        widgetToolMeta(uiPageReaderOpenAI, uiPageReaderMCPApp, "Renders the tela page as a reader card.", "Opening page…", "Page ready"),
 	}, s.mcpGetPage)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -72,6 +73,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Title:       "Search",
 		Description: "Ranked full-text search over title + body, snippet-highlighted. Optional space_id narrows to one space.",
 		Annotations: readOnly,
+		Meta:        widgetToolMeta(uiSearchOpenAI, uiSearchMCPApp, "Renders search hits as a clickable result list.", "Searching…", "Results ready"),
 	}, s.mcpSearch)
 
 	mcp.AddTool(server, &mcp.Tool{

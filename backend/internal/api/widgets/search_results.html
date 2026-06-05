@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tela search</title>
+<style>
+  :root {
+    --fg: #1a1a1a; --muted: #6b7280; --bg: #ffffff; --border: #e5e7eb;
+    --accent: #4f46e5; --card-bg: #ffffff; --card-hover: #f9fafb;
+    --mark-bg: #fef08a; --mark-fg: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e5e7eb; --muted: #9ca3af; --bg: #111317; --border: #2a2f3a;
+            --accent: #818cf8; --card-bg: #161922; --card-hover: #1c2027;
+            --mark-bg: #5b4d12; --mark-fg: #fde68a; }
+  }
+  html[data-theme="dark"] {
+    --fg: #e5e7eb; --muted: #9ca3af; --bg: #111317; --border: #2a2f3a;
+    --accent: #818cf8; --card-bg: #161922; --card-hover: #1c2027;
+    --mark-bg: #5b4d12; --mark-fg: #fde68a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--fg); background: var(--bg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { padding: 16px 20px; max-width: 760px; }
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .result {
+    display: block; text-decoration: none; color: inherit;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg);
+    padding: 12px 14px; transition: background .12s ease, border-color .12s ease;
+  }
+  .result:hover { background: var(--card-hover); border-color: var(--accent); }
+  .crumb { font-size: 12px; color: var(--muted); margin: 0 0 3px; line-height: 1.4;
+           word-break: break-word; }
+  .crumb .sep { padding: 0 4px; opacity: .7; }
+  .r-title { font-size: 15px; font-weight: 650; margin: 0 0 5px; line-height: 1.35; }
+  a.result:hover .r-title { color: var(--accent); }
+  .snippet { font-size: 14px; color: var(--muted); margin: 0; line-height: 1.5;
+             word-wrap: break-word; }
+  .snippet mark { background: var(--mark-bg); color: var(--mark-fg); border-radius: 3px;
+                  padding: 0 2px; }
+  .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="list" id="list"></div>
+  </div>
+
+<script type="module">
+  // ---- safe rendering -----------------------------------------------------
+  // Escape ALL html first. Because we only ever inject tags we generate (never
+  // raw user html), this is XSS-safe even though results are user content.
+  const esc = (s) => String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Snippet may carry <mark>…</mark> highlight tags. Escape the whole string,
+  // then re-allow ONLY <mark>/</mark> by unescaping those exact sequences back
+  // to real tags. Everything else stays inert escaped text.
+  function renderSnippet(s) {
+    return esc(s)
+      .replace(/&lt;mark&gt;/g, "<mark>")
+      .replace(/&lt;\/mark&gt;/g, "</mark>");
+  }
+
+  const isHttp = (u) => /^https?:\/\//i.test(u || "");
+
+  // route an open through the host bridge; falls back to a normal link.
+  let openVia = null; // (href) => void, set by the active host branch
+
+  function render(data) {
+    data = data || {};
+    const results = Array.isArray(data.results) ? data.results : [];
+    const list = document.getElementById("list");
+    list.replaceChildren();
+
+    if (!results.length) {
+      const e = document.createElement("p");
+      e.className = "empty";
+      e.textContent = "No results.";
+      list.appendChild(e);
+      return;
+    }
+
+    for (const r of results) {
+      const url = r && r.url ? String(r.url) : "";
+      const linked = isHttp(url);
+      const card = document.createElement(linked ? "a" : "div");
+      card.className = "result";
+      if (linked) {
+        card.href = url;
+        card.rel = "noopener";
+        card.addEventListener("click", (e) => {
+          if (openVia) { e.preventDefault(); openVia(url); }
+        });
+      }
+
+      const crumb = Array.isArray(r && r.breadcrumb) ? r.breadcrumb.filter(Boolean) : [];
+      if (crumb.length) {
+        const c = document.createElement("div");
+        c.className = "crumb";
+        crumb.forEach((part, i) => {
+          if (i) { const s = document.createElement("span"); s.className = "sep"; s.textContent = "›"; c.appendChild(s); }
+          c.appendChild(document.createTextNode(String(part)));
+        });
+        card.appendChild(c);
+      }
+
+      const title = document.createElement("div");
+      title.className = "r-title";
+      title.textContent = (r && r.title) ? String(r.title) : "Untitled";
+      card.appendChild(title);
+
+      if (r && r.snippet) {
+        const sn = document.createElement("p");
+        sn.className = "snippet";
+        sn.innerHTML = renderSnippet(r.snippet); // escaped + only <mark> re-allowed
+        card.appendChild(sn);
+      }
+
+      list.appendChild(card);
+    }
+  }
+
+  // ---- host bridge --------------------------------------------------------
+  function applyTheme(theme) {
+    if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
+  }
+
+  if (window.openai) {
+    // ── ChatGPT (Apps SDK) ──
+    openVia = (href) => { if (window.openai.openExternal) window.openai.openExternal({ href }); };
+    const paint = () => { applyTheme(window.openai.theme); render(window.openai.toolOutput || {}); };
+    // globals may not be present at first paint — try, then subscribe + poll.
+    paint();
+    window.addEventListener("openai:set_globals", (e) => {
+      const g = e.detail && e.detail.globals;
+      if (g && ("toolOutput" in g || "theme" in g)) paint();
+    });
+    let tries = 0;
+    const t = setInterval(() => { if (window.openai.toolOutput || ++tries > 40) { clearInterval(t); paint(); } }, 250);
+  } else {
+    // ── MCP Apps standard (Claude / Goose / VS Code) ──
+    try {
+      const { App } = await import("https://esm.sh/@modelcontextprotocol/ext-apps");
+      const app = new App({ name: "tela-search-results", version: "1.0.0" });
+      openVia = (href) => { if (app.openLink) app.openLink({ url: href }); };
+      app.ontoolresult = (p) => render((p && p.structuredContent) || {});
+      await app.connect();
+    } catch (err) {
+      document.getElementById("list").innerHTML = '<p class="empty">Could not connect to the host.</p>';
+    }
+  }
+</script>
+</body>
+</html>
