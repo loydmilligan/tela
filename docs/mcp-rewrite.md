@@ -601,3 +601,21 @@ sandboxed iframe with JSON-RPC-over-postMessage bridge; widget reads
 `openai/*` `_meta` keys + `window.openai` bridge API, and the `search`/`fetch`
 field set — all flagged in research as reconstructed from snippets (developers.openai.com
 TLS-flaky). Confirm against live Apps SDK reference first.
+
+---
+
+## 14. Session progress + blockers (2026-06-05)
+
+**Done this session (committed to `main`, NOT yet deployed — prod held at db041c2 for Connect testing):**
+- Phase 6 widgets: page-reader + search-results cards (`widgets/*.html` + `mcp_widgets.go`), dual-MIME `ui://` resources, `_meta` on get_page/search. Untested in-host (blocked, see below).
+- ChatGPT Deep Research `search`+`fetch` (search hits carry id/text/url; `fetch` tool).
+- Host-polish: tool `Title`s on all 20 tools, server branding, full-bleed connector icon (data URI).
+- Security review fixes deployed at db041c2: H1 CSRF consent step, M1 move panic, M2 body cap, L3 backlinks leak.
+
+**🔴 BLOCKER — WorkOS AuthKit OAuth server is fully down (404).** As of 2026-06-05 ~11:50, the ENTIRE `pleasing-puzzle-31-staging.authkit.app` `/oauth2/*` + `/.well-known/oauth-authorization-server` surface returns 404 (jwks, authorize, token, register, discovery — all gone). It worked that morning; broke **after the dashboard config** (Standalone / External Sign-in URI / DCR-CIMD). Claude's Connect fails at DCR ("Couldn't register with Tela's sign-in service"). **This is a WorkOS-dashboard fix only Cagdas can make** — likely a toggle disabled the hosted OAuth server, or Standalone mode needs the OAuth server explicitly (re)enabled. Until fixed, no Connect + nothing in-host is testable.
+
+**Directory-listing readiness (from research):**
+- Claude directory: NO widgets required. tela meets transport/OAuth/tool-annotation/title/first-party. **Blockers:** privacy-policy URL, public docs page, populated test account, WAF allowlist Anthropic egress `160.79.104.0/21`, MCP Inspector pass. Submit at `clau.de/mcp-directory-submission`.
+- ChatGPT directory: effectively wants widgets (have them now). **Blockers:** org identity verification, privacy policy, demo account w/o MFA, `_meta.ui.csp`/openWorldHint/outputSchema audit, screenshots, web+mobile test pass, global-residency project. Note: front-page placement is OpenAI's discretionary "enhanced distribution" — submission only gets searchable/direct-link.
+
+**Next (in priority):** (1) Cagdas fixes WorkOS AS. (2) deploy the held batch. (3) test Connect + widgets in Claude/ChatGPT. (4) directory prep: privacy policy + public docs page + test account.
