@@ -108,7 +108,7 @@ dev-db:
 	@docker start $(DEV_PG_CONTAINER) >/dev/null 2>&1 || \
 	  docker run -d --name $(DEV_PG_CONTAINER) \
 	    -e POSTGRES_USER=tela -e POSTGRES_PASSWORD=tela -e POSTGRES_DB=tela \
-	    -p 55432:5432 postgres:17-alpine >/dev/null
+	    -p 55432:5432 pgvector/pgvector:pg17 >/dev/null
 	@echo "waiting for postgres…"; \
 	for i in $$(seq 1 30); do \
 	  docker exec $(DEV_PG_CONTAINER) pg_isready -U tela -d tela >/dev/null 2>&1 && break; \

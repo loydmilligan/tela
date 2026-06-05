@@ -53,7 +53,11 @@ services:
   # test stack's `-p tela-test` project prefix compose namespaces this volume
   # automatically (tela-test_tela-pgdata), so the test DB is fully isolated.
   postgres:
-    image: postgres:17-alpine
+    # pgvector/pgvector ships the `vector` extension on top of the official
+    # postgres:17 image (Debian, not alpine) — RAG's semantic half needs
+    # CREATE EXTENSION vector (0002_rag.sql). Same PG major as before, so the
+    # existing pgdata volume is reused without a dump/restore.
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER:     ${TELA_PG_USER:-tela}
       POSTGRES_PASSWORD: ${TELA_PG_PASSWORD}
