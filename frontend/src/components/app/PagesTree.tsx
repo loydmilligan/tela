@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ChevronDown,
@@ -15,8 +15,10 @@ import {
   useUpdatePage,
 } from '../../lib/queries/pages'
 import { useSpaces } from '../../lib/queries/spaces'
+import { useSpaceFreshness } from '../../lib/queries/freshness'
 import type { PageTreeNode } from '../../lib/types'
 import { useExpandedNodes } from '../../lib/useExpandedNodes'
+import { StalenessDot } from './StalenessDot'
 import { Button } from '../ui/button'
 import { Card, CardBody, CardFooter } from '../ui/card'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
@@ -71,6 +73,19 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
 
   const treeData = tree.data as PageTreeNode[] | undefined
   const nodes = treeData ?? []
+
+  // Per-page index staleness for the dots. Only when the embedder is enabled
+  // (otherwise every page reads as "unindexed", which is noise on a dark
+  // instance). Map page id → 'stale' | 'unindexed'; absent = fresh/empty.
+  const freshness = useSpaceFreshness(spaceId)
+  const staleStatus = useMemo(() => {
+    const m = new Map<number, 'stale' | 'unindexed'>()
+    if (!freshness.data?.enabled) return m
+    for (const p of freshness.data.pages) {
+      if (p.status === 'stale' || p.status === 'unindexed') m.set(p.page_id, p.status)
+    }
+    return m
+  }, [freshness.data])
 
   // Auto-reveal the active page when navigation lands on it from outside the
   // sidebar (backlink click, command-palette result, [[wikilink]], direct URL,
@@ -169,6 +184,7 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
             onToggle={toggle}
             onExpand={expand}
             allNodes={nodes}
+            staleStatus={staleStatus}
           />
         ))}
       </ul>
@@ -212,6 +228,7 @@ interface PageNodeProps {
   onToggle: (id: number) => void
   onExpand: (id: number) => void
   allNodes: PageTreeNode[]
+  staleStatus: Map<number, 'stale' | 'unindexed'>
 }
 
 function PageNode({
@@ -223,6 +240,7 @@ function PageNode({
   onToggle,
   onExpand,
   allNodes,
+  staleStatus,
 }: PageNodeProps) {
   const navigate = useNavigate()
   const createPage = useCreatePage()
@@ -321,6 +339,20 @@ function PageNode({
           )}
         </button>
 
+        {/* Staleness marker — trailing, only when this page's index is out of
+            date. Hides on row hover to make room for the ⋯ menu. */}
+        {staleStatus.has(node.id) ? (
+          <span className="shrink-0 inline-flex items-center group-hover:hidden">
+            <StalenessDot
+              label={
+                staleStatus.get(node.id) === 'stale'
+                  ? 'Edited since last indexed'
+                  : 'Not indexed yet'
+              }
+            />
+          </span>
+        ) : null}
+
         {/* Exposure marker — trailing, only when the page is actually exposed.
             Reclaims the left gutter (titles align tight to the chevron). */}
         {node.exposure && node.exposure.state !== 'private' ? (
@@ -375,6 +407,7 @@ function PageNode({
               onToggle={onToggle}
               onExpand={onExpand}
               allNodes={allNodes}
+              staleStatus={staleStatus}
             />
           ))}
         </ul>

@@ -5,6 +5,7 @@ import { SettingsApiKeysTab } from '../components/app/SettingsApiKeysTab'
 import { SettingsAuditTab } from '../components/app/SettingsAuditTab'
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
+import { SettingsSearchIndexTab } from '../components/app/SettingsSearchIndexTab'
 import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
 import { Button } from '../components/ui/button'
 import { useMe } from '../lib/queries/auth'
@@ -58,6 +59,13 @@ const AUDIT_TAB: SettingsTab = {
   render: () => <SettingsAuditTab />,
 }
 
+// Search index freshness — available to all users (scoped to their own spaces).
+const SEARCH_INDEX_TAB: SettingsTab = {
+  id: 'search-index',
+  label: 'Search index',
+  render: () => <SettingsSearchIndexTab />,
+}
+
 export function SettingsPage() {
   const me = useMe()
   // The Users + API Keys tabs are gated on instance-admin; the array itself
@@ -66,9 +74,9 @@ export function SettingsPage() {
   // too — mounting the tab for non-admins would just render a perpetual 403.
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, IMPORT_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
+      return [PROFILE_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
     }
-    return [PROFILE_TAB, IMPORT_TAB]
+    return [PROFILE_TAB, IMPORT_TAB, SEARCH_INDEX_TAB]
   }, [me.data?.is_instance_admin])
   const [activeId, setActiveId] = useState(tabs[0].id)
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]

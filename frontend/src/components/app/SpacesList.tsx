@@ -37,9 +37,11 @@ import {
 import { Input } from '../ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useSpaceAccess } from '../../lib/queries/space-grants'
+import { useFreshness } from '../../lib/queries/freshness'
 import { cn } from '../../lib/utils'
 import { NewSpaceDialog } from './NewSpaceDialog'
 import { ShareSpaceDialog } from './ShareSpaceDialog'
+import { StalenessDot } from './StalenessDot'
 
 interface SpacesListProps {
   activeSpaceId: number | null
@@ -49,6 +51,16 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
   const navigate = useNavigate()
   const spaces = useSpaces()
   const [newOpen, setNewOpen] = useState(false)
+
+  // Per-space stale-page counts for the sidebar dots. Only when the embedder is
+  // enabled (else everything reads unindexed — noise on a dark instance).
+  const freshness = useFreshness()
+  const staleBySpace = new Map<number, number>()
+  if (freshness.data?.enabled) {
+    for (const f of freshness.data.spaces) {
+      if (f.stale_pages > 0) staleBySpace.set(f.space_id, f.stale_pages)
+    }
+  }
 
   return (
     <section
@@ -107,6 +119,7 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
           key={space.id}
           space={space}
           active={space.id === activeSpaceId}
+          stalePages={staleBySpace.get(space.id) ?? 0}
           onSelect={() => {
             void navigate({ to: '/spaces/$spaceId', params: { spaceId: space.id } })
           }}
@@ -148,10 +161,11 @@ function SpacesError({ onRetry }: { onRetry: () => void }) {
 interface SpaceRowProps {
   space: Space
   active: boolean
+  stalePages: number
   onSelect: () => void
 }
 
-function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
+function SpaceRow({ space, active, stalePages, onSelect }: SpaceRowProps) {
   const [renameOpen, setRenameOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -179,6 +193,12 @@ function SpaceRow({ space, active, onSelect }: SpaceRowProps) {
           <span className="text-[var(--text-muted)]">Untitled space</span>
         )}
       </button>
+
+      {stalePages > 0 ? (
+        <StalenessDot
+          label={`${stalePages} ${stalePages === 1 ? 'page needs' : 'pages need'} indexing`}
+        />
+      ) : null}
 
       {/* Compact access cluster: a lock for solo spaces, else people-count +
           org/group kind icons. Click → manage; hover → full who/what peek.
