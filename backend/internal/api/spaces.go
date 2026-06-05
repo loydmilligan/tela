@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/models"
 )
 
@@ -64,7 +65,20 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := s.DB.QueryContext(r.Context(), `
+	spaces, ae := s.listSpacesCore(r.Context(), u)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"spaces": spaces})
+}
+
+// listSpacesCore is the transport-agnostic core behind GET /api/spaces and the
+// MCP `list_spaces` tool: every space the user can reach, with the sidebar
+// access summary. Returns *apiErr instead of writing to a ResponseWriter so the
+// HTTP route and the MCP tool can share one implementation.
+func (s *Server) listSpacesCore(ctx context.Context, u *auth.User) ([]spaceListItem, *apiErr) {
+	rows, err := s.DB.QueryContext(ctx, `
 		SELECT s.id, s.name, s.slug, s.created_at, s.updated_at,
 		       (SELECT COUNT(DISTINCT user_id) FROM space_access a WHERE a.space_id = s.id) AS member_count,
 		       CASE WHEN s.personal_user_id IS NOT NULL THEN 1 ELSE 0 END AS is_personal
@@ -72,8 +86,7 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sa ON sa.space_id = s.id
 		 ORDER BY s.name ASC`, u.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "list spaces failed")
-		return
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "list spaces failed"}
 	}
 	defer rows.Close()
 
@@ -85,27 +98,24 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			personal int
 		)
 		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount, &personal); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "scan space row failed")
-			return
+			return nil, &apiErr{http.StatusInternalServerError, "internal", "scan space row failed"}
 		}
 		it.IsPersonal = personal == 1
 		it.Principals = []spacePrincipal{}
 		spaces = append(spaces, it)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "iterate spaces failed")
-		return
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "iterate spaces failed"}
 	}
 	for i := range spaces {
 		byID[spaces[i].ID] = &spaces[i]
 	}
 
 	// Attach the org/group grants for these spaces in one query (no N+1).
-	if err := attachSpacePrincipals(r.Context(), s.DB, byID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "load space sharing failed")
-		return
+	if err := attachSpacePrincipals(ctx, s.DB, byID); err != nil {
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "load space sharing failed"}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"spaces": spaces})
+	return spaces, nil
 }
 
 func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {

@@ -200,6 +200,15 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/auth/") {
 		return true
 	}
+	// MCP Streamable-HTTP transport. Bypasses Middleware because it
+	// self-authenticates via the SDK's bearer verifier (mcp.go) over the same
+	// tela PATs — a single transport endpoint serves both read and write tools
+	// over POST, so the method-level scope gate here can't apply; per-tool scope
+	// is enforced inside the tool handlers. The verifier rejects missing/invalid
+	// tokens with 401 + WWW-Authenticate (RFC 9728), so this is not an open hole.
+	if strings.HasPrefix(p, "/api/mcp") {
+		return true
+	}
 	if strings.HasPrefix(p, "/api/share/") {
 		return true
 	}

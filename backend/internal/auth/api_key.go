@@ -243,6 +243,14 @@ func userForAPIKey(ctx context.Context, d *sql.DB, userID int64) (*User, error) 
 	return &u, nil
 }
 
+// UserForAPIKey resolves the *User behind a validated PAT. Exported wrapper
+// over userForAPIKey for the MCP Streamable-HTTP transport's bearer verifier,
+// which self-authenticates outside Middleware and needs to build the same
+// *User the cookie/bearer paths attach to context.
+func UserForAPIKey(ctx context.Context, d *sql.DB, userID int64) (*User, error) {
+	return userForAPIKey(ctx, d, userID)
+}
+
 // extractBearerToken returns the raw token from the Authorization header, or
 // "" when the header is absent / non-Bearer / non-tela_pat_. Callers use the
 // empty return to decide whether to attempt bearer auth or fall through to

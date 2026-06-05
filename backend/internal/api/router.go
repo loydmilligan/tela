@@ -42,6 +42,13 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// built_at=process-start.
 	mux.HandleFunc("GET /api/version", srv.Version)
 
+	// MCP Streamable-HTTP transport (single endpoint, POST + GET + DELETE).
+	// Self-authenticated via the SDK bearer verifier over tela PATs; on
+	// auth.IsPublicPath so the session/method-scope Middleware skips it (a POST
+	// transport carries both read and write tools, so per-tool scope is enforced
+	// in the handlers, not by HTTP method). Method-less pattern matches all verbs.
+	mux.Handle("/api/mcp", srv.MCPHandler())
+
 	mux.HandleFunc("POST /api/auth/login", srv.Login)
 	mux.HandleFunc("POST /api/auth/logout", srv.Logout)
 	mux.HandleFunc("GET /api/auth/me", srv.Me)

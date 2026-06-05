@@ -396,13 +396,49 @@ WorkOS vs Stytch vs self-run Hydra.
 Phases 1–4 ship value with zero OAuth. Phase 5 unlocks consumer connectors.
 Phase 6 is the UX differentiator and can run in parallel with 5.
 
+### Phase 0 — DONE (spike landed)
+
+Proven end-to-end with the official SDK (`go-sdk v1.6.1`), driving the real MCP
+client over Streamable HTTP against the wired backend:
+
+- **Mount:** `mux.Handle("/api/mcp", srv.MCPHandler())` (method-less → all verbs).
+  `/api/mcp` added to `auth.IsPublicPath` so tela's Middleware skips it; the
+  endpoint **self-authenticates**.
+- **Auth seam (resolved — this was the linchpin):** the SDK threads a per-request
+  `*auth.TokenInfo` from the request context into every tool call via
+  `req.GetExtra().TokenInfo`. So the integration is a **`TokenVerifier` wrapping
+  tela's `LookupAPIKey`** (`mcp.go` `mcpVerifier`), stashing the resolved tela
+  `*User`+`*APIKey` in `TokenInfo.Extra`; tools read them back with
+  `mcpIdentity(req)`. No per-session server rebuild; one shared server.
+- **Gotcha found:** `auth.RequireBearerToken` **rejects a zero
+  `TokenInfo.Expiration`** ("token missing expiration"). Set a rolling window
+  (verifier re-runs per request; real PAT expiry stays enforced in
+  `LookupAPIKey`).
+- **Scope wrinkle (resolved):** a single POST transport carries read+write
+  tools, so tela's method-level scope gate can't apply — `/api/mcp` being on
+  `IsPublicPath` sidesteps it; per-tool scope enforcement is the tool's job
+  (Phase 1).
+- **Core-extraction pattern validated:** `listSpacesCore(ctx, *User) ([]…, *apiErr)`
+  now backs both `GET /api/spaces` and the `list_spaces` tool; the existing REST
+  integration test still passes (no behavior drift), and the tool returns typed
+  **structured output with an inferred output schema**, correctly space-scoped.
+- **Tests:** `TestMCP_SpikeListSpaces` (client→initialize→tools/list→call, asserts
+  scoping + output schema) and `TestMCP_SpikeRejectsNoToken` both green.
+
+This is the template every Phase-1 tool follows. Phase-5 OAuth slots into the
+same `RequireBearerToken` seam via its `ResourceMetadataURL` option (PRM /
+`WWW-Authenticate` already wired by the SDK).
+
 ---
 
 ## 10. Risks / things to verify before coding
 
-1. **SDK auth-context threading (§3.1)** — the linchpin; spike it in Phase 0.
-2. **Pinned go-sdk version** — sources disagreed on latest patch (v1.4 vs v1.6);
-   pin at build time, read its release notes (post-1.0 API is stable).
+1. ~~**SDK auth-context threading (§3.1)** — the linchpin; spike it in Phase 0.~~
+   **RESOLVED in Phase 0** — `req.GetExtra().TokenInfo` + a `TokenVerifier`
+   wrapping `LookupAPIKey`. See "Phase 0 — DONE".
+2. ~~**Pinned go-sdk version**~~ — pinned to **v1.6.1** (latest stable); has
+   StreamableHTTP, output-schema inference, the `auth` package with
+   `RequireBearerToken` + PRM handler.
 3. **Apps-SDK `_meta` key names** (`openai/outputTemplate`, `text/html+skybridge`,
    `window.openai`) — verify against live OpenAI docs before Phase 6.
 4. **Stateful sessions in prod** — fine on single-instance archer; revisit
