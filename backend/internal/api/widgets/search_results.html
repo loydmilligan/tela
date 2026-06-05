@@ -50,7 +50,8 @@
     <div class="list" id="list"></div>
   </div>
 
-<script type="module">
+<!--TELA_BRIDGE-->
+<script>
   // ---- safe rendering -----------------------------------------------------
   // Escape ALL html first. Because we only ever inject tags we generate (never
   // raw user html), this is XSS-safe even though results are user content.
@@ -67,9 +68,6 @@
   }
 
   const isHttp = (u) => /^https?:\/\//i.test(u || "");
-
-  // route an open through the host bridge; falls back to a normal link.
-  let openVia = null; // (href) => void, set by the active host branch
 
   function render(data) {
     data = data || {};
@@ -94,7 +92,8 @@
         card.href = url;
         card.rel = "noopener";
         card.addEventListener("click", (e) => {
-          if (openVia) { e.preventDefault(); openVia(url); }
+          e.preventDefault();
+          window.__telaWidget.openLink(url);
         });
       }
 
@@ -126,34 +125,9 @@
   }
 
   // ---- host bridge --------------------------------------------------------
-  function applyTheme(theme) {
-    if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
-  }
-
-  if (window.openai) {
-    // ── ChatGPT (Apps SDK) ──
-    openVia = (href) => { if (window.openai.openExternal) window.openai.openExternal({ href }); };
-    const paint = () => { applyTheme(window.openai.theme); render(window.openai.toolOutput || {}); };
-    // globals may not be present at first paint — try, then subscribe + poll.
-    paint();
-    window.addEventListener("openai:set_globals", (e) => {
-      const g = e.detail && e.detail.globals;
-      if (g && ("toolOutput" in g || "theme" in g)) paint();
-    });
-    let tries = 0;
-    const t = setInterval(() => { if (window.openai.toolOutput || ++tries > 40) { clearInterval(t); paint(); } }, 250);
-  } else {
-    // ── MCP Apps standard (Claude / Goose / VS Code) ──
-    try {
-      const { App } = await import("https://esm.sh/@modelcontextprotocol/ext-apps");
-      const app = new App({ name: "tela-search-results", version: "1.0.0" });
-      openVia = (href) => { if (app.openLink) app.openLink({ url: href }); };
-      app.ontoolresult = (p) => render((p && p.structuredContent) || {});
-      await app.connect();
-    } catch (err) {
-      document.getElementById("list").innerHTML = '<p class="empty">Could not connect to the host.</p>';
-    }
-  }
+  // window.__telaWidget is provided by the injected bridge.js (ChatGPT + MCP
+  // Apps). It replays the latest tool output, so registering here is race-safe.
+  window.__telaWidget.onData(render);
 </script>
 </body>
 </html>

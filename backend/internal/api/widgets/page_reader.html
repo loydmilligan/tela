@@ -52,7 +52,8 @@
     <div class="body" id="body"></div>
   </div>
 
-<script type="module">
+<!--TELA_BRIDGE-->
+<script>
   // ---- safe minimal markdown renderer ------------------------------------
   // Escape ALL html first, then apply a known-safe subset. Because we only ever
   // inject tags we generate (never raw user html), this is XSS-safe even though
@@ -100,8 +101,8 @@
         }
         out += "</ol>"; continue;
       }
-      if (/^\s*>\s?/.test(ln)) {                               // blockquote
-        flush(); out += `<blockquote>${inline(ln.replace(/^\s*>\s?/, ""))}</blockquote>`; i++; continue;
+      if (/^\s*&gt;\s?/.test(ln)) {                            // blockquote (lines are pre-escaped, so > is &gt;)
+        flush(); out += `<blockquote>${inline(ln.replace(/^\s*&gt;\s?/, ""))}</blockquote>`; i++; continue;
       }
       if (/^\s*([-*_]\s*){3,}$/.test(ln)) { flush(); out += "<hr>"; i++; continue; } // hr
       if (ln.trim() === "") { flush(); i++; continue; }        // blank
@@ -112,10 +113,9 @@
   }
 
   // ---- render + host bridge ----------------------------------------------
+  // window.__telaWidget (injected bridge.js) abstracts ChatGPT + MCP Apps and
+  // replays the latest tool output, so registering onData here is race-safe.
   let openHref = null;
-  function applyTheme(theme) {
-    if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
-  }
   function render(data) {
     // get_page returns structuredContent shaped { page: { title, body, url, … } };
     // tolerate a flat shape too.
@@ -128,34 +128,10 @@
     else { a.style.display = "none"; openHref = null; }
   }
 
-  if (window.openai) {
-    // ── ChatGPT (Apps SDK) ──
-    const paint = () => { applyTheme(window.openai.theme); render(window.openai.toolOutput || {}); };
-    // globals may not be present at first paint — try, then subscribe + poll.
-    paint();
-    window.addEventListener("openai:set_globals", (e) => {
-      const g = e.detail && e.detail.globals;
-      if (g && ("toolOutput" in g || "theme" in g)) paint();
-    });
-    let tries = 0;
-    const t = setInterval(() => { if (window.openai.toolOutput || ++tries > 40) { clearInterval(t); paint(); } }, 250);
-    document.getElementById("open").addEventListener("click", (e) => {
-      if (openHref && window.openai.openExternal) { e.preventDefault(); window.openai.openExternal({ href: openHref }); }
-    });
-  } else {
-    // ── MCP Apps standard (Claude / Goose / VS Code) ──
-    try {
-      const { App } = await import("https://esm.sh/@modelcontextprotocol/ext-apps");
-      const app = new App({ name: "tela-page-reader", version: "1.0.0" });
-      app.ontoolresult = (p) => render((p && p.structuredContent) || {});
-      await app.connect();
-      document.getElementById("open").addEventListener("click", (e) => {
-        if (openHref && app.openLink) { e.preventDefault(); app.openLink({ url: openHref }); }
-      });
-    } catch (err) {
-      document.getElementById("body").innerHTML = '<p class="empty">Could not connect to the host.</p>';
-    }
-  }
+  document.getElementById("open").addEventListener("click", (e) => {
+    if (openHref) { e.preventDefault(); window.__telaWidget.openLink(openHref); }
+  });
+  window.__telaWidget.onData(render);
 </script>
 </body>
 </html>

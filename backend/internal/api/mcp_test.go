@@ -563,9 +563,9 @@ func TestMCP_SpikeRejectsNoToken(t *testing.T) {
 }
 
 // TestMCP_Widgets verifies the MCP Apps widget surface: the ui:// resources are
-// advertised + serve HTML (both MIME variants). The tool→widget _meta links are
-// temporarily disabled (blank-iframe render in Claude); re-add the get_page/search
-// _meta assertion when the rendering is verified and the links go back on.
+// advertised + serve HTML (both MIME variants) with the host bridge inlined (no
+// external esm.sh import — that left a blank iframe in Claude), and the
+// get_page/search tools carry the _meta that links them to their widget.
 func TestMCP_Widgets(t *testing.T) {
 	ts, d := newWiredServer(t)
 	alice := seedUser(t, d, "alice", "alicepw12", false)
@@ -593,15 +593,53 @@ func TestMCP_Widgets(t *testing.T) {
 		}
 	}
 
-	// Reading a widget resource returns the HTML bundle with the right MIME.
+	// Reading a widget resource returns the HTML bundle with the right MIME and
+	// the bridge inlined: the ChatGPT (window.openai) + MCP Apps (ui/initialize)
+	// branches are present, the injection marker is consumed, and there's no
+	// external esm.sh import (the cause of Claude's blank iframe).
 	rr, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "ui://tela/page-reader/openai"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rr.Contents) != 1 || !strings.Contains(rr.Contents[0].Text, "window.openai") {
-		t.Fatalf("widget html unexpected")
+	if len(rr.Contents) != 1 {
+		t.Fatalf("widget html unexpected: %+v", rr.Contents)
+	}
+	html := rr.Contents[0].Text
+	for _, must := range []string{"window.openai", "ui/initialize", "window.__telaWidget"} {
+		if !strings.Contains(html, must) {
+			t.Errorf("widget html missing %q (bridge not inlined?)", must)
+		}
+	}
+	for _, mustNot := range []string{"esm.sh", "<!--TELA_BRIDGE-->"} {
+		if strings.Contains(html, mustNot) {
+			t.Errorf("widget html still contains %q", mustNot)
+		}
 	}
 	if rr.Contents[0].MIMEType != "text/html+skybridge" {
 		t.Errorf("widget mime: %q", rr.Contents[0].MIMEType)
+	}
+
+	// get_page + search advertise the widget link _meta.
+	tools, err := sess.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTemplate := map[string]string{
+		"get_page": "ui://tela/page-reader/openai",
+		"search":   "ui://tela/search-results/openai",
+	}
+	seen := map[string]bool{}
+	for _, tl := range tools.Tools {
+		if want, ok := wantTemplate[tl.Name]; ok {
+			seen[tl.Name] = true
+			if tl.Meta["openai/outputTemplate"] != want {
+				t.Errorf("%s _meta outputTemplate = %v, want %q", tl.Name, tl.Meta["openai/outputTemplate"], want)
+			}
+		}
+	}
+	for name := range wantTemplate {
+		if !seen[name] {
+			t.Errorf("tool %q not advertised", name)
+		}
 	}
 }
