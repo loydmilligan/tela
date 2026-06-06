@@ -6,6 +6,10 @@ export const TAG_SNAPSHOT_REQ = 0x02
 export const TAG_SNAPSHOT_RESP = 0x03
 export const TAG_SYNC_INIT = 0x04
 export const TAG_AWARENESS = 0x05
+// 0x06 reset: server→peer. The page body was rewritten out-of-band (an agent
+// MCP write) and the Yjs overlay dropped; this Y.Doc is now stale and must be
+// reloaded from pages.body.
+export const TAG_RESET = 0x06
 
 // Prefix `payload` with `tag` into a fresh ArrayBuffer suitable for ws.send.
 export function encodeFrame(tag: number, payload: Uint8Array): ArrayBuffer {

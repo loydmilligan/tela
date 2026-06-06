@@ -431,7 +431,9 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	k, _ := auth.APIKeyFromContext(r.Context())
-	p, ae := s.updatePageCore(r.Context(), u, k, id, req)
+	// agentWrite=false: a REST save is the editor's own collab-synced write (or a
+	// generic client); it must NOT drop the Yjs overlay it is in sync with.
+	p, ae := s.updatePageCore(r.Context(), u, k, id, req, false)
 	if ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
@@ -442,7 +444,7 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 // updatePageCore is the transport-agnostic core behind PATCH /api/pages/{id} and
 // the MCP update_page tool: patch title and/or body under editor+ membership,
 // re-sync wikilinks when the body changes, and snapshot a revision after commit.
-func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req pageUpdateRequest) (models.Page, *apiErr) {
+func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req pageUpdateRequest, agentWrite bool) (models.Page, *apiErr) {
 	if req.Title == nil && req.Body == nil {
 		return models.Page{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of title, body must be provided"}
 	}
@@ -530,6 +532,15 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		// Title is folded into each chunk's embed text and body is the source,
 		// so reindex on either change (debounced, async; no-op when RAG is off).
 		s.rag.QueueReindex(id)
+	}
+	// When an agent rewrites the body out-of-band (MCP update_page), drop the
+	// Yjs collab overlay so live + next editors re-seed from the new body instead
+	// of masking it with stale CRDT state (which would also clobber the agent's
+	// write on the next human save). DB-wins, per the agent-backend sync design.
+	if agentWrite && req.Body != nil && p.Body != existing.Body {
+		if err := s.rooms.resetPage(ctx, s.DB, id); err != nil {
+			log.Printf("page %d collab overlay reset failed: %v", id, err)
+		}
 	}
 	return p, nil
 }

@@ -7,6 +7,7 @@ import {
 } from 'y-protocols/awareness'
 import {
   TAG_AWARENESS,
+  TAG_RESET,
   TAG_SNAPSHOT_REQ,
   TAG_SNAPSHOT_RESP,
   TAG_SYNC_INIT,
@@ -292,6 +293,12 @@ export class TelaProvider {
     const tag = frame[0]
     const payload = frame.subarray(1)
     switch (tag) {
+      case TAG_RESET:
+        // The body was rewritten out-of-band (an agent MCP write) and the
+        // server dropped the Yjs overlay; this Y.Doc is now stale. Reload to
+        // re-seed from pages.body — DB-wins, per the agent-backend sync design.
+        if (!this.destroyed) window.location.reload()
+        return
       case TAG_UPDATE:
         Y.applyUpdate(this.doc, payload, this)
         return

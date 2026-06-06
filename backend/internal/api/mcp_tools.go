@@ -548,7 +548,9 @@ func (s *Server) mcpUpdatePage(ctx context.Context, req *mcp.CallToolRequest, in
 	if ae := mcpRequireWrite(k); ae != nil {
 		return mcpErr(ae), getPageOut{}, nil
 	}
-	p, ae := s.updatePageCore(ctx, u, k, in.ID, pageUpdateRequest{Title: in.Title, Body: in.Body})
+	// agentWrite=true: an agent rewriting the body must invalidate the Yjs collab
+	// overlay so live/next editors see it instead of stale CRDT state.
+	p, ae := s.updatePageCore(ctx, u, k, in.ID, pageUpdateRequest{Title: in.Title, Body: in.Body}, true)
 	if ae != nil {
 		return mcpErr(ae), getPageOut{}, nil
 	}

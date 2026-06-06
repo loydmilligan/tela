@@ -52,6 +52,9 @@ const (
 	tagSnapshotResp byte = 0x03
 	tagSyncInit     byte = 0x04
 	tagAwareness    byte = 0x05
+	// tagReset server→peer: the page body was rewritten out-of-band (an agent
+	// MCP write); the peer must drop its stale Y.Doc and reload from pages.body.
+	tagReset byte = 0x06
 )
 
 // wsReadLimit bounds a single inbound ws message. Yjs full-state sync vectors
@@ -145,6 +148,36 @@ func (rr *roomRegistry) release(rm *room, p *peer) {
 	if cur, ok := rr.rooms[rm.pageID]; ok && cur == rm {
 		delete(rr.rooms, rm.pageID)
 	}
+}
+
+// resetPage drops a page's Yjs overlay (updates + snapshots) and tears down any
+// live room, so the next editor open re-seeds from pages.body. Called when an
+// agent rewrites pages.body out-of-band (MCP update_page): the editor's
+// in-memory Y.Doc would otherwise mask the new body indefinitely and clobber it
+// on the next human save. DB-wins, per the agent-backend sync design. Connected
+// peers are sent a reset frame (reload) and closed FIRST (stops further appends
+// at the now-stale seq), then the overlay tables are cleared.
+func (rr *roomRegistry) resetPage(ctx context.Context, db *sql.DB, pageID int64) error {
+	rr.mu.Lock()
+	rm, active := rr.rooms[pageID]
+	if active {
+		delete(rr.rooms, pageID)
+	}
+	rr.mu.Unlock()
+
+	if active {
+		for _, p := range rm.peerList() {
+			_ = p.conn.Write(ctx, websocket.MessageBinary, []byte{tagReset})
+			_ = p.conn.Close(websocket.StatusNormalClosure, "page reset")
+		}
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM page_yjs_updates WHERE page_id = $1`, pageID); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM page_yjs_snapshots WHERE page_id = $1`, pageID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // initFromDB lazy-loads nextSeq + lastSnapSeq from the database on first
