@@ -1,6 +1,6 @@
 {
   "name": "tela-mcp",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "MCP server for Tela — a self-hostable, markdown-native team wiki. Lets Claude, Cursor, and other agents search, read, and write your wiki pages. A stdio↔HTTP proxy to a Tela instance's built-in MCP server ({TELA_BASE_URL}/api/mcp) for hosts that can't speak HTTP transport directly.",
   "keywords": [
     "mcp",
