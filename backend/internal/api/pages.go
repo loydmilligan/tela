@@ -278,11 +278,33 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 // createPageCore is the transport-agnostic core behind POST /api/pages and the
 // MCP create_page tool: validate, gate on editor+ membership (bearer space-scope
 // first), then insert the page and sync its outgoing wikilinks in one tx.
+// leadingTitleH1RE matches a leading ATX H1 at the very top of a body (only
+// whitespace may precede it), capturing the heading text.
+var leadingTitleH1RE = regexp.MustCompile(`\A\s*#[ \t]+([^\r\n]+?)[ \t]*(\r?\n|\z)`)
+
+// stripLeadingTitleH1 drops a leading `# Heading` from body when its text equals
+// title (case-insensitive). Title and body are separate columns, but MCP/agent
+// clients habitually open the markdown with `# Same Title`, which then renders
+// twice — once as the page title, once as a body heading. A leading H1 that
+// differs from the title is left untouched.
+func stripLeadingTitleH1(body, title string) string {
+	m := leadingTitleH1RE.FindStringSubmatchIndex(body)
+	if m == nil {
+		return body
+	}
+	heading := strings.TrimSpace(body[m[2]:m[3]])
+	if !strings.EqualFold(heading, strings.TrimSpace(title)) {
+		return body
+	}
+	return strings.TrimLeft(body[m[1]:], "\r\n")
+}
+
 func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKey, req pageCreateRequest) (models.Page, *apiErr) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title is required"}
 	}
+	body := stripLeadingTitleH1(req.Body, title)
 	if len(title) > maxPageTitleLen {
 		return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title exceeds 500 characters"}
 	}
@@ -354,10 +376,10 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	var id int64
 	if err := tx.QueryRowContext(ctx,
 		`INSERT INTO pages(space_id, parent_id, title, body, position) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		req.SpaceID, nullableInt64(req.ParentID), title, req.Body, position).Scan(&id); err != nil {
+		req.SpaceID, nullableInt64(req.ParentID), title, body, position).Scan(&id); err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "create page failed"}
 	}
-	if err := syncPageLinks(ctx, tx, id, req.Body); err != nil {
+	if err := syncPageLinks(ctx, tx, id, body); err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "sync page_links failed"}
 	}
 	page, err := selectPageByIDTx(ctx, tx, id)
