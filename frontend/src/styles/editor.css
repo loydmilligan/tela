@@ -916,13 +916,21 @@
   .tela-block-handle {
     position: fixed;
     z-index: 40;
-    display: none;
+    /* Hide via visibility, NOT display:none, so the handle keeps its width while
+       hidden. Milkdown's BlockProvider runs computePosition (placement:'left')
+       BEFORE flipping data-show; with display:none the handle measures 0 wide, so
+       it lands over the text (block.left − 0 − offset) and only snaps to the
+       gutter on a later re-measure. Kept laid-out, it positions correctly first try. */
+    visibility: hidden;
+    pointer-events: none;
+    display: flex;
     align-items: center;
     gap: 1px;
     padding: 0;
   }
   .tela-block-handle[data-show='true'] {
-    display: flex;
+    visibility: visible;
+    pointer-events: auto;
   }
   .tela-block-handle-btn {
     display: inline-flex;
