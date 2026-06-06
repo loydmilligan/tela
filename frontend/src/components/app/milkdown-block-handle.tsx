@@ -162,6 +162,21 @@ export function BlockHandleView() {
     providerRef.current?.update()
   })
 
+  // Hide the handle on scroll. BlockProvider only repositions on its throttled
+  // mousemove callback, so a scroll never fires it — the `position: fixed`
+  // handle would otherwise freeze at its viewport coords while the content
+  // scrolls underneath. We listen on the page-scroll container (the <main
+  // data-page-scroll> in router.tsx, which has overflow-y-auto) and hide; the
+  // handle re-appears on the next mousemove, which is the correct Notion UX.
+  useEffect(() => {
+    if (loading || !handleRef.current) return
+    const scroller = handleRef.current.closest('[data-page-scroll]')
+    if (!scroller) return
+    const onScroll = () => providerRef.current?.hide()
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [loading])
+
   // Dismiss the action menu on outside-click or Escape.
   useEffect(() => {
     if (!menu) return
