@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Check, FileText, Globe } from 'lucide-react'
 import { ApiError } from '../../lib/api'
-import { useMovePage } from '../../lib/queries/pages'
+import { useMovePage, usePages } from '../../lib/queries/pages'
+import { useSpaces } from '../../lib/queries/spaces'
 import type { PageTreeNode } from '../../lib/types'
 import { Button } from '../ui/button'
 import {
@@ -17,6 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog'
+import { Field } from '../ui/field'
+import { Select } from '../ui/select'
 
 const UNTITLED_TITLE = 'Untitled'
 
@@ -34,7 +37,9 @@ interface FlatPage {
 // Pre-order walk that excludes the moved node AND everything beneath it. The
 // backend rejects cycles with code: "cycle", but we filter client-side too so
 // invalid rows never appear in the picker. Breadcrumb is the slash-joined chain
-// of ancestor titles (omitting the page itself).
+// of ancestor titles (omitting the page itself). When the target space differs
+// from the moved page's space, movedId simply isn't present in the tree, so
+// nothing is excluded — which is exactly right.
 function flattenValidTargets(
   roots: PageTreeNode[],
   movedId: number,
@@ -60,10 +65,12 @@ function parentIdToPickerValue(parentId: number | null): string {
 
 export interface MovePageDialogProps {
   node: PageTreeNode
-  // Full root list for the moved page's space. Used to filter descendants.
+  // Full root list for the moved page's space. Used to filter descendants and
+  // to populate the parent picker without a refetch for the (common) same-space
+  // case — it's the same data the sidebar already has cached.
   roots: PageTreeNode[]
   // Source space, threaded into useMovePage so we can invalidate it correctly
-  // even though v0 only supports within-space moves.
+  // (both source and target spaces are invalidated on a cross-space move).
   spaceId: number
   open: boolean
   onOpenChange: (next: boolean) => void
@@ -77,12 +84,32 @@ export function MovePageDialog({
   onOpenChange,
 }: MovePageDialogProps) {
   const movePage = useMovePage()
+  const spaces = useSpaces()
+  const spaceSelectId = useId()
 
+  const [targetSpaceId, setTargetSpaceId] = useState<number>(spaceId)
   const [parentId, setParentId] = useState<number | null>(node.parent_id)
   const [pickerValue, setPickerValue] = useState<string>(() =>
     parentIdToPickerValue(node.parent_id),
   )
   const [error, setError] = useState<string | null>(null)
+
+  const crossSpace = targetSpaceId !== spaceId
+
+  // Fetch the target space's tree only when the dialog is open AND the chosen
+  // destination differs from the source. Closed dialogs (one is mounted per row)
+  // pass spaceId: null so the query stays disabled — no fetch storm. Same-space
+  // moves reuse the `roots` prop, so no loading flash for the common case.
+  const targetTree = usePages({
+    spaceId: open && crossSpace ? targetSpaceId : null,
+    tree: true,
+  })
+  const targetData = targetTree.data as PageTreeNode[] | undefined
+  const targetRoots = useMemo(
+    () => (crossSpace ? (targetData ?? []) : roots),
+    [crossSpace, targetData, roots],
+  )
+  const loadingTargets = crossSpace && targetTree.isLoading
 
   // Re-seed on each fresh open so a closed-and-reopened dialog never leaks the
   // previous attempt's state. Mirrors NewPageDialog's openRef pattern.
@@ -90,6 +117,7 @@ export function MovePageDialog({
   useEffect(() => {
     if (open && !openRef.current) {
       openRef.current = true
+      setTargetSpaceId(spaceId)
       setParentId(node.parent_id)
       setPickerValue(parentIdToPickerValue(node.parent_id))
       setError(null)
@@ -97,16 +125,26 @@ export function MovePageDialog({
     if (!open && openRef.current) {
       openRef.current = false
     }
-  }, [open, node.parent_id])
+  }, [open, node.parent_id, spaceId])
+
+  function handleSpaceChange(nextSpaceId: number) {
+    setTargetSpaceId(nextSpaceId)
+    // The old parent can't exist in a different space; default to the space
+    // root. When switching back to the source space, restore the original
+    // parent so an accidental detour is a no-op.
+    const nextParent = nextSpaceId === spaceId ? node.parent_id : null
+    setParentId(nextParent)
+    setPickerValue(parentIdToPickerValue(nextParent))
+  }
 
   const validTargets = useMemo(
-    () => flattenValidTargets(roots, node.id),
-    [roots, node.id],
+    () => flattenValidTargets(targetRoots, node.id),
+    [targetRoots, node.id],
   )
 
   // Build picker items: synthetic "(top of space)" row first, then every
-  // remaining page in the space. The currently-selected row shows a check icon
-  // so the user can see their pick even after typing to filter.
+  // remaining page in the target space. The currently-selected row shows a
+  // check icon so the user can see their pick even after typing to filter.
   const pickerItems: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = []
     const rootChosen = parentId == null
@@ -154,7 +192,7 @@ export function MovePageDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (parentId === node.parent_id) {
+    if (!crossSpace && parentId === node.parent_id) {
       handleClose(false)
       return
     }
@@ -163,6 +201,7 @@ export function MovePageDialog({
       await movePage.mutateAsync({
         id: node.id,
         fromSpaceId: spaceId,
+        ...(crossSpace ? { space_id: targetSpaceId } : {}),
         parent_id: parentId,
       })
       handleClose(false)
@@ -173,7 +212,11 @@ export function MovePageDialog({
 
   const title = node.title || UNTITLED_TITLE
   const submitDisabled =
-    movePage.isPending || parentId === node.parent_id
+    movePage.isPending ||
+    loadingTargets ||
+    (!crossSpace && parentId === node.parent_id)
+
+  const spaceList = spaces.data ?? []
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -181,18 +224,41 @@ export function MovePageDialog({
         <DialogHeader>
           <DialogTitle>Move "{title}" to:</DialogTitle>
           <DialogDescription>
-            Pick a new parent, or "(top of space)" to make this a root page.
+            Pick a destination space, then a new parent — or "(top of space)" to
+            make it a root page. Moving across spaces takes the whole subtree
+            along.
           </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={handleSubmit}
           className="flex flex-col gap-[var(--space-4)]"
         >
+          <Field label="Destination space" htmlFor={spaceSelectId}>
+            <Select
+              id={spaceSelectId}
+              value={String(targetSpaceId)}
+              onChange={(e) => handleSpaceChange(Number(e.target.value))}
+            >
+              {spaceList.map((s) => (
+                <option key={s.id} value={String(s.id)}>
+                  {s.name}
+                  {s.id === spaceId ? ' (current)' : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
           <CommandInlinePicker
             items={pickerItems}
-            placeholder="Search pages in this space…"
-            emptyMessage="No matches."
-            label="Move target"
+            placeholder={
+              loadingTargets
+                ? 'Loading pages…'
+                : crossSpace
+                  ? 'Search pages in the destination space…'
+                  : 'Search pages in this space…'
+            }
+            emptyMessage={loadingTargets ? 'Loading…' : 'No matches.'}
+            label="Parent page"
             value={pickerValue}
             onValueChange={setPickerValue}
           />
