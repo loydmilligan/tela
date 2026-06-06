@@ -229,7 +229,7 @@ function SpaceRow({ space, active, stalePages, onSelect }: SpaceRowProps) {
             variant="ghost"
             size="sm"
             aria-label={`Actions for ${space.name || 'space'}`}
-            className="shrink-0 h-[var(--space-6)] w-[var(--space-6)] p-0 hidden group-hover:inline-flex data-[state=open]:inline-flex focus-visible:inline-flex"
+            className="shrink-0 h-[var(--space-6)] w-[var(--space-6)] p-0 hidden group-hover:inline-flex data-[state=open]:inline-flex focus-visible:inline-flex [@media(hover:none)]:inline-flex"
           >
             <MoreHorizontal width={14} height={14} />
           </Button>
