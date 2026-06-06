@@ -192,12 +192,20 @@ func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceN
 <head>
   <meta charset="utf-8">
   <title>%s</title>
+  <meta property="og:site_name" content="tela">
   <meta property="og:title" content="%s">
   <meta property="og:description" content="%s">
   <meta property="og:image" content="%s">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:alt" content="%s">
   <meta property="og:url" content="%s">
   <meta property="og:type" content="article">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="%s">
+  <meta name="twitter:description" content="%s">
+  <meta name="twitter:image" content="%s">
 </head>
 <body></body>
 </html>`,
@@ -205,7 +213,11 @@ func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceN
 		html.EscapeString(ogTitle),
 		html.EscapeString(ogDesc),
 		html.EscapeString(imageURL),
+		html.EscapeString(ogTitle),
 		html.EscapeString(pageURL),
+		html.EscapeString(ogTitle),
+		html.EscapeString(ogDesc),
+		html.EscapeString(imageURL),
 	)
 }
 
@@ -227,11 +239,14 @@ func writeLockedShareOGHTML(w http.ResponseWriter, token string) {
 <head>
   <meta charset="utf-8">
   <title>%s</title>
+  <meta property="og:site_name" content="tela">
   <meta property="og:title" content="%s">
   <meta property="og:description" content="%s">
   <meta property="og:url" content="%s">
   <meta property="og:type" content="article">
   <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="%s">
+  <meta name="twitter:description" content="%s">
 </head>
 <body></body>
 </html>`,
@@ -239,5 +254,7 @@ func writeLockedShareOGHTML(w http.ResponseWriter, token string) {
 		html.EscapeString(lockedTitle),
 		html.EscapeString(lockedDesc),
 		html.EscapeString(pageURL),
+		html.EscapeString(lockedTitle),
+		html.EscapeString(lockedDesc),
 	)
 }
