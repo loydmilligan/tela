@@ -42,6 +42,16 @@ export default defineConfig({
           proxy.on('error', () => {})
         },
       },
+      // Yjs collab websocket (tela-provider → /ws/pages/{id}). Without this the
+      // dev editor runs Yjs-offline, which hides React+Yjs behaviour.
+      '/ws': {
+        target: process.env.TELA_PROXY_TARGET ?? 'http://localhost:8080',
+        ws: true,
+        changeOrigin: false,
+        configure: (proxy) => {
+          proxy.on('error', () => {})
+        },
+      },
     },
   },
   test: {
