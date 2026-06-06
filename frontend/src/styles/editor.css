@@ -5,6 +5,11 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    /* The editor grows with its content; the outer page area scrolls. Without
+       this, in PageView's flex column the editor would shrink below its content
+       (min-height ~320px) and overflow-paint on top of the Child-pages /
+       Backlinks sections beneath it (sections rendered on top of each other). */
+    flex-shrink: 0;
   }
   .tela-milkdown [data-milkdown-root] {
     flex: 1;
