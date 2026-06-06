@@ -53,7 +53,7 @@ See [`access-model.md`](access-model.md) for the canonical principal/grant/role 
 - WebSocket `/ws/...` — live collab (custom 1-byte-tag protocol; see architecture.md).
 
 ## Search
-- `GET /api/search?q=...` — FTS5 over title + body, snippet-highlighted.
+- `GET /api/search?q=...` — ranked Postgres full-text (`tsvector` / `ts_rank_cd`) over title + body, snippet-highlighted via `ts_headline`.
 - `GET /api/search/bodies?space_id&q&limit` — per-space body search (member-gated, bearer-`read` ok). Limit clamped to [1,100].
 
 ## Diagrams (Excalidraw)

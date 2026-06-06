@@ -68,7 +68,7 @@ Era-carried conventions (kept to minimize churn): datetimes are **TEXT** `'YYYY-
 
 Core shape: `spaces`, `pages` (`body TEXT` canonical markdown), `space_members` (role: owner/editor/viewer), page-link rows (backlinks from `[[wikilink]]` / `tela://page/{id}`), `users` + sessions + `email_tokens`, `orgs`/`org_members`/`groups`/`group_members`/`space_grants`, `comments`, `page_revisions`, `share_links`, `page_diagrams` (Excalidraw PNG sidecars), `page_images`, `page_yjs_*`, `api_keys` + audit, `feedback`, `access_audit`.
 
-- **Search:** PLACEHOLDER. FTS5 was removed in the Postgres switch; `/api/search*` currently run an unranked `ILIKE` substring scan (escapeLike-guarded), `TODO(search)` in `internal/api/search*.go`. The target two-tier instant + semantic (pgvector) design is in [`search.md`](search.md). tsvector / pg_trgm / pgvector all live in this one Postgres, so the rebuild is additive.
+- **Search:** ranked Postgres FTS. `/api/search` + `/api/search/bodies` run Postgres full-text over `pages.search_tsv` (title weighted above body, Excalidraw stripped in-SQL, ranked by `ts_rank_cd`, snippets via `ts_headline`, parsed with `websearch_to_tsquery`; migration `0004_pages_fts.sql`) — the old unranked `ILIKE` placeholder is gone. The semantic-enrichment tier (RAG over `pgvector`) is partially wired; the full two-tier instant + semantic design is in [`search.md`](search.md). tsvector / pg_trgm / pgvector all live in this one Postgres.
 - **Backlinks:** parsed from `[[wikilink]]` / `tela://page/{id}` on save.
 - **Soft delete:** queries must filter out deleted rows.
 

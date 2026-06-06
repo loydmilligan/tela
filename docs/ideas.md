@@ -24,8 +24,8 @@ here is that board number, so anything is easy to cross-reference back.
 
 ## Search & AI
 
-- **#17 — "Ask your docs" (cited answers)** — natural-language question → answer cited from the wiki (RAG over FTS5 + LLM). _(Outline, Rovo, kapa.ai)_
-- **#18 — Semantic / vector search** — embedding search alongside FTS5 keyword search. _(emerging — sqlite-vec)_
+- **#17 — "Ask your docs" (cited answers)** — natural-language question → answer cited from the wiki (RAG over Postgres full-text + `pgvector` + LLM). _(Outline, Rovo, kapa.ai)_
+- **#18 — Semantic / vector search** — embedding search alongside Postgres full-text keyword search. _(`pgvector`; `semantic_search` MCP tool now shipped — palette integration still open)_
 - **#20 — AI auto-summary at top of page** — one-click, regenerable TL;DR block. _(Notion, Nuclino)_
 - **#21 — AI search-gap finder** — mine unanswered queries → suggest pages to write. _(Mintlify, Slite)_
 - **#22 — Conversational search (follow-ups)** — multi-turn chat grounded in the wiki. _(Algolia Ask AI)_
