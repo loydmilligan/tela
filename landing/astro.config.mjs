@@ -1,6 +1,5 @@
 // @ts-check
 import { defineConfig, fontProviders } from 'astro/config';
-import react from '@astrojs/react';
 import tailwindcss from '@tailwindcss/vite';
 
 // tela landing — standalone static marketing site. Built separately from the
@@ -15,8 +14,6 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   output: 'static',
   site: 'https://tela.cagdas.io',
-
-  integrations: [react()],
 
   fonts: [
     {
