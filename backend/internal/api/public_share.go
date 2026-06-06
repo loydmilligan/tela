@@ -23,6 +23,11 @@ var botUASubstrings = []string{
 	"telegrambot",
 	"linkedinbot",
 	"whatsapp",
+	"mastodon",        // Mastodon link preview (http.rb/… (Mastodon/4.x; …))
+	"cardyb",          // Bluesky link-card service (Bluesky Cardyb/1.1)
+	"slack-imgproxy",  // Slack image unfurl fetcher
+	"facebookcatalog", // Facebook catalog/share crawler (not …externalhit)
+	"pinterest",       // Pinterest rich-pin fetcher
 	"bot/",
 	"bot ",
 }

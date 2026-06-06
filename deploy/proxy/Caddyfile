@@ -72,7 +72,7 @@
 	# Mirror of botUASubstrings in backend/internal/api/public_share.go — keep in sync.
 	@share_bots {
 		path /share/*
-		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|discordbot|telegrambot|linkedinbot|whatsapp|bot/|bot\s)"
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|bot/|bot\s)"
 	}
 	handle @share_bots {
 		header X-Robots-Tag "noindex"
