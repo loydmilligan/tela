@@ -36,6 +36,32 @@ const writeTools = [
   heading="The tela MCP server"
   updated="June 5, 2026"
 >
+  <script type="application/ld+json" is:inline slot="head" set:html={JSON.stringify({
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'TechArticle',
+        '@id': 'https://tela.cagdas.io/mcp/#article',
+        headline: 'The tela MCP server',
+        description: 'Connect Claude, ChatGPT or any MCP client to tela: a markdown wiki your agents can read, search and write over HTTP with OAuth.',
+        url: 'https://tela.cagdas.io/mcp/',
+        inLanguage: 'en',
+        dateModified: '2026-06-05',
+        author: { '@id': 'https://tela.cagdas.io/#org' },
+        publisher: { '@id': 'https://tela.cagdas.io/#org' },
+        about: { '@id': 'https://tela.cagdas.io/#software' },
+        isPartOf: { '@id': 'https://tela.cagdas.io/#website' },
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://tela.cagdas.io/' },
+          { '@type': 'ListItem', position: 2, name: 'MCP server', item: 'https://tela.cagdas.io/mcp/' },
+        ],
+      },
+    ],
+  })} />
+
   <p class="lead">
     tela ships a built-in <a href="https://modelcontextprotocol.io">Model Context
     Protocol</a> server, so AI agents are first-class users of your wiki — they
@@ -132,7 +158,7 @@ const writeTools = [
     <li>Agent tool calls run with your account's permissions — an agent can only touch what you can.</li>
     <li>Write tools are gated separately from read tools; read-only connections never mutate content.</li>
     <li>Page bodies are canonical markdown — what an agent writes is exactly what your team sees.</li>
-    <li>See the <a href="/privacy">privacy policy</a> for what is collected and shared.</li>
+    <li>See the <a href="/privacy/">privacy policy</a> for what is collected and shared.</li>
   </ul>
 
   <h2>Limitations</h2>

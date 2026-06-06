@@ -109,6 +109,9 @@ const ogImage = new URL('/og-image.png', Astro.site).href;
       ],
     })} />
 
+    <!-- Per-page <head> extras (e.g. page-scoped JSON-LD). Optional. -->
+    <slot name="head" />
+
     <Font cssVariable="--af-display" preload />
     <Font cssVariable="--af-body" preload />
     <Font cssVariable="--af-mono" />
