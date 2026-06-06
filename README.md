@@ -5,7 +5,7 @@
 
 # tela
 
-A self-hostable, markdown-native team wiki — spaces, nested pages, a Milkdown editor, full-text search, live collaboration, comments, page history, public sharing, and a first-class MCP server so AI agents are first-class citizens alongside humans.
+A self-hostable, markdown-native team wiki — spaces, nested pages, a Milkdown editor, ranked full-text + semantic search, live collaboration, comments, page history, public sharing, and a first-class MCP server so AI agents are first-class citizens alongside humans.
 
 Public instance: **https://tela.cagdas.io**
 
@@ -92,4 +92,4 @@ tela was originally built by an autonomous agent system ("forge") and is now und
 
 ## License
 
-TBD (the `mcp/` package is published MIT).
+[MIT](LICENSE).

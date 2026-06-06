@@ -1,7 +1,29 @@
 {
   "name": "tela-mcp",
   "version": "0.7.0",
-  "description": "Thin stdio↔HTTP proxy to a Tela instance's built-in MCP server ({TELA_BASE_URL}/api/mcp). For stdio-only hosts; modern hosts can use HTTP transport directly.",
+  "description": "MCP server for Tela — a self-hostable, markdown-native team wiki. Lets Claude, Cursor, and other agents search, read, and write your wiki pages. A stdio↔HTTP proxy to a Tela instance's built-in MCP server ({TELA_BASE_URL}/api/mcp) for hosts that can't speak HTTP transport directly.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "wiki",
+    "knowledge-base",
+    "markdown",
+    "documentation",
+    "ai-agents",
+    "claude",
+    "cursor",
+    "self-hosted",
+    "tela"
+  ],
+  "homepage": "https://tela.cagdas.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zcag/tela.git",
+    "directory": "mcp"
+  },
+  "bugs": {
+    "email": "tela@cagdas.io"
+  },
   "license": "MIT",
   "type": "module",
   "bin": {
