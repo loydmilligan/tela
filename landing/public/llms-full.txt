@@ -1,18 +1,18 @@
 # tela — the team wiki your agents can write to
 
-> A self-hostable, markdown-native team wiki with a built-in MCP server, so AI agents read, write, and search your docs as first-class teammates. Live multiplayer, instant SQLite full-text search, one binary. Your data, your server.
+> A self-hostable, markdown-native team wiki with a built-in MCP server, so AI agents read, write, and search your docs as first-class teammates. Live multiplayer, ranked full-text + semantic search, your data on your server.
 
 ## What tela is
 
 tela is an open-source, self-hostable **agent-native** team wiki. The wedge: a built-in Model Context Protocol (MCP) server makes AI agents first-class participants — they read, write, and search the wiki through the same API the team's UI uses, not through a bolted-on chat box.
 
 - **Markdown is canonical, forever.** `pages.body` is plain markdown text — no block model, no proprietary format. The Milkdown editor is fully WYSIWYG; the file underneath stays clean markdown. Bulk-import a directory, export any time. Leaving tela means copying files.
-- **Self-hosted, single binary.** Go compiles to one binary; storage and full-text search are SQLite + FTS5 — no Postgres, no Elasticsearch, no external search service. `docker compose up`, one host port, your data on your disk.
+- **Self-hosted, your data.** Go backend on PostgreSQL; full-text search is native Postgres (ranked `ts_rank_cd` over a generated `tsvector`), with optional semantic/RAG retrieval via an embedding model — no Elasticsearch, no external search service. `docker compose up`, one host port, your data on your disk.
 - **Real-time multiplayer.** Live collaborative editing over Yjs — concurrent cursors and edits, rebased onto the canonical markdown on save. Comments anchor to a `{prefix, exact, suffix}` text window, so they don't drift when the page is edited.
-- **Built for agents.** Ships `tela-mcp` (published on npm). Agents authenticate with a scoped personal access token and get 17 tools: search (FTS5), get_page, list_pages, list_backlinks, create_page, update_page (auto-snapshots a revision), add_comment (text-anchored), import_markdown (bulk), plus space and key management. Keys are scoped read / write / admin and can be pinned to a single space.
+- **Built for agents.** Ships `tela-mcp` (published on npm). Agents authenticate with a scoped personal access token and get 20 tools: search (ranked full-text), semantic_search + read_chunk (vector + keyword retrieval with cited chunks), get_page, list_pages, list_backlinks, fetch, create_page, update_page (auto-snapshots a revision), move_page, add_comment (text-anchored), import_mira (bulk), submit_feedback, plus space management. Keys are scoped read / write / admin and can be pinned to a single space.
 
 ## Stack
-- Backend: Go, compiled to a single binary. Storage + full-text search: SQLite + FTS5.
+- Backend: Go + PostgreSQL (`pgx/v5`). Search: ranked Postgres full-text (`tsvector` / `ts_rank_cd`) plus optional semantic/RAG retrieval.
 - Frontend: React + TypeScript + Vite + Tailwind + the Milkdown editor; Yjs for live collaboration.
 - MCP server: TypeScript, published as `tela-mcp` on npm — a thin client over the REST API.
 - Deploy: Docker Compose + a Caddy reverse proxy. Public instance: https://tela.cagdas.io
@@ -39,16 +39,16 @@ That's the whole integration. The agent then stops starting from zero every sess
 
 ## How does tela compare?
 - vs **Notion**: your docs are plain markdown on your own server, and agents get a real read/write API — not a closed block store with a chat sidebar. (Notion wins on databases, templates, polish.)
-- vs **Confluence**: one binary you run yourself, no per-seat pricing, your data on your disk. (Confluence wins on Jira, granular permissions, enterprise scale.)
+- vs **Confluence**: you run it yourself, no per-seat pricing, your data on your disk. (Confluence wins on Jira, granular permissions, enterprise scale.)
 - vs **Obsidian**: built for a team — live multiplayer, a shared server, an agent API. (Obsidian wins on local-first single-user, plugins, graph.)
 - vs **a git repo of markdown**: live WYSIWYG editing, instant full-text search, comments, sharing, and an agent API over the same markdown. (A repo wins on pure version control, free, zero infra.)
-- vs **Outline**: a built-in MCP server makes agents first-class, on canonical markdown in a single binary. (Outline wins on maturity, Slack integration, track record.)
+- vs **Outline**: a built-in MCP server makes agents first-class, on canonical markdown you host yourself. (Outline wins on maturity, Slack integration, track record.)
 
-None of them combine all of it: an agent-native MCP server, markdown you own, live multiplayer, real full-text search — in a single binary you run yourself.
+None of them combine all of it: an agent-native MCP server, markdown you own, live multiplayer, ranked full-text plus semantic search — that you run yourself.
 
 ## FAQ
-- **Is the MCP integration real or a demo?** Real. `tela-mcp` is published on npm with 17 tools over the live REST API; the tool catalog and `.mcp.json` are in `mcp/README.md`, and the code is open.
-- **Do I need Postgres or Elasticsearch?** No. Storage and full-text search are both SQLite + FTS5 inside the single Go binary.
+- **Is the MCP integration real or a demo?** Real. `tela-mcp` is published on npm with 20 tools over the live REST API; the tool catalog and `.mcp.json` are in `mcp/README.md`, and the code is open.
+- **Do I need Postgres?** Yes — tela runs on PostgreSQL, which `docker compose` brings up for you. Full-text search is built in (native Postgres `tsvector`); semantic search additionally uses an embedding model. No Elasticsearch, no external search service.
 - **Can I get my content out?** Yes. Pages are canonical plain markdown — bulk-import a directory and export any time. No proprietary format.
 - **How do agents authenticate?** Each agent uses a scoped personal access token (`tela_pat_…`) issued in Settings → API Keys — read, write, or admin, pinnable to a single space.
 - **Is it multiplayer?** Yes — live collaborative editing over Yjs.

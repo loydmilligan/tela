@@ -4,11 +4,15 @@ import { Font } from 'astro:assets';
 interface Props {
   title?: string;
   description?: string;
+  /** Longer copy for the social card; falls back to `description`. The meta
+   *  description stays ≤~160 chars for SERP; og/twitter can run longer. */
+  ogDescription?: string;
 }
 
 const {
   title = 'tela — the agent-native team wiki your AI reasons over',
-  description = 'A markdown team wiki with semantic search and a built-in MCP server. Your AI agents search your docs by meaning and read, write and cite them — right inside Claude and ChatGPT. Real-time multiplayer, SSO, scoped access. Your markdown, hosted or self-hosted.',
+  description = 'Open-source markdown team wiki with a built-in MCP server and semantic search — so Claude and ChatGPT read, write, and cite your docs. Hosted or self-hosted.',
+  ogDescription = description,
 } = Astro.props;
 
 // Absolute OG image URL (Astro.site = https://tela.cagdas.io).
@@ -54,7 +58,7 @@ const ogImage = new URL('/og-image.png', Astro.site).href;
     <meta property="og:site_name" content="tela" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
+    <meta property="og:description" content={ogDescription} />
     <meta property="og:url" content={Astro.url.href} />
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
@@ -62,7 +66,7 @@ const ogImage = new URL('/og-image.png', Astro.site).href;
     <meta property="og:image:alt" content="tela — the wiki your agents reason over" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
-    <meta name="twitter:description" content={description} />
+    <meta name="twitter:description" content={ogDescription} />
     <meta name="twitter:image" content={ogImage} />
 
     <script type="application/ld+json" is:inline set:html={JSON.stringify({

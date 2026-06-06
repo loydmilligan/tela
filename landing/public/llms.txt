@@ -1,15 +1,15 @@
 # tela
 
-> The team wiki your AI agents can actually read and write — through a built-in MCP server, on markdown you self-host. Live multiplayer, instant SQLite full-text search, one binary. Your data, your server.
+> The team wiki your AI agents can actually read and write — through a built-in MCP server, on markdown you self-host. Live multiplayer, ranked full-text + semantic search, your data on your server.
 
-tela is an open-source, self-hostable, **agent-native** team wiki. It ships `tela-mcp`, a published Model Context Protocol server that gives agents 17 scoped tools over the same REST API the UI uses — create, read, update, and search pages, leave anchored comments, import markdown, manage spaces. Pages are canonical markdown forever (no block model, no proprietary format). Go + SQLite/FTS5 backend, React/Milkdown editor, Yjs live collaboration.
+tela is an open-source, self-hostable, **agent-native** team wiki. It ships `tela-mcp`, a published Model Context Protocol server that gives agents 20 scoped tools over the same REST API the UI uses — read, search (keyword and semantic), create and update pages, leave anchored comments, import content, manage spaces. Pages are canonical markdown forever (no block model, no proprietary format). Go + PostgreSQL backend, React/Milkdown editor, Yjs live collaboration.
 
 ## Product
 - [Home](https://tela.cagdas.io/): what tela is, the agent/MCP story, the feature showcase, an honest comparison vs Notion/Confluence/Obsidian/Outline, and self-host instructions.
 - [Live instance](https://tela.cagdas.io/login): the running app.
 
 ## Code & packages
-- [GitHub repository](https://github.com/zcag/tela): open source — Go backend (SQLite + FTS5), React/Milkdown frontend, and the MCP server.
+- [GitHub repository](https://github.com/zcag/tela): open source — Go backend (PostgreSQL), React/Milkdown frontend, and the MCP server.
 - [tela-mcp on npm](https://www.npmjs.com/package/tela-mcp): the published MCP server.
 - [MCP server docs](https://github.com/zcag/tela/blob/main/mcp/README.md): the full tool catalog and the `.mcp.json` configuration.
 

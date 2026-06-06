@@ -59,13 +59,13 @@ const tree = [
       </div>
 
       <article class="prose">
-        <h1 data-line="0">Incident response</h1>
+        <div class="mock-h1" data-line="0">Incident response</div>
         <p data-line="1">When a service degrades, the on-call engineer owns the timeline until handoff. Keep this page open during an incident.</p>
         <div class="callout" data-line="2">
           <span class="callout-ic">!</span>
           <span>Page <strong>@on-call</strong> before paging anyone else. The rotation lives in the linked runbook.</span>
         </div>
-        <h2 data-line="3">First five minutes</h2>
+        <div class="mock-h2" data-line="3">First five minutes</div>
         <ul>
           <li data-line="4">Acknowledge the alert and post in <span class="mention">#incident</span>.</li>
           <li data-line="5">Open a timeline below — every action gets a timestamp.</li>
@@ -183,7 +183,10 @@ const tree = [
   .av2 { background: var(--accent); color: var(--accent-fg); margin-left: -7px; }
 
   .prose { color: var(--fg-soft); line-height: var(--leading-normal); }
-  .prose h1 {
+  /* Demo headings are styled DIVs, not document headings — this is a product
+     mock, so it must not inject <h1>/<h2> into the page's real outline (the
+     hero owns the single H1). Visual styling is identical. */
+  .prose .mock-h1 {
     font-family: var(--font-display);
     font-size: var(--text-xl);
     font-weight: 600;
@@ -191,7 +194,7 @@ const tree = [
     letter-spacing: var(--tracking-tight);
     margin-bottom: 0.5rem;
   }
-  .prose h2 {
+  .prose .mock-h2 {
     font-family: var(--font-display);
     font-size: var(--text-base);
     font-weight: 600;
