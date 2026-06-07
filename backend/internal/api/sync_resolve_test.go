@@ -124,6 +124,38 @@ func TestApplyFileSync_MoveByPlacement(t *testing.T) {
 	}
 }
 
+func TestApplyFileSync_UpdateAndMoveInOneTx(t *testing.T) {
+	s, u, space := syncFixture(t)
+	ctx := context.Background()
+
+	parent, _, ae := s.ApplyFileSync(ctx, u, nil, space, nil, "Parent.md", []byte("p"))
+	if ae != nil {
+		t.Fatalf("parent: %+v", ae)
+	}
+	child, _, ae := s.ApplyFileSync(ctx, u, nil, space, nil, "Child.md", []byte("c"))
+	if ae != nil {
+		t.Fatalf("child: %+v", ae)
+	}
+
+	// Same child file, content edited AND relocated under parent in one apply →
+	// both reconciled atomically; move wins the reported action.
+	child.Body = "c edited"
+	p, act, ae := s.ApplyFileSync(ctx, u, nil, space, &parent.ID, "Child.md", emit(child))
+	if ae != nil {
+		t.Fatalf("update+move: %+v", ae)
+	}
+	if act != syncMoved {
+		t.Fatalf("action = %q, want moved", act)
+	}
+	if p.ID != child.ID || p.Body != "c edited" || p.ParentID == nil || *p.ParentID != parent.ID {
+		t.Fatalf("update+move wrong: %+v", p)
+	}
+	// Content change in the same apply must have snapshotted a revision.
+	if revisionCount(t, s.DB, child.ID) == 0 {
+		t.Errorf("content change did not snapshot a revision")
+	}
+}
+
 func TestApplyFileSync_UnknownIdCreatesFresh(t *testing.T) {
 	s, u, space := syncFixture(t)
 	ctx := context.Background()

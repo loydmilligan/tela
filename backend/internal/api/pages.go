@@ -493,26 +493,58 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"page": p})
 }
 
-// updatePageCore is the transport-agnostic core behind PATCH /api/pages/{id} and
-// the MCP update_page tool: patch title and/or body under editor+ membership,
-// re-sync wikilinks when the body changes, and snapshot a revision after commit.
-func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req pageUpdateRequest, agentWrite bool) (models.Page, *apiErr) {
+// validateUpdateReq checks a page patch's fields without touching the DB, so
+// the cheap 400s (no_fields / invalid_title) surface before any tx or auth —
+// preserving error precedence across every caller of applyUpdateTx.
+func validateUpdateReq(req pageUpdateRequest) *apiErr {
 	if req.Title == nil && req.Body == nil && req.Props == nil {
-		return models.Page{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of title, body, props must be provided"}
+		return &apiErr{http.StatusBadRequest, "no_fields", "at least one of title, body, props must be provided"}
 	}
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			return &apiErr{http.StatusBadRequest, "invalid_title", "title cannot be empty"}
+		}
+		if len(title) > maxPageTitleLen {
+			return &apiErr{http.StatusBadRequest, "invalid_title", "title exceeds 500 characters"}
+		}
+	}
+	return nil
+}
 
+// requireEditTx authorizes u (optionally scoped by api key k) as an editor+ of
+// spaceID within an open tx: api-key space scope, membership, then edit role.
+// The shared source-auth gate for in-tx page mutations (update / move / sync).
+func (s *Server) requireEditTx(ctx context.Context, tx *sql.Tx, u *auth.User, k *auth.APIKey, spaceID int64) *apiErr {
+	if ae := apiKeySpaceScopeErr(k, spaceID); ae != nil {
+		return ae
+	}
+	role, err := spaceRoleTx(ctx, tx, u.ID, spaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	}
+	if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
+	}
+	if !canEdit(role) {
+		return &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
+	}
+	return nil
+}
+
+// applyUpdateTx writes a validated page patch within an open tx and returns the
+// re-fetched page. It updates only the provided columns, enforces the body
+// invariant (frontmatter stripped → props), and re-syncs wikilinks when the body
+// changes. No validation (caller ran validateUpdateReq), no auth (caller ran
+// requireEditTx), no commit, and no after-commit effects (revision / RAG / Yjs)
+// — those are afterPageWrite's, run by the caller post-commit. Shared by
+// updatePageCore and the sync ingress so the write path is one mechanism.
+func applyUpdateTx(ctx context.Context, tx *sql.Tx, id int64, req pageUpdateRequest) (models.Page, *apiErr) {
 	sets := make([]string, 0, 4)
 	args := make([]any, 0, 4)
 
 	if req.Title != nil {
-		title := strings.TrimSpace(*req.Title)
-		if title == "" {
-			return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title cannot be empty"}
-		}
-		if len(title) > maxPageTitleLen {
-			return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title exceeds 500 characters"}
-		}
-		args = append(args, title)
+		args = append(args, strings.TrimSpace(*req.Title))
 		sets = append(sets, "title = $"+strconv.Itoa(len(args)))
 	}
 	// Body invariant: strip any leading frontmatter out of the incoming body and
@@ -536,33 +568,6 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	sets = append(sets, "updated_at = tela_now()")
 	args = append(args, id)
 
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
-	}
-	defer tx.Rollback()
-
-	existing, err := selectPageByIDTx(ctx, tx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
-	}
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
-	}
-	if ae := apiKeySpaceScopeErr(k, existing.SpaceID); ae != nil {
-		return models.Page{}, ae
-	}
-	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
-	}
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
-	}
-	if !canEdit(role) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
-	}
-
 	stmt := "UPDATE pages SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(len(args))
 	res, err := tx.ExecContext(ctx, stmt, args...)
 	if err != nil {
@@ -584,30 +589,66 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	if err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "fetch updated page failed"}
 	}
+	return p, nil
+}
+
+// afterPageWrite runs the post-commit side effects of a page write: snapshot a
+// revision and queue a RAG reindex when body or title actually changed, and (for
+// out-of-band/agent writes) reset the live Yjs overlay so editors re-seed from
+// the new body. Runs after commit so a failure here can't roll the save back —
+// it logs and proceeds. Shared by updatePageCore and the sync ingress.
+func (s *Server) afterPageWrite(ctx context.Context, existing, p models.Page, bodyProvided, agentWrite bool, authorID int64, source string) {
+	changed := p.Body != existing.Body || p.Title != existing.Title
+	if changed {
+		// Title is folded into each chunk's embed text and body is the source,
+		// so reindex on either change (debounced, async; no-op when RAG is off).
+		if _, err := insertPageRevision(ctx, s.DB, p.ID, p.Body, p.Title, p.Props, &authorID, source); err != nil {
+			log.Printf("page %d snapshot revision failed: %v", p.ID, err)
+		}
+		s.rag.QueueReindex(p.ID)
+	}
+	// When the body is rewritten out-of-band (MCP agent, file sync), drop the Yjs
+	// collab overlay so live + next editors re-seed from the new body instead of
+	// masking it with stale CRDT state. DB-wins, per the agent-backend sync design.
+	if agentWrite && bodyProvided && p.Body != existing.Body {
+		if err := s.rooms.resetPage(ctx, s.DB, p.ID); err != nil {
+			log.Printf("page %d collab overlay reset failed: %v", p.ID, err)
+		}
+	}
+}
+
+// updatePageCore is the transport-agnostic core behind PATCH /api/pages/{id} and
+// the MCP update_page tool: patch title and/or body under editor+ membership,
+// re-sync wikilinks when the body changes, and snapshot a revision after commit.
+func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req pageUpdateRequest, agentWrite bool) (models.Page, *apiErr) {
+	if ae := validateUpdateReq(req); ae != nil {
+		return models.Page{}, ae
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
+	}
+	defer tx.Rollback()
+
+	existing, err := selectPageByIDTx(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	}
+	if err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
+	}
+	if ae := s.requireEditTx(ctx, tx, u, k, existing.SpaceID); ae != nil {
+		return models.Page{}, ae
+	}
+	p, ae := applyUpdateTx(ctx, tx, id, req)
+	if ae != nil {
+		return models.Page{}, ae
+	}
 	if err := tx.Commit(); err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	// M9.0 snapshot-on-save: every persisted PATCH that actually changes body
-	// or title writes a page_revisions row. Runs AFTER commit so a failure
-	// here cannot roll the user's save back — we log and proceed.
-	if p.Body != existing.Body || p.Title != existing.Title {
-		authorID := u.ID
-		if _, err := insertPageRevision(ctx, s.DB, id, p.Body, p.Title, p.Props, &authorID, "manual"); err != nil {
-			log.Printf("page %d snapshot revision failed: %v", id, err)
-		}
-		// Title is folded into each chunk's embed text and body is the source,
-		// so reindex on either change (debounced, async; no-op when RAG is off).
-		s.rag.QueueReindex(id)
-	}
-	// When an agent rewrites the body out-of-band (MCP update_page), drop the
-	// Yjs collab overlay so live + next editors re-seed from the new body instead
-	// of masking it with stale CRDT state (which would also clobber the agent's
-	// write on the next human save). DB-wins, per the agent-backend sync design.
-	if agentWrite && req.Body != nil && p.Body != existing.Body {
-		if err := s.rooms.resetPage(ctx, s.DB, id); err != nil {
-			log.Printf("page %d collab overlay reset failed: %v", id, err)
-		}
-	}
+	s.afterPageWrite(ctx, existing, p, req.Body != nil, agentWrite, u.ID, "manual")
 	return p, nil
 }
 
@@ -785,21 +826,29 @@ func (s *Server) movePageCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	if err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
-	if ae := apiKeySpaceScopeErr(k, page.SpaceID); ae != nil {
+	if ae := s.requireEditTx(ctx, tx, u, k, page.SpaceID); ae != nil {
 		return models.Page{}, ae
 	}
 
-	sourceRole, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	moved, ae := s.applyMoveTx(ctx, tx, u, k, page, mv)
+	if ae != nil {
+		return models.Page{}, ae
 	}
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
+	if err := tx.Commit(); err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	if !canEdit(sourceRole) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
-	}
+	return moved, nil
+}
 
+// applyMoveTx reparents / relocates / reorders page within an open tx and
+// returns the re-fetched page. It does the move-specific authorization (target
+// space membership + edit role when crossing spaces), parent + cycle validation,
+// the move write, descendant space-id propagation, and sibling renumbering on
+// both ends. Assumes the caller already authorized edit on the SOURCE space
+// (requireEditTx) and owns the tx lifecycle (no commit here). Shared by
+// movePageCore and the sync ingress so a move is one mechanism.
+func (s *Server) applyMoveTx(ctx context.Context, tx *sql.Tx, u *auth.User, k *auth.APIKey, page models.Page, mv pageMoveParams) (models.Page, *apiErr) {
+	id := page.ID
 	targetSpaceID := page.SpaceID
 	if mv.SpaceIDSet {
 		targetSpaceID = mv.NewSpaceID
@@ -908,9 +957,6 @@ func (s *Server) movePageCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	moved, err := selectPageByIDTx(ctx, tx, id)
 	if err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "fetch moved page failed"}
-	}
-	if err := tx.Commit(); err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
 	return moved, nil
 }

@@ -72,53 +72,106 @@ func (s *Server) ApplyFileSync(
 }
 
 // applySyncBound applies an incoming file to the existing page it is bound to.
-// Content and placement are reconciled independently: an unchanged dimension is
-// left untouched so we never write (and never snapshot/reindex/reset-overlay)
-// more than the file actually changed.
+// The common steady-state case — nothing differs — is a tx-free fast path off
+// the already-fetched row. When something did change, the whole reconcile runs
+// in ONE transaction: re-fetch (so the change decision and the write are atomic
+// and race-safe against a concurrent edit), authorize once, then update and/or
+// move via the shared in-tx primitives. Content and placement are reconciled
+// independently, so we never write (or snapshot/reindex/reset-overlay) a
+// dimension the file did not actually change.
 func (s *Server) applySyncBound(
 	ctx context.Context, u *auth.User, k *auth.APIKey,
 	existing models.Page, spaceID int64, parentID *int64,
 	title, body string, props map[string]any,
 ) (models.Page, syncAction, *apiErr) {
-	contentSame := title == existing.Title && body == existing.Body && propsEqual(props, existing.Props)
-	placementSame := existing.SpaceID == spaceID && sameParent(existing.ParentID, parentID)
-	if contentSame && placementSame {
-		return existing, syncUnchanged, nil
+	if syncContentSame(existing, title, body, props) && syncPlacementSame(existing, spaceID, parentID) {
+		return existing, syncUnchanged, nil // fast path: no tx, no write
 	}
 
-	p := existing
-	if !contentSame {
-		// agentWrite=true: a sync write is out-of-band w.r.t. any live Yjs
-		// overlay, so the overlay must re-seed from the new body (DB-wins),
-		// exactly like an MCP agent write.
-		updated, ae := s.updatePageCore(ctx, u, k, existing.ID, pageUpdateRequest{
-			Title: &title, Body: &body, Props: props,
-		}, true)
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
+	}
+	defer tx.Rollback()
+
+	// Re-read under the tx; recompute against the fresh row so a concurrent write
+	// that already landed our content is a no-op rather than a clobber.
+	cur, err := selectPageByIDTx(ctx, tx, existing.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Page{}, "", &apiErr{http.StatusNotFound, "not_found", "page vanished mid-sync"}
+	}
+	if err != nil {
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
+	}
+	if ae := s.requireEditTx(ctx, tx, u, k, cur.SpaceID); ae != nil {
+		return models.Page{}, "", ae
+	}
+
+	contentChanged := !syncContentSame(cur, title, body, props)
+	placementChanged := !syncPlacementSame(cur, spaceID, parentID)
+	if !contentChanged && !placementChanged {
+		return cur, syncUnchanged, nil // a concurrent write beat us to it
+	}
+
+	p := cur
+	action := syncUpdated
+	if contentChanged {
+		req := pageUpdateRequest{Title: &title, Body: &body, Props: props}
+		if ae := validateUpdateReq(req); ae != nil {
+			return models.Page{}, "", ae
+		}
+		updated, ae := applyUpdateTx(ctx, tx, cur.ID, req)
 		if ae != nil {
 			return models.Page{}, "", ae
 		}
 		p = updated
 	}
-
-	action := syncUpdated
-	if !placementSame {
-		mv := pageMoveParams{ParentIDSet: true}
-		if existing.SpaceID != spaceID {
-			mv.SpaceIDSet = true
-			mv.NewSpaceID = spaceID
-		}
-		if parentID == nil {
-			mv.ParentIDIsNull = true
-		} else {
-			mv.NewParentID = *parentID
-		}
-		moved, ae := s.movePageCore(ctx, u, k, existing.ID, mv)
+	if placementChanged {
+		moved, ae := s.applyMoveTx(ctx, tx, u, k, p, syncMoveParams(cur, spaceID, parentID))
 		if ae != nil {
 			return models.Page{}, "", ae
 		}
 		p, action = moved, syncMoved
 	}
+	if err := tx.Commit(); err != nil {
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
+	}
+
+	// agentWrite=true: a sync write is out-of-band w.r.t. any live Yjs overlay,
+	// so the overlay must re-seed from the new body (DB-wins), like an agent
+	// write. Only fires when body/title actually changed.
+	if contentChanged {
+		s.afterPageWrite(ctx, cur, p, true, true, u.ID, "sync")
+	}
 	return p, action, nil
+}
+
+// syncContentSame reports whether the file's title/body/props already match the
+// page (so no update is needed).
+func syncContentSame(p models.Page, title, body string, props map[string]any) bool {
+	return title == p.Title && body == p.Body && propsEqual(props, p.Props)
+}
+
+// syncPlacementSame reports whether the file's location already matches the
+// page's space + parent (so no move is needed).
+func syncPlacementSame(p models.Page, spaceID int64, parentID *int64) bool {
+	return p.SpaceID == spaceID && sameParent(p.ParentID, parentID)
+}
+
+// syncMoveParams builds the move request that relocates a page to the file's
+// location (space + parent derived from its path).
+func syncMoveParams(cur models.Page, spaceID int64, parentID *int64) pageMoveParams {
+	mv := pageMoveParams{ParentIDSet: true}
+	if cur.SpaceID != spaceID {
+		mv.SpaceIDSet = true
+		mv.NewSpaceID = spaceID
+	}
+	if parentID == nil {
+		mv.ParentIDIsNull = true
+	} else {
+		mv.NewParentID = *parentID
+	}
+	return mv
 }
 
 // propsEqual compares two props bags by canonical JSON so a yaml-parsed int and
