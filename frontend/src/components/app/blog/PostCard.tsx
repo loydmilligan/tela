@@ -119,14 +119,15 @@ function Cover({
     <div
       aria-hidden
       className={`relative shrink-0 overflow-hidden ${box}`}
-      style={{ background: coverBackground(title), containerType: 'size' }}
+      style={{ background: coverBackground(title) }}
     >
-      {/* Large faded monogram, sized to the cover height so it scales across the
-          featured + grid card sizes. White-on-gradient: part of the generated
-          art, theme-independent like the grid lines above. */}
+      {/* Large faded monogram bleeding off the corner. Fixed size (not cqh — the
+          featured cover's height comes from flex-stretch, where container units
+          collapse to 0). White-on-gradient: part of the generated art, theme-
+          independent like the grid lines above. */}
       <span
-        className="pointer-events-none absolute right-[-0.06em] bottom-[-0.2em] font-[family-name:var(--font-sans)] font-extrabold leading-none tracking-[-0.04em] select-none"
-        style={{ fontSize: '74cqh', color: 'rgba(255,255,255,0.22)' }}
+        className="pointer-events-none absolute right-[-0.06em] bottom-[-0.18em] text-[9.5rem] font-[family-name:var(--font-sans)] font-extrabold leading-none tracking-[-0.04em] select-none"
+        style={{ color: 'rgba(255,255,255,0.22)' }}
       >
         {monogram(title)}
       </span>
