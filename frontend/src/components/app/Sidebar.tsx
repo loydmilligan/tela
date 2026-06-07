@@ -1,5 +1,5 @@
 import { Link, useParams } from '@tanstack/react-router'
-import { FilePlus, Search } from 'lucide-react'
+import { FilePlus, Search, Share2 } from 'lucide-react'
 import { PagesTree } from './PagesTree'
 import { SpacesList } from './SpacesList'
 import { UserMenu } from './UserMenu'
@@ -76,6 +76,17 @@ export function Sidebar({ open = false }: { open?: boolean }) {
           >
             {newPageShortcut}
           </kbd>
+        </Button>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+        >
+          <Link to="/graph" aria-label="Graph view" title="Graph view">
+            <Share2 width={14} height={14} />
+            <span className="flex-1 text-left">Graph</span>
+          </Link>
         </Button>
       </div>
       <SpacesList activeSpaceId={activeSpaceId} />

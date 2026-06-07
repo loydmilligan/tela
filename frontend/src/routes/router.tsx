@@ -375,6 +375,29 @@ const searchRoute = createRoute({
   ),
 })
 
+// Graph view — full-screen force-directed map of pages + their connections
+// (wikilinks and the page hierarchy). `?focus=` scopes to a page's
+// neighborhood; `?space=` scopes to one space. Lazy so d3-force + the canvas
+// renderer stay off the main chunk.
+const graphRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/graph',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { focus?: number; space?: number } => {
+    const out: { focus?: number; space?: number } = {}
+    const focus = Number(search.focus)
+    if (Number.isFinite(focus) && focus > 0) out.focus = focus
+    const space = Number(search.space)
+    if (Number.isFinite(space) && space > 0) out.space = space
+    return out
+  },
+  component: lazyRouteComponent(
+    () => import('../components/app/GraphView'),
+    'GraphRoute',
+  ),
+})
+
 const spaceRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/spaces/$spaceId',
@@ -592,6 +615,7 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     sharedRoute,
     searchRoute,
+    graphRoute,
     spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
   ]),
 ])

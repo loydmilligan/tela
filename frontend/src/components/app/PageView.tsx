@@ -21,6 +21,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Plus,
+  Share2,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
@@ -249,6 +250,13 @@ function PageActionsMenu({
           }
         >
           <BookOpen width={14} height={14} /> Read mode
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() =>
+            void navigate({ to: '/graph', search: { focus: pageId } })
+          }
+        >
+          <Share2 width={14} height={14} /> Open in graph
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void downloadPdf()}>
           <FileDown width={14} height={14} /> Export PDF
