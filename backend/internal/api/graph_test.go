@@ -44,6 +44,11 @@ func TestGraphData(t *testing.T) {
 		tx.Rollback()
 		t.Fatalf("syncPageLinks: %v", err)
 	}
+	// Sibling links to a non-existent page → a broken outgoing link.
+	if err := syncPageLinks(ctx, tx, sibling, "dead [x](tela://page/999999)"); err != nil {
+		tx.Rollback()
+		t.Fatalf("syncPageLinks broken: %v", err)
+	}
 	tx.Commit()
 
 	req := userRequest(http.MethodGet, "/api/graph", "", authUser(owner, "owner", false))
@@ -67,6 +72,15 @@ func TestGraphData(t *testing.T) {
 	for _, n := range out.Nodes {
 		if n.ID == secret {
 			t.Fatalf("secret page leaked into graph nodes")
+		}
+		if n.UpdatedAt == "" {
+			t.Fatalf("node %d missing updated_at", n.ID)
+		}
+		if n.ID == sibling && n.Broken != 1 {
+			t.Fatalf("sibling broken=%d want 1", n.Broken)
+		}
+		if n.ID != sibling && n.Broken != 0 {
+			t.Fatalf("node %d broken=%d want 0", n.ID, n.Broken)
 		}
 	}
 

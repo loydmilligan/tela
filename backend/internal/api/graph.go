@@ -21,6 +21,10 @@ type graphNode struct {
 	SpaceID   int64  `json:"space_id"`
 	SpaceName string `json:"space_name"`
 	Title     string `json:"title"`
+	UpdatedAt string `json:"updated_at"`
+	// Count of outgoing wikilinks whose target page no longer exists (recorded
+	// in page_links with a last_known_title). Powers broken-link surfacing.
+	Broken int `json:"broken"`
 }
 
 type graphLink struct {
@@ -62,14 +66,14 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	)
 	if pinSpace != nil {
 		nodeRows, err = s.DB.QueryContext(ctx, `
-			SELECT p.id, p.space_id, s.name, p.title
+			SELECT p.id, p.space_id, s.name, p.title, p.updated_at
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
 			 WHERE p.space_id = $2`, u.ID, *pinSpace)
 	} else {
 		nodeRows, err = s.DB.QueryContext(ctx, `
-			SELECT p.id, p.space_id, s.name, p.title
+			SELECT p.id, p.space_id, s.name, p.title, p.updated_at
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id`, u.ID)
@@ -83,7 +87,7 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	nodes := []graphNode{}
 	for nodeRows.Next() {
 		var n graphNode
-		if err := nodeRows.Scan(&n.ID, &n.SpaceID, &n.SpaceName, &n.Title); err != nil {
+		if err := nodeRows.Scan(&n.ID, &n.SpaceID, &n.SpaceName, &n.Title, &n.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan graph node failed")
 			return
 		}
@@ -92,6 +96,44 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	if err := nodeRows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "iterate graph nodes failed")
 		return
+	}
+
+	// Broken outgoing-link counts: page_links rows whose target page no longer
+	// exists. Scoped to visible source pages (+ pin); attached to the nodes.
+	brokenSQL := `
+		SELECT l.source_id, COUNT(*)
+		  FROM page_links l
+		  JOIN pages ps ON ps.id = l.source_id
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) s1 ON s1.space_id = ps.space_id
+		  LEFT JOIN pages pt ON pt.id = l.target_id
+		 WHERE pt.id IS NULL`
+	var brokenRows *sql.Rows
+	if pinSpace != nil {
+		brokenRows, err = s.DB.QueryContext(ctx, brokenSQL+` AND ps.space_id = $2 GROUP BY l.source_id`, u.ID, *pinSpace)
+	} else {
+		brokenRows, err = s.DB.QueryContext(ctx, brokenSQL+` GROUP BY l.source_id`, u.ID)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "list broken links failed")
+		return
+	}
+	defer brokenRows.Close()
+	broken := map[int64]int{}
+	for brokenRows.Next() {
+		var src int64
+		var n int
+		if err := brokenRows.Scan(&src, &n); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "scan broken link failed")
+			return
+		}
+		broken[src] = n
+	}
+	if err := brokenRows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "iterate broken links failed")
+		return
+	}
+	for i := range nodes {
+		nodes[i].Broken = broken[nodes[i].ID]
 	}
 
 	// --- link edges (page_links), both endpoints visible -------------------
