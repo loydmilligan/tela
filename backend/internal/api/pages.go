@@ -143,12 +143,12 @@ func listPagesFlat(ctx context.Context, db *sql.DB, spaceID int64, parentID *int
 	if parentID == nil {
 		rows, err = db.QueryContext(ctx,
 			`SELECT id, space_id, parent_id, title, body, position, props, created_at, updated_at
-			 FROM pages WHERE space_id = $1 AND parent_id IS NULL
+			 FROM pages WHERE space_id = $1 AND parent_id IS NULL AND deleted_at IS NULL
 			 ORDER BY position ASC, id ASC`, spaceID)
 	} else {
 		rows, err = db.QueryContext(ctx,
 			`SELECT id, space_id, parent_id, title, body, position, props, created_at, updated_at
-			 FROM pages WHERE space_id = $1 AND parent_id = $2
+			 FROM pages WHERE space_id = $1 AND parent_id = $2 AND deleted_at IS NULL
 			 ORDER BY position ASC, id ASC`, spaceID, *parentID)
 	}
 	if err != nil {
@@ -222,7 +222,7 @@ func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
-			 WHERE p.space_id = $2
+			 WHERE p.space_id = $2 AND p.deleted_at IS NULL
 			 ORDER BY s.name ASC, p.title ASC`, u.ID, *k.SpaceID)
 	} else {
 		rows, err = s.DB.QueryContext(r.Context(), `
@@ -230,6 +230,7 @@ func (s *Server) ListAllPages(w http.ResponseWriter, r *http.Request) {
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+			 WHERE p.deleted_at IS NULL
 			 ORDER BY s.name ASC, p.title ASC`, u.ID)
 	}
 	if err != nil {
@@ -391,7 +392,7 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	if req.ParentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = $1`, *req.ParentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1 AND deleted_at IS NULL`, *req.ParentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.Page{}, &apiErr{http.StatusBadRequest, "parent_not_found", "parent page does not exist"}
 		}
@@ -406,10 +407,10 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	var maxPos sql.NullInt64
 	if req.ParentID == nil {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL`, req.SpaceID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL AND deleted_at IS NULL`, req.SpaceID).Scan(&maxPos)
 	} else {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, req.SpaceID, *req.ParentID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2 AND deleted_at IS NULL`, req.SpaceID, *req.ParentID).Scan(&maxPos)
 	}
 	if err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "compute position failed"}
@@ -427,6 +428,9 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	}
 	if err := syncPageLinks(ctx, tx, id, body); err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "sync page_links failed"}
+	}
+	if err := appendChangeLog(ctx, tx, req.SpaceID, id, changeCreated); err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "append change_log failed"}
 	}
 	page, err := selectPageByIDTx(ctx, tx, id)
 	if err != nil {
@@ -527,26 +531,58 @@ func (s *Server) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"page": p})
 }
 
-// updatePageCore is the transport-agnostic core behind PATCH /api/pages/{id} and
-// the MCP update_page tool: patch title and/or body under editor+ membership,
-// re-sync wikilinks when the body changes, and snapshot a revision after commit.
-func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req pageUpdateRequest, agentWrite bool) (models.Page, *apiErr) {
+// validateUpdateReq checks a page patch's fields without touching the DB, so
+// the cheap 400s (no_fields / invalid_title) surface before any tx or auth —
+// preserving error precedence across every caller of applyUpdateTx.
+func validateUpdateReq(req pageUpdateRequest) *apiErr {
 	if req.Title == nil && req.Body == nil && req.Props == nil {
-		return models.Page{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of title, body, props must be provided"}
+		return &apiErr{http.StatusBadRequest, "no_fields", "at least one of title, body, props must be provided"}
 	}
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			return &apiErr{http.StatusBadRequest, "invalid_title", "title cannot be empty"}
+		}
+		if len(title) > maxPageTitleLen {
+			return &apiErr{http.StatusBadRequest, "invalid_title", "title exceeds 500 characters"}
+		}
+	}
+	return nil
+}
 
+// requireEditTx authorizes u (optionally scoped by api key k) as an editor+ of
+// spaceID within an open tx: api-key space scope, membership, then edit role.
+// The shared source-auth gate for in-tx page mutations (update / move / sync).
+func (s *Server) requireEditTx(ctx context.Context, tx *sql.Tx, u *auth.User, k *auth.APIKey, spaceID int64) *apiErr {
+	if ae := apiKeySpaceScopeErr(k, spaceID); ae != nil {
+		return ae
+	}
+	role, err := spaceRoleTx(ctx, tx, u.ID, spaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	}
+	if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
+	}
+	if !canEdit(role) {
+		return &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
+	}
+	return nil
+}
+
+// applyUpdateTx writes a validated page patch within an open tx and returns the
+// re-fetched page. It updates only the provided columns, enforces the body
+// invariant (frontmatter stripped → props), and re-syncs wikilinks when the body
+// changes. No validation (caller ran validateUpdateReq), no auth (caller ran
+// requireEditTx), no commit, and no after-commit effects (revision / RAG / Yjs)
+// — those are afterPageWrite's, run by the caller post-commit. Shared by
+// updatePageCore and the sync ingress so the write path is one mechanism.
+func applyUpdateTx(ctx context.Context, tx *sql.Tx, id int64, req pageUpdateRequest) (models.Page, *apiErr) {
 	sets := make([]string, 0, 4)
 	args := make([]any, 0, 4)
 
 	if req.Title != nil {
-		title := strings.TrimSpace(*req.Title)
-		if title == "" {
-			return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title cannot be empty"}
-		}
-		if len(title) > maxPageTitleLen {
-			return models.Page{}, &apiErr{http.StatusBadRequest, "invalid_title", "title exceeds 500 characters"}
-		}
-		args = append(args, title)
+		args = append(args, strings.TrimSpace(*req.Title))
 		sets = append(sets, "title = $"+strconv.Itoa(len(args)))
 	}
 	// Body invariant: strip any leading frontmatter out of the incoming body and
@@ -570,33 +606,6 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	sets = append(sets, "updated_at = tela_now()")
 	args = append(args, id)
 
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
-	}
-	defer tx.Rollback()
-
-	existing, err := selectPageByIDTx(ctx, tx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
-	}
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
-	}
-	if ae := apiKeySpaceScopeErr(k, existing.SpaceID); ae != nil {
-		return models.Page{}, ae
-	}
-	role, err := spaceRoleTx(ctx, tx, u.ID, existing.SpaceID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
-	}
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
-	}
-	if !canEdit(role) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
-	}
-
 	stmt := "UPDATE pages SET " + strings.Join(sets, ", ") + " WHERE id = $" + strconv.Itoa(len(args))
 	res, err := tx.ExecContext(ctx, stmt, args...)
 	if err != nil {
@@ -618,37 +627,83 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	if err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "fetch updated page failed"}
 	}
+	if err := appendChangeLog(ctx, tx, p.SpaceID, p.ID, changeUpdated); err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "append change_log failed"}
+	}
+	return p, nil
+}
+
+// afterPageWrite runs the post-commit side effects of a page write: snapshot a
+// revision and queue a RAG reindex when body or title actually changed, and (for
+// out-of-band/agent writes) reset the live Yjs overlay so editors re-seed from
+// the new body. Runs after commit so a failure here can't roll the save back —
+// it logs and proceeds. Shared by updatePageCore and the sync ingress.
+func (s *Server) afterPageWrite(ctx context.Context, existing, p models.Page, bodyProvided, agentWrite bool, authorID int64, source string) {
+	changed := p.Body != existing.Body || p.Title != existing.Title
+	if changed {
+		// Title is folded into each chunk's embed text and body is the source,
+		// so reindex on either change (debounced, async; no-op when RAG is off).
+		if _, err := insertPageRevision(ctx, s.DB, p.ID, p.Body, p.Title, p.Props, &authorID, source); err != nil {
+			log.Printf("page %d snapshot revision failed: %v", p.ID, err)
+		}
+		s.rag.QueueReindex(p.ID)
+	}
+	// When the body is rewritten out-of-band (MCP agent, file sync), drop the Yjs
+	// collab overlay so live + next editors re-seed from the new body instead of
+	// masking it with stale CRDT state. DB-wins, per the agent-backend sync design.
+	if agentWrite && bodyProvided && p.Body != existing.Body {
+		if err := s.rooms.resetPage(ctx, s.DB, p.ID); err != nil {
+			log.Printf("page %d collab overlay reset failed: %v", p.ID, err)
+		}
+	}
+}
+
+// updatePageCore is the transport-agnostic core behind PATCH /api/pages/{id} and
+// the MCP update_page tool: patch title and/or body under editor+ membership,
+// re-sync wikilinks when the body changes, and snapshot a revision after commit.
+func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64, req pageUpdateRequest, agentWrite bool) (models.Page, *apiErr) {
+	if ae := validateUpdateReq(req); ae != nil {
+		return models.Page{}, ae
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
+	}
+	defer tx.Rollback()
+
+	existing, err := selectPageByIDTx(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	}
+	if err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
+	}
+	if ae := s.requireEditTx(ctx, tx, u, k, existing.SpaceID); ae != nil {
+		return models.Page{}, ae
+	}
+	p, ae := applyUpdateTx(ctx, tx, id, req)
+	if ae != nil {
+		return models.Page{}, ae
+	}
 	if err := tx.Commit(); err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	// M9.0 snapshot-on-save: every persisted PATCH that actually changes body
-	// or title writes a page_revisions row. Runs AFTER commit so a failure
-	// here cannot roll the user's save back — we log and proceed.
-	if p.Body != existing.Body || p.Title != existing.Title {
-		authorID := u.ID
-		editSource := "manual"
-		if agentWrite {
-			editSource = "agent"
-		}
-		if _, err := insertPageRevision(ctx, s.DB, id, p.Body, p.Title, p.Props, &authorID, editSource); err != nil {
-			log.Printf("page %d snapshot revision failed: %v", id, err)
-		}
-		// Title is folded into each chunk's embed text and body is the source,
-		// so reindex on either change (debounced, async; no-op when RAG is off).
-		s.rag.QueueReindex(id)
-		// Notify anyone newly @-mentioned in the body (idempotent per page+user).
-		s.notifyPageMentions(ctx, u, id, existing.SpaceID, p.Title, p.Body)
-		// Notify followers of the page / its space that it changed (collapsed).
-		s.notifyPageUpdate(ctx, u, id, existing.SpaceID, p.Title)
+	// Snapshot-on-save (revision + RAG reindex), and — for agent/out-of-band
+	// writes — reset the Yjs overlay so live editors re-seed (DB-wins). Shared
+	// with the file-sync path via afterPageWrite. The revision source carries the
+	// agent-vs-manual tag the "Changes by your AI" feed keys on.
+	editSource := "manual"
+	if agentWrite {
+		editSource = "agent"
 	}
-	// When an agent rewrites the body out-of-band (MCP update_page), drop the
-	// Yjs collab overlay so live + next editors re-seed from the new body instead
-	// of masking it with stale CRDT state (which would also clobber the agent's
-	// write on the next human save). DB-wins, per the agent-backend sync design.
-	if agentWrite && req.Body != nil && p.Body != existing.Body {
-		if err := s.rooms.resetPage(ctx, s.DB, id); err != nil {
-			log.Printf("page %d collab overlay reset failed: %v", id, err)
-		}
+	s.afterPageWrite(ctx, existing, p, req.Body != nil, agentWrite, u.ID, editSource)
+	// Notifications fire only on the interactive REST/MCP edit path (not file
+	// sync): mention anyone newly @-mentioned, and notify followers of the page /
+	// its space. Same body/title-changed gate afterPageWrite uses internally.
+	if p.Body != existing.Body || p.Title != existing.Title {
+		s.notifyPageMentions(ctx, u, id, existing.SpaceID, p.Title, p.Body)
+		s.notifyPageUpdate(ctx, u, id, existing.SpaceID, p.Title)
 	}
 	return p, nil
 }
@@ -710,22 +765,66 @@ func (s *Server) deletePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		return &apiErr{http.StatusInternalServerError, "internal", "cache page_links titles failed"}
 	}
 
-	res, err := tx.ExecContext(ctx, `DELETE FROM pages WHERE id = $1`, id)
+	// Soft-delete: stamp deleted_at on the page AND its whole live subtree
+	// (the old hard DELETE relied on ON DELETE CASCADE to take the descendants;
+	// soft-delete must walk them itself). Trashed rows are then invisible to
+	// every read (all filter deleted_at IS NULL) and recoverable — a sync glitch
+	// can't destroy content, and a re-synced file can resurrect by id (sync §6).
+	// subtreeCTE re-walks parent_id (unaffected by deleted_at), so it resolves
+	// the same set before and after the stamp; reused for the cleanups below.
+	const subtreeCTE = `
+		WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM pages WHERE id = $1
+			UNION ALL
+			SELECT p.id FROM pages p JOIN subtree s ON p.parent_id = s.id
+		)`
+	rows, err := tx.QueryContext(ctx, subtreeCTE+`
+		UPDATE pages SET deleted_at = tela_now()
+		 WHERE id IN (SELECT id FROM subtree) AND deleted_at IS NULL
+		 RETURNING id`, id)
 	if err != nil {
 		return &apiErr{http.StatusInternalServerError, "internal", "delete page failed"}
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return &apiErr{http.StatusInternalServerError, "internal", "delete page: rows affected failed"}
+	var deletedIDs []int64
+	for rows.Next() {
+		var did int64
+		if err := rows.Scan(&did); err != nil {
+			rows.Close()
+			return &apiErr{http.StatusInternalServerError, "internal", "scan deleted id failed"}
+		}
+		deletedIDs = append(deletedIDs, did)
 	}
-	if n == 0 {
+	rerr := rows.Err()
+	rows.Close() // must close before the next Exec on this tx (single-conn cursor)
+	if rerr != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete page: read ids failed"}
+	}
+	if len(deletedIDs) == 0 {
 		return &apiErr{http.StatusNotFound, "not_found", "page not found"}
 	}
 
-	// Explicitly clear outgoing rows for the deleted source — no FK / no
-	// triggers; nothing else would remove them.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = $1`, id); err != nil {
-		return &apiErr{http.StatusInternalServerError, "internal", "delete page_links source rows failed"}
+	// Hard-remove the subtree's dependents that must NOT survive a delete — the
+	// behaviour the old ON DELETE CASCADE gave us, now explicit:
+	//   - page_links: trashed pages stop contributing backlinks (resurrect
+	//     rebuilds them from the body via syncPageLinks).
+	//   - share_links: a deleted page must not stay publicly reachable.
+	//   - page_diagrams: derived render blobs served from a public path.
+	for _, stmt := range []string{
+		`DELETE FROM page_links WHERE source_id IN (SELECT id FROM subtree)`,
+		`DELETE FROM share_links WHERE page_id IN (SELECT id FROM subtree)`,
+		`DELETE FROM page_diagrams WHERE page_id IN (SELECT id FROM subtree)`,
+	} {
+		if _, err := tx.ExecContext(ctx, subtreeCTE+stmt, id); err != nil {
+			return &apiErr{http.StatusInternalServerError, "internal", "delete page dependents failed"}
+		}
+	}
+
+	// Feed every soft-deleted page (whole subtree) so a polling client learns of
+	// the deletions, not just the root (sync §4). Same space for the whole subtree.
+	for _, did := range deletedIDs {
+		if err := appendChangeLog(ctx, tx, existing.SpaceID, did, changeDeleted); err != nil {
+			return &apiErr{http.StatusInternalServerError, "internal", "append change_log failed"}
+		}
 	}
 	// Subscriptions + notifications are polymorphic (no FK on subject_id), so a
 	// page delete must clear its own — else orphaned follows / dead inbox rows
@@ -838,21 +937,29 @@ func (s *Server) movePageCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	if err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
-	if ae := apiKeySpaceScopeErr(k, page.SpaceID); ae != nil {
+	if ae := s.requireEditTx(ctx, tx, u, k, page.SpaceID); ae != nil {
 		return models.Page{}, ae
 	}
 
-	sourceRole, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	moved, ae := s.applyMoveTx(ctx, tx, u, k, page, mv)
+	if ae != nil {
+		return models.Page{}, ae
 	}
-	if err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
+	if err := tx.Commit(); err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	if !canEdit(sourceRole) {
-		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
-	}
+	return moved, nil
+}
 
+// applyMoveTx reparents / relocates / reorders page within an open tx and
+// returns the re-fetched page. It does the move-specific authorization (target
+// space membership + edit role when crossing spaces), parent + cycle validation,
+// the move write, descendant space-id propagation, and sibling renumbering on
+// both ends. Assumes the caller already authorized edit on the SOURCE space
+// (requireEditTx) and owns the tx lifecycle (no commit here). Shared by
+// movePageCore and the sync ingress so a move is one mechanism.
+func (s *Server) applyMoveTx(ctx context.Context, tx *sql.Tx, u *auth.User, k *auth.APIKey, page models.Page, mv pageMoveParams) (models.Page, *apiErr) {
+	id := page.ID
 	targetSpaceID := page.SpaceID
 	if mv.SpaceIDSet {
 		targetSpaceID = mv.NewSpaceID
@@ -892,7 +999,7 @@ func (s *Server) movePageCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	if targetParentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = $1`, *targetParentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1 AND deleted_at IS NULL`, *targetParentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.Page{}, &apiErr{http.StatusBadRequest, "parent_not_found", "parent page does not exist"}
 		}
@@ -962,8 +1069,8 @@ func (s *Server) movePageCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	if err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "fetch moved page failed"}
 	}
-	if err := tx.Commit(); err != nil {
-		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
+	if err := appendChangeLog(ctx, tx, moved.SpaceID, moved.ID, changeMoved); err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "append change_log failed"}
 	}
 	return moved, nil
 }
@@ -971,7 +1078,7 @@ func (s *Server) movePageCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 func buildPageTree(ctx context.Context, db *sql.DB, spaceID int64) ([]*pageNode, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, space_id, parent_id, title, body, position, props, created_at, updated_at
-		 FROM pages WHERE space_id = $1
+		 FROM pages WHERE space_id = $1 AND deleted_at IS NULL
 		 ORDER BY position ASC, id ASC`, spaceID)
 	if err != nil {
 		return nil, err
@@ -1022,17 +1129,20 @@ func buildPageTree(ctx context.Context, db *sql.DB, spaceID int64) ([]*pageNode,
 	return roots, nil
 }
 
+// selectPageByID / selectPageByIDTx fetch a LIVE page (soft-deleted rows are
+// invisible — a trashed id reads as sql.ErrNoRows, i.e. not-found / 403). Use
+// selectPageByIDIncludingDeleted for the resurrect path.
 func selectPageByID(ctx context.Context, db *sql.DB, id int64) (models.Page, error) {
 	row := db.QueryRowContext(ctx,
 		`SELECT id, space_id, parent_id, title, body, position, props, created_at, updated_at
-		 FROM pages WHERE id = $1`, id)
+		 FROM pages WHERE id = $1 AND deleted_at IS NULL`, id)
 	return scanPageFromRow(row)
 }
 
 func selectPageByIDTx(ctx context.Context, tx *sql.Tx, id int64) (models.Page, error) {
 	row := tx.QueryRowContext(ctx,
 		`SELECT id, space_id, parent_id, title, body, position, props, created_at, updated_at
-		 FROM pages WHERE id = $1`, id)
+		 FROM pages WHERE id = $1 AND deleted_at IS NULL`, id)
 	return scanPageFromRow(row)
 }
 
@@ -1083,11 +1193,11 @@ func siblingIDsExcluding(ctx context.Context, tx *sql.Tx, spaceID int64, parentI
 	var err error
 	if parentID == nil {
 		rows, err = tx.QueryContext(ctx,
-			`SELECT id FROM pages WHERE space_id = $1 AND parent_id IS NULL AND id != $2
+			`SELECT id FROM pages WHERE space_id = $1 AND parent_id IS NULL AND id != $2 AND deleted_at IS NULL
 			 ORDER BY position ASC, id ASC`, spaceID, excludeID)
 	} else {
 		rows, err = tx.QueryContext(ctx,
-			`SELECT id FROM pages WHERE space_id = $1 AND parent_id = $2 AND id != $3
+			`SELECT id FROM pages WHERE space_id = $1 AND parent_id = $2 AND id != $3 AND deleted_at IS NULL
 			 ORDER BY position ASC, id ASC`, spaceID, *parentID, excludeID)
 	}
 	if err != nil {
@@ -1115,7 +1225,7 @@ func wouldCreateCycle(ctx context.Context, tx *sql.Tx, movingID, newParentID int
 			return true, nil
 		}
 		var pid sql.NullInt64
-		err := tx.QueryRowContext(ctx, `SELECT parent_id FROM pages WHERE id = $1`, cursor).Scan(&pid)
+		err := tx.QueryRowContext(ctx, `SELECT parent_id FROM pages WHERE id = $1 AND deleted_at IS NULL`, cursor).Scan(&pid)
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -1140,6 +1250,8 @@ func updateDescendantsSpaceID(ctx context.Context, tx *sql.Tx, rootID, newSpaceI
 			placeholders[i] = "$" + strconv.Itoa(i+1)
 			args[i] = fid
 		}
+		// No deleted_at filter on purpose: a trashed descendant must still ride
+		// the space move so a later resurrect lands it in the new space, not the old.
 		q := fmt.Sprintf(`SELECT id FROM pages WHERE parent_id IN (%s)`, strings.Join(placeholders, ","))
 		rows, err := tx.QueryContext(ctx, q, args...)
 		if err != nil {
@@ -1264,7 +1376,7 @@ func parseWikiTitleSlugs(body string) []string {
 func resolveWikiTitleSlugs(ctx context.Context, tx *sql.Tx, sourceID int64, slugs []string) ([]int64, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, title FROM pages
-		WHERE space_id = (SELECT space_id FROM pages WHERE id = $1)
+		WHERE space_id = (SELECT space_id FROM pages WHERE id = $1) AND deleted_at IS NULL
 		ORDER BY id ASC`, sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("load space pages for wikilink resolution: %w", err)
@@ -1332,7 +1444,7 @@ func syncPageLinks(ctx context.Context, tx *sql.Tx, sourceID int64, body string)
 			continue
 		}
 		var title sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT title FROM pages WHERE id = $1`, tid).Scan(&title)
+		err := tx.QueryRowContext(ctx, `SELECT title FROM pages WHERE id = $1 AND deleted_at IS NULL`, tid).Scan(&title)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("lookup target title: %w", err)
 		}

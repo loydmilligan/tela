@@ -555,4 +555,3 @@ var htmlEscaper = strings.NewReplacer(
 func htmlEscape(s string) string {
 	return htmlEscaper.Replace(s)
 }
-

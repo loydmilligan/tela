@@ -92,7 +92,7 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			                   websearch_to_tsquery('english', $3), $4) AS snippet
 			FROM pages p
 			JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
-			WHERE p.space_id = $2 AND p.search_tsv @@ websearch_to_tsquery('english', $3)
+			WHERE p.space_id = $2 AND p.deleted_at IS NULL AND p.search_tsv @@ websearch_to_tsquery('english', $3)
 			ORDER BY ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $3)) DESC, p.updated_at DESC
 			LIMIT $5`, u.ID, *spaceFilter, query, headlineOpts, limit)
 	} else {
@@ -102,7 +102,7 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			                   websearch_to_tsquery('english', $2), $3) AS snippet
 			FROM pages p
 			JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
-			WHERE p.search_tsv @@ websearch_to_tsquery('english', $2)
+			WHERE p.deleted_at IS NULL AND p.search_tsv @@ websearch_to_tsquery('english', $2)
 			ORDER BY ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $2)) DESC, p.updated_at DESC
 			LIMIT $4`, u.ID, query, headlineOpts, limit)
 	}

@@ -1,6 +1,7 @@
 package mdimport
 
 import (
+	"path"
 	"regexp"
 	"strings"
 )
@@ -20,4 +21,38 @@ func FirstH1Title(body string) string {
 		return ""
 	}
 	return strings.TrimSpace(m[1])
+}
+
+// TitleFor resolves a page title from the locked import/sync precedence:
+// frontmatter title → first H1 in the body → filename stem → "Untitled".
+// body must already be frontmatter-stripped. Shared by the bulk importer
+// (Pass 2) and the sync ingress so the two never drift.
+func TitleFor(fmTitle, body, filename string) string {
+	t := strings.TrimSpace(fmTitle)
+	if t == "" {
+		t = FirstH1Title(body)
+	}
+	if t == "" {
+		t = filenameStem(filename)
+	}
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return "Untitled"
+	}
+	return t
+}
+
+// filenameStem returns the basename without a trailing .md/.markdown extension
+// (case-insensitive), preserving the human casing/spacing of the name.
+func filenameStem(filename string) string {
+	base := path.Base(filename)
+	lower := strings.ToLower(base)
+	switch {
+	case strings.HasSuffix(lower, ".markdown"):
+		return base[:len(base)-len(".markdown")]
+	case strings.HasSuffix(lower, ".md"):
+		return base[:len(base)-len(".md")]
+	default:
+		return base
+	}
 }

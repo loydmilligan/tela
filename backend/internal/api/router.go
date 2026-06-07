@@ -42,6 +42,13 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// built_at=process-start.
 	mux.HandleFunc("GET /api/version", srv.Version)
 
+	// WebDAV file-sync surface (sync spec §9). Subtree handler at /dav/ —
+	// self-authenticates via PAT-as-Basic and gates scope itself, so it is on
+	// auth.IsPublicPath (the session/method Middleware skips it). The x/net/webdav
+	// Handler drives the protocol over the davFS; ServeMux redirects the bare
+	// /dav → /dav/. Method-less pattern matches every WebDAV verb.
+	mux.Handle("/dav/", srv.DAVHandler())
+
 	// MCP Streamable-HTTP transport (single endpoint, POST + GET + DELETE).
 	// Self-authenticated via the SDK bearer verifier over tela PATs; on
 	// auth.IsPublicPath so the session/method-scope Middleware skips it (a POST
@@ -219,6 +226,11 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/spaces/{id}/subscription", srv.UnsubscribeSpace)
 	mux.HandleFunc("GET /api/users/me/notification-prefs", srv.GetNotificationPrefs)
 	mux.HandleFunc("PUT /api/users/me/notification-prefs", srv.UpdateNotificationPref)
+
+	// Sync delta feed (§4 D10): per-space append-only change_log ranged by a
+	// monotonic seq cursor, so a syncing client pulls deltas instead of
+	// re-scanning. Session OR bearer-read; membership on space_id required.
+	mux.HandleFunc("GET /api/changes", srv.ListChanges)
 
 	// M16.A.1 API keys: bearer-token management. Instance-admin only via the
 	// session cookie path, OR a bearer key with admin scope. Keys are issued

@@ -404,7 +404,7 @@ func (s *Server) ListAllShares(w http.ResponseWriter, r *http.Request) {
 		       sl.created_by, sl.created_at, sl.expires_at, sl.revoked_at,
 		       p.space_id, sp.name, p.title
 		  FROM share_links sl
-		  JOIN pages p ON p.id = sl.page_id
+		  JOIN pages p ON p.id = sl.page_id AND p.deleted_at IS NULL
 		  JOIN spaces sp ON sp.id = p.space_id
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
 		 WHERE sl.revoked_at IS NULL`
@@ -1159,12 +1159,12 @@ func pageInShareSubtree(ctx context.Context, q *sql.DB, rootID, descendantID int
 	}
 	const query = `
 		WITH RECURSIVE scope(id, space_id, depth) AS (
-		  SELECT id, space_id, 0 FROM pages WHERE id = $1
+		  SELECT id, space_id, 0 FROM pages WHERE id = $1 AND deleted_at IS NULL
 		  UNION ALL
 		  SELECT p.id, p.space_id, s.depth + 1
 		    FROM pages p
 		    JOIN scope s ON p.parent_id = s.id
-		   WHERE p.space_id = s.space_id AND s.depth < $2
+		   WHERE p.space_id = s.space_id AND p.deleted_at IS NULL AND s.depth < $2
 		)
 		SELECT 1 FROM scope WHERE id = $3 LIMIT 1`
 	var x int
@@ -1186,7 +1186,7 @@ func shareSubtree(ctx context.Context, q *sql.DB, rootID int64, includeDescendan
 		var n sharePageNode
 		var parentID sql.NullInt64
 		row := q.QueryRowContext(ctx,
-			`SELECT id, title, parent_id, position FROM pages WHERE id = $1`, rootID)
+			`SELECT id, title, parent_id, position FROM pages WHERE id = $1 AND deleted_at IS NULL`, rootID)
 		if err := row.Scan(&n.ID, &n.Title, &parentID, &n.Position); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return []sharePageNode{}, nil
@@ -1203,12 +1203,12 @@ func shareSubtree(ctx context.Context, q *sql.DB, rootID int64, includeDescendan
 	const query = `
 		WITH RECURSIVE scope(id, title, parent_id, position, space_id, depth) AS (
 		  SELECT id, title, parent_id, position, space_id, 0
-		    FROM pages WHERE id = $1
+		    FROM pages WHERE id = $1 AND deleted_at IS NULL
 		  UNION ALL
 		  SELECT p.id, p.title, p.parent_id, p.position, p.space_id, s.depth + 1
 		    FROM pages p
 		    JOIN scope s ON p.parent_id = s.id
-		   WHERE p.space_id = s.space_id AND s.depth < $2
+		   WHERE p.space_id = s.space_id AND p.deleted_at IS NULL AND s.depth < $2
 		)
 		SELECT id, title, parent_id, position FROM scope
 		 ORDER BY position ASC, id ASC`

@@ -132,7 +132,7 @@ func (s *Service) ReindexSpace(ctx context.Context, spaceID int64) (pages, chunk
 }
 
 func (s *Service) pageIDs(ctx context.Context, spaceID int64) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM pages WHERE space_id = $1 ORDER BY id`, spaceID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM pages WHERE space_id = $1 AND deleted_at IS NULL ORDER BY id`, spaceID)
 	if err != nil {
 		return nil, err
 	}

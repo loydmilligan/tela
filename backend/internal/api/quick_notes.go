@@ -45,7 +45,7 @@ func (s *Server) QuickNotes(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	err = tx.QueryRowContext(ctx, `
 		SELECT id FROM pages
-		 WHERE space_id = $1 AND parent_id IS NULL AND title = $2
+		 WHERE space_id = $1 AND parent_id IS NULL AND title = $2 AND deleted_at IS NULL
 		 ORDER BY id LIMIT 1`, spaceID, quickNotesTitle).Scan(&id)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -78,7 +78,7 @@ func (s *Server) QuickNotes(w http.ResponseWriter, r *http.Request) {
 func createQuickNotesPageTx(ctx context.Context, tx *sql.Tx, spaceID int64) (int64, error) {
 	var maxPos sql.NullInt64
 	if err := tx.QueryRowContext(ctx,
-		`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL`, spaceID).
+		`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL AND deleted_at IS NULL`, spaceID).
 		Scan(&maxPos); err != nil {
 		return 0, err
 	}

@@ -93,7 +93,7 @@ func (s *Service) lexicalRank(ctx context.Context, userID int64, q string, space
 	sql := `
 		SELECT pc.id
 		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id
+		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
 		    ON sm.space_id = p.space_id
 		 WHERE pc.content_tsv @@ plainto_tsquery('english', ` + qry + `)`
@@ -118,7 +118,7 @@ func (s *Service) vectorRank(ctx context.Context, userID int64, q string, spaceI
 	sql := `
 		SELECT pc.id
 		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id
+		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
 		    ON sm.space_id = p.space_id
 		 WHERE pc.embedding IS NOT NULL`
@@ -160,7 +160,7 @@ func (s *Service) hydrate(ctx context.Context, ids []int64, score map[int64]floa
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT pc.id, pc.page_id, p.space_id, pc.heading_path, pc.content, p.title, p.updated_at
 		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id
+		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
 		 WHERE pc.id IN (`+strings.Join(ph, ",")+`)`, qb.args...)
 	if err != nil {
 		return nil, err

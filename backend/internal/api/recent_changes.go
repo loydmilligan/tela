@@ -57,7 +57,7 @@ func (s *Server) ListRecentChanges(w http.ResponseWriter, r *http.Request) {
 		           p.id AS page_id, p.title, p.space_id, sp.name AS space_name,
 		           u.username, pr.created_at
 		      FROM page_revisions pr
-		      JOIN pages p ON p.id = pr.page_id
+		      JOIN pages p ON p.id = pr.page_id AND p.deleted_at IS NULL
 		      JOIN spaces sp ON sp.id = p.space_id
 		      JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sa
 		        ON sa.space_id = p.space_id

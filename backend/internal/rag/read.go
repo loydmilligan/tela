@@ -35,7 +35,7 @@ func (s *Service) ReadChunk(ctx context.Context, userID, chunkID int64, spaceID 
 	query := `
 		SELECT pc.id, pc.page_id, p.space_id, pc.heading_path, pc.content, p.title, p.updated_at
 		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id
+		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
 		    ON sm.space_id = p.space_id
 		 WHERE pc.id = ` + cid

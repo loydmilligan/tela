@@ -146,7 +146,7 @@ func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID in
 		`SELECT p.title, p.body, sp.name
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
-		  WHERE p.id = $1`, pageID,
+		  WHERE p.id = $1 AND p.deleted_at IS NULL`, pageID,
 	).Scan(&title, &body, &spaceName)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)

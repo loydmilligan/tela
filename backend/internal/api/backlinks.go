@@ -57,7 +57,7 @@ func (s *Server) Backlinks(w http.ResponseWriter, r *http.Request) {
 // target page collapses to the same 403 a non-member sees.
 func (s *Server) backlinksCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64) ([]backlinkHit, *apiErr) {
 	var targetSpaceID int64
-	err := s.DB.QueryRowContext(ctx, `SELECT space_id FROM pages WHERE id = $1`, pageID).Scan(&targetSpaceID)
+	err := s.DB.QueryRowContext(ctx, `SELECT space_id FROM pages WHERE id = $1 AND deleted_at IS NULL`, pageID).Scan(&targetSpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
@@ -82,7 +82,7 @@ func (s *Server) backlinksCore(ctx context.Context, u *auth.User, k *auth.APIKey
 			  JOIN pages p ON p.id = l.source_id
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
-			 WHERE l.target_id = $2 AND p.space_id = $3
+			 WHERE l.target_id = $2 AND p.space_id = $3 AND p.deleted_at IS NULL
 			 ORDER BY s.name ASC, p.title ASC`, u.ID, pageID, *k.SpaceID)
 	} else {
 		rows, err2 = s.DB.QueryContext(ctx, `
@@ -91,7 +91,7 @@ func (s *Server) backlinksCore(ctx context.Context, u *auth.User, k *auth.APIKey
 			  JOIN pages p ON p.id = l.source_id
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
-			 WHERE l.target_id = $2
+			 WHERE l.target_id = $2 AND p.deleted_at IS NULL
 			 ORDER BY s.name ASC, p.title ASC`, u.ID, pageID)
 	}
 	if err2 != nil {

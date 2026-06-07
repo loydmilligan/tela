@@ -29,9 +29,9 @@ var processStart = time.Now().UTC().Format(time.RFC3339)
 // startup compat check (M16.B.1) to decide whether to print a "backend newer
 // than built-against" warning to stderr.
 type VersionInfo struct {
-	Version  string `json:"version"`
-	Commit   string `json:"commit"`
-	BuiltAt  string `json:"built_at"`
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	BuiltAt string `json:"built_at"`
 }
 
 // Version handles GET /api/version. Public (see auth.IsPublicPath) — mirrors

@@ -101,7 +101,7 @@ func (s *Server) mcpReadSpaceResource(ctx context.Context, req *mcp.ReadResource
 		return nil, mcp.ResourceNotFoundError(uri)
 	}
 	rows, err := s.DB.QueryContext(ctx,
-		`SELECT id, title FROM pages WHERE space_id = $1 ORDER BY position ASC, id ASC`, id)
+		`SELECT id, title FROM pages WHERE space_id = $1 AND deleted_at IS NULL ORDER BY position ASC, id ASC`, id)
 	if err != nil {
 		return nil, mcp.ResourceNotFoundError(uri)
 	}

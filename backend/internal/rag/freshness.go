@@ -47,7 +47,7 @@ func (s *Service) Freshness(ctx context.Context, userID int64) ([]SpaceFreshness
 		       coalesce(max(pc.idx), '') AS last_indexed
 		  FROM acc
 		  JOIN spaces sp ON sp.id = acc.space_id
-		  LEFT JOIN pages p ON p.space_id = sp.id
+		  LEFT JOIN pages p ON p.space_id = sp.id AND p.deleted_at IS NULL
 		  LEFT JOIN pc ON pc.page_id = p.id
 		 GROUP BY sp.id, sp.name
 		 ORDER BY sp.name`, userID)
@@ -84,7 +84,7 @@ func (s *Service) SpacePageFreshness(ctx context.Context, userID, spaceID int64)
 		  FROM pages p
 		  JOIN acc ON acc.space_id = p.space_id
 		  LEFT JOIN pc ON pc.page_id = p.id
-		 WHERE p.space_id = $2
+		 WHERE p.space_id = $2 AND p.deleted_at IS NULL
 		 ORDER BY p.title`, userID, spaceID)
 	if err != nil {
 		return nil, err

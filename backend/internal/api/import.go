@@ -108,7 +108,7 @@ func (s *Server) ImportSpace(w http.ResponseWriter, r *http.Request) {
 	if parentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = $1`, *parentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1 AND deleted_at IS NULL`, *parentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, "parent_not_found", "parent page does not exist")
 			return

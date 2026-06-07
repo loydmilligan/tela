@@ -102,6 +102,7 @@ func (s *Server) searchBodiesCore(ctx context.Context, u *auth.User, k *auth.API
 		       ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $2)) AS score
 		  FROM pages p
 		 WHERE p.space_id = $1
+		   AND p.deleted_at IS NULL
 		   AND p.search_tsv @@ websearch_to_tsquery('english', $2)
 		 ORDER BY score DESC, p.updated_at DESC
 		 LIMIT $3`, spaceID, rawQuery, limit)

@@ -173,7 +173,7 @@ func (s *Server) importMiraCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	if parentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT space_id FROM pages WHERE id = $1`, *parentID).Scan(&parentSpaceID)
+			`SELECT space_id FROM pages WHERE id = $1 AND deleted_at IS NULL`, *parentID).Scan(&parentSpaceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.Page{}, "", &apiErr{http.StatusBadRequest, "bad_request", "parent page does not exist"}
 		}
@@ -188,10 +188,10 @@ func (s *Server) importMiraCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	var maxPos sql.NullInt64
 	if parentID == nil {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL`, spaceID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL AND deleted_at IS NULL`, spaceID).Scan(&maxPos)
 	} else {
 		err = tx.QueryRowContext(ctx,
-			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2`, spaceID, *parentID).Scan(&maxPos)
+			`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2 AND deleted_at IS NULL`, spaceID, *parentID).Scan(&maxPos)
 	}
 	if err != nil {
 		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "compute position failed"}

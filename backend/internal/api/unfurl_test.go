@@ -7,18 +7,18 @@ import (
 
 func TestIsBlockedIP(t *testing.T) {
 	cases := map[string]bool{
-		"127.0.0.1":       true,  // loopback
-		"::1":             true,  // loopback v6
-		"10.0.0.5":        true,  // RFC1918
-		"192.168.1.1":     true,  // RFC1918
-		"172.16.0.1":      true,  // RFC1918
-		"169.254.1.1":     true,  // link-local
-		"0.0.0.0":         true,  // unspecified
-		"fe80::1":         true,  // link-local v6
-		"fc00::1":         true,  // ULA (private v6)
-		"8.8.8.8":         false, // public
-		"1.1.1.1":         false, // public
-		"93.184.216.34":   false, // public (example.com)
+		"127.0.0.1":     true,  // loopback
+		"::1":           true,  // loopback v6
+		"10.0.0.5":      true,  // RFC1918
+		"192.168.1.1":   true,  // RFC1918
+		"172.16.0.1":    true,  // RFC1918
+		"169.254.1.1":   true,  // link-local
+		"0.0.0.0":       true,  // unspecified
+		"fe80::1":       true,  // link-local v6
+		"fc00::1":       true,  // ULA (private v6)
+		"8.8.8.8":       false, // public
+		"1.1.1.1":       false, // public
+		"93.184.216.34": false, // public (example.com)
 	}
 	for ipStr, want := range cases {
 		ip := net.ParseIP(ipStr)

@@ -71,13 +71,14 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
-			 WHERE p.space_id = $2`, u.ID, *pinSpace)
+			 WHERE p.space_id = $2 AND p.deleted_at IS NULL`, u.ID, *pinSpace)
 	} else {
 		nodeRows, err = s.DB.QueryContext(ctx, `
 			SELECT p.id, p.space_id, s.name, p.title, p.updated_at
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id`, u.ID)
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+			 WHERE p.deleted_at IS NULL`, u.ID)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list graph nodes failed")
@@ -104,9 +105,9 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	brokenSQL := `
 		SELECT l.source_id, COUNT(*)
 		  FROM page_links l
-		  JOIN pages ps ON ps.id = l.source_id
+		  JOIN pages ps ON ps.id = l.source_id AND ps.deleted_at IS NULL
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) s1 ON s1.space_id = ps.space_id
-		  LEFT JOIN pages pt ON pt.id = l.target_id
+		  LEFT JOIN pages pt ON pt.id = l.target_id AND pt.deleted_at IS NULL
 		 WHERE pt.id IS NULL`
 	var brokenRows *sql.Rows
 	if pinSpace != nil {
@@ -148,8 +149,8 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	linkRows, err := s.queryGraphEdges(ctx, u.ID, pinSpace, `
 		SELECT l.source_id, l.target_id
 		  FROM page_links l
-		  JOIN pages ps ON ps.id = l.source_id
-		  JOIN pages pt ON pt.id = l.target_id
+		  JOIN pages ps ON ps.id = l.source_id AND ps.deleted_at IS NULL
+		  JOIN pages pt ON pt.id = l.target_id AND pt.deleted_at IS NULL
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) s1 ON s1.space_id = ps.space_id
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) s2 ON s2.space_id = pt.space_id`,
 		` WHERE ps.space_id = $2 AND pt.space_id = $2`)
@@ -176,8 +177,8 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	treeRows, err := s.queryGraphEdges(ctx, u.ID, pinSpace, `
 		SELECT pp.id, p.id
 		  FROM pages p
-		  JOIN pages pp ON pp.id = p.parent_id
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) s1 ON s1.space_id = p.space_id
+		  JOIN pages pp ON pp.id = p.parent_id AND pp.deleted_at IS NULL
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) s1 ON s1.space_id = p.space_id AND p.deleted_at IS NULL
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) s2 ON s2.space_id = pp.space_id`,
 		` WHERE p.space_id = $2`)
 	if err != nil {

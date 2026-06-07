@@ -82,7 +82,7 @@ func (s *Server) ExportSpaceMarkdownZip(w http.ResponseWriter, r *http.Request) 
 func loadSpacePages(ctx context.Context, db *sql.DB, spaceID int64) ([]models.Page, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, space_id, parent_id, title, body, position, props, created_at, updated_at
-		   FROM pages WHERE space_id = $1 ORDER BY position ASC, id ASC`, spaceID)
+		   FROM pages WHERE space_id = $1 AND deleted_at IS NULL ORDER BY position ASC, id ASC`, spaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,9 @@ func loadSpacePages(ctx context.Context, db *sql.DB, spaceID int64) ([]models.Pa
 
 // writeSpaceZip lays the pages out as a directory tree and writes one .md per
 // page. Sibling filename collisions (same slug) are disambiguated with -2, -3…;
-// a page's children nest under a folder of the same (deduped) slug.
+// a page's children nest under a folder of the same (deduped) slug. The layout
+// (slug derivation + dedup) is the shared sibling-folder model in pagetree.go,
+// so the zip and the live WebDAV surface emit byte-identical file trees.
 func writeSpaceZip(zw *zip.Writer, pages []models.Page) {
 	children := map[int64][]models.Page{}
 	var roots []models.Page
@@ -114,15 +116,9 @@ func writeSpaceZip(zw *zip.Writer, pages []models.Page) {
 
 	var walk func(nodes []models.Page, prefix string)
 	walk = func(nodes []models.Page, prefix string) {
-		used := map[string]bool{}
+		slugs := siblingSlugs(nodes)
 		for _, p := range nodes {
-			slug := mdSlugOr(p.Title, fmt.Sprintf("page-%d", p.ID))
-			base := slug
-			for n := 2; used[slug]; n++ {
-				slug = fmt.Sprintf("%s-%d", base, n)
-			}
-			used[slug] = true
-
+			slug := slugs[p.ID]
 			if fw, err := zw.Create(prefix + slug + ".md"); err == nil {
 				_, _ = fw.Write(pagemd.Encode(p, publicBaseURL()))
 			}

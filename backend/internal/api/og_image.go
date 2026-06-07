@@ -91,7 +91,7 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 		`SELECT p.title, sp.name, p.updated_at
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
-		  WHERE p.id = $1`, pageID,
+		  WHERE p.id = $1 AND p.deleted_at IS NULL`, pageID,
 	).Scan(&title, &spaceName, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)

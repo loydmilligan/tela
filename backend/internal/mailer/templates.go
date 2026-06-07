@@ -10,8 +10,10 @@ import (
 // Branded transactional templates. Email clients don't support OKLCH or CSS
 // custom properties, so these inline hex values translate tela's "Loom in the
 // dark" palette (landing/src/styles/tokens.css) into email-safe colors:
-//   void #14121b · card #1d1b27 · hairline #322f3d
-//   text #f3f1f8 / #b6b2c4 · indigo fill #4f46e5 on #ffffff
+//
+//	void #14121b · card #1d1b27 · hairline #322f3d
+//	text #f3f1f8 / #b6b2c4 · indigo fill #4f46e5 on #ffffff
+//
 // This is the one place hex is correct — the frontend token gate does not
 // (and cannot) cover server-rendered email.
 const (

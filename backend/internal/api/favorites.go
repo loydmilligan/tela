@@ -28,7 +28,7 @@ type favoriteItem struct {
 func pageSpaceID(r *http.Request, db *sql.DB, pageID int64) (int64, error) {
 	var spaceID int64
 	err := db.QueryRowContext(r.Context(),
-		`SELECT space_id FROM pages WHERE id = $1`, pageID).Scan(&spaceID)
+		`SELECT space_id FROM pages WHERE id = $1 AND deleted_at IS NULL`, pageID).Scan(&spaceID)
 	return spaceID, err
 }
 
@@ -42,7 +42,7 @@ func (s *Server) ListFavorites(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT f.page_id, p.title, p.space_id, sp.name, f.created_at
 		  FROM favorites f
-		  JOIN pages p ON p.id = f.page_id
+		  JOIN pages p ON p.id = f.page_id AND p.deleted_at IS NULL
 		  JOIN spaces sp ON sp.id = p.space_id
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sa
 		    ON sa.space_id = p.space_id

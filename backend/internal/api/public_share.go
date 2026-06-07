@@ -54,7 +54,7 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 		`SELECT p.title, p.body, sp.name, p.space_id
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
-		  WHERE p.id = $1`, pageID,
+		  WHERE p.id = $1 AND p.deleted_at IS NULL`, pageID,
 	).Scan(&title, &body, &spaceName, &spaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)
