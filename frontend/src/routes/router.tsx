@@ -523,6 +523,13 @@ const readRoute = createRoute({
   component: lazyRouteComponent(() => import('./read'), 'ReadRoute'),
 })
 
+// A user's public home page (/u/{handle}). Child of rootRoute (NO ensureMe gate).
+const publicUserRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/u/$username',
+  component: lazyRouteComponent(() => import('./public'), 'PublicUserRoute'),
+})
+
 // Public-space front page (curated index). Child of rootRoute (NO ensureMe gate).
 const publicSpaceIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -570,6 +577,7 @@ const routeTree = rootRoute.addChildren([
   shareRootRoute,
   shareSlugRoute,
   shareDescendantRoute,
+  publicUserRoute,
   publicSpaceIndexRoute,
   publicReaderRoute,
   readRoute,

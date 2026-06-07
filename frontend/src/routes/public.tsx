@@ -4,10 +4,12 @@ import {
   usePublicSpace,
   usePublicSpacePage,
   usePublicSpaceTree,
+  usePublicUser,
 } from '../lib/queries/public'
 import { pageSlug } from '../lib/slug'
 import { PublicReaderView } from '../components/app/PublicReader'
 import { PublicSpaceIndex } from '../components/app/PublicSpaceIndex'
+import { PublicUserHome } from '../components/app/PublicUserHome'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
 import { Card, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 
@@ -53,6 +55,26 @@ function PublicUnavailable({
       </Card>
     </PublicShell>
   )
+}
+
+// A user's public home page: /u/{handle}.
+export function PublicUserRoute() {
+  const { username } = useParams({ from: '/u/$username' })
+  const userQuery = usePublicUser(username)
+
+  if (userQuery.isLoading) {
+    return (
+      <PublicShell>
+        <p role="status" className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          Loading…
+        </p>
+      </PublicShell>
+    )
+  }
+  if (userQuery.error || !userQuery.data) {
+    return <PublicUnavailable message="This profile isn't available." />
+  }
+  return <PublicUserHome data={userQuery.data} />
 }
 
 // The curated front page of a public space: /public/spaces/{id}.

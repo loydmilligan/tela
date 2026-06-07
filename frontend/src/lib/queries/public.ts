@@ -13,6 +13,7 @@ export const publicKeys = {
   tree: (spaceId: number) => [...publicKeys.all, 'tree', spaceId] as const,
   page: (spaceId: number, pageId: number) =>
     [...publicKeys.all, 'page', spaceId, pageId] as const,
+  user: (username: string) => [...publicKeys.all, 'user', username] as const,
 }
 
 export interface PublicSpacePayload {
@@ -95,5 +96,28 @@ export function usePublicSpacePage(spaceId: number, pageId: number, enabled = tr
     retry: false,
     staleTime: 60_000,
     enabled,
+  })
+}
+
+// /u/{handle} home page: a user's public spaces + their top-level posts.
+export interface PublicUserSpace {
+  id: number
+  name: string
+  slug: string
+  pages: { id: number; title: string; updated_at: string }[]
+}
+
+export interface PublicUserResponse {
+  user: { username: string }
+  spaces: PublicUserSpace[]
+}
+
+export function usePublicUser(username: string) {
+  return useQuery<PublicUserResponse, PublicError>({
+    queryKey: publicKeys.user(username),
+    queryFn: () =>
+      publicFetch(`/api/public/users/${encodeURIComponent(username)}`),
+    retry: false,
+    staleTime: 60_000,
   })
 }

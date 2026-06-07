@@ -174,6 +174,8 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/public/spaces/{id}/tree", srv.GetPublicSpaceTree)
 	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}", srv.GetPublicSpacePage)
 	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}/md", srv.ExportPublicSpacePageMarkdown)
+	// Public user home page (/u/{handle}) data: a user's public spaces + posts.
+	mux.HandleFunc("GET /api/public/users/{username}", srv.GetPublicUser)
 
 	// M17.A.1 Feedback submit-only channel. Session OR bearer (any scope —
 	// the bearer carve-out lives in auth.scopeAllowsRequest so the MCP
