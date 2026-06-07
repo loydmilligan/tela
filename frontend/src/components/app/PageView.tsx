@@ -37,6 +37,7 @@ import { useSpaceMembers } from '../../lib/queries/members'
 import { useRevision } from '../../lib/queries/page-revisions'
 import { CommentsPanel } from './CommentsPanel'
 import { PresenceAvatars } from './presence-avatars'
+import { WikilinkHoverPreview } from './wikilink-hover-preview'
 
 // ShareManagerSheet only opens when an editor+ clicks the header Share button;
 // its Sheet + create-form + management hooks + Lucide icons are ~15 KB raw that
@@ -290,6 +291,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
   const [title, setTitle] = useState(page.title)
   const [body, setBody] = useState(page.body)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // Container for wikilink hover-preview delegation (covers the editor body).
+  const contentRef = useRef<HTMLDivElement>(null)
 
   // M7.2 — viewer role gating. The backend rejects ws upgrade for viewers
   // (HTTP 403 + code `viewer_no_write`). We prefer Option A from the task
@@ -806,7 +809,11 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[48rem] w-full self-center min-h-0">
+      <div
+        ref={contentRef}
+        className="flex-1 flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[48rem] w-full self-center min-h-0"
+      >
+        <WikilinkHoverPreview containerRef={contentRef} />
         {isDraftMode ? (
           <div
             role="status"

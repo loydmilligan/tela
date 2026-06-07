@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle'
+import { WikilinkHoverPreview } from './wikilink-hover-preview'
 
 // Lazy — the Milkdown grammar/Yjs blob is the app's largest dep and ships as
 // its own chunk; neither reader root (authed /read, public /share) should drag
@@ -124,6 +125,9 @@ export interface ReaderShellProps {
   /** Optional source line in the cover meta (e.g. the canonical/share URL).
    * Shown in print/PDF and share contexts so an exported doc reads as published. */
   sourceLabel?: string
+  /** Mount the wikilink hover-preview over the article. Authed reader only —
+   * the preview fetches via the authed API, so it stays off for share/print. */
+  enableLinkPreview?: boolean
 }
 
 // Set on the window once the reader has painted (fonts ready + a short settle so
@@ -153,6 +157,7 @@ export function ReaderShell({
   sidebar,
   onEscape,
   sourceLabel,
+  enableLinkPreview,
 }: ReaderShellProps) {
   // Preferences — text size + typeface, persisted; theme is global.
   const [size, setSize] = useState<ReaderSize>(() =>
@@ -406,6 +411,9 @@ export function ReaderShell({
             )}
 
             <article className="reader-article" ref={articleRef}>
+              {enableLinkPreview ? (
+                <WikilinkHoverPreview containerRef={articleRef} />
+              ) : null}
               <h1 className="reader-title">{title || 'Untitled'}</h1>
               <div className="reader-meta">
                 <span>{minutes} min read</span>

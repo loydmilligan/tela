@@ -104,6 +104,7 @@ function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewP
       wikilinkMode="edit"
       aliveWikilinkIds={aliveIds}
       wikilinkResolveIndex={wikilinkResolveIndex}
+      enableLinkPreview
       onNavigateWikilink={onNavigateWikilink}
       onEscape={onEscape}
       topbarTrailing={<DownloadPdfButton url={`/api/pages/${pageId}/pdf`} themed />}
