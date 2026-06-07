@@ -23,6 +23,8 @@ import { setPos, setShow } from './milkdown-floating'
 import { insertMermaid } from './milkdown-mermaid'
 import { insertTabs } from './milkdown-tabs'
 import { insertKanban } from './milkdown-kanban'
+import { insertPullquote } from './milkdown-pullquote'
+import { insertEmbed } from './milkdown-embed'
 
 export const slashPlugin = slashFactory('tela-slash')
 
@@ -85,6 +87,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     run: (ctx) => ctx.get(commandsCtx).call(wrapInBlockquoteCommand.key),
   },
   {
+    id: 'pull-quote',
+    label: 'Pull quote',
+    hint: 'Elevated quote with attribution',
+    keywords: ['pullquote', 'pull quote', 'quote', 'epigraph', 'citation'],
+    run: insertPullquote,
+  },
+  {
     id: 'collapsible',
     label: 'Collapsible',
     hint: 'Toggleable details block',
@@ -133,6 +142,13 @@ const ALL_COMMANDS: SlashCommand[] = [
     hint: 'Diagram from text',
     keywords: ['mermaid', 'diagram', 'flowchart', 'graph', 'sequence'],
     run: insertMermaid,
+  },
+  {
+    id: 'embed',
+    label: 'Embed',
+    hint: 'YouTube, Vimeo, Loom, or a link',
+    keywords: ['embed', 'video', 'youtube', 'vimeo', 'loom', 'iframe'],
+    run: insertEmbed,
   },
   {
     id: 'tabs',

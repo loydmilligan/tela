@@ -205,6 +205,92 @@
     margin-bottom: 0;
   }
 
+  /* Pull-quote (milkdown-pullquote.ts). An elevated `:::quote` block: large
+     optical size, accent rule, optional attribution caption. Rules live outside
+     `.ProseMirror` so a Storybook story can render the same structure. The body
+     is a <blockquote> so it inherits the generic rule above — explicitly reset
+     the border/italic/muted treatment here. */
+  .tela-pullquote {
+    margin: var(--space-6) 0;
+    padding: 0 0 0 var(--space-5);
+    border-left: 3px solid var(--accent);
+  }
+  .tela-pullquote .tela-pullquote-body,
+  .tela-milkdown .ProseMirror .tela-pullquote .tela-pullquote-body {
+    border-left: 0;
+    margin: 0;
+    padding: 0;
+    font-style: normal;
+    font-weight: 500;
+    font-size: var(--text-xl);
+    line-height: var(--leading-relaxed);
+    color: var(--text-primary);
+  }
+  .tela-pullquote .tela-pullquote-body > :first-child {
+    margin-top: 0;
+  }
+  .tela-pullquote .tela-pullquote-body > :last-child {
+    margin-bottom: 0;
+  }
+  .tela-pullquote-cite {
+    margin-top: var(--space-3);
+    font-size: var(--text-sm);
+    font-style: normal;
+    color: var(--text-muted);
+    outline: none;
+  }
+  .tela-pullquote-cite::before {
+    content: '—\00a0';
+  }
+  /* Editable empty caption: show the placeholder, suppress the em-dash so the
+     hint reads cleanly. */
+  .tela-pullquote-cite[data-empty='true']::before {
+    content: none;
+  }
+  .tela-pullquote-cite[data-empty='true']::after {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  /* Web embeds (milkdown-embed.ts). Allowlisted providers render a responsive
+     16:9 iframe; everything else degrades to a link card. Rules live outside
+     `.ProseMirror` so a Storybook story can render the same structure. */
+  .tela-embed {
+    margin: var(--space-4) 0;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+  }
+  .tela-embed:not(.tela-embed-link) {
+    position: relative;
+    aspect-ratio: 16 / 9;
+  }
+  .tela-embed iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+  .tela-embed-link {
+    aspect-ratio: auto;
+    padding: var(--space-3) var(--space-4);
+  }
+  .tela-embed-link a {
+    color: var(--accent);
+    word-break: break-all;
+  }
+  .tela-embed-empty {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  /* PM selection ring when the atom embed is selected in the editor. */
+  .tela-milkdown .ProseMirror .tela-embed.ProseMirror-selectednode {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   /* M13.0 — GitHub-style blockquote callouts. Block-level chrome rendered by
      calloutSchema.toDOM: outer host + non-editable header (icon + label) +
      editable body. The host carries a `tela-callout` base class plus a
@@ -325,6 +411,59 @@
      for caution), which would fight the prose. */
   .tela-callout-body p {
     color: var(--text-primary);
+  }
+
+  /* Footnotes. The gfm preset already parses `[^n]` references into
+     `footnote_reference` atoms (rendered as <sup data-type="footnote_reference">)
+     and `[^n]: …` into `footnote_definition` blocks (<dl data-type>…). It ships
+     no styling — these rules give the marker its bracketed superscript look and
+     the definition list its compact, muted treatment. The reader layer
+     (reader.css + ReaderShell) adds ref↔definition linking + a "Footnotes"
+     section header on top of this base. */
+  .tela-milkdown .ProseMirror sup[data-type='footnote_reference'] {
+    font-size: 0.72em;
+    font-weight: 500;
+    line-height: 0;
+    color: var(--accent);
+    padding: 0 1px;
+    cursor: pointer;
+  }
+  .tela-milkdown .ProseMirror sup[data-type='footnote_reference']::before {
+    content: '[';
+  }
+  .tela-milkdown .ProseMirror sup[data-type='footnote_reference']::after {
+    content: ']';
+  }
+  .tela-milkdown .ProseMirror dl[data-type='footnote_definition'] {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: var(--space-2);
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    color: var(--text-muted);
+  }
+  .tela-milkdown .ProseMirror dl[data-type='footnote_definition'] dt {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: right;
+  }
+  .tela-milkdown .ProseMirror dl[data-type='footnote_definition'] dt::before {
+    content: '[';
+  }
+  .tela-milkdown .ProseMirror dl[data-type='footnote_definition'] dt::after {
+    content: ']';
+  }
+  .tela-milkdown .ProseMirror dl[data-type='footnote_definition'] dd {
+    margin: 0;
+  }
+  .tela-milkdown
+    .ProseMirror
+    dl[data-type='footnote_definition']
+    dd
+    > :last-child {
+    margin-bottom: 0;
   }
 
   /* M13.1 — collapsibles via raw `<details><summary>` HTML pass-through.
@@ -481,6 +620,79 @@
     font-family: inherit;
     font-size: inherit;
     color: inherit;
+  }
+
+  /* Code-block chrome (milkdown-codeblock.ts nodeView): a header bar with the
+     language label + copy button sits on top of the <pre>. The container owns
+     the border/radius; the inner <pre> drops its own so the two read as one
+     card. */
+  .tela-milkdown .ProseMirror .tela-codeblock {
+    margin: 0 0 var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+  .tela-milkdown .ProseMirror .tela-codeblock-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+    background: var(--surface-3);
+    border-bottom: 1px solid var(--border-subtle);
+    user-select: none;
+  }
+  .tela-milkdown .ProseMirror .tela-codeblock-lang {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    color: var(--text-muted);
+  }
+  .tela-milkdown .ProseMirror .tela-codeblock-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity var(--duration-fast) var(--ease-out),
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+  .tela-milkdown .ProseMirror .tela-codeblock:hover .tela-codeblock-copy,
+  .tela-milkdown .ProseMirror .tela-codeblock-copy:focus-visible {
+    opacity: 1;
+  }
+  .tela-milkdown .ProseMirror .tela-codeblock-copy:hover {
+    color: var(--text-primary);
+    border-color: var(--border-subtle);
+  }
+  .tela-milkdown .ProseMirror .tela-codeblock-copy[data-copied] {
+    opacity: 1;
+    color: var(--success);
+    border-color: transparent;
+  }
+  /* Inner <pre> defers its frame to the container above. */
+  .tela-milkdown .ProseMirror .tela-codeblock pre {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  /* Touch / no-hover: keep the copy button reachable. */
+  @media (hover: none) {
+    .tela-milkdown .ProseMirror .tela-codeblock-copy {
+      opacity: 1;
+    }
   }
 
   /* Prism syntax highlighting — colors come from --syntax-* tokens so

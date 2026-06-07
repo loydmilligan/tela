@@ -68,6 +68,9 @@ import {
   calloutSchema,
   calloutsRemarkPlugin,
 } from './milkdown-callouts'
+import { codeBlockNodeView } from './milkdown-codeblock'
+import { pullquoteNodeView, pullquoteSchema } from './milkdown-pullquote'
+import { embedSchema } from './milkdown-embed'
 import {
   collapsiblesRemarkPlugin,
   detailsNodeView,
@@ -657,6 +660,10 @@ function MilkdownEditorInner({
       .use(clipboard)
       .use(listener)
       .use(prism)
+      // Code-block chrome (language label + copy button) via a code_block
+      // nodeView. After prism so its inline token decorations land on our
+      // contentDOM <code>. See milkdown-codeblock.ts.
+      .use(codeBlockNodeView)
       .use(slashPlugin)
       .use(bubblePlugin)
       .use(wikilinkPlugin)
@@ -684,6 +691,15 @@ function MilkdownEditorInner({
       .use(calloutsRemarkPlugin)
       .use(calloutSchema)
       .use(calloutInputRule)
+      // Pull-quote: `:::quote{cite="…"}` container directive → elevated quote
+      // with an optional attribution caption. Built on the directive foundation
+      // above. See milkdown-pullquote.ts.
+      .use(pullquoteSchema)
+      .use(pullquoteNodeView)
+      // Web embeds: `:::embed` container directive → responsive sandboxed iframe
+      // for allowlisted providers (YouTube/Vimeo/Loom), link card otherwise.
+      // See milkdown-embed.ts.
+      .use(embedSchema)
       // M13.1 — collapsibles via raw `<details><summary>` HTML pass-through.
       // The remark plugin detects post-html-transformer paragraph-wrapped
       // `<details>` / `</details>` brackets and rewrites them into structured
