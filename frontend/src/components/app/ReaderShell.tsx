@@ -307,12 +307,33 @@ export function ReaderShell({
         const target = document.getElementById(hash)
         if (target) target.scrollIntoView({ block: 'start' })
       }
-      // PDF export readiness signal (gotenberg waits on this). Wait for fonts +
-      // a short settle so async mermaid/katex/diagram paints land in the capture.
+      // PDF export readiness signal (gotenberg waits on this). Wait for fonts,
+      // then for any charts to finish painting (ECharts lazy-loads ~1MB + renders
+      // async, so a fixed delay isn't enough), then a short settle so async
+      // mermaid/katex/diagram paints also land in the capture.
+      const chartsSettled = (): Promise<void> =>
+        new Promise((resolve) => {
+          const start = Date.now()
+          const check = () => {
+            const pending = Array.from(
+              document.querySelectorAll('.tela-chart-canvas'),
+            ).filter(
+              (c) =>
+                !c.querySelector('svg') && !c.closest('.tela-chart-error'),
+            )
+            // Resolve when every chart has painted its SVG (or errored), or
+            // after an 8s cap so a stuck/failed chart never blocks the export.
+            if (pending.length === 0 || Date.now() - start > 8000) resolve()
+            else window.setTimeout(check, 150)
+          }
+          check()
+        })
       const ready = () =>
-        window.setTimeout(() => {
-          window.__telaPdfReady = true
-        }, 400)
+        void chartsSettled().then(() =>
+          window.setTimeout(() => {
+            window.__telaPdfReady = true
+          }, 400),
+        )
       if (document.fonts?.ready) void document.fonts.ready.finally(ready)
       else ready()
     })
