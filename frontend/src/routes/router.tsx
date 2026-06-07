@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-router'
 import { FilePlus, FileQuestion, Menu } from 'lucide-react'
 import { AppCommandHost } from '../components/app/AppCommandHost'
+import { NotificationBell } from '../components/app/NotificationBell'
 import { EmptyState } from '../components/ui/empty-state'
 import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
@@ -144,7 +145,10 @@ const appLayoutRoute = createRoute({
                 tela
               </Link>
             </h1>
-            <ThemeSwitcher />
+            <div className="flex items-center gap-[var(--space-2)]">
+              <NotificationBell />
+              <ThemeSwitcher />
+            </div>
           </header>
           <main
             data-page-scroll

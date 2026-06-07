@@ -1,0 +1,140 @@
+import { Link } from '@tanstack/react-router'
+import { Bell, Check } from 'lucide-react'
+import {
+  useNotifications,
+  useUnreadCount,
+  useMarkNotificationRead,
+  useMarkAllNotificationsRead,
+  type NotificationItem,
+} from '../../lib/queries/notifications'
+import { Button } from '../ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu'
+import { relativeTimeFromSqlite } from '../../lib/relativeTime'
+import { cn } from '../../lib/utils'
+
+// Human copy per notification type. A new type adds a case here (and an emit
+// site in the backend) — nothing else changes. See docs/notifications.md.
+function describe(n: NotificationItem): string {
+  const actor = n.actor_username ?? 'Someone'
+  const title = typeof n.data.page_title === 'string' ? n.data.page_title : 'a page'
+  switch (n.type) {
+    case 'mention':
+      return `${actor} mentioned you in “${title}”`
+    default:
+      return `${actor} sent you a notification`
+  }
+}
+
+// Header notification bell: a polled unread badge + a panel of recent items,
+// each deep-linking to its subject and marking itself read on click.
+export function NotificationBell() {
+  const unread = useUnreadCount()
+  const notifications = useNotifications()
+  const markRead = useMarkNotificationRead()
+  const markAll = useMarkAllNotificationsRead()
+  const count = unread.data ?? 0
+  const items = notifications.data ?? []
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={count > 0 ? `Notifications, ${count} unread` : 'Notifications'}
+          className="relative h-[var(--space-8)] w-[var(--space-8)] p-0"
+        >
+          <Bell width={16} height={16} />
+          {count > 0 ? (
+            <span className="absolute top-[2px] right-[2px] flex items-center justify-center min-w-[15px] h-[15px] px-[3px] rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[length:var(--text-xs)] leading-none">
+              {count > 9 ? '9+' : count}
+            </span>
+          ) : null}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-[22rem] max-h-[28rem] overflow-y-auto p-[var(--space-1)]"
+      >
+        <div className="flex items-center justify-between px-[var(--space-2)] py-[var(--space-1)]">
+          <span className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
+            Notifications
+          </span>
+          {count > 0 ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                markAll.mutate()
+              }}
+              className="inline-flex items-center gap-[var(--space-1)] text-[length:var(--text-xs)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              <Check width={12} height={12} /> Mark all read
+            </button>
+          ) : null}
+        </div>
+
+        {items.length === 0 ? (
+          <p className="m-0 px-[var(--space-2)] py-[var(--space-5)] text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            You’re all caught up.
+          </p>
+        ) : (
+          items.map((n) => (
+            <NotificationRow
+              key={n.id}
+              n={n}
+              onOpen={() => {
+                if (!n.read) markRead.mutate(n.id)
+              }}
+            />
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function NotificationRow({ n, onOpen }: { n: NotificationItem; onOpen: () => void }) {
+  const className = cn(
+    'flex flex-col gap-[2px] items-start no-underline',
+    !n.read && 'bg-[var(--sidebar-item-active)]',
+  )
+  const inner = (
+    <>
+      <span className="text-[length:var(--text-sm)] text-[var(--text-primary)] whitespace-normal">
+        {describe(n)}
+      </span>
+      <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        {relativeTimeFromSqlite(n.created_at)}
+      </span>
+    </>
+  )
+
+  // Page subjects deep-link to the page; anything else falls back to home.
+  if (n.subject_kind === 'page' && n.space_id != null) {
+    return (
+      <DropdownMenuItem asChild>
+        <Link
+          to="/spaces/$spaceId/pages/$pageId/{-$slug}"
+          params={{ spaceId: n.space_id, pageId: n.subject_id, slug: undefined }}
+          onClick={onOpen}
+          className={className}
+        >
+          {inner}
+        </Link>
+      </DropdownMenuItem>
+    )
+  }
+  return (
+    <DropdownMenuItem asChild>
+      <Link to="/" onClick={onOpen} className={className}>
+        {inner}
+      </Link>
+    </DropdownMenuItem>
+  )
+}
