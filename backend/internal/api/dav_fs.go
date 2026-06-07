@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -181,14 +180,14 @@ func (fs *davFS) openRead(ctx context.Context, segs []string) (webdavFile, error
 	}
 	leaf := segs[len(segs)-1]
 	if isFile {
-		// The client is downloading this page → it becomes its merge base for the
-		// next edit (spec §5). Best-effort; a failed base write only costs the next
-		// sync a re-establish.
-		if pr := davPrincipalFrom(ctx); pr.k != nil {
-			if err := upsertSyncBase(ctx, fs.s.DB, pr.k.ID, p.ID, p.Title, p.Body, p.Props); err != nil {
-				log.Printf("dav: sync base upsert on read (page %d): %v", p.ID, err)
-			}
-		}
+		// NB: the merge base is set ONLY on write (the PUT, in ApplyFileSync), not
+		// here. A read can't reliably mean "the client adopted this content" — stock
+		// clients (rclone) issue HEAD/GET probes during their own sync bookkeeping,
+		// and treating those as a base update would set base==current right before a
+		// PUT and collapse the 3-way merge into last-write-wins. Setting base only to
+		// what the client actually SENT is unambiguous and correct in every flow (the
+		// client downloads server changes into its local file before editing, so the
+		// incoming PUT already carries them and diff3 reconciles against the last send).
 		return newDavReadFile(leaf, p), nil
 	}
 	return fs.dirFromChildren(leaf, davModTime(p.UpdatedAt), t, p.ID), nil

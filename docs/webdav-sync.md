@@ -37,9 +37,36 @@ The body is pure markdown; the frontmatter (`id`, `title`, `slug`, `created`,
 `updated`, plus any custom keys) is a generated view. Re-uploading a file tela
 just gave you is a **no-op** — no churn, no duplicate.
 
-Conflict handling this phase is **last-write-wins** (the server snapshots a
-revision on every write, so nothing is lost). The 3-way merge lands in a later
-phase.
+### Conflict handling — server-side 3-way merge
+
+tela merges on the server. When a page changed both in the app and in your local
+file since your last sync, **non-overlapping edits combine automatically** (you
+edited the intro, a teammate edited the footer → both land). Edits to the **same
+lines** are a conflict: your local edit wins the visible copy, the page is
+flagged for review, and the overridden server version is kept as a revision
+(`source = sync-conflict`) — nothing is ever lost. Merge is line-based, so
+edits on adjacent lines may be treated as one conflicting block.
+
+> **First-edit caveat:** the merge needs a *base* (what your client last sent).
+> A page created in the app and edited locally **before your client has ever
+> uploaded it** has no base yet, so that first write is last-write-wins. After
+> the client has uploaded a page once, edits merge.
+
+## ⚠️ Always pass `--ignore-size`
+
+tela **transforms files on write** — it renders the YAML frontmatter (id,
+title, …) and may merge your edit with the server's. So the bytes stored differ
+from the bytes you uploaded, and rclone's default post-transfer **size check
+will call every upload "corrupted" and roll it back** (it can even delete the
+page). Pass `--ignore-size` on every command that writes:
+
+```bash
+rclone copy   ./engineering tela:engineering --ignore-size
+rclone bisync ./engineering tela:engineering --ignore-size ...
+```
+
+rclone then uses modtime (not size) to decide what changed — which is why
+modtime support (rclone ≥ 1.66) matters here. Pure sync-*down* doesn't need it.
 
 ## rclone config
 
@@ -70,11 +97,11 @@ First run establishes the baseline; subsequent runs reconcile both directions:
 
 ```bash
 # one-time baseline
-rclone bisync tela:engineering ./engineering --resync
+rclone bisync tela:engineering ./engineering --resync --ignore-size
 
 # ongoing (cron / systemd timer)
 rclone bisync tela:engineering ./engineering \
-  --max-delete 25 --check-access \
+  --ignore-size --max-delete 25 --check-access \
   --exclude-from ~/.config/rclone/tela-excludes.txt
 ```
 
