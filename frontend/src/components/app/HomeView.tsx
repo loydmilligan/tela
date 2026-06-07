@@ -9,6 +9,7 @@ import {
   Search,
   Star,
   Building2,
+  type LucideIcon,
 } from 'lucide-react'
 import { useMe } from '../../lib/queries/auth'
 import { useRecentChanges } from '../../lib/queries/recent-changes'
@@ -247,7 +248,7 @@ function Widget({
   className,
   children,
 }: {
-  icon: typeof Star
+  icon: LucideIcon
   title: string
   loading?: boolean
   error?: boolean
