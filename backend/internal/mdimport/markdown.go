@@ -445,26 +445,7 @@ func Import(
 		}
 
 		body, fmTitle, fmProps := pagemd.Decode(mdFiles[i].content)
-		title := fmTitle
-		if title == "" {
-			title = FirstH1Title(body)
-		}
-		if title == "" {
-			base := path.Base(mdFiles[i].path)
-			lower := strings.ToLower(base)
-			switch {
-			case strings.HasSuffix(lower, ".markdown"):
-				title = base[:len(base)-len(".markdown")]
-			case strings.HasSuffix(lower, ".md"):
-				title = base[:len(base)-len(".md")]
-			default:
-				title = base
-			}
-		}
-		title = strings.TrimSpace(title)
-		if title == "" {
-			title = "Untitled"
-		}
+		title := TitleFor(fmTitle, body, mdFiles[i].path)
 
 		resolvedTitle, renamed := resolveTitle(parent, title)
 		if renamed {
