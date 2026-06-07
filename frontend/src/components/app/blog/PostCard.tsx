@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { coverGradient } from '../../../lib/blog'
+import { coverBackground, monogram } from '../../../lib/blog'
 import { pageSlug } from '../../../lib/slug'
 import { postDateFromSqlite } from '../../../lib/relativeTime'
 import type { BlogCardMeta } from '../../../lib/queries/public'
@@ -119,7 +119,17 @@ function Cover({
     <div
       aria-hidden
       className={`relative shrink-0 overflow-hidden ${box}`}
-      style={{ background: coverGradient(title) }}
-    />
+      style={{ background: coverBackground(title), containerType: 'size' }}
+    >
+      {/* Large faded monogram, sized to the cover height so it scales across the
+          featured + grid card sizes. White-on-gradient: part of the generated
+          art, theme-independent like the grid lines above. */}
+      <span
+        className="pointer-events-none absolute right-[-0.06em] bottom-[-0.2em] font-[family-name:var(--font-sans)] font-extrabold leading-none tracking-[-0.04em] select-none"
+        style={{ fontSize: '74cqh', color: 'rgba(255,255,255,0.22)' }}
+      >
+        {monogram(title)}
+      </span>
+    </div>
   )
 }

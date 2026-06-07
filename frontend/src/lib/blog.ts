@@ -32,11 +32,17 @@ export function avatarStyle(seed: string): { background: string; color: string }
   }
 }
 
-// A soft cover background derived from the title — a low-chroma diagonal wash
-// with two hue-shifted stops, used when a post has no `cover` image. Subtle on
-// purpose: it reads as a tasteful placeholder, not a loud gradient.
-export function coverGradient(seed: string): string {
+// The generated cover background for a post with no `cover` image: a title-
+// seeded diagonal gradient under a fine "engineer's-notebook" graph grid. Paired
+// with a large faded monogram in PostCard, this reads as a deliberate cover, not
+// a blank placeholder. Deterministic (same title → same cover) and theme-
+// independent (it's a fixed decorative surface, like the avatar tint).
+export function coverBackground(seed: string): string {
   const hue = hueFromString(seed)
   const hue2 = (hue + 38) % 360
-  return `linear-gradient(135deg, oklch(0.72 0.12 ${hue}) 0%, oklch(0.6 0.13 ${hue2}) 100%)`
+  return [
+    'linear-gradient(rgba(255,255,255,0.09) 1px, transparent 1px) 0 0 / 22px 22px',
+    'linear-gradient(90deg, rgba(255,255,255,0.09) 1px, transparent 1px) 0 0 / 22px 22px',
+    `linear-gradient(135deg, oklch(0.7 0.13 ${hue}), oklch(0.58 0.14 ${hue2}))`,
+  ].join(', ')
 }
