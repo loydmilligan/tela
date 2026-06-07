@@ -889,8 +889,9 @@
   }
 
   /* M19 — timeline (:::timeline). A bullet list of dated events rendered as a
-     vertical rail with a marker dot per item; the leading bold date reads as a
-     chip. Pure CSS over the nested list — events stay normal editable items. */
+     vertical rail with a filled marker dot per item (ringed so it punches
+     cleanly through the rail) and the leading bold date set as a soft pill.
+     Pure CSS over the nested list — events stay normal editable items. */
   .tela-milkdown .ProseMirror .tela-timeline {
     margin: var(--space-2) 0 var(--space-4);
   }
@@ -904,16 +905,17 @@
     content: '';
     position: absolute;
     left: 5px;
-    top: 8px;
-    bottom: 8px;
+    top: 9px;
+    bottom: 10px;
     width: 2px;
+    border-radius: 1px;
     background: var(--border-subtle);
   }
   .tela-milkdown .ProseMirror .tela-timeline li {
     position: relative;
     list-style: none;
     margin: 0;
-    padding: 0 0 var(--space-4) var(--space-6);
+    padding: 0 0 var(--space-5) calc(var(--space-6) + var(--space-1));
   }
   .tela-milkdown .ProseMirror .tela-timeline li::before {
     content: '';
@@ -923,15 +925,16 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--surface-1);
-    border: 2px solid var(--accent);
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--surface-1);
     box-sizing: border-box;
   }
   .tela-milkdown .ProseMirror .tela-timeline li:last-child {
-    padding-bottom: 0;
+    padding-bottom: var(--space-1);
   }
   .tela-milkdown .ProseMirror .tela-timeline li > p {
     margin: 0;
+    line-height: var(--leading-relaxed);
   }
   .tela-milkdown
     .ProseMirror
@@ -939,9 +942,16 @@
     li
     > p:first-child
     > strong:first-child {
+    display: inline-block;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent);
     font-weight: 600;
-    margin-right: var(--space-1);
+    font-size: var(--text-xs);
+    letter-spacing: 0.01em;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    margin-right: var(--space-2);
+    vertical-align: 1px;
   }
 
   /* M19 — calendar (:::calendar{month}). The nodeView renders this month grid
@@ -986,10 +996,10 @@
     border-bottom: 1px solid var(--border-subtle);
   }
   .tela-calendar-cell {
-    height: 4.75rem;
+    height: 5rem;
     width: calc(100% / 7);
     vertical-align: top;
-    padding: 0 var(--space-1) var(--space-1);
+    padding: 0 3px var(--space-1);
     border-right: 1px solid var(--border-subtle);
     border-bottom: 1px solid var(--border-subtle);
   }
@@ -1017,16 +1027,19 @@
   }
   .tela-calendar-event {
     font-family: var(--font-sans);
-    font-size: var(--text-xs);
-    line-height: var(--leading-tight);
-    padding: 2px var(--space-2);
-    margin-top: 2px;
+    font-size: 0.6875rem;
+    line-height: 1.3;
+    padding: 2px 5px;
+    margin-top: 3px;
     border-radius: var(--radius-xs);
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--text-primary);
-    white-space: nowrap;
+    /* Wrap to at most two lines, then ellipsis — never a hard mid-word cut. */
     overflow: hidden;
-    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow-wrap: anywhere;
   }
   .tela-calendar-source {
     margin-top: var(--space-3);
