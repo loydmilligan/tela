@@ -48,6 +48,11 @@ func TestSyncConnections_CreateListRevoke(t *testing.T) {
 	if !strings.Contains(got.Rclone.ConfigCreateCommand, got.Connection.Key) {
 		t.Fatalf("config command missing the key:\n%s", got.Rclone.ConfigCreateCommand)
 	}
+	// --obscure is load-bearing: without it rclone stores the (revealable) PAT raw
+	// and de-obscures it into garbage on every request → 401. See buildRcloneSetup.
+	if !strings.Contains(got.Rclone.ConfigCreateCommand, "--obscure") {
+		t.Fatalf("config command must pass --obscure or rclone stores the PAT raw → 401:\n%s", got.Rclone.ConfigCreateCommand)
+	}
 	if !strings.Contains(got.Rclone.MountCommand, "rclone mount") || !strings.Contains(got.Rclone.MountCommand, "--ignore-size") {
 		t.Fatalf("mount command should be `rclone mount … --ignore-size`:\n%s", got.Rclone.MountCommand)
 	}

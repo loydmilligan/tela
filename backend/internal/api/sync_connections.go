@@ -175,7 +175,13 @@ func buildRcloneSetup(user, spaceSlug, rawKey string, readOnly bool) rcloneSetup
 	if user == "" {
 		user = "you@example.com"
 	}
-	configCreate := fmt.Sprintf("rclone config create %s webdav url=%s vendor=other user=%s pass=%s", remote, url, user, rawKey)
+	// --obscure is REQUIRED, not cosmetic: rclone stores webdav passwords obscured
+	// and de-obscures them before sending. Without the flag, rclone first tries to
+	// reveal the value to guess if it's "already obscured" — and a tela PAT happens
+	// to be a revealable string, so rclone assumes it's pre-obscured and stores it
+	// RAW. It then de-obscures the raw token into garbage on every request → 401.
+	// --obscure forces obscuring so the round-trip is correct.
+	configCreate := fmt.Sprintf("rclone config create %s webdav url=%s vendor=other user=%s pass=%s --obscure", remote, url, user, rawKey)
 
 	// The vault is mounted (rclone mount), not bidirectionally synced: edits go
 	// straight up via PUT (the server merges), server-side changes appear after
