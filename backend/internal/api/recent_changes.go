@@ -25,8 +25,9 @@ type recentChangeItem struct {
 // ListRecentChanges returns the most recently edited pages the caller can see.
 // DISTINCT ON collapses a page's many revisions to its newest one; the outer
 // sort then orders pages by recency. Filters (applied to the revisions before
-// the collapse): ?mine=1 → only the caller's own edits ("My recent edits");
-// ?source=agent → only agent/MCP edits ("Changes by your AI").
+// the collapse): ?mine=1 → only the caller's own edits; ?source=agent → only
+// agent/MCP edits; ?source=human → only non-agent edits. The dashboard pairs
+// mine+human ("My recent edits") with mine+agent ("Changes by your AI").
 func (s *Server) ListRecentChanges(w http.ResponseWriter, r *http.Request) {
 	u, ok := requireUser(w, r)
 	if !ok {
@@ -39,8 +40,11 @@ func (s *Server) ListRecentChanges(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("mine") == "1" {
 		conds = append(conds, "pr.author_id = $1")
 	}
-	if r.URL.Query().Get("source") == "agent" {
+	switch r.URL.Query().Get("source") {
+	case "agent":
 		conds = append(conds, "pr.source = 'agent'")
+	case "human":
+		conds = append(conds, "pr.source <> 'agent'")
 	}
 	where := ""
 	if len(conds) > 0 {

@@ -24,7 +24,11 @@ export const recentChangesKeys = {
 //   { mine }      → only the caller's own edits ("My recent edits")
 //   { source }    → only agent/MCP edits ("Changes by your AI")
 //   { limit }     → cap the row count (dashboard widgets keep it to a glance)
-export function useRecentChanges(opts?: { mine?: boolean; source?: 'agent'; limit?: number }) {
+export function useRecentChanges(opts?: {
+  mine?: boolean
+  source?: 'agent' | 'human'
+  limit?: number
+}) {
   const params = new URLSearchParams()
   if (opts?.mine) params.set('mine', '1')
   if (opts?.source) params.set('source', opts.source)

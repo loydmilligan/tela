@@ -44,8 +44,10 @@ export function HomeRoute() {
   const me = useMe()
   const spaces = useSpaces()
   const recent = useRecentChanges({ limit: DASH_LIMIT })
-  const agentChanges = useRecentChanges({ source: 'agent', limit: DASH_LIMIT })
-  const myEdits = useRecentChanges({ mine: true, limit: DASH_LIMIT })
+  // The pair: pages YOU edited by hand vs pages YOUR AI edited (both author=you,
+  // split by revision source — an agent write via MCP authenticates as you).
+  const myEdits = useRecentChanges({ mine: true, source: 'human', limit: DASH_LIMIT })
+  const agentChanges = useRecentChanges({ mine: true, source: 'agent', limit: DASH_LIMIT })
   const favorites = useFavorites()
   const visited = useMemo(() => readRecentPages(), [])
   const greeting = useMemo(() => greetingFor(new Date().getHours()), [])
@@ -101,52 +103,28 @@ export function HomeRoute() {
             <SpacesGrid />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-[var(--space-4)]">
-              <div className="lg:col-span-2 flex flex-col gap-[var(--space-4)]">
-                <Widget
-                  icon={FileClock}
-                  title="Recent changes"
-                  count={recent.data?.length}
-                  loading={recent.isLoading}
-                  error={recent.isError}
-                  empty={!recent.data || recent.data.length === 0}
-                  emptyText="No edits yet. Create or edit a page and it shows up here."
-                >
-                  {recent.data?.map((c) => (
-                    <PageRow
-                      key={`change-${c.page_id}`}
-                      spaceId={c.space_id}
-                      pageId={c.page_id}
-                      title={c.title}
-                      meta={`${c.space_name} · ${
-                        c.author_username ? `${c.author_username} · ` : ''
-                      }${relativeTimeFromSqlite(c.updated_at)}`}
-                    />
-                  ))}
-                </Widget>
-
-                {/* Changes your agents made — fills once an agent edits via MCP. */}
-                <Widget
-                  icon={Bot}
-                  title="Changes by your AI"
-                  count={agentChanges.data?.length}
-                  loading={agentChanges.isLoading}
-                  error={agentChanges.isError}
-                  empty={!agentChanges.data || agentChanges.data.length === 0}
-                  emptyText="When an agent edits a page (via MCP), it shows up here."
-                >
-                  {agentChanges.data?.map((c) => (
-                    <PageRow
-                      key={`agent-${c.page_id}`}
-                      spaceId={c.space_id}
-                      pageId={c.page_id}
-                      title={c.title}
-                      meta={`${c.space_name} · ${
-                        c.author_username ? `${c.author_username} · ` : ''
-                      }${relativeTimeFromSqlite(c.updated_at)}`}
-                    />
-                  ))}
-                </Widget>
-              </div>
+              <Widget
+                className="lg:col-span-2"
+                icon={FileClock}
+                title="Recent changes"
+                count={recent.data?.length}
+                loading={recent.isLoading}
+                error={recent.isError}
+                empty={!recent.data || recent.data.length === 0}
+                emptyText="No edits yet. Create or edit a page and it shows up here."
+              >
+                {recent.data?.map((c) => (
+                  <PageRow
+                    key={`change-${c.page_id}`}
+                    spaceId={c.space_id}
+                    pageId={c.page_id}
+                    title={c.title}
+                    meta={`${c.space_name} · ${
+                      c.author_username ? `${c.author_username} · ` : ''
+                    }${relativeTimeFromSqlite(c.updated_at)}`}
+                  />
+                ))}
+              </Widget>
 
               <div className="flex flex-col gap-[var(--space-4)]">
                 <Widget
@@ -170,26 +148,6 @@ export function HomeRoute() {
                 </Widget>
 
                 <Widget
-                  icon={PencilLine}
-                  title="My recent edits"
-                  count={myEdits.data?.length}
-                  loading={myEdits.isLoading}
-                  error={myEdits.isError}
-                  empty={!myEdits.data || myEdits.data.length === 0}
-                  emptyText="Pages you edit will appear here."
-                >
-                  {myEdits.data?.map((c) => (
-                    <PageRow
-                      key={`mine-${c.page_id}`}
-                      spaceId={c.space_id}
-                      pageId={c.page_id}
-                      title={c.title}
-                      meta={`${c.space_name} · ${relativeTimeFromSqlite(c.updated_at)}`}
-                    />
-                  ))}
-                </Widget>
-
-                <Widget
                   icon={Clock}
                   title="Recently visited"
                   count={visitedItems.length}
@@ -206,6 +164,50 @@ export function HomeRoute() {
                   ))}
                 </Widget>
               </div>
+            </div>
+
+            {/* You vs your AI — a matched pair: pages you edited by hand, and
+                pages your agents edited (via MCP) on your behalf. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-4)]">
+              <Widget
+                icon={PencilLine}
+                title="My recent edits"
+                count={myEdits.data?.length}
+                loading={myEdits.isLoading}
+                error={myEdits.isError}
+                empty={!myEdits.data || myEdits.data.length === 0}
+                emptyText="Pages you edit by hand will appear here."
+              >
+                {myEdits.data?.map((c) => (
+                  <PageRow
+                    key={`mine-${c.page_id}`}
+                    spaceId={c.space_id}
+                    pageId={c.page_id}
+                    title={c.title}
+                    meta={`${c.space_name} · ${relativeTimeFromSqlite(c.updated_at)}`}
+                  />
+                ))}
+              </Widget>
+
+              <Widget
+                icon={Bot}
+                title="Changes by your AI"
+                count={agentChanges.data?.length}
+                loading={agentChanges.isLoading}
+                error={agentChanges.isError}
+                empty={!agentChanges.data || agentChanges.data.length === 0}
+                emptyText="Pages your agents edit (via MCP) will appear here."
+              >
+                {agentChanges.data?.map((c) => (
+                  <PageRow
+                    key={`agent-${c.page_id}`}
+                    spaceId={c.space_id}
+                    pageId={c.page_id}
+                    title={c.title}
+                    meta={`${c.space_name} · ${relativeTimeFromSqlite(c.updated_at)}`}
+                  />
+                ))}
+              </Widget>
             </div>
           </>
         )}

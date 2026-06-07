@@ -130,4 +130,15 @@ func TestRecentChanges_SourceAgentFilter(t *testing.T) {
 	if strings.Contains(body, "Pure Human") {
 		t.Fatalf("purely-human page leaked into agent feed: %q", body)
 	}
+
+	// ?source=human is the complement — the agent-only page drops out.
+	rec = routedRecorder("GET /api/recent-changes", srv.ListRecentChanges,
+		userRequest(http.MethodGet, "/api/recent-changes?source=human", "", au))
+	humanBody := rec.Body.String()
+	if strings.Contains(humanBody, "Agent Page") {
+		t.Fatalf("agent-only page leaked into human feed: %q", humanBody)
+	}
+	if !strings.Contains(humanBody, "Pure Human") {
+		t.Fatalf("human page missing from human feed: %q", humanBody)
+	}
 }
