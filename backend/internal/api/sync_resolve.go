@@ -24,6 +24,7 @@ const (
 	syncCreated     syncAction = "created"     // new page (a fresh id was assigned)
 	syncUpdated     syncAction = "updated"     // existing page, content changed in place
 	syncMoved       syncAction = "moved"       // existing page, reparented/relocated (± content)
+	syncRenamed     syncAction = "renamed"     // existing page, on-disk filename changed only (mv a.md b.md)
 	syncResurrected syncAction = "resurrected" // a soft-deleted page brought back by its id
 )
 
@@ -72,7 +73,7 @@ func (s *Server) ApplyFileSync(
 	if d.ID != nil {
 		existing, err := selectPageByID(ctx, s.DB, *d.ID)
 		if err == nil {
-			return s.applySyncBound(ctx, u, k, existing, spaceID, parentID, title, d.Body, props)
+			return s.applySyncBound(ctx, u, k, existing, spaceID, parentID, filename, title, d.Body, props)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
@@ -95,7 +96,7 @@ func (s *Server) ApplyFileSync(
 		if existing, ok, err := s.findSiblingByFilename(ctx, spaceID, parentID, filename); err != nil {
 			return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "lookup sibling failed"}
 		} else if ok {
-			return s.applySyncBound(ctx, u, k, existing, spaceID, parentID, title, d.Body, props)
+			return s.applySyncBound(ctx, u, k, existing, spaceID, parentID, filename, title, d.Body, props)
 		}
 	}
 
@@ -197,9 +198,16 @@ func (s *Server) applySyncResurrect(
 func (s *Server) applySyncBound(
 	ctx context.Context, u *auth.User, k *auth.APIKey,
 	existing models.Page, spaceID int64, parentID *int64,
-	title, body string, props map[string]any,
+	filename, title, body string, props map[string]any,
 ) (models.Page, syncAction, *apiErr) {
-	if syncContentSame(existing, title, body, props) && syncPlacementSame(existing, spaceID, parentID) {
+	// A rename of the sync surface: the client wrote the page to a different
+	// on-disk name than it's currently served as, so persist pages.filename — that
+	// makes `mv a.md b.md` stick instead of reverting to the old name on the next
+	// sync-down. Compared against pageFileBase, so it's a no-op for an ordinary
+	// edit at the current name (and for the name we'd serve anyway).
+	fileStem := strings.TrimSuffix(filename, ".md")
+	renamed := fileStem != "" && fileStem != pageFileBase(existing)
+	if syncContentSame(existing, title, body, props) && syncPlacementSame(existing, spaceID, parentID) && !renamed {
 		return existing, syncUnchanged, nil // fast path: no tx, no write
 	}
 
@@ -234,7 +242,8 @@ func (s *Server) applySyncBound(
 
 	contentChanged := !syncContentSame(cur, mTitle, mBody, mProps)
 	placementChanged := !syncPlacementSame(cur, spaceID, parentID)
-	if !contentChanged && !placementChanged {
+	renamed = fileStem != "" && fileStem != pageFileBase(cur) // recheck against the tx's fresh row
+	if !contentChanged && !placementChanged && !renamed {
 		return cur, syncUnchanged, nil // merge produced no net change (or a concurrent write beat us)
 	}
 
@@ -281,6 +290,17 @@ func (s *Server) applySyncBound(
 			return models.Page{}, "", ae
 		}
 		p, action = moved, syncMoved
+	}
+	if renamed {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE pages SET filename = $1 WHERE id = $2`, fileStem, cur.ID); err != nil {
+			return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "rename sync filename failed"}
+		}
+		fs := fileStem
+		p.Filename = &fs
+		if action == syncUpdated && !contentChanged && !placementChanged {
+			action = syncRenamed
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "commit failed"}

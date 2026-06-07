@@ -125,6 +125,47 @@ func TestApplyFileSync_CreateFilenameMismatchNoStorm(t *testing.T) {
 	}
 }
 
+// Renaming the local file (same page, carried by its id, written to a new name)
+// must update the stored filename so the rename sticks instead of reverting to
+// the old name on the next sync-down.
+func TestApplyFileSync_RenameSticks(t *testing.T) {
+	s, u, space := syncFixture(t)
+	ctx := context.Background()
+
+	p, _, ae := s.ApplyFileSync(ctx, u, nil, space, nil, "Alpha.md", []byte("body"))
+	if ae != nil {
+		t.Fatalf("create: %+v", ae)
+	}
+	if p.Filename == nil || *p.Filename != "Alpha" {
+		t.Fatalf("create filename = %v, want \"Alpha\"", p.Filename)
+	}
+
+	// emit(p) carries the id; applying it at a NEW name is a rename, not a fork.
+	r, act, ae := s.ApplyFileSync(ctx, u, nil, space, nil, "Beta.md", emit(p))
+	if ae != nil {
+		t.Fatalf("rename: %+v", ae)
+	}
+	if act != syncRenamed {
+		t.Fatalf("action = %q, want renamed", act)
+	}
+	if r.ID != p.ID {
+		t.Fatalf("rename forked the page: %d → %d", p.ID, r.ID)
+	}
+	if r.Filename == nil || *r.Filename != "Beta" {
+		t.Fatalf("filename after rename = %v, want \"Beta\"", r.Filename)
+	}
+	tree, err := newSpaceTree(ctx, s.DB, space)
+	if err != nil {
+		t.Fatalf("tree: %v", err)
+	}
+	if got := tree.slug[p.ID]; got != "Beta" {
+		t.Fatalf("on-disk name = %q, want \"Beta\" (rename did not stick)", got)
+	}
+	if n := livePageCount(t, s.DB, space); n != 1 {
+		t.Fatalf("space has %d live pages, want 1", n)
+	}
+}
+
 func TestApplyFileSync_UpdateBindsById(t *testing.T) {
 	s, u, space := syncFixture(t)
 	ctx := context.Background()

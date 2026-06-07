@@ -42,6 +42,17 @@ The body is pure markdown; the frontmatter (`id`, `title`, `slug`, `created`,
 `updated`, plus any custom keys) is a generated view. Re-uploading a file tela
 just gave you is a **no-op** — no churn, no duplicate.
 
+**The on-disk filename is yours and stable.** A file *you* create over sync keeps
+the name you gave it — tela records that name server-side and serves the page back
+at it. So creating `meeting-notes.md` with a title of "Q3 Planning" stays
+`meeting-notes.md` (not `q3-planning.md`), and renaming a file (`mv a.md b.md`)
+sticks. This is what lets a brand-new file round-trip cleanly: the page comes back
+at the exact path you wrote, so the client's post-write check passes instead of
+chasing a different name. The URL `slug` in the frontmatter still follows the
+**title** — it's the page's web address, kept separate from the on-disk filename.
+(Pages created in the app are named by their title-slug until a sync client first
+creates or renames them.)
+
 ### Conflict handling — server-side 3-way merge
 
 tela merges on the server. When a page changed both in the app and in your local
