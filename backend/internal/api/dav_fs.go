@@ -312,8 +312,12 @@ func (fs *davFS) Mkdir(ctx context.Context, name string, _ os.FileMode) error {
 		return err
 	}
 	if !found {
-		// A new top-level folder would be a new space — not creatable over WebDAV.
-		return os.ErrPermission
+		if len(segs) == 1 {
+			// A new top-level folder mints a new space (mkdir ~/tela/foo). Guarded:
+			// disabled by config, or with a space-pinned key, this stays refused.
+			return fs.createSpaceFromMkcol(ctx, segs[0])
+		}
+		return os.ErrNotExist // nesting under a space that doesn't exist → 409
 	}
 	if len(segs) == 1 {
 		return os.ErrExist // the space folder already exists
@@ -344,6 +348,36 @@ func (fs *davFS) Mkdir(ctx context.Context, name string, _ os.FileMode) error {
 		SpaceID: sp.id, ParentID: parentID, Title: target,
 	})
 	return davMapErr(ae)
+}
+
+// createSpaceFromMkcol mints a new space from a root-level MKCOL (mkdir
+// ~/tela/<folder>), owned by the caller. It uses the folder name as the slug
+// verbatim when that's already slug-valid (so the folder round-trips with the
+// exact name the client made), else lets createSpaceCore derive one. Guards:
+// disabled via TELA_WEBDAV_CREATE_SPACES=0, and a space-pinned key (scoped to one
+// space) can never mint others. A slug already taken by a space the caller can't
+// see surfaces as "already exists". Space DELETE stays refused (RemoveAll), so
+// this is intentionally asymmetric — create by mkdir, but never rm a space.
+func (fs *davFS) createSpaceFromMkcol(ctx context.Context, folder string) error {
+	if !davCreateSpacesEnabled() {
+		return os.ErrPermission
+	}
+	pr := davPrincipalFrom(ctx)
+	if pr.k != nil && pr.k.SpaceID != nil {
+		return os.ErrPermission
+	}
+	slug := ""
+	if slugValidRe.MatchString(folder) {
+		slug = folder // round-trips at the exact folder name the client created
+	}
+	_, ae := fs.s.createSpaceCore(ctx, pr.u, folder, slug)
+	if ae != nil {
+		if ae.Status == http.StatusConflict {
+			return os.ErrExist // slug taken (possibly by a space the caller can't see)
+		}
+		return davMapErr(ae)
+	}
+	return nil
 }
 
 func (fs *davFS) RemoveAll(ctx context.Context, name string) error {

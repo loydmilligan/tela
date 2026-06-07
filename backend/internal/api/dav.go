@@ -162,6 +162,17 @@ func davEnabled() bool {
 	return true
 }
 
+// davCreateSpacesEnabled gates whether a root-level MKCOL mints a new space
+// (mkdir ~/tela/foo). Default ON; set TELA_WEBDAV_CREATE_SPACES to 0/false/off/no
+// to keep space creation in-app only.
+func davCreateSpacesEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("TELA_WEBDAV_CREATE_SPACES"))) {
+	case "0", "false", "off", "no":
+		return false
+	}
+	return true
+}
+
 // davScopeAllows maps the PAT scope to the WebDAV verb. read = the safe,
 // non-mutating verbs only; write/admin = everything.
 func davScopeAllows(scope, method string) bool {

@@ -192,6 +192,75 @@ func TestDAV_JunkFilesStillDropped(t *testing.T) {
 	}
 }
 
+func spaceBySlug(t *testing.T, d *sql.DB, uid int64, slug string) (int64, bool) {
+	t.Helper()
+	var id int64
+	err := d.QueryRowContext(context.Background(), `
+		SELECT s.id FROM spaces s
+		  JOIN space_members m ON m.space_id = s.id AND m.user_id = $1 AND m.role = 'owner'
+		 WHERE s.slug = $2`, uid, slug).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, false
+	}
+	if err != nil {
+		t.Fatalf("space by slug %q: %v", slug, err)
+	}
+	return id, true
+}
+
+func TestDAV_MkcolAtRootCreatesSpace(t *testing.T) {
+	ts, d := newWiredServer(t)
+	uid := seedUser(t, d, "owner", "pw-owner-123", false)
+	token, _ := seedAPIKeyForUser(t, d, uid, "write", nil)
+
+	if resp, _ := davDo(t, ts, token, "MKCOL", "/dav/notes", "", nil); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("MKCOL new space status = %d, want 201", resp.StatusCode)
+	}
+	spaceID, ok := spaceBySlug(t, d, uid, "notes")
+	if !ok {
+		t.Fatal("space 'notes' not created / not owned by caller")
+	}
+
+	// It's immediately usable over /dav: list it, then write a page into it.
+	if resp, _ := davDo(t, ts, token, "PROPFIND", "/dav/notes/", "", map[string]string{"Depth": "1"}); resp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("PROPFIND new space status = %d, want 207", resp.StatusCode)
+	}
+	if resp, _ := davDo(t, ts, token, "PUT", "/dav/notes/hello.md", "hi\n", nil); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("PUT into new space status = %d, want 201", resp.StatusCode)
+	}
+	if n := countLivePages(t, d, spaceID); n != 1 {
+		t.Fatalf("new space has %d pages, want 1", n)
+	}
+}
+
+func TestDAV_MkcolSpaceCreationDisabled(t *testing.T) {
+	t.Setenv("TELA_WEBDAV_CREATE_SPACES", "0")
+	ts, d := newWiredServer(t)
+	uid := seedUser(t, d, "owner", "pw-owner-123", false)
+	token, _ := seedAPIKeyForUser(t, d, uid, "write", nil)
+
+	if resp, _ := davDo(t, ts, token, "MKCOL", "/dav/nope", "", nil); resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("MKCOL with creation disabled = %d, want 405", resp.StatusCode)
+	}
+	if _, ok := spaceBySlug(t, d, uid, "nope"); ok {
+		t.Fatal("space created despite TELA_WEBDAV_CREATE_SPACES=0")
+	}
+}
+
+func TestDAV_PinnedKeyCannotCreateSpace(t *testing.T) {
+	ts, d := newWiredServer(t)
+	uid := seedUser(t, d, "owner", "pw-owner-123", false)
+	pinned := seedSpace(t, d, "Engineering", "eng", uid)
+	token, _ := seedAPIKeyForUser(t, d, uid, "write", &pinned)
+
+	if resp, _ := davDo(t, ts, token, "MKCOL", "/dav/other", "", nil); resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("pinned-key MKCOL = %d, want 405", resp.StatusCode)
+	}
+	if _, ok := spaceBySlug(t, d, uid, "other"); ok {
+		t.Fatal("pinned key minted a new space")
+	}
+}
+
 func TestDAV_FileSizeCapRejects(t *testing.T) {
 	t.Setenv("TELA_WEBDAV_FILE_MAX_BYTES", "8")
 	ts, d, spaceID, folder, token := davFixture(t)

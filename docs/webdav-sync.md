@@ -227,6 +227,13 @@ Thumbs.db
 - **Renaming a `.md` file** (e.g. in a mounted client) retitles the page;
   renaming a folder reparents it. Editing only the `slug:` in frontmatter is
   ignored — the slug is always derived from the title.
+- **Creating a space:** `mkdir ~/tela/<folder>` at the **root** mints a new space
+  owned by you (a root-level MKCOL). The folder name is the slug verbatim when
+  it's already slug-valid, so it round-trips at the exact name; otherwise a slug
+  is derived. A **space-pinned** PAT can't create spaces, and the whole behaviour
+  is disabled with `TELA_WEBDAV_CREATE_SPACES=0` (then spaces are in-app only).
+  Deletion is intentionally asymmetric — you can create a space by `mkdir`, but a
+  space DELETE/`rmdir` over WebDAV is always refused (delete it in-app).
 - **Viewers** (read-only space role) get a read-only tree; `PUT`/`MKCOL`/`DELETE`
   return 403.
 - **Delete-safety.** Two server-side guards back up rclone's `--max-delete`
