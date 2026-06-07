@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Building2,
+  FileDown,
   Lock,
   MoreHorizontal,
   Plus,
@@ -40,6 +41,7 @@ import { useSpaceAccess } from '../../lib/queries/space-grants'
 import { useFreshness } from '../../lib/queries/freshness'
 import { cn } from '../../lib/utils'
 import { NewSpaceDialog } from './NewSpaceDialog'
+import { useFileDownload } from './use-file-download'
 import { ShareSpaceDialog } from './ShareSpaceDialog'
 import { StalenessDot } from './StalenessDot'
 
@@ -169,6 +171,10 @@ function SpaceRow({ space, active, stalePages, onSelect }: SpaceRowProps) {
   const [renameOpen, setRenameOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const { download: downloadZip } = useFileDownload(
+    `/api/spaces/${space.id}/export.zip`,
+    { fallbackName: 'space.zip' },
+  )
 
   return (
     <div
@@ -243,6 +249,9 @@ function SpaceRow({ space, active, stalePages, onSelect }: SpaceRowProps) {
           <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setShareOpen(true)}>
             <UsersRound width={14} height={14} /> Share
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void downloadZip()}>
+            <FileDown width={14} height={14} /> Export Markdown (.zip)
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem destructive onSelect={() => setDeleteOpen(true)}>

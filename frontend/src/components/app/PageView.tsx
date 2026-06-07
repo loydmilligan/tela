@@ -89,7 +89,7 @@ import {
 } from '../ui/dropdown-menu'
 import { cn } from '../../lib/utils'
 import { BacklinksSection } from './BacklinksSection'
-import { usePdfDownload } from './use-pdf-download'
+import { useFileDownload } from './use-file-download'
 
 // Milkdown is the largest dependency in the app (~700 KB raw). Lazy-load it so
 // non-editor routes (sidebar, spaces list, command palette) don't pay for it
@@ -207,8 +207,11 @@ function PageActionsMenu({
   onDelete: () => void
 }) {
   const navigate = useNavigate()
-  const { download: downloadPdf } = usePdfDownload(`/api/pages/${pageId}/pdf`, {
+  const { download: downloadPdf } = useFileDownload(`/api/pages/${pageId}/pdf`, {
     themed: true,
+  })
+  const { download: downloadMd } = useFileDownload(`/api/pages/${pageId}/md`, {
+    fallbackName: 'page.md',
   })
   const origin = window.location.origin
   const slug = pageSlug(title)
@@ -261,6 +264,9 @@ function PageActionsMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void downloadPdf()}>
           <FileDown width={14} height={14} /> Export PDF
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void downloadMd()}>
+          <FileDown width={14} height={14} /> Export Markdown
         </DropdownMenuItem>
         {!isViewer ? (
           <DropdownMenuItem

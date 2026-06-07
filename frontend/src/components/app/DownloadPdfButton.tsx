@@ -1,7 +1,7 @@
 import { FileDown, Loader2 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
-import { usePdfDownload } from './use-pdf-download'
+import { useFileDownload } from './use-file-download'
 
 interface DownloadPdfButtonProps {
   /** Endpoint that streams the PDF (authed /api/pages/{id}/pdf or a /share/…/.pdf URL). */
@@ -25,7 +25,7 @@ export function DownloadPdfButton({
   className,
   themed = false,
 }: DownloadPdfButtonProps) {
-  const { download, busy, failed } = usePdfDownload(url, { themed, fallbackName })
+  const { download, busy, failed } = useFileDownload(url, { themed, fallbackName })
 
   return (
     <Button

@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react'
 import { getTheme } from '../../lib/theme'
 
-// usePdfDownload encapsulates the fetch→Blob→download flow (with the live-theme
+// useFileDownload encapsulates the fetch→Blob→download flow (with the live-theme
 // query param) so both the standalone DownloadPdfButton and the "•••" menu's
 // Export-PDF item can trigger it. Lives in its own module so the component file
 // stays a pure component export (react-refresh).
-export function usePdfDownload(
+export function useFileDownload(
   url: string,
   opts?: { themed?: boolean; fallbackName?: string },
 ) {
