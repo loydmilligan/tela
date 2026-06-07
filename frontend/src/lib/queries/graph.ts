@@ -12,6 +12,8 @@ export interface GraphNode {
   space_id: number
   space_name: string
   title: string
+  // Ancestor page titles, top→down (excludes the page and the space).
+  breadcrumb: string[]
   updated_at: string
   // Count of outgoing wikilinks whose target no longer exists.
   broken: number

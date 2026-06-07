@@ -27,6 +27,7 @@ interface SimNode extends SimulationNodeDatum {
   id: number
   spaceId: number
   spaceName: string
+  breadcrumb: string[]
   title: string
   updatedAt: string
   deg: number
@@ -45,12 +46,21 @@ interface HoverCard {
   flipX: boolean // place left of the cursor (near right edge)
   flipY: boolean // place above the cursor (near bottom edge)
   title: string
-  spaceName: string
+  location: string // "Space › …ancestors", collapsed when deep
   updatedAt: string
   broken: number
   linksOut: number
   linksIn: number
   children: number
+}
+
+// Build the card's one-line location: space + ancestor path, collapsed to
+// `first › … › last` past 3 segments so a deep tree never wraps or squashes.
+function locationLine(spaceName: string, breadcrumb: string[]): string {
+  const segs = [spaceName, ...breadcrumb]
+  const shown =
+    segs.length > 3 ? [segs[0], '…', segs[segs.length - 1]] : segs
+  return shown.join(' › ')
 }
 
 export interface PageGraphProps {
@@ -161,6 +171,7 @@ export function PageGraph({
         Object.assign(existing, {
           spaceId: n.space_id,
           spaceName: n.space_name,
+          breadcrumb: n.breadcrumb,
           title: n.title,
           updatedAt: n.updated_at,
           deg: d,
@@ -174,6 +185,7 @@ export function PageGraph({
         id: n.id,
         spaceId: n.space_id,
         spaceName: n.space_name,
+        breadcrumb: n.breadcrumb,
         title: n.title,
         updatedAt: n.updated_at,
         deg: d,
@@ -517,7 +529,7 @@ export function PageGraph({
                 flipX,
                 flipY,
                 title: node.title,
-                spaceName: node.spaceName,
+                location: locationLine(node.spaceName, node.breadcrumb),
                 updatedAt: node.updatedAt,
                 broken: node.broken,
                 ...connectionCounts(node.id),
@@ -619,7 +631,7 @@ function NodeHoverCard({ card }: { card: HoverCard }) {
   return (
     <div className="tela-graph-nodecard" style={{ left, top, bottom }}>
       <p className="tela-graph-nodecard-title">{card.title || 'Untitled'}</p>
-      <p className="tela-graph-nodecard-sub">{card.spaceName}</p>
+      <p className="tela-graph-nodecard-sub" title={card.location}>{card.location}</p>
       <p className="tela-graph-nodecard-meta">
         {parts.length ? parts.join(' · ') : 'No connections'}
       </p>

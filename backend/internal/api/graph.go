@@ -17,11 +17,12 @@ import (
 // frontend (trivial to derive from links).
 
 type graphNode struct {
-	ID        int64  `json:"id"`
-	SpaceID   int64  `json:"space_id"`
-	SpaceName string `json:"space_name"`
-	Title     string `json:"title"`
-	UpdatedAt string `json:"updated_at"`
+	ID         int64    `json:"id"`
+	SpaceID    int64    `json:"space_id"`
+	SpaceName  string   `json:"space_name"`
+	Title      string   `json:"title"`
+	Breadcrumb []string `json:"breadcrumb"`
+	UpdatedAt  string   `json:"updated_at"`
 	// Count of outgoing wikilinks whose target page no longer exists (recorded
 	// in page_links with a last_known_title). Powers broken-link surfacing.
 	Broken int `json:"broken"`
@@ -134,6 +135,12 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range nodes {
 		nodes[i].Broken = broken[nodes[i].ID]
+		bc, err := pageBreadcrumb(ctx, s.DB, nodes[i].ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "build breadcrumb failed")
+			return
+		}
+		nodes[i].Breadcrumb = bc
 	}
 
 	// --- link edges (page_links), both endpoints visible -------------------
