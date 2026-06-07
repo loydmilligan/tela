@@ -9,6 +9,7 @@ import { SettingsSearchIndexTab } from '../components/app/SettingsSearchIndexTab
 import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
 import { Button } from '../components/ui/button'
 import { useMe } from '../lib/queries/auth'
+import { useOrgs } from '../lib/queries/orgs'
 import { cn } from '../lib/utils'
 
 interface SettingsTab {
@@ -50,7 +51,15 @@ const USERS_TAB: SettingsTab = {
 const ORGS_TAB: SettingsTab = {
   id: 'orgs',
   label: 'Organizations',
-  render: () => <SettingsOrgsTab />,
+  render: () => <SettingsOrgsTab scope="instance" />,
+}
+
+// The org-admin self-service variant — shown to non-instance-admins who
+// administer at least one org. Scoped to their orgs; no create/delete/domains.
+const ORG_ADMIN_TAB: SettingsTab = {
+  id: 'orgs',
+  label: 'Organizations',
+  render: () => <SettingsOrgsTab scope="admin" />,
 }
 
 const AUDIT_TAB: SettingsTab = {
@@ -68,16 +77,25 @@ const SEARCH_INDEX_TAB: SettingsTab = {
 
 export function SettingsPage() {
   const me = useMe()
+  const orgs = useOrgs()
   // The Users + API Keys tabs are gated on instance-admin; the array itself
   // drops them for non-admins so /settings looks identical to today's
   // Profile-only shell. The backend gates /api/api_keys on instance-admin
   // too — mounting the tab for non-admins would just render a perpetual 403.
+  // A non-instance-admin who administers an org gets a scoped Organizations
+  // tab (member/group management + audit for their own orgs).
+  const isOrgAdmin =
+    !me.data?.is_instance_admin &&
+    (orgs.data?.some((o) => o.my_role === 'admin') ?? false)
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
       return [PROFILE_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
     }
+    if (isOrgAdmin) {
+      return [PROFILE_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, ORG_ADMIN_TAB]
+    }
     return [PROFILE_TAB, IMPORT_TAB, SEARCH_INDEX_TAB]
-  }, [me.data?.is_instance_admin])
+  }, [me.data?.is_instance_admin, isOrgAdmin])
   const [activeId, setActiveId] = useState(tabs[0].id)
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
 

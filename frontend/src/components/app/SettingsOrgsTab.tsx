@@ -47,9 +47,22 @@ import { Input } from '../ui/input'
 import { Select } from '../ui/select'
 import { cn } from '../../lib/utils'
 
-export function SettingsOrgsTab() {
+// scope === 'instance' is the instance-admin view (every org, create/delete,
+// domain mapping). scope === 'admin' is the org-admin self-service view: only
+// the orgs the caller administers, members + groups + audit, but no
+// create/delete-org and no domain mapping (those stay instance-admin only).
+export function SettingsOrgsTab({
+  scope = 'instance',
+}: {
+  scope?: 'instance' | 'admin'
+}) {
   const orgs = useOrgs()
   const [createOpen, setCreateOpen] = useState(false)
+  const isInstance = scope === 'instance'
+
+  const visibleOrgs = isInstance
+    ? orgs.data ?? []
+    : (orgs.data ?? []).filter((o) => o.my_role === 'admin')
 
   return (
     <section
@@ -59,14 +72,16 @@ export function SettingsOrgsTab() {
       <div className="flex flex-col gap-[var(--space-4)]">
         <header className="flex items-start justify-between gap-[var(--space-3)]">
           <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-            Organizations group people so a whole team can be granted access to a
-            space at once. Add members here, then share spaces with an org from
-            its Share dialog.
+            {isInstance
+              ? 'Organizations group people so a whole team can be granted access to a space at once. Add members here, then share spaces with an org from its Share dialog.'
+              : 'Organizations you administer. Manage members and groups, and review recent access changes. Creating organizations and mapping email domains is handled by an instance admin.'}
           </p>
-          <Button type="button" variant="primary" onClick={() => setCreateOpen(true)}>
-            <Building2 width={14} height={14} />
-            <span>New org</span>
-          </Button>
+          {isInstance ? (
+            <Button type="button" variant="primary" onClick={() => setCreateOpen(true)}>
+              <Building2 width={14} height={14} />
+              <span>New org</span>
+            </Button>
+          ) : null}
         </header>
 
         {orgs.isLoading ? (
@@ -77,28 +92,33 @@ export function SettingsOrgsTab() {
           <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
             Couldn't load organizations.
           </p>
-        ) : orgs.data && orgs.data.length > 0 ? (
+        ) : visibleOrgs.length > 0 ? (
           <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
-            {orgs.data.map((org) => (
-              <OrgRow key={org.id} org={org} />
+            {visibleOrgs.map((org) => (
+              <OrgRow key={org.id} org={org} scope={scope} />
             ))}
           </ul>
         ) : (
           <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-            No organizations yet. Create one to start grouping members.
+            {isInstance
+              ? 'No organizations yet. Create one to start grouping members.'
+              : 'You don’t administer any organizations.'}
           </p>
         )}
       </div>
 
-      <hr className="border-0 border-t border-[var(--border-subtle)]" />
-      <DomainsSection orgs={orgs.data ?? []} />
-
-      <CreateOrgDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {isInstance ? (
+        <>
+          <hr className="border-0 border-t border-[var(--border-subtle)]" />
+          <DomainsSection orgs={orgs.data ?? []} />
+          <CreateOrgDialog open={createOpen} onOpenChange={setCreateOpen} />
+        </>
+      ) : null}
     </section>
   )
 }
 
-function OrgRow({ org }: { org: Org }) {
+function OrgRow({ org, scope }: { org: Org; scope: 'instance' | 'admin' }) {
   const [manageOpen, setManageOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -128,26 +148,30 @@ function OrgRow({ org }: { org: Org }) {
       <Button type="button" variant="secondary" size="sm" onClick={() => setManageOpen(true)}>
         Manage members
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Actions for ${org.name}`}
-            className="h-[var(--space-7)] w-[var(--space-7)] p-0"
-          >
-            <MoreHorizontal width={14} height={14} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem destructive onSelect={() => setDeleteOpen(true)}>
-            Delete org
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {scope === 'instance' ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Actions for ${org.name}`}
+              className="h-[var(--space-7)] w-[var(--space-7)] p-0"
+            >
+              <MoreHorizontal width={14} height={14} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem destructive onSelect={() => setDeleteOpen(true)}>
+              Delete org
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
 
       <ManageOrgDialog org={org} open={manageOpen} onOpenChange={setManageOpen} />
-      <DeleteOrgDialog org={org} open={deleteOpen} onOpenChange={setDeleteOpen} />
+      {scope === 'instance' ? (
+        <DeleteOrgDialog org={org} open={deleteOpen} onOpenChange={setDeleteOpen} />
+      ) : null}
     </li>
   )
 }
