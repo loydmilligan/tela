@@ -815,6 +815,226 @@
     margin: 0;
   }
 
+  /* M19 — stat grid (:::stats). Responsive grid of KPI tiles. The trend glyph
+     (↑/↓/+/-) in the value drives the per-tile accent rail via [data-accent],
+     set by the nodeView. Fully token-driven so it adapts across themes. */
+  .tela-milkdown .ProseMirror .tela-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: var(--space-3);
+    margin: var(--space-2) 0 var(--space-4);
+  }
+  .tela-milkdown .ProseMirror .tela-stat {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+    overflow: hidden;
+  }
+  .tela-milkdown .ProseMirror .tela-stat::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: var(--border-strong);
+  }
+  .tela-milkdown .ProseMirror .tela-stat[data-accent='positive']::before {
+    background: var(--accent-positive-fg);
+  }
+  .tela-milkdown .ProseMirror .tela-stat[data-accent='negative']::before {
+    background: var(--accent-negative-fg);
+  }
+  .tela-stat-head {
+    display: flex;
+    min-width: 0;
+  }
+  .tela-stat-label {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tela-stat-label-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+  .tela-stat-label-input:focus {
+    outline: none;
+    color: var(--text-primary);
+  }
+  .tela-milkdown .ProseMirror .tela-stat-value {
+    font-size: var(--text-2xl);
+    font-weight: 650;
+    line-height: var(--leading-tight);
+    color: var(--text-primary);
+    word-break: break-word;
+  }
+  .tela-milkdown .ProseMirror .tela-stat-value > p {
+    margin: 0;
+  }
+
+  /* M19 — timeline (:::timeline). A bullet list of dated events rendered as a
+     vertical rail with a marker dot per item; the leading bold date reads as a
+     chip. Pure CSS over the nested list — events stay normal editable items. */
+  .tela-milkdown .ProseMirror .tela-timeline {
+    margin: var(--space-2) 0 var(--space-4);
+  }
+  .tela-milkdown .ProseMirror .tela-timeline ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+  }
+  .tela-milkdown .ProseMirror .tela-timeline ul::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--border-subtle);
+  }
+  .tela-milkdown .ProseMirror .tela-timeline li {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 0 0 var(--space-4) var(--space-6);
+  }
+  .tela-milkdown .ProseMirror .tela-timeline li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--surface-1);
+    border: 2px solid var(--accent);
+    box-sizing: border-box;
+  }
+  .tela-milkdown .ProseMirror .tela-timeline li:last-child {
+    padding-bottom: 0;
+  }
+  .tela-milkdown .ProseMirror .tela-timeline li > p {
+    margin: 0;
+  }
+  .tela-milkdown
+    .ProseMirror
+    .tela-timeline
+    li
+    > p:first-child
+    > strong:first-child {
+    color: var(--accent);
+    font-weight: 600;
+    margin-right: var(--space-1);
+  }
+
+  /* M19 — calendar (:::calendar{month}). The nodeView renders this month grid
+     (non-editable chrome) from the event list; the editable source list sits
+     below in edit mode and is hidden in read-only via [data-editable]. */
+  .tela-milkdown .ProseMirror .tela-calendar {
+    margin: var(--space-2) 0 var(--space-4);
+  }
+  .tela-calendar-grid {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface-1);
+  }
+  .tela-calendar-invalid {
+    padding: var(--space-4);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .tela-calendar-caption {
+    padding: var(--space-3) var(--space-4);
+    font-weight: 600;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .tela-calendar-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .tela-calendar-table th {
+    padding: var(--space-2) var(--space-1);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    text-align: center;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .tela-calendar-cell {
+    height: 4.75rem;
+    width: calc(100% / 7);
+    vertical-align: top;
+    padding: 0 var(--space-1) var(--space-1);
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .tela-calendar-table tr > .tela-calendar-cell:last-child {
+    border-right: none;
+  }
+  .tela-calendar-table tr:last-child > .tela-calendar-cell {
+    border-bottom: none;
+  }
+  .tela-calendar-cell[data-out='true'] {
+    background: var(--surface-2);
+  }
+  .tela-calendar-cell[data-today='true'] {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+  }
+  .tela-calendar-daynum {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-align: right;
+    padding: var(--space-1) var(--space-1) 0;
+  }
+  .tela-calendar-cell[data-today='true'] .tela-calendar-daynum {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .tela-calendar-event {
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    padding: 2px var(--space-2);
+    margin-top: 2px;
+    border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tela-calendar-source {
+    margin-top: var(--space-3);
+  }
+  .tela-calendar[data-editable='false'] .tela-calendar-source {
+    display: none;
+  }
+
   /* Images */
   .tela-milkdown .ProseMirror img {
     max-width: 100%;

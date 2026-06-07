@@ -71,5 +71,26 @@
     --callout-caution-bg: #f0d6c2;
     --callout-caution-fg: #8a2828;
     --callout-caution-border: #c45a5a;
+
+    /* M19 — shared semantic accent enum + chart palette (see tokens.css). Warm
+       values: dusty, lower-chroma tints that integrate with the cream surface
+       (#fbf6ec) instead of fighting --accent (#b4543a). */
+    --accent-positive-fg: #4a5e1f;
+    --accent-positive-soft: #e1e6c8;
+    --accent-negative-fg: #7a2a2a;
+    --accent-negative-soft: #f0d6c2;
+    --accent-warning-fg: #8a5a14;
+    --accent-warning-soft: #f0e3c2;
+    --accent-info-fg: #2c5f7a;
+    --accent-info-soft: #e6e8e3;
+
+    --chart-1: #b4543a;
+    --chart-2: #2c7a72;
+    --chart-3: #b8761e;
+    --chart-4: #a83269;
+    --chart-5: #2c5f7a;
+    --chart-6: #5d7a3a;
+    --chart-grid: #e0cdab;
+    --chart-axis: #7a6a55;
   }
 }

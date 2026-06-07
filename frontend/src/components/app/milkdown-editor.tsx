@@ -62,6 +62,13 @@ import {
   kanbanNodeViews,
   kanbanSchema,
 } from './milkdown-kanban'
+import {
+  statGridNodeViews,
+  statGridSchema,
+  statTileSchema,
+} from './milkdown-stat-grid'
+import { timelineSchema } from './milkdown-timeline'
+import { calendarNodeView, calendarSchema } from './milkdown-calendar'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
   calloutInputRule,
@@ -656,6 +663,16 @@ function MilkdownEditorInner({
       .use(kanbanColumnSchema)
       .use(kanbanSchema)
       .use(kanbanNodeViews)
+      // M19 — data blocks on the directive foundation. stat grid (`:::stats`,
+      // `### Label` tiles), timeline (`:::timeline` dated list → rail), and
+      // calendar (`:::calendar{month}` list → month grid). Same registration
+      // in both editor branches; schemas + nodeViews only, no Yjs dependency.
+      .use(statTileSchema)
+      .use(statGridSchema)
+      .use(statGridNodeViews)
+      .use(timelineSchema)
+      .use(calendarSchema)
+      .use(calendarNodeView)
       .use(history)
       .use(clipboard)
       .use(listener)

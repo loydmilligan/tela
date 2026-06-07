@@ -68,5 +68,26 @@
     --callout-caution-bg: #fef2f2;
     --callout-caution-fg: #b91c1c;
     --callout-caution-border: #f87171;
+
+    /* M19 — shared semantic accent enum + chart palette (see tokens.css for the
+       rationale). Light values: soft tints on the white surface, mid-darkness
+       fg so accents read as a calm signal. */
+    --accent-positive-fg: #15803d;
+    --accent-positive-soft: #ecfdf5;
+    --accent-negative-fg: #b91c1c;
+    --accent-negative-soft: #fef2f2;
+    --accent-warning-fg: #b45309;
+    --accent-warning-soft: #fffbeb;
+    --accent-info-fg: #1d4ed8;
+    --accent-info-soft: #eff6ff;
+
+    --chart-1: #4f46e5;
+    --chart-2: #0d9488;
+    --chart-3: #d97706;
+    --chart-4: #db2777;
+    --chart-5: #2563eb;
+    --chart-6: #65a30d;
+    --chart-grid: #e4e4e9;
+    --chart-axis: #5b5b66;
   }
 }

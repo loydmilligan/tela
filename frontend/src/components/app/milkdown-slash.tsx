@@ -24,6 +24,9 @@ import { setPos, setShow } from './milkdown-floating'
 import { insertMermaid } from './milkdown-mermaid'
 import { insertTabs } from './milkdown-tabs'
 import { insertKanban } from './milkdown-kanban'
+import { insertStatGrid } from './milkdown-stat-grid'
+import { insertTimeline } from './milkdown-timeline'
+import { insertCalendar } from './milkdown-calendar'
 import { insertPullquote } from './milkdown-pullquote'
 import { insertEmbed } from './milkdown-embed'
 import { SLASH_BLOCKS } from './blocks-manifest'
@@ -64,6 +67,9 @@ const RUN: Record<string, (ctx: Ctx) => void> = {
   embed: insertEmbed,
   tabs: insertTabs,
   kanban: insertKanban,
+  'stat-grid': insertStatGrid,
+  timeline: insertTimeline,
+  calendar: insertCalendar,
   date: (ctx) => {
     const view = ctx.get(editorViewCtx)
     // YYYY-MM-DD, matching the project's date convention.

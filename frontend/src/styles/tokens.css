@@ -174,5 +174,35 @@
     --callout-caution-bg: #fef2f2;
     --callout-caution-fg: #b91c1c;
     --callout-caution-border: #f87171;
+
+    /* M19 — shared semantic accent enum for the data blocks (stat_grid tiles,
+       timeline events, calendar chips, table cell/row accents). Five roles;
+       `default` carries no tint (falls back to --border-subtle / --text-*).
+       Each non-default role pairs a strong line/label colour (`-fg`) with a
+       soft tinted surface (`-soft`). One definition shared across every data
+       block so accents stay consistent. Defaults mirror the light palette;
+       per-theme values live in themes/*.css. Hues track the callout spec
+       (positive=green, negative=red, warning=amber, info=blue). */
+    --accent-positive-fg: #15803d;
+    --accent-positive-soft: #ecfdf5;
+    --accent-negative-fg: #b91c1c;
+    --accent-negative-soft: #fef2f2;
+    --accent-warning-fg: #b45309;
+    --accent-warning-soft: #fffbeb;
+    --accent-info-fg: #1d4ed8;
+    --accent-info-soft: #eff6ff;
+
+    /* M19 — categorical chart palette (chart block / ECharts). Six perceptually
+       distinct hues + grid/axis greys. The chart reads these CSS vars at render
+       time and re-renders on theme switch, so charts stay theme-dynamic.
+       Per-theme values live in themes/*.css. */
+    --chart-1: #4f46e5;
+    --chart-2: #0d9488;
+    --chart-3: #d97706;
+    --chart-4: #db2777;
+    --chart-5: #2563eb;
+    --chart-6: #65a30d;
+    --chart-grid: #e4e4e9;
+    --chart-axis: #5b5b66;
   }
 }

@@ -43,6 +43,7 @@ const INFRA = new Set([
 
 // milkdown-* plugin basename -> manifest block id(s) it backs.
 const PLUGIN_BLOCKS = {
+  'milkdown-calendar': ['calendar'],
   'milkdown-callouts': ['callout'],
   'milkdown-codeblock': ['code'],
   'milkdown-collapsibles': ['collapsible'],
@@ -53,8 +54,10 @@ const PLUGIN_BLOCKS = {
   'milkdown-math': ['equation', 'inline-math'],
   'milkdown-mermaid': ['mermaid'],
   'milkdown-pullquote': ['pull-quote'],
+  'milkdown-stat-grid': ['stat-grid'],
   'milkdown-tabs': ['tabs'],
   'milkdown-task-list': ['task-list'],
+  'milkdown-timeline': ['timeline'],
   'milkdown-wikilink-bracket': ['wikilink'],
 }
 
