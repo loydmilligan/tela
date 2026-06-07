@@ -226,9 +226,212 @@
     font-size: 1em;
     margin: 0 0 1.15em;
   }
+  /* Pull-quote scales with the reading size like the rest of the prose (the
+     editor's fixed --text-xl would ignore the S/M/L preference). */
+  .tela-reader .tela-milkdown .ProseMirror .tela-pullquote {
+    margin: 1.8em 0;
+  }
+  .tela-reader .tela-milkdown .ProseMirror .tela-pullquote-body {
+    font-size: 1.3em;
+    line-height: var(--reading-leading-tight);
+  }
   /* Heading scroll target — clear the sticky top bar when jumped to from TOC. */
   .tela-reader .reader-heading {
     scroll-margin-top: calc(var(--space-8) + var(--space-4));
+    position: relative;
+  }
+
+  /* Hover copy-link affordance. Lives in the left gutter so it never reflows the
+     heading text; revealed on heading hover / keyboard focus. Clicking copies an
+     absolute deep-link (handled in ReaderShell) and flips to a "copied" tick. */
+  .tela-reader .reader-anchor {
+    position: absolute;
+    left: -1.05em;
+    top: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1.25em;
+    font-weight: 400;
+    text-decoration: none;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-out);
+    user-select: none;
+  }
+  .tela-reader .reader-heading:hover .reader-anchor,
+  .tela-reader .reader-anchor:focus-visible {
+    opacity: 0.55;
+  }
+  .tela-reader .reader-anchor:hover {
+    opacity: 1 !important;
+    color: var(--accent);
+  }
+  .tela-reader .reader-anchor[data-copied] {
+    opacity: 1 !important;
+    color: var(--success);
+  }
+  .tela-reader .reader-anchor[data-copied]::after {
+    content: 'Copied';
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 2px);
+    transform: translateX(-50%);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  /* The anchor is a reading aid, not content — never print it. */
+  @media print {
+    .tela-reader .reader-anchor {
+      display: none !important;
+    }
+  }
+  @media (hover: none) {
+    /* Touch: no hover, so keep it faintly visible rather than unreachable. */
+    .tela-reader .reader-anchor {
+      opacity: 0.4;
+    }
+  }
+
+  /* --- Long-form readability pass -------------------------------------------
+     Micro-typography that only matters at reading length: better wrapping
+     (balanced headings, no orphan tails on paragraphs), legibility hints,
+     calmer links, and quieter rules/lists/media. All scoped to .tela-reader so
+     the editor surface is untouched, and all token-driven. */
+  .tela-reader .tela-milkdown .ProseMirror {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'kern', 'liga', 'clig', 'calt';
+    /* Lets opening quotes / bullets hang into the margin for a clean left edge
+       (progressive — currently Safari; harmless elsewhere). */
+    hanging-punctuation: first allow-end last;
+  }
+  .tela-reader .reader-title,
+  .tela-reader .tela-milkdown .ProseMirror h1,
+  .tela-reader .tela-milkdown .ProseMirror h2,
+  .tela-reader .tela-milkdown .ProseMirror h3,
+  .tela-reader .tela-milkdown .ProseMirror h4 {
+    /* Even line lengths so a heading never drops one lonely word. */
+    text-wrap: balance;
+  }
+  .tela-reader .tela-milkdown .ProseMirror p,
+  .tela-reader .tela-milkdown .ProseMirror li {
+    /* Avoids short orphan last lines + typographic rivers in body copy. */
+    text-wrap: pretty;
+  }
+  /* The first block after a heading hugs it — no double gap between the
+     heading's bottom margin and the block's top margin. */
+  .tela-reader .tela-milkdown .ProseMirror :is(h1, h2, h3, h4) + * {
+    margin-top: 0;
+  }
+  /* Links read calmer in long-form: a thin, low-contrast underline that firms
+     up on hover, rather than the editor's solid accent rule. */
+  .tela-reader .tela-milkdown .ProseMirror a:not(.reader-footnote-back) {
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.16em;
+    text-decoration-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  }
+  .tela-reader .tela-milkdown .ProseMirror a:not(.reader-footnote-back):hover {
+    text-decoration-color: var(--accent);
+  }
+  /* Inline code sits slightly smaller so it doesn't tower over the prose. */
+  .tela-reader .tela-milkdown .ProseMirror :not(pre) > code {
+    font-size: 0.88em;
+  }
+  /* Images / diagrams stay within the measure, centred, softly rounded. */
+  .tela-reader .tela-milkdown .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+  }
+  /* A divider as a quiet centred mark, not a full-width bar. */
+  .tela-reader .tela-milkdown .ProseMirror hr {
+    border: 0;
+    border-top: 1px solid var(--border-subtle);
+    width: 38%;
+    margin: var(--space-8) auto;
+  }
+  /* Lists: comfortable hang + muted markers. */
+  .tela-reader .tela-milkdown .ProseMirror ul,
+  .tela-reader .tela-milkdown .ProseMirror ol {
+    padding-left: 1.4em;
+  }
+  .tela-reader .tela-milkdown .ProseMirror li::marker {
+    color: var(--text-muted);
+  }
+  /* Tables breathe a touch more and never break the column on overflow. */
+  .tela-reader .tela-milkdown .ProseMirror table {
+    font-size: 0.95em;
+  }
+
+  /* Footnotes (reader). Base marker/list styling is in editor.css; here we add
+     the "Footnotes" section break before the first definition, the scroll
+     offsets for jumps, and the back-link affordance. */
+  .tela-reader .reader-footnotes-start {
+    margin-top: var(--space-8);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .tela-reader .reader-footnotes-start::before {
+    content: 'Footnotes';
+    display: block;
+    grid-column: 1 / -1;
+    margin-bottom: var(--space-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .tela-reader .reader-footnote-def,
+  .tela-reader sup[data-type='footnote_reference'] {
+    scroll-margin-top: calc(var(--space-8) + var(--space-4));
+  }
+  /* Briefly flag the jumped-to definition / reference so the eye lands on it.
+     Toggled by ReaderShell on click (not :target — the jump doesn't change the
+     URL hash). Fades via a short transition; reduced-motion shows it flat. */
+  .tela-reader .reader-footnote-def,
+  .tela-reader sup[data-type='footnote_reference'] {
+    transition: background-color var(--duration-base) var(--ease-out);
+  }
+  .tela-reader .reader-footnote-def.reader-fn-flash {
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 var(--space-2) var(--surface-2);
+  }
+  .tela-reader sup[data-type='footnote_reference'].reader-fn-flash {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-radius: var(--radius-xs);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tela-reader .reader-footnote-def,
+    .tela-reader sup[data-type='footnote_reference'] {
+      transition: none;
+    }
+  }
+  .tela-reader .reader-footnote-back {
+    margin-left: var(--space-2);
+    color: var(--accent);
+    text-decoration: none;
+    font-size: var(--text-sm);
+  }
+  .tela-reader .reader-footnote-back:hover {
+    color: var(--text-primary);
+  }
+  @media print {
+    .tela-reader .reader-footnote-back {
+      display: none !important;
+    }
   }
 
   /* Table of contents — sticky rail, hidden until there's room for it. */
@@ -406,6 +609,10 @@
     .tela-reader .tela-milkdown .ProseMirror p {
       orphans: 3;
       widows: 3;
+    }
+    /* Interactive chrome is meaningless on paper. */
+    .tela-reader .tela-codeblock-copy {
+      display: none !important;
     }
   }
 }

@@ -11,6 +11,7 @@ import {
 import { Type } from 'lucide-react'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { relativeTimeFromSqlite } from '../../lib/relativeTime'
+import { pageSlug } from '../../lib/slug'
 import {
   getTheme,
   setTheme,
@@ -44,6 +45,48 @@ function parseWikilinkPageId(href: string): number | null {
   const tail = href.slice(prefix.length)
   if (!/^\d+$/.test(tail)) return null
   return Number(tail)
+}
+
+// Footnotes (gfm preset). Link each `[^n]` reference to its definition and back,
+// assign stable ids, and mark the definition block so the reader can give it a
+// "Footnotes" section header. Non-destructive: only sets ids/classes and appends
+// a back-link — the static reader never re-renders, so PM won't clobber it.
+function wireFootnotes(view: EditorView) {
+  const defs = Array.from(
+    view.dom.querySelectorAll('dl[data-type="footnote_definition"]'),
+  ) as HTMLElement[]
+  defs.forEach((dl, i) => {
+    const label = dl.dataset.label || String(i + 1)
+    dl.id = `fn-${label}`
+    dl.classList.add('reader-footnote-def')
+    if (i === 0) dl.classList.add('reader-footnotes-start')
+    const dd = dl.querySelector('dd')
+    if (dd && !dd.querySelector(':scope > .reader-footnote-back')) {
+      const back = document.createElement('a')
+      back.className = 'reader-footnote-back'
+      back.href = `#fnref-${label}`
+      // U+FE0E forces text (not emoji) presentation of the return arrow.
+      back.textContent = '↩︎'
+      back.setAttribute('aria-label', 'Back to reference')
+      back.setAttribute('contenteditable', 'false')
+      dd.appendChild(back)
+    }
+  })
+  const seen = new Set<string>()
+  const refs = Array.from(
+    view.dom.querySelectorAll('sup[data-type="footnote_reference"]'),
+  ) as HTMLElement[]
+  refs.forEach((sup) => {
+    const label = sup.dataset.label || ''
+    // Only the first reference to a label owns the back-link target id.
+    if (label && !seen.has(label)) {
+      sup.id = `fnref-${label}`
+      seen.add(label)
+    }
+    sup.classList.add('reader-footnote-ref')
+    sup.setAttribute('role', 'link')
+    sup.tabIndex = 0
+  })
 }
 
 type ReaderSize = 's' | 'm' | 'l'
@@ -212,15 +255,45 @@ export function ReaderShell({
         view.dom.querySelectorAll('h1, h2, h3'),
       ) as HTMLElement[]
       const entries: TocEntry[] = []
+      // Stable, human-readable slug ids (deduped) so a heading deep-link
+      // (`#getting-started`) survives across loads — unlike the old positional
+      // `reader-h-${i}`, which changed the moment a heading was added above.
+      const used = new Map<string, number>()
       els.forEach((el, i) => {
         const text = (el.textContent ?? '').trim()
         if (!text) return
-        if (!el.id) el.id = `reader-h-${i}`
+        const base = pageSlug(text) || `section-${i + 1}`
+        const n = used.get(base) ?? 0
+        used.set(base, n + 1)
+        el.id = n === 0 ? base : `${base}-${n + 1}`
         el.classList.add('reader-heading')
+        // Hover affordance: a click-to-copy anchor injected once per heading.
+        // The reader dispatches no transactions, so poking PM's static DOM is
+        // safe here (no redraw to clobber it).
+        if (!el.querySelector(':scope > .reader-anchor')) {
+          const a = document.createElement('a')
+          a.className = 'reader-anchor'
+          a.href = `#${el.id}`
+          a.textContent = '#'
+          a.setAttribute('contenteditable', 'false')
+          a.setAttribute('aria-label', 'Copy link to this section')
+          el.prepend(a)
+        } else {
+          const a = el.querySelector(':scope > .reader-anchor') as HTMLElement
+          a.setAttribute('href', `#${el.id}`)
+        }
         entries.push({ id: el.id, text, level: Number(el.tagName[1]) })
       })
       headingsRef.current = els.filter((el) => el.id && el.textContent?.trim())
       setToc(entries)
+      wireFootnotes(view)
+      // Honour a deep-link hash now that ids exist (the browser couldn't on
+      // load — the article hadn't rendered yet).
+      const hash = decodeURIComponent(window.location.hash.slice(1))
+      if (hash) {
+        const target = document.getElementById(hash)
+        if (target) target.scrollIntoView({ block: 'start' })
+      }
       // PDF export readiness signal (gotenberg waits on this). Wait for fonts +
       // a short settle so async mermaid/katex/diagram paints land in the capture.
       const ready = () =>
@@ -269,11 +342,18 @@ export function ReaderShell({
     }
   }, [toc])
 
-  const jumpTo = useCallback((id: string) => {
+  const jumpTo = useCallback((id: string, flash = false) => {
     const el = document.getElementById(id)
     if (!el) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+    if (flash) {
+      el.classList.remove('reader-fn-flash')
+      // Reflow so re-adding the class restarts the highlight animation.
+      void el.offsetWidth
+      el.classList.add('reader-fn-flash')
+      window.setTimeout(() => el.classList.remove('reader-fn-flash'), 1400)
+    }
   }, [])
 
   // Wikilink navigation — keep clicks inside the reader. Capture phase so we run
@@ -285,8 +365,41 @@ export function ReaderShell({
     const el = articleRef.current
     if (!el) return
     function onClick(e: MouseEvent) {
-      const anchor = (e.target as HTMLElement | null)?.closest('a')
+      const target = e.target as HTMLElement | null
+      // Footnote reference (a <sup>, not an <a>) → jump to its definition.
+      const fnref = target?.closest('sup[data-type="footnote_reference"]') as
+        | HTMLElement
+        | null
+      if (fnref) {
+        e.preventDefault()
+        e.stopPropagation()
+        const label = fnref.dataset.label
+        if (label) jumpTo(`fn-${label}`, true)
+        return
+      }
+      const anchor = target?.closest('a')
       if (!anchor) return
+      // Footnote back-link → jump to the originating reference.
+      if (anchor.classList.contains('reader-footnote-back')) {
+        e.preventDefault()
+        e.stopPropagation()
+        jumpTo((anchor.getAttribute('href') ?? '').slice(1), true)
+        return
+      }
+      // Heading copy-link anchor: copy the absolute deep-link, scroll into view,
+      // and reflect the hash in the URL — without a full hashchange jump.
+      if (anchor.classList.contains('reader-anchor')) {
+        e.preventDefault()
+        e.stopPropagation()
+        const hash = anchor.getAttribute('href') ?? ''
+        const url = `${window.location.origin}${window.location.pathname}${window.location.search}${hash}`
+        void navigator.clipboard?.writeText(url).catch(() => {})
+        window.history.replaceState(null, '', url)
+        jumpTo(hash.slice(1))
+        anchor.dataset.copied = 'true'
+        window.setTimeout(() => delete anchor.dataset.copied, 1100)
+        return
+      }
       const id = parseWikilinkPageId(anchor.getAttribute('href') ?? '')
       if (id == null) return
       e.preventDefault()
@@ -295,7 +408,7 @@ export function ReaderShell({
     }
     el.addEventListener('click', onClick, true)
     return () => el.removeEventListener('click', onClick, true)
-  }, [onNavigateWikilink])
+  }, [onNavigateWikilink, jumpTo])
 
   return (
     <div className="tela-reader" data-reading-size={size} data-reading-font={font}>
