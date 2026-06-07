@@ -106,25 +106,6 @@ export function HomeRoute() {
 
               <div className="flex flex-col gap-[var(--space-5)]">
                 <Widget
-                  icon={PencilLine}
-                  title="My recent edits"
-                  loading={myEdits.isLoading}
-                  error={myEdits.isError}
-                  empty={!myEdits.data || myEdits.data.length === 0}
-                  emptyText="Pages you edit will appear here."
-                >
-                  {myEdits.data?.map((c) => (
-                    <PageRow
-                      key={`mine-${c.page_id}`}
-                      spaceId={c.space_id}
-                      pageId={c.page_id}
-                      title={c.title}
-                      meta={`${c.space_name} · ${relativeTimeFromSqlite(c.updated_at)}`}
-                    />
-                  ))}
-                </Widget>
-
-                <Widget
                   icon={Star}
                   title="Favorites"
                   loading={favorites.isLoading}
@@ -139,6 +120,25 @@ export function HomeRoute() {
                       pageId={f.page_id}
                       title={f.title}
                       meta={f.space_name}
+                    />
+                  ))}
+                </Widget>
+
+                <Widget
+                  icon={PencilLine}
+                  title="My recent edits"
+                  loading={myEdits.isLoading}
+                  error={myEdits.isError}
+                  empty={!myEdits.data || myEdits.data.length === 0}
+                  emptyText="Pages you edit will appear here."
+                >
+                  {myEdits.data?.map((c) => (
+                    <PageRow
+                      key={`mine-${c.page_id}`}
+                      spaceId={c.space_id}
+                      pageId={c.page_id}
+                      title={c.title}
+                      meta={`${c.space_name} · ${relativeTimeFromSqlite(c.updated_at)}`}
                     />
                   ))}
                 </Widget>

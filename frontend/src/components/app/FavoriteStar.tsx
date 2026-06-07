@@ -1,20 +1,21 @@
 import { Star } from 'lucide-react'
-import { Toggle } from '../ui/toggle'
+import { Button } from '../ui/button'
 import { useFavoriteStatus, useToggleFavorite } from '../../lib/queries/favorites'
 
 // Header star toggle — stars/unstars the current page for the signed-in user.
-// Optimism comes from the mutation's onSuccess cache write; while the status
-// query is still loading the star renders un-filled (safe default).
+// A ghost Button (not a Radix Toggle) so the *icon* fills when active, rather
+// than the whole button getting a pressed-state background. Mirrors FollowButton.
 export function FavoriteStar({ pageId }: { pageId: number }) {
   const { data } = useFavoriteStatus(pageId)
   const toggle = useToggleFavorite()
   const isFavorited = data ?? false
 
   return (
-    <Toggle
+    <Button
+      type="button"
+      variant="ghost"
       size="sm"
-      pressed={isFavorited}
-      onPressedChange={() => toggle.mutate({ pageId, isFavorited })}
+      onClick={() => toggle.mutate({ pageId, isFavorited })}
       disabled={toggle.isPending}
       aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
       title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
@@ -25,6 +26,6 @@ export function FavoriteStar({ pageId }: { pageId: number }) {
         height={16}
         className={isFavorited ? 'fill-[var(--accent)] text-[var(--accent)]' : undefined}
       />
-    </Toggle>
+    </Button>
   )
 }
