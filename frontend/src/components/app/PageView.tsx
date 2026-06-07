@@ -3,6 +3,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -81,7 +82,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog'
-import { Input } from '../ui/input'
 import { SaveIndicator, type SaveStatus } from '../ui/save-indicator'
 import { VisibilityBadge } from '../ui/visibility-badge'
 import {
@@ -309,6 +309,16 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(page.title)
   const [body, setBody] = useState(page.body)
+  // Title is a textarea (so long titles wrap instead of clipping); keep its
+  // height pinned to its content so it reads like a heading, not a box.
+  const titleRef = useRef<HTMLTextAreaElement>(null)
+  const fitTitleHeight = useCallback(() => {
+    const el = titleRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
+  useLayoutEffect(fitTitleHeight, [fitTitleHeight, title])
   const [deleteOpen, setDeleteOpen] = useState(false)
   // Container for wikilink hover-preview delegation (covers the editor body).
   const contentRef = useRef<HTMLDivElement>(null)
@@ -875,18 +885,29 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
           </div>
         ) : null}
 
-        <Input
-          size="lg"
+        <textarea
+          ref={titleRef}
+          rows={1}
           autoFocus={titleAutoFocus && !isDraftMode}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={handleTitleBlur}
+          onKeyDown={(e) => {
+            // Titles are single-logical-line: Enter commits and moves on
+            // rather than inserting a newline.
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
+          }}
           placeholder="Untitled page"
           aria-label="Page title"
           className={cn(
-            'border-transparent bg-transparent shadow-none',
-            'h-auto px-[var(--space-2)] py-[var(--space-2)]',
+            'block w-full resize-none overflow-hidden bg-transparent',
+            'rounded-[var(--radius-md)] border border-transparent outline-none',
+            'px-[var(--space-2)] py-[var(--space-2)]',
             'text-[length:var(--text-3xl)] leading-[var(--leading-tight)] font-medium',
+            'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
             'focus-visible:border-[var(--border-subtle)]',
           )}
         />
