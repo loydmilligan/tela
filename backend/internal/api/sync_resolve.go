@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -43,13 +44,27 @@ const (
 func (s *Server) ApplyFileSync(
 	ctx context.Context, u *auth.User, k *auth.APIKey,
 	spaceID int64, parentID *int64, filename string, content []byte,
-) (models.Page, syncAction, *apiErr) {
+) (page models.Page, action syncAction, ae *apiErr) {
 	d := pagemd.DecodeDoc(pagemd.NormalizeText(string(content)))
 	title := mdimport.TitleFor(d.Title, d.Body, filename)
 	props := d.Props
 	if props == nil {
 		props = map[string]any{}
 	}
+
+	// On any successful apply, record what the client just sent as its merge base
+	// for this page (spec §5): its NEXT edit 3-way-merges against this exact state,
+	// not the merged result it hasn't downloaded yet. Best-effort and out-of-band
+	// — a failed base write only costs the next sync a re-establish, it must never
+	// fail the apply itself.
+	defer func() {
+		if ae != nil || k == nil || page.ID == 0 {
+			return
+		}
+		if err := upsertSyncBase(ctx, s.DB, k.ID, page.ID, title, d.Body, props); err != nil {
+			log.Printf("sync base upsert (page %d, key %d): %v", page.ID, k.ID, err)
+		}
+	}()
 
 	// Bind by id when present and still resolvable. A missing/unknown id falls
 	// through to CREATE (a fresh id is assigned); resurrecting a soft-deleted
@@ -192,16 +207,26 @@ func (s *Server) applySyncBound(
 		return models.Page{}, "", ae
 	}
 
-	contentChanged := !syncContentSame(cur, title, body, props)
+	// Phase 4 keystone (spec §5): instead of clobbering the DB with the incoming
+	// file, 3-way merge it against the current row using the client's last-synced
+	// base. Non-overlapping edits from both sides combine; an overlapping edit
+	// auto-picks a side and is flagged. With no base / no client / oversized body
+	// this returns the incoming values — last-write-wins, the pre-merge behavior.
+	mTitle, mBody, mProps, conflicted, err := s.mergeAgainstBase(ctx, tx, k, cur, title, body, props)
+	if err != nil {
+		return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "merge base lookup failed"}
+	}
+
+	contentChanged := !syncContentSame(cur, mTitle, mBody, mProps)
 	placementChanged := !syncPlacementSame(cur, spaceID, parentID)
 	if !contentChanged && !placementChanged {
-		return cur, syncUnchanged, nil // a concurrent write beat us to it
+		return cur, syncUnchanged, nil // merge produced no net change (or a concurrent write beat us)
 	}
 
 	p := cur
 	action := syncUpdated
 	if contentChanged {
-		req := pageUpdateRequest{Title: &title, Body: &body, Props: props}
+		req := pageUpdateRequest{Title: &mTitle, Body: &mBody, Props: mProps}
 		if ae := validateUpdateReq(req); ae != nil {
 			return models.Page{}, "", ae
 		}
@@ -210,6 +235,14 @@ func (s *Server) applySyncBound(
 			return models.Page{}, "", ae
 		}
 		p = updated
+		if conflicted {
+			// Flag the page for manual resolution; the merged text already took a
+			// side (the snapshot of the overridden side happens post-commit below).
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE pages SET sync_conflict_at = tela_now() WHERE id = $1`, cur.ID); err != nil {
+				return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "flag sync conflict failed"}
+			}
+		}
 	}
 	if placementChanged {
 		moved, ae := s.applyMoveTx(ctx, tx, u, k, p, syncMoveParams(cur, spaceID, parentID))
@@ -227,6 +260,14 @@ func (s *Server) applySyncBound(
 	// write. Only fires when body/title actually changed.
 	if contentChanged {
 		s.afterPageWrite(ctx, cur, p, true, true, u.ID, "sync")
+		if conflicted {
+			// Preserve the overridden DB side as a revision so the auto-resolved
+			// conflict is recoverable (afterPageWrite already snapshotted the
+			// merged result as the live "sync" revision).
+			if _, err := insertPageRevision(ctx, s.DB, cur.ID, cur.Body, cur.Title, cur.Props, &u.ID, "sync-conflict"); err != nil {
+				log.Printf("page %d sync-conflict snapshot failed: %v", cur.ID, err)
+			}
+		}
 	}
 	return p, action, nil
 }

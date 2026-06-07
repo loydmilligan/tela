@@ -261,6 +261,88 @@ func TestDAV_SpacePinnedPATHidesOtherSpaces(t *testing.T) {
 	}
 }
 
+// TestDAV_ThreeWayMergeCombinesEdits is the Phase-4 keystone end-to-end: a PUT
+// establishes the client's base, the page is edited out-of-band in the DB (as if
+// in the app), the client edits a DIFFERENT line locally and PUTs — the server
+// must MERGE both, not clobber the app edit (which last-write-wins would).
+func TestDAV_ThreeWayMergeCombinesEdits(t *testing.T) {
+	ts, d, spaceID, folder, token := davFixture(t)
+	ctx := context.Background()
+
+	// 1. Client uploads the original → creates the page + records its base.
+	original := "line1\nline2\nline3\n"
+	if resp, _ := davDo(t, ts, token, "PUT", "/dav/"+folder+"/note.md", original, nil); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("initial PUT = %d, want 201", resp.StatusCode)
+	}
+	page, ok := pageByTitle(t, d, spaceID, "note")
+	if !ok {
+		t.Fatal("note page not created")
+	}
+
+	// 2. Out-of-band DB edit (someone edits line 2 in the app).
+	if _, err := d.ExecContext(ctx,
+		`UPDATE pages SET body = $1, updated_at = tela_now() WHERE id = $2`,
+		"line1\nline2-APP\nline3\n", page.ID); err != nil {
+		t.Fatalf("simulate app edit: %v", err)
+	}
+
+	// 3. Client edits a DIFFERENT line locally (line 3) against its base and PUTs.
+	if resp, _ := davDo(t, ts, token, "PUT", "/dav/"+folder+"/note.md", "line1\nline2\nline3-LOCAL\n", nil); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("merge PUT = %d, want 201", resp.StatusCode)
+	}
+
+	// Both edits must survive — line2 from the app, line3 from the client.
+	merged, _ := pageByTitle(t, d, spaceID, "note")
+	if merged.Body != "line1\nline2-APP\nline3-LOCAL\n" {
+		t.Fatalf("merged body = %q, want both edits combined", merged.Body)
+	}
+	var conflictAt sql.NullString
+	d.QueryRowContext(ctx, `SELECT sync_conflict_at FROM pages WHERE id = $1`, page.ID).Scan(&conflictAt)
+	if conflictAt.Valid {
+		t.Fatalf("clean non-overlapping merge should NOT flag a conflict, got %q", conflictAt.String)
+	}
+}
+
+// TestDAV_ThreeWayMergeConflict: both sides edit the SAME line → the local edit
+// wins (default), the page is flagged, and the overridden DB side is kept as a
+// recoverable `sync-conflict` revision.
+func TestDAV_ThreeWayMergeConflict(t *testing.T) {
+	ts, d, spaceID, folder, token := davFixture(t)
+	ctx := context.Background()
+
+	if resp, _ := davDo(t, ts, token, "PUT", "/dav/"+folder+"/note.md", "a\nb\nc\n", nil); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("initial PUT = %d, want 201", resp.StatusCode)
+	}
+	page, _ := pageByTitle(t, d, spaceID, "note")
+
+	// App edits line 2 → B-APP; client edits the same line 2 → B-LOCAL.
+	if _, err := d.ExecContext(ctx,
+		`UPDATE pages SET body = $1, updated_at = tela_now() WHERE id = $2`, "a\nB-APP\nc\n", page.ID); err != nil {
+		t.Fatalf("simulate app edit: %v", err)
+	}
+	if resp, _ := davDo(t, ts, token, "PUT", "/dav/"+folder+"/note.md", "a\nB-LOCAL\nc\n", nil); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("conflict PUT = %d, want 201", resp.StatusCode)
+	}
+
+	merged, _ := pageByTitle(t, d, spaceID, "note")
+	if merged.Body != "a\nB-LOCAL\nc\n" {
+		t.Fatalf("conflict body = %q, want incoming (local) to win", merged.Body)
+	}
+	var conflictAt sql.NullString
+	d.QueryRowContext(ctx, `SELECT sync_conflict_at FROM pages WHERE id = $1`, page.ID).Scan(&conflictAt)
+	if !conflictAt.Valid {
+		t.Fatal("conflict should set sync_conflict_at")
+	}
+	// The overridden DB side (B-APP) must be recoverable as a revision.
+	var n int
+	d.QueryRowContext(ctx,
+		`SELECT count(*) FROM page_revisions WHERE page_id = $1 AND source = 'sync-conflict' AND body LIKE '%B-APP%'`,
+		page.ID).Scan(&n)
+	if n != 1 {
+		t.Fatalf("want 1 sync-conflict revision preserving the DB side, got %d", n)
+	}
+}
+
 // --- pure unit tests (no DB) for the path + slug layer ---
 
 func TestDavSplit(t *testing.T) {
