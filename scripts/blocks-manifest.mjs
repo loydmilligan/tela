@@ -45,6 +45,7 @@ const INFRA = new Set([
 const PLUGIN_BLOCKS = {
   'milkdown-calendar': ['calendar'],
   'milkdown-callouts': ['callout'],
+  'milkdown-chart': ['chart'],
   'milkdown-codeblock': ['code'],
   'milkdown-collapsibles': ['collapsible'],
   'milkdown-embed': ['embed'],
@@ -55,6 +56,7 @@ const PLUGIN_BLOCKS = {
   'milkdown-mermaid': ['mermaid'],
   'milkdown-pullquote': ['pull-quote'],
   'milkdown-stat-grid': ['stat-grid'],
+  'milkdown-table': ['table'],
   'milkdown-tabs': ['tabs'],
   'milkdown-task-list': ['task-list'],
   'milkdown-timeline': ['timeline'],

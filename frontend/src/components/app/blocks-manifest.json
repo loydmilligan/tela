@@ -169,6 +169,18 @@
       "note": "Set month=YYYY-MM on the directive. Each bullet is `YYYY-MM-DD Title` inside that month. One month per block; all-day only."
     },
     {
+      "id": "chart",
+      "label": "Chart",
+      "hint": "Bar / line / pie (interactive)",
+      "category": "Data",
+      "slash": true,
+      "agent": true,
+      "keywords": ["chart", "graph", "bar", "line", "pie", "donut", "scatter", "plot", "visualization", "data"],
+      "syntax": "```chart\ntype: bar\ntitle: Quarterly revenue\nx: [Q1, Q2, Q3, Q4]\nseries:\n  - name: Revenue\n    data: [120, 145, 180, 210]\n```",
+      "when": "Plot quantitative data — a bar, line, area, scatter, pie, or donut chart.",
+      "note": "A ```chart fenced block with a YAML spec. `type`: bar | grouped-bar | stacked-bar | line | area | scatter | pie | donut. xy/category charts use `x` (categories) + `series: [{name, data}]`; pie/donut use `data: [{label, value}]`. Renders interactively (hover tooltips, clickable legend) and follows the page theme."
+    },
+    {
       "id": "embed",
       "label": "Embed",
       "hint": "YouTube, Vimeo, Loom, or a link",
@@ -267,9 +279,10 @@
       "category": "Lists & tables",
       "slash": true,
       "agent": true,
-      "keywords": ["table", "grid"],
-      "syntax": "| Name | Role |\n| --- | --- |\n| Ada | Pioneer |",
-      "when": "Tabular data (GitHub-flavored markdown)."
+      "keywords": ["table", "grid", "comparison", "matrix", "checklist", "sortable"],
+      "syntax": "| Feature | Free | ==Pro== |\n| --- | --- | --- |\n| SSO | cross | check |\n| Seats | 3 | dash |",
+      "when": "Tabular data, comparisons, and feature matrices (GitHub-flavored markdown).",
+      "note": "Upgrades that round-trip as plain markdown: a cell that is exactly `check`, `cross`, or `dash` (also ✓/✗/–, yes/no, n/a) renders as a green ✓ / red ✗ / muted – icon — ideal for feature-comparison grids. A header cell written as `==Label==` (highlight) marks that whole column as featured. The first column pins when a wide table scrolls, and in the reader large tables get clickable sort headers + a filter box."
     },
     {
       "id": "highlight",

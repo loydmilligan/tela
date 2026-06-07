@@ -55,6 +55,7 @@ import {
   toggleHighlightCommand,
 } from './milkdown-highlight'
 import { mermaidPlugin } from './milkdown-mermaid'
+import { chartPlugin } from './milkdown-chart'
 import { directiveRemarkPlugin } from './milkdown-directives'
 import { tabSchema, tabsNodeView, tabsSchema } from './milkdown-tabs'
 import {
@@ -69,6 +70,7 @@ import {
 } from './milkdown-stat-grid'
 import { timelineSchema } from './milkdown-timeline'
 import { calendarNodeView, calendarSchema } from './milkdown-calendar'
+import { tableEnhancePlugin } from './milkdown-table'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
   calloutInputRule,
@@ -654,6 +656,10 @@ function MilkdownEditorInner({
       .use(toggleHighlightCommand)
       // Mermaid: renders a diagram below each ```mermaid code block (lazy lib).
       .use(mermaidPlugin)
+      // Chart: renders an interactive ECharts chart below each ```chart code
+      // block (lazy lib + YAML). Themed from --chart-* tokens. See
+      // milkdown-chart.ts.
+      .use(chartPlugin)
       // Container directives (:::name) + the tabs block built on them.
       .use(directiveRemarkPlugin)
       .use(tabSchema)
@@ -673,6 +679,10 @@ function MilkdownEditorInner({
       .use(timelineSchema)
       .use(calendarSchema)
       .use(calendarNodeView)
+      // M19 — GFM table upgrades (glyph cells, featured column, sticky first
+      // column, reader-side sort/filter). Enhances the stock table; no new
+      // node. See milkdown-table.ts.
+      .use(tableEnhancePlugin)
       .use(history)
       .use(clipboard)
       .use(listener)
