@@ -204,7 +204,7 @@ func (fs *davFS) openRead(ctx context.Context, segs []string) (webdavFile, error
 		return nil, err
 	}
 	if len(segs) == 1 { // space folder: its root pages + root files
-		return fs.dirFromChildren(sp.folder, davModTime(sp.updatedAt), t, rootParentKey, fileSet[rootParentKey]), nil
+		return fs.dirFromChildren(sp.folder, davModTime(sp.updatedAt), t, rootParentKey, fileSet), nil
 	}
 	leaf := segs[len(segs)-1]
 	p, isFile, found := t.resolve(segs[1:])
@@ -235,20 +235,25 @@ func (fs *davFS) openRead(ctx context.Context, segs []string) (webdavFile, error
 		}
 		return newDavReadFile(leaf, p), nil
 	}
-	return fs.dirFromChildren(leaf, davModTime(p.UpdatedAt), t, p.ID, fileSet[p.ID]), nil
+	return fs.dirFromChildren(leaf, davModTime(p.UpdatedAt), t, p.ID, fileSet), nil
 }
 
 // dirFromChildren builds a collection whose entries are the page tree's children
 // of parentKey: a `<slug>.md` file per child, plus a `<slug>/` folder for each
 // child that itself has children. The file entries are lightweight (walkFS
 // re-Stats every node for the authoritative props).
-func (fs *davFS) dirFromChildren(name string, mod time.Time, t *spaceTree, parentKey int64, files []spaceFile) *davDir {
+func (fs *davFS) dirFromChildren(name string, mod time.Time, t *spaceTree, parentKey int64, fileSet map[int64][]spaceFile) *davDir {
 	group := t.children[parentKey]
+	files := fileSet[parentKey]
 	kids := make([]os.FileInfo, 0, len(group)+len(files))
 	for _, c := range group {
 		slug := t.slug[c.ID]
 		kids = append(kids, &davInfo{name: slug + ".md"})
-		if t.hasChildren(c.ID) {
+		// Present a page as a `<slug>/` collection when it holds child pages OR
+		// stored files — else a folder page whose only contents are files would be
+		// undiscoverable by a recursive tree walk (the client never descends into
+		// it), so its files would never sync down.
+		if t.hasChildren(c.ID) || len(fileSet[c.ID]) > 0 {
 			kids = append(kids, &davInfo{name: slug, dir: true, mod: davModTime(c.UpdatedAt)})
 		}
 	}

@@ -134,6 +134,17 @@ func TestDAV_NonMarkdownNestsUnderFolderPage(t *testing.T) {
 	if !strings.Contains(multi, "logo.png") {
 		t.Fatalf("folder PROPFIND missing logo.png:\n%s", multi)
 	}
+
+	// The SPACE-ROOT listing must expose `assets/` as a directory even though the
+	// page has no child pages — only files. Otherwise a recursive walk never
+	// descends and the nested file never syncs down.
+	resp, root := davDo(t, ts, token, "PROPFIND", "/dav/"+folder+"/", "", map[string]string{"Depth": "1"})
+	if resp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("root PROPFIND status = %d, want 207", resp.StatusCode)
+	}
+	if !strings.Contains(root, "/assets/") {
+		t.Fatalf("root listing missing the assets/ collection (files-only folder not descendable):\n%s", root)
+	}
 }
 
 func TestDAV_NonMarkdownDeleteIsSoftAndGone(t *testing.T) {
