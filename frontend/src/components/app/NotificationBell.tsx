@@ -25,6 +25,8 @@ function describe(n: NotificationItem): string {
   switch (n.type) {
     case 'mention':
       return `${actor} mentioned you in “${title}”`
+    case 'page_updated':
+      return `${actor} updated “${title}”`
     default:
       return `${actor} sent you a notification`
   }
