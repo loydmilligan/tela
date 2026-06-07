@@ -17,11 +17,15 @@ type Group struct {
 }
 
 type Space struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Slug      string `json:"slug"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+	// Visibility is 'private' (members-only, the resting state) or 'public'
+	// (whole space readable by anyone, no login). Read-only outbound exposure —
+	// never grants write. See docs/public-spaces.md.
+	Visibility string `json:"visibility"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 type Page struct {

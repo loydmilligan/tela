@@ -165,6 +165,16 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// via the /api/share/ prefix; the handler validates the share token + scope.
 	mux.HandleFunc("GET /api/share/{token}/pdf", srv.ExportSharePDF)
 
+	// Public-space read API: a space with visibility='public' is readable with
+	// no login. MUST be on auth.IsPublicPath (/api/public/) so the session
+	// middleware skips it; every handler self-authenticates by requiring the
+	// space be public, and is GET/read-only (writes stay on the membership-gated
+	// /api/ routes). See public_spaces.go + docs/public-spaces.md.
+	mux.HandleFunc("GET /api/public/spaces/{id}", srv.GetPublicSpace)
+	mux.HandleFunc("GET /api/public/spaces/{id}/tree", srv.GetPublicSpaceTree)
+	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}", srv.GetPublicSpacePage)
+	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}/md", srv.ExportPublicSpacePageMarkdown)
+
 	// M17.A.1 Feedback submit-only channel. Session OR bearer (any scope —
 	// the bearer carve-out lives in auth.scopeAllowsRequest so the MCP
 	// `submit_feedback` tool can use a read-scope key). Write-only in v0: no

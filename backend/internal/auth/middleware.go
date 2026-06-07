@@ -233,6 +233,12 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/share/") {
 		return true
 	}
+	// Public-space read API — a space with visibility='public' is readable with
+	// no login. Every /api/public/ handler self-authenticates by requiring the
+	// space be public and is strictly GET/read-only. See api/public_spaces.go.
+	if strings.HasPrefix(p, "/api/public/") {
+		return true
+	}
 	if strings.HasPrefix(p, "/api/diagrams/") {
 		return true
 	}
