@@ -193,6 +193,15 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/users/me/sessions", srv.DeleteAllMySessionsExceptCurrent)
 	mux.HandleFunc("DELETE /api/users/me/sessions/{id}", srv.DeleteMySession)
 
+	// Per-user page favorites (starred pages) + the home-dashboard feeds.
+	// Favorites are re-gated through space_access on read; recent-changes is the
+	// latest edit per accessible page, built from page_revisions.
+	mux.HandleFunc("GET /api/users/me/favorites", srv.ListFavorites)
+	mux.HandleFunc("GET /api/pages/{id}/favorite", srv.GetFavoriteStatus)
+	mux.HandleFunc("POST /api/pages/{id}/favorite", srv.AddFavorite)
+	mux.HandleFunc("DELETE /api/pages/{id}/favorite", srv.DeleteFavorite)
+	mux.HandleFunc("GET /api/recent-changes", srv.ListRecentChanges)
+
 	// M16.A.1 API keys: bearer-token management. Instance-admin only via the
 	// session cookie path, OR a bearer key with admin scope. Keys are issued
 	// once on POST and never re-exposed — list/delete operate over key_prefix
@@ -227,6 +236,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/orgs/{id}/members", srv.AddOrgMember)
 	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)
 	mux.HandleFunc("DELETE /api/orgs/{id}/members/{user_id}", srv.DeleteOrgMember)
+
+	// Org-scoped access audit: a company's own admin sees the membership / group
+	// / grant / domain history for THEIR org (not the whole instance). Org-admin
+	// gated via requireOrgAdmin — the same primitive future org-admin
+	// capabilities (user/space management) will hang off.
+	mux.HandleFunc("GET /api/orgs/{id}/audit", srv.ListOrgAudit)
 
 	// Group sub-teams: a third grantable principal nested under an org. Org-admin
 	// gated; membership ⊆ org membership (DB-enforced). See docs/access-model.md.
