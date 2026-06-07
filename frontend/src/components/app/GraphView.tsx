@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Crosshair, Maximize2, Search, X } from 'lucide-react'
 import {
   buildSpacePalette,
+  neighborhood,
   useGraph,
   type GraphLink,
   type GraphNode,
@@ -14,28 +15,6 @@ import { PageGraph } from './PageGraph'
 interface GraphSearchParams {
   focus?: number
   space?: number
-}
-
-// BFS the (undirected) graph from a seed to a hop depth — powers focus mode.
-function neighborhood(seed: number, links: GraphLink[], depth: number): Set<number> {
-  const adj = new Map<number, number[]>()
-  for (const l of links) {
-    ;(adj.get(l.source) ?? adj.set(l.source, []).get(l.source)!).push(l.target)
-    ;(adj.get(l.target) ?? adj.set(l.target, []).get(l.target)!).push(l.source)
-  }
-  const seen = new Set<number>([seed])
-  let frontier = [seed]
-  for (let i = 0; i < depth; i++) {
-    const next: number[] = []
-    for (const id of frontier)
-      for (const nb of adj.get(id) ?? [])
-        if (!seen.has(nb)) {
-          seen.add(nb)
-          next.push(nb)
-        }
-    frontier = next
-  }
-  return seen
 }
 
 export function GraphRoute() {

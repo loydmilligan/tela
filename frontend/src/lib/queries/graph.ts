@@ -12,6 +12,8 @@ export interface GraphNode {
   space_id: number
   space_name: string
   title: string
+  // Ancestor page titles, top→down (excludes the page and the space).
+  breadcrumb: string[]
   updated_at: string
   // Count of outgoing wikilinks whose target no longer exists.
   broken: number
@@ -49,6 +51,33 @@ export function buildSpacePalette(nodes: GraphNode[]): SpaceColor[] {
       spaceName,
       varName: `--collab-cursor-${(i % PALETTE_SIZE) + 1}`,
     }))
+}
+
+// BFS the (undirected) graph from a seed page out to `depth` hops. Used to scope
+// the full graph down to a page's neighborhood (focus mode + on-page local graph).
+export function neighborhood(
+  seed: number,
+  links: GraphLink[],
+  depth: number,
+): Set<number> {
+  const adj = new Map<number, number[]>()
+  for (const l of links) {
+    ;(adj.get(l.source) ?? adj.set(l.source, []).get(l.source)!).push(l.target)
+    ;(adj.get(l.target) ?? adj.set(l.target, []).get(l.target)!).push(l.source)
+  }
+  const seen = new Set<number>([seed])
+  let frontier = [seed]
+  for (let i = 0; i < depth; i++) {
+    const next: number[] = []
+    for (const id of frontier)
+      for (const nb of adj.get(id) ?? [])
+        if (!seen.has(nb)) {
+          seen.add(nb)
+          next.push(nb)
+        }
+    frontier = next
+  }
+  return seen
 }
 
 export function useGraph(spaceId?: number) {

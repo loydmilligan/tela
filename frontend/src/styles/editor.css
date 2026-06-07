@@ -1268,6 +1268,60 @@
     width: 80%;
   }
 
+  /* Graph node hover card — peek a node's title, space, and connection counts
+     without clicking. Absolutely positioned inside the graph canvas wrapper
+     (left/top set inline from the hovered node); pointer-events off. */
+  .tela-graph-nodecard {
+    position: absolute;
+    z-index: 20;
+    width: 13.75rem;
+    pointer-events: none;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--text-primary) 25%, transparent);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .tela-graph-nodecard {
+      animation: tela-wikilink-preview-in var(--duration-fast) ease-out;
+    }
+  }
+  .tela-graph-nodecard-title {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: var(--leading-tight);
+    color: var(--text-primary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .tela-graph-nodecard-sub {
+    margin: var(--space-1) 0 0;
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tela-graph-nodecard-meta {
+    margin: var(--space-1) 0 0;
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+  .tela-graph-nodecard-broken {
+    margin: var(--space-1) 0 0;
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    color: var(--danger);
+  }
+
   /* M7.5 — remote cursors + selection ranges from y-prosemirror's
      yCursorPlugin. The caret element and the selection-range span both carry
      `data-collab-color="1..8"` (set by lib/collab/cursor-builder.ts); the

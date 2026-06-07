@@ -38,6 +38,8 @@ import { useSpaceMembers } from '../../lib/queries/members'
 import { useRevision } from '../../lib/queries/page-revisions'
 import { CommentsPanel } from './CommentsPanel'
 import { PageProperties } from './PageProperties'
+import { LocalGraphCard } from './LocalGraphCard'
+import { LocalGraphPanel } from './LocalGraphPanel'
 import { PresenceAvatars } from './presence-avatars'
 import { WikilinkHoverPreview } from './wikilink-hover-preview'
 
@@ -393,6 +395,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
   // live selection at submit time without prop-drilling the view down.
   const editorViewRef = useRef<EditorView | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
+  const [graphOpen, setGraphOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [selectionEmpty, setSelectionEmpty] = useState(true)
   const [selectionPreview, setSelectionPreview] = useState('')
@@ -775,7 +778,10 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                   variant="ghost"
                   size="sm"
                   aria-label="Comments"
-                  onClick={() => setCommentsOpen(true)}
+                  onClick={() => {
+                    setGraphOpen(false)
+                    setCommentsOpen(true)
+                  }}
                   className="h-[var(--space-8)] px-[var(--space-3)]"
                 >
                   <MessageSquare width={16} height={16} />
@@ -784,6 +790,22 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                   ) : (
                     <span>Comments</span>
                   )}
+                </Button>
+              ) : null}
+              {roleResolved ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Graph"
+                  title="Graph — this page's connections"
+                  onClick={() => {
+                    setCommentsOpen(false)
+                    setGraphOpen(true)
+                  }}
+                  className="h-[var(--space-8)] w-[var(--space-8)] p-0"
+                >
+                  <Share2 width={16} height={16} />
                 </Button>
               ) : null}
               {/* Visibility pill — ambient exposure indicator; editors click to
@@ -943,6 +965,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
         />
 
         <BacklinksSection pageId={page.id} />
+
+        <LocalGraphCard pageId={page.id} />
       </div>
 
       <DeletePageConfirmDialog
@@ -952,6 +976,14 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
         onOpenChange={setDeleteOpen}
         onDeleted={onDeleted}
       />
+
+      {roleResolved ? (
+        <LocalGraphPanel
+          pageId={page.id}
+          open={graphOpen}
+          onOpenChange={setGraphOpen}
+        />
+      ) : null}
 
       {roleResolved && !isViewer && !isDraftMode && me.data ? (
         <CommentsPanel

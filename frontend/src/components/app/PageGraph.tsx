@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   forceCollide,
   forceLink,
@@ -12,6 +12,7 @@ import {
 } from 'd3-force'
 import { subscribeToTheme } from '../../lib/theme'
 import { parseSqliteTs } from '../../lib/types'
+import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 import { buildSpacePalette, type GraphLink, type GraphNode } from '../../lib/queries/graph'
 
 // Interactive force-directed graph on a <canvas>: d3-force does the layout, a
@@ -25,7 +26,10 @@ import { buildSpacePalette, type GraphLink, type GraphNode } from '../../lib/que
 interface SimNode extends SimulationNodeDatum {
   id: number
   spaceId: number
+  spaceName: string
+  breadcrumb: string[]
   title: string
+  updatedAt: string
   deg: number
   r: number
   ageT: number // 0 = newest, 1 = oldest (for recency tint)
@@ -33,6 +37,30 @@ interface SimNode extends SimulationNodeDatum {
 }
 interface SimLink extends SimulationLinkDatum<SimNode> {
   kind: 'link' | 'tree'
+}
+
+// Surfaced to the React overlay when a node is hovered long enough.
+interface HoverCard {
+  x: number // container-relative position
+  y: number
+  flipX: boolean // place left of the cursor (near right edge)
+  flipY: boolean // place above the cursor (near bottom edge)
+  title: string
+  location: string // "Space › …ancestors", collapsed when deep
+  updatedAt: string
+  broken: number
+  linksOut: number
+  linksIn: number
+  children: number
+}
+
+// Build the card's one-line location: space + ancestor path, collapsed to
+// `first › … › last` past 3 segments so a deep tree never wraps or squashes.
+function locationLine(spaceName: string, breadcrumb: string[]): string {
+  const segs = [spaceName, ...breadcrumb]
+  const shown =
+    segs.length > 3 ? [segs[0], '…', segs[segs.length - 1]] : segs
+  return shown.join(' › ')
 }
 
 export interface PageGraphProps {
@@ -78,6 +106,8 @@ export function PageGraph({
   const hoveredRef = useRef<number | null>(null)
   const colorsRef = useRef<Record<string, string>>({})
   const needsFitRef = useRef(true)
+  const [card, setCard] = useState<HoverCard | null>(null)
+  const cardTimerRef = useRef<number | undefined>(undefined)
   const propsRef = useRef({ showLinks, showTree, recency, currentId, matchedIds })
   propsRef.current = { showLinks, showTree, recency, currentId, matchedIds }
   const navRef = useRef(onNavigate)
@@ -140,7 +170,10 @@ export function PageGraph({
       if (existing) {
         Object.assign(existing, {
           spaceId: n.space_id,
+          spaceName: n.space_name,
+          breadcrumb: n.breadcrumb,
           title: n.title,
+          updatedAt: n.updated_at,
           deg: d,
           r: nodeRadius(d),
           ageT,
@@ -151,7 +184,10 @@ export function PageGraph({
       const created: SimNode = {
         id: n.id,
         spaceId: n.space_id,
+        spaceName: n.space_name,
+        breadcrumb: n.breadcrumb,
         title: n.title,
+        updatedAt: n.updated_at,
         deg: d,
         r: nodeRadius(d),
         ageT,
@@ -391,6 +427,24 @@ export function PageGraph({
     ctx.restore()
   }
 
+  // Connection counts for the hover card, derived from the visible edges.
+  function connectionCounts(id: number) {
+    let linksOut = 0
+    let linksIn = 0
+    let children = 0
+    for (const l of simLinksRef.current) {
+      const s = (l.source as SimNode).id
+      const t = (l.target as SimNode).id
+      if (l.kind === 'link') {
+        if (s === id) linksOut++
+        else if (t === id) linksIn++
+      } else if (s === id) {
+        children++
+      }
+    }
+    return { linksOut, linksIn, children }
+  }
+
   // --- pointer interaction ------------------------------------------------
   useEffect(() => {
     const canvas = canvasRef.current
@@ -426,7 +480,13 @@ export function PageGraph({
     let downY = 0
     let panStart = { x: 0, y: 0, tx: 0, ty: 0 }
 
+    const hideCard = () => {
+      window.clearTimeout(cardTimerRef.current)
+      setCard(null)
+    }
+
     const onPointerDown = (e: PointerEvent) => {
+      hideCard()
       canvas.setPointerCapture(e.pointerId)
       downX = e.clientX
       downY = e.clientY
@@ -447,11 +507,35 @@ export function PageGraph({
     const onPointerMove = (e: PointerEvent) => {
       if (mode === 'none') {
         const wpt = toWorld(e.clientX, e.clientY)
-        const id = hitTest(wpt.x, wpt.y)?.id ?? null
+        const hit = hitTest(wpt.x, wpt.y)
+        const id = hit?.id ?? null
         if (id !== hoveredRef.current) {
           hoveredRef.current = id
           canvas.style.cursor = id != null ? 'pointer' : 'default'
           draw()
+          // Hover card: hide on change, then show after a short dwell.
+          hideCard()
+          if (hit) {
+            const rect = canvas.getBoundingClientRect()
+            const cx = e.clientX - rect.left
+            const cy = e.clientY - rect.top
+            const flipX = cx > rect.width - 232
+            const flipY = cy > rect.height - 132
+            const node = hit
+            cardTimerRef.current = window.setTimeout(() => {
+              setCard({
+                x: cx,
+                y: cy,
+                flipX,
+                flipY,
+                title: node.title,
+                location: locationLine(node.spaceName, node.breadcrumb),
+                updatedAt: node.updatedAt,
+                broken: node.broken,
+                ...connectionCounts(node.id),
+              })
+            }, 260)
+          }
         }
         return
       }
@@ -478,7 +562,16 @@ export function PageGraph({
       mode = 'none'
       dragNode = null
     }
+    const onPointerLeave = () => {
+      hideCard()
+      if (hoveredRef.current != null) {
+        hoveredRef.current = null
+        canvas.style.cursor = 'default'
+        draw()
+      }
+    }
     const onWheel = (e: WheelEvent) => {
+      hideCard()
       e.preventDefault()
       const t = transformRef.current
       const rect = canvas.getBoundingClientRect()
@@ -495,6 +588,7 @@ export function PageGraph({
     canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('pointermove', onPointerMove)
     canvas.addEventListener('pointerup', onPointerUp)
+    canvas.addEventListener('pointerleave', onPointerLeave)
     canvas.addEventListener('wheel', onWheel, { passive: false })
     const onResize = () => draw()
     window.addEventListener('resize', onResize)
@@ -502,10 +596,11 @@ export function PageGraph({
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('pointerleave', onPointerLeave)
       canvas.removeEventListener('wheel', onWheel)
       window.removeEventListener('resize', onResize)
     }
-     
+
   }, [])
 
   useEffect(() => {
@@ -514,10 +609,38 @@ export function PageGraph({
   }, [showLinks, showTree, recency, currentId, matchedIds])
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="block h-full w-full touch-none select-none"
-      aria-label="Page graph"
-    />
+    <div className="relative h-full w-full">
+      <canvas
+        ref={canvasRef}
+        className="block h-full w-full touch-none select-none"
+        aria-label="Page graph"
+      />
+      {card ? <NodeHoverCard card={card} /> : null}
+    </div>
+  )
+}
+
+function NodeHoverCard({ card }: { card: HoverCard }) {
+  const parts: string[] = []
+  if (card.linksOut) parts.push(`${card.linksOut} link${card.linksOut === 1 ? '' : 's'}`)
+  if (card.linksIn) parts.push(`${card.linksIn} backlink${card.linksIn === 1 ? '' : 's'}`)
+  if (card.children) parts.push(`${card.children} child${card.children === 1 ? '' : 'ren'}`)
+  const left = card.flipX ? card.x - 220 - 12 : card.x + 12
+  const top = card.flipY ? undefined : card.y + 12
+  const bottom = card.flipY ? `calc(100% - ${card.y - 12}px)` : undefined
+  return (
+    <div className="tela-graph-nodecard" style={{ left, top, bottom }}>
+      <p className="tela-graph-nodecard-title">{card.title || 'Untitled'}</p>
+      <p className="tela-graph-nodecard-sub" title={card.location}>{card.location}</p>
+      <p className="tela-graph-nodecard-meta">
+        {parts.length ? parts.join(' · ') : 'No connections'}
+      </p>
+      {card.broken > 0 ? (
+        <p className="tela-graph-nodecard-broken">
+          {card.broken} broken link{card.broken === 1 ? '' : 's'}
+        </p>
+      ) : null}
+      <p className="tela-graph-nodecard-meta">Updated {relativeTimeFromSqlite(card.updatedAt)}</p>
+    </div>
   )
 }
