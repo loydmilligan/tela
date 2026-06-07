@@ -209,6 +209,14 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/mcp") {
 		return true
 	}
+	// WebDAV file-sync (sync spec §7–9). Self-authenticates via PAT-as-Basic and
+	// scope-gates per verb inside the handler — stock WebDAV clients send Basic,
+	// not Bearer, so the generic Middleware can't authenticate them. The bare
+	// /dav (no trailing slash) is included so ServeMux can issue its redirect to
+	// /dav/ without the Middleware 401'ing first.
+	if p == "/dav" || strings.HasPrefix(p, "/dav/") {
+		return true
+	}
 	// OAuth Protected Resource Metadata (RFC 9728) for the MCP endpoint — public
 	// discovery doc, served as static JSON by api.ServePRM (which self-gates on
 	// whether OAuth is configured). Clients fetch it unauthenticated to bootstrap

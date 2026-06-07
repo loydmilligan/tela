@@ -42,6 +42,13 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// built_at=process-start.
 	mux.HandleFunc("GET /api/version", srv.Version)
 
+	// WebDAV file-sync surface (sync spec §9). Subtree handler at /dav/ —
+	// self-authenticates via PAT-as-Basic and gates scope itself, so it is on
+	// auth.IsPublicPath (the session/method Middleware skips it). The x/net/webdav
+	// Handler drives the protocol over the davFS; ServeMux redirects the bare
+	// /dav → /dav/. Method-less pattern matches every WebDAV verb.
+	mux.Handle("/dav/", srv.DAVHandler())
+
 	// MCP Streamable-HTTP transport (single endpoint, POST + GET + DELETE).
 	// Self-authenticated via the SDK bearer verifier over tela PATs; on
 	// auth.IsPublicPath so the session/method-scope Middleware skips it (a POST

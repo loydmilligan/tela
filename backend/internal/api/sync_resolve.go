@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/mdimport"
@@ -66,6 +67,20 @@ func (s *Server) ApplyFileSync(
 		// trashed page owns this id either → a genuinely unknown id → create.
 		if p, act, handled, ae := s.applySyncResurrect(ctx, u, k, *d.ID, spaceID, parentID, title, d.Body, props); handled || ae != nil {
 			return p, act, ae
+		}
+	} else {
+		// No frontmatter id, but a sibling page may already occupy this filename
+		// slug at the target location → bind to it (update in place) instead of
+		// minting a duplicate. This is what makes `<slug>.md` idempotent against
+		// the page its `<slug>/` directory represents (so MKCOL-then-PUT-index
+		// doesn't create a second page), and it stops a re-push — before the
+		// server-assigned id has round-tripped back into the file — from forking
+		// the page. Identity is still path-derived only as a last resort: a file
+		// that carries an id always binds by id above.
+		if existing, ok, err := s.findSiblingByFilename(ctx, spaceID, parentID, filename); err != nil {
+			return models.Page{}, "", &apiErr{http.StatusInternalServerError, "internal", "lookup sibling failed"}
+		} else if ok {
+			return s.applySyncBound(ctx, u, k, existing, spaceID, parentID, title, d.Body, props)
 		}
 	}
 
@@ -255,6 +270,58 @@ func propsEqual(a, b map[string]any) bool {
 		return false
 	}
 	return bytes.Equal(ja, jb)
+}
+
+// findSiblingByFilename locates the live page that would be written as filename
+// under (spaceID, parentID) — i.e. the sibling whose deduped on-disk slug equals
+// the file's stem. It powers ApplyFileSync's path-fallback bind for id-less
+// files (see the call site). Returns ok=false when nothing matches (a genuinely
+// new file → create). One indexed query over the sibling group; the dedup uses
+// the same siblingSlugs mapping the read side emits, so the match is exact and
+// reciprocal with what a client last pulled.
+func (s *Server) findSiblingByFilename(ctx context.Context, spaceID int64, parentID *int64, filename string) (models.Page, bool, error) {
+	stem := strings.TrimSuffix(filename, ".md")
+	if stem == "" {
+		return models.Page{}, false, nil
+	}
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	const cols = `id, space_id, parent_id, title, body, position, props, created_at, updated_at`
+	if parentID == nil {
+		rows, err = s.DB.QueryContext(ctx,
+			`SELECT `+cols+` FROM pages
+			  WHERE space_id = $1 AND parent_id IS NULL AND deleted_at IS NULL
+			  ORDER BY position ASC, id ASC`, spaceID)
+	} else {
+		rows, err = s.DB.QueryContext(ctx,
+			`SELECT `+cols+` FROM pages
+			  WHERE space_id = $1 AND parent_id = $2 AND deleted_at IS NULL
+			  ORDER BY position ASC, id ASC`, spaceID, *parentID)
+	}
+	if err != nil {
+		return models.Page{}, false, err
+	}
+	defer rows.Close()
+	var siblings []models.Page
+	for rows.Next() {
+		p, err := scanPageFromRows(rows)
+		if err != nil {
+			return models.Page{}, false, err
+		}
+		siblings = append(siblings, p)
+	}
+	if err := rows.Err(); err != nil {
+		return models.Page{}, false, err
+	}
+	slugs := siblingSlugs(siblings)
+	for _, p := range siblings {
+		if slugs[p.ID] == stem {
+			return p, true, nil
+		}
+	}
+	return models.Page{}, false, nil
 }
 
 // sameParent reports whether two nullable parent ids are equal (both nil = both

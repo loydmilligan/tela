@@ -47,6 +47,21 @@
 		reverse_proxy backend:8080
 	}
 
+	# WebDAV file-sync surface (sync spec §9). Stock clients (rclone, Finder,
+	# Windows Explorer) authenticate with a PAT as the Basic-auth password; the
+	# backend self-authenticates and scope-gates per verb (it's on
+	# auth.IsPublicPath). reverse_proxy forwards the non-standard WebDAV methods
+	# (PROPFIND / PROPPATCH / MKCOL / MOVE / COPY / LOCK / UNLOCK) to the origin
+	# unchanged. Matches both the bare /dav (so the backend's 301 → /dav/ lands)
+	# and the subtree. noindex. NOTE: Cloudflare's WAF/managed rules in front of
+	# this origin must be configured to allow these verbs through to /dav/* —
+	# they are blocked by default on many WAF profiles.
+	@dav path /dav /dav/*
+	handle @dav {
+		header X-Robots-Tag "noindex"
+		reverse_proxy backend:8080
+	}
+
 	# #3 ".pdf on a share URL" trick → server-rendered PDF. These MUST precede the
 	# /share/* OG/SPA handlers below so the pretty URL lands on the backend, which
 	# rewrites it to the public /api/share/{token}/pdf endpoint (descendant pages
