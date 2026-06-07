@@ -1,5 +1,7 @@
 import { $nodeSchema, $prose } from '@milkdown/kit/utils'
 import { Plugin } from '@milkdown/kit/prose/state'
+import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
 
@@ -142,12 +144,50 @@ export const statGridSchema = $nodeSchema('stat_grid', () => ({
   },
 }))
 
+// Classify each stat-tile body paragraph so CSS can give the tile mira-style
+// hierarchy: the first paragraph is the value (a big bold number + a small muted
+// unit, via the bold/non-bold split in CSS); a paragraph led by a trend glyph
+// (↑/↓/→ or +/-N) becomes a coloured trend line; the rest are muted description
+// lines. Done with node decorations — the PM-sanctioned way to add classes
+// without mutating the doc — keyed off each paragraph's content.
+function buildStatDecorations(doc: ProseNode): DecorationSet {
+  const decos: Decoration[] = []
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'stat_tile') return true
+    let idx = 0
+    node.forEach((child, offset) => {
+      if (child.type.name !== 'paragraph') return
+      const childPos = pos + 1 + offset
+      const add = (cls: string) =>
+        decos.push(
+          Decoration.node(childPos, childPos + child.nodeSize, { class: cls }),
+        )
+      if (idx === 0) {
+        add('tela-stat-figure')
+      } else {
+        const t = child.textContent.trim()
+        if (/^[↑▲]|^\+\d/.test(t)) add('tela-stat-trend tela-stat-trend-up')
+        else if (/^[↓▼]|^-\d/.test(t))
+          add('tela-stat-trend tela-stat-trend-down')
+        else if (t.startsWith('→')) add('tela-stat-trend tela-stat-trend-flat')
+        else add('tela-stat-desc')
+      }
+      idx++
+    })
+    return false
+  })
+  return DecorationSet.create(doc, decos)
+}
+
 // NodeView: tile chrome. The label is an editable input synced to the attr in
-// edit mode (a static caption in read-only). The accent (a top rail + value
-// colour) follows the trend glyph in the value text, recomputed on each update.
+// edit mode (a static caption in read-only). Body paragraphs are classified by
+// the decorations above into value / trend / description rows.
 export const statGridNodeViews = $prose(() => {
   return new Plugin({
     props: {
+      decorations(state) {
+        return buildStatDecorations(state.doc)
+      },
       nodeViews: {
         stat_tile: (node, view, getPos) => {
           const dom = document.createElement('div')
@@ -235,13 +275,30 @@ export function insertStatGrid(ctx: Ctx) {
   const gridType = schema.nodes.stat_grid
   const tileType = schema.nodes.stat_tile
   const paraType = schema.nodes.paragraph
+  const strong = schema.marks.strong
   if (!gridType || !tileType || !paraType) return
-  const mkTile = (label: string, value: string) =>
-    tileType.create({ label }, paraType.create(null, schema.text(value)))
+  const mkTile = (
+    label: string,
+    num: string,
+    unit: string,
+    trend: string,
+    desc: string,
+  ) => {
+    const valueKids = [
+      strong ? schema.text(num, [strong.create()]) : schema.text(num),
+    ]
+    if (unit) valueKids.push(schema.text(' ' + unit))
+    const body = [
+      paraType.create(null, valueKids),
+      paraType.create(null, schema.text(trend)),
+      paraType.create(null, schema.text(desc)),
+    ]
+    return tileType.create({ label }, body)
+  }
   const node = gridType.create(null, [
-    mkTile('Revenue', '$4.2M ↑ 18%'),
-    mkTile('Active users', '12,400 ↑ 3%'),
-    mkTile('Churn', '1.8% ↓ 0.4%'),
+    mkTile('Revenue', '$4.2M', '', '↑ 18% QoQ', 'vs last quarter'),
+    mkTile('Active users', '12,400', '', '↑ 3% MoM', 'monthly actives'),
+    mkTile('Avg. response', '142', 'ms', '↓ 12%', 'p95 latency'),
   ])
   view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
   view.focus()

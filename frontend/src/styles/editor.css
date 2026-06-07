@@ -1003,19 +1003,6 @@
     background: var(--surface-1);
     overflow: hidden;
   }
-  .tela-milkdown .ProseMirror .tela-stat::before {
-    content: '';
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 3px;
-    background: var(--border-strong);
-  }
-  .tela-milkdown .ProseMirror .tela-stat[data-accent='positive']::before {
-    background: var(--accent-positive-fg);
-  }
-  .tela-milkdown .ProseMirror .tela-stat[data-accent='negative']::before {
-    background: var(--accent-negative-fg);
-  }
   .tela-stat-head {
     display: flex;
     min-width: 0;
@@ -1046,14 +1033,55 @@
     color: var(--text-primary);
   }
   .tela-milkdown .ProseMirror .tela-stat-value {
-    font-size: var(--text-2xl);
-    font-weight: 650;
-    line-height: var(--leading-tight);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 2px;
     color: var(--text-primary);
     word-break: break-word;
   }
   .tela-milkdown .ProseMirror .tela-stat-value > p {
     margin: 0;
+  }
+  /* Value line: a big bold number with the trailing text as a small muted unit
+     (so `**$43** /MWh` reads as a headline figure). When the author doesn't bold
+     anything the whole line still shows at a readable size via the fallback. */
+  .tela-milkdown .ProseMirror p.tela-stat-figure {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    line-height: var(--leading-tight);
+    color: var(--text-primary);
+  }
+  .tela-milkdown .ProseMirror p.tela-stat-figure:has(strong) {
+    font-size: var(--text-sm);
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .tela-milkdown .ProseMirror p.tela-stat-figure strong {
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  /* Trend line: coloured by direction (↑ positive / ↓ negative / → flat). */
+  .tela-milkdown .ProseMirror p.tela-stat-trend {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: var(--leading-tight);
+  }
+  .tela-milkdown .ProseMirror p.tela-stat-trend-up {
+    color: var(--accent-positive-fg);
+  }
+  .tela-milkdown .ProseMirror p.tela-stat-trend-down {
+    color: var(--accent-negative-fg);
+  }
+  .tela-milkdown .ProseMirror p.tela-stat-trend-flat {
+    color: var(--text-muted);
+  }
+  /* Description line(s): muted footnote under the figure. */
+  .tela-milkdown .ProseMirror p.tela-stat-desc {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    line-height: var(--leading-normal);
   }
 
   /* M19 — timeline (:::timeline). A bullet list of dated events rendered as a

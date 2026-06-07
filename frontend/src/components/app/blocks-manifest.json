@@ -140,9 +140,9 @@
       "slash": true,
       "agent": true,
       "keywords": ["stat", "stats", "kpi", "metric", "dashboard", "tiles", "scorecard", "numbers"],
-      "syntax": ":::stats\n### Revenue\n**$4.2M** ↑ 18%\n\n### Active users\n**12,400** ↑ 3%\n:::",
-      "when": "Show a row of headline numbers / KPIs, each with a label and a value.",
-      "note": "Each ### heading is a tile label; the text below is its value. A ↑ or ↓ (or +/-) in the value tints the tile green/red automatically."
+      "syntax": ":::stats\n### Solar PV LCOE\n**$43** /MWh\n\n↓ 90% since 2010\n\nGlobal weighted average (IRENA)\n:::",
+      "when": "Show a row of headline numbers / KPIs, each with a label, value, and optional trend.",
+      "note": "Each ### heading is a tile. Inside it, separate lines with blank lines: a value (bold the number — any trailing text becomes a small unit), an optional trend line starting with ↑/↓/→ or +/- (rendered coloured — green up, red down), and an optional muted description line."
     },
     {
       "id": "timeline",
