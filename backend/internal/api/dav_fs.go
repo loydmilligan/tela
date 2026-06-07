@@ -318,7 +318,40 @@ func (fs *davFS) RemoveAll(ctx context.Context, name string) error {
 		return os.ErrNotExist
 	}
 	pr := davPrincipalFrom(ctx)
+	// Delete-safety (sync §6), WebDAV path only — an interactive app/MCP delete is
+	// always honoured. (1) Cursor gate: a sync client may only delete a page it
+	// has previously synced (a sync_base row proves it had the page); a page it
+	// never had isn't a real removal, so refusing stops a partial clone / fresh
+	// client from soft-deleting pages it never pulled. (2) Mass-delete brake:
+	// refuse once an anomalous fraction of the space would vanish in a window.
+	if pr.k != nil {
+		had, err := hasSyncBase(ctx, fs.s.DB, pr.k.ID, p.ID)
+		if err != nil {
+			return err
+		}
+		if !had {
+			log.Printf("dav: refused DELETE of page %d — key %d never synced it", p.ID, pr.k.ID)
+			return os.ErrPermission
+		}
+		live, err := countLiveSpacePages(ctx, fs.s.DB, sp.id)
+		if err != nil {
+			return err
+		}
+		if !fs.s.davDeletes.allow(pr.k.ID, sp.id, live) {
+			log.Printf("dav: refused DELETE of page %d — mass-delete guard tripped (key %d, space %d)", p.ID, pr.k.ID, sp.id)
+			return os.ErrPermission
+		}
+	}
 	return davMapErr(fs.s.deletePageCore(ctx, pr.u, pr.k, p.ID))
+}
+
+// countLiveSpacePages returns the number of live (non-deleted) pages in a space
+// — the denominator the mass-delete brake measures the vanishing fraction against.
+func countLiveSpacePages(ctx context.Context, db *sql.DB, spaceID int64) (int64, error) {
+	var n int64
+	err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM pages WHERE space_id = $1 AND deleted_at IS NULL`, spaceID).Scan(&n)
+	return n, err
 }
 
 func (fs *davFS) Rename(ctx context.Context, oldName, newName string) error {

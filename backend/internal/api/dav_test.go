@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -386,6 +387,74 @@ func TestDAV_BaseGapSeededOnRead(t *testing.T) {
 	merged, _ := pageByTitle(t, d, spaceID, "note")
 	if merged.Body != "L1-APP\nL2\nL3-LOCAL\n" {
 		t.Fatalf("base-gap merge body = %q, want both edits", merged.Body)
+	}
+}
+
+// TestDAV_DeleteRequiresPriorSync: the cursor gate (sync §6). A client may only
+// delete a page it has previously synced (has a base for) — a page created in
+// the app that this client never pulled must NOT be deletable, so a partial /
+// fresh client can't wipe pages it never had. After a GET seeds the base, the
+// same delete is honoured.
+func TestDAV_DeleteRequiresPriorSync(t *testing.T) {
+	ts, d, spaceID, folder, token := davFixture(t)
+	ctx := context.Background()
+
+	var pid int64
+	if err := d.QueryRowContext(ctx,
+		`INSERT INTO pages (space_id, title, body, props) VALUES ($1, 'note', 'x', '{}'::jsonb) RETURNING id`,
+		spaceID).Scan(&pid); err != nil {
+		t.Fatalf("seed page: %v", err)
+	}
+
+	// Never synced by this client → refused; page stays live.
+	if resp, _ := davDo(t, ts, token, "DELETE", "/dav/"+folder+"/note.md", "", nil); resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("DELETE of never-synced page = %d, want 405 (refused)", resp.StatusCode)
+	}
+	if countLivePages(t, d, spaceID) != 1 {
+		t.Fatal("page must remain after a refused delete")
+	}
+
+	// A download seeds the base → the client now "had" it → delete is honoured.
+	davDo(t, ts, token, "GET", "/dav/"+folder+"/note.md", "", nil)
+	if resp, _ := davDo(t, ts, token, "DELETE", "/dav/"+folder+"/note.md", "", nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE after sync = %d, want 204", resp.StatusCode)
+	}
+	if countLivePages(t, d, spaceID) != 0 {
+		t.Fatal("page should be soft-deleted after an allowed delete")
+	}
+}
+
+// TestDAV_MassDeleteGuard: the brake trips once an anomalous fraction of the
+// space vanishes in a window. With a floor of 2 and fraction 0.5 over 6 pages,
+// the limit is max(2, 3) = 3 → only 3 deletes are honoured.
+func TestDAV_MassDeleteGuard(t *testing.T) {
+	t.Setenv("TELA_WEBDAV_DELETE_FLOOR", "2") // before the server builds its guard
+	ts, d, spaceID, folder, token := davFixture(t)
+
+	for i := 0; i < 6; i++ {
+		name := fmt.Sprintf("/dav/%s/note%d.md", folder, i)
+		if resp, _ := davDo(t, ts, token, "PUT", name, fmt.Sprintf("body %d\n", i), nil); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("PUT note%d = %d", i, resp.StatusCode)
+		}
+	}
+
+	allowed := 0
+	for i := 0; i < 6; i++ {
+		resp, _ := davDo(t, ts, token, "DELETE", fmt.Sprintf("/dav/%s/note%d.md", folder, i), "", nil)
+		switch resp.StatusCode {
+		case http.StatusNoContent:
+			allowed++
+		case http.StatusMethodNotAllowed:
+			// guard tripped — expected past the limit
+		default:
+			t.Fatalf("DELETE note%d unexpected status %d", i, resp.StatusCode)
+		}
+	}
+	if allowed != 3 {
+		t.Fatalf("mass-delete guard allowed %d deletes, want 3 (limit max(2, 0.5*6))", allowed)
+	}
+	if n := countLivePages(t, d, spaceID); n != 3 {
+		t.Fatalf("%d live pages after guarded run, want 3", n)
 	}
 }
 

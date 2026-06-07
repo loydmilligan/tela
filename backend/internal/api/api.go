@@ -27,6 +27,12 @@ type Server struct {
 	// be turned into a mail bomb.
 	authLimiter *authRateLimiter
 
+	// davDeletes is the WebDAV mass-delete brake (sync §6): a per-(api_key,space)
+	// sliding window that refuses a sync client's delete once an anomalous
+	// fraction of the space has already vanished, so a runaway client can't wipe a
+	// space. Pairs with the per-page cursor gate in the davFS RemoveAll path.
+	davDeletes *davDeleteGuard
+
 	// auditWriter buffers bearer-authed audit-log writes. M16.A.2: every
 	// request that resolved to a valid api_keys row is recorded here
 	// (method, path, status_code, ts). Lives on Server because the
@@ -64,6 +70,7 @@ func New(db *sql.DB) *Server {
 		auditWriter:  auth.NewAuditWriter(db),
 		Mailer:       mailer.FromEnv(),
 		authLimiter:  newAuthRateLimiter(),
+		davDeletes:   newDavDeleteGuard(),
 		rag:          rag.NewService(db, rag.ConfigFromEnv()),
 		oauth:        loadMCPOAuth(context.Background()),
 		seedWelcome:  os.Getenv("TELA_DISABLE_WELCOME_SEED") == "",
@@ -74,6 +81,7 @@ func New(db *sql.DB) *Server {
 	// is fine: each test process is short-lived.
 	go s.shareLimiter.sweepLoop(context.Background())
 	go s.authLimiter.sweepLoop(context.Background())
+	go s.davDeletes.sweepLoop(context.Background())
 	// Background auto-reindex worker (no-op when the embedder is unconfigured).
 	// Page writes call s.rag.QueueReindex; this drains the debounced queue.
 	s.rag.StartAutoReindex(context.Background())

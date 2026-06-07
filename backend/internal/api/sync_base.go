@@ -59,6 +59,22 @@ func loadSyncBaseTx(ctx context.Context, tx *sql.Tx, apiKeyID, pageID int64) (sy
 	return b, true, nil
 }
 
+// hasSyncBase reports whether the client (api key) has ever synced this page —
+// i.e. a base row exists. The WebDAV delete path uses it as a cursor gate: a
+// page the client never had isn't a real removal (sync §6).
+func hasSyncBase(ctx context.Context, db *sql.DB, apiKeyID, pageID int64) (bool, error) {
+	var x int
+	err := db.QueryRowContext(ctx,
+		`SELECT 1 FROM sync_base WHERE api_key_id = $1 AND page_id = $2`, apiKeyID, pageID).Scan(&x)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // dbExec is satisfied by both *sql.DB and *sql.Tx so the base upsert works inside
 // or outside a transaction.
 type dbExec interface {

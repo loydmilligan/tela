@@ -147,6 +147,13 @@ Thumbs.db
   ignored — the slug is always derived from the title.
 - **Viewers** (read-only space role) get a read-only tree; `PUT`/`MKCOL`/`DELETE`
   return 403.
+- **Delete-safety.** Two server-side guards back up rclone's `--max-delete`
+  (deletes are soft / recoverable regardless): a client may only delete a page it
+  has **previously synced** (so a partial or fresh client can't remove pages it
+  never pulled), and a **mass-delete brake** refuses once an anomalous fraction
+  of a space would vanish in a short window — tunable via
+  `TELA_WEBDAV_DELETE_FLOOR` (default 20, always-allowed per window) and
+  `TELA_WEBDAV_DELETE_FRACTION` (default 0.5). A refused delete returns 405.
 - **Disable** the surface entirely with `TELA_WEBDAV_ENABLED=0`.
 - **Cloudflare WAF:** the non-standard WebDAV verbs (PROPFIND/MKCOL/MOVE/…) must
   be allowed through to `/dav/*` at the edge; some managed WAF profiles block
