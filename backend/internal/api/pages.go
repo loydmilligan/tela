@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
-	"github.com/zcag/tela/backend/internal/mdimport"
 	"github.com/zcag/tela/backend/internal/models"
+	"github.com/zcag/tela/backend/internal/pagemd"
 )
 
 const maxPageTitleLen = 500
@@ -326,9 +326,9 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	// Body invariant: frontmatter never lives in pages.body, at any ingress.
 	// Strip any leading frontmatter out of the body and absorb it into props.
 	// Precedence: an explicit props field wins over frontmatter found in body.
-	body, _, bodyProps := mdimport.StripFrontmatter(req.Body)
+	body, _, bodyProps := pagemd.Decode(req.Body)
 	body = stripLeadingTitleH1(body, title)
-	props := mdimport.FilterReserved(req.Props)
+	props := pagemd.FilterReserved(req.Props)
 	if props == nil {
 		props = bodyProps
 	}
@@ -520,14 +520,14 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	var bodyStripped string
 	var bodyProps map[string]any
 	if req.Body != nil {
-		bodyStripped, _, bodyProps = mdimport.StripFrontmatter(*req.Body)
+		bodyStripped, _, bodyProps = pagemd.Decode(*req.Body)
 		args = append(args, bodyStripped)
 		sets = append(sets, "body = $"+strconv.Itoa(len(args)))
 	}
 	// Props: Replace semantics. An explicit props field wins over frontmatter
 	// found in body; a nil field leaves the bag unchanged.
 	if req.Props != nil {
-		args = append(args, propsJSON(mdimport.FilterReserved(req.Props)))
+		args = append(args, propsJSON(pagemd.FilterReserved(req.Props)))
 		sets = append(sets, "props = $"+strconv.Itoa(len(args))+"::jsonb")
 	} else if bodyProps != nil {
 		args = append(args, propsJSON(bodyProps))

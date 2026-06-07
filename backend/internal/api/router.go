@@ -82,6 +82,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/spaces/{id}", srv.DeleteSpace)
 	mux.HandleFunc("GET /api/spaces/{id}/index-version", srv.GetSpaceIndexVersion)
 	mux.HandleFunc("POST /api/spaces/{id}/import", srv.ImportSpace)
+	mux.HandleFunc("GET /api/spaces/{id}/export.zip", srv.ExportSpaceMarkdownZip)
 	// M18.A.3 mira import: wraps the miraimport converter behind the same
 	// editor+ membership gate as /import. URL-fetch path has its own
 	// allowlist + caps (see import_mira.go); payload path enforces the 1 MiB
@@ -109,6 +110,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// page id lives inside the signed token, not the path, which keeps the
 	// public branch a clean HasPrefix.
 	mux.HandleFunc("GET /api/pages/{id}/pdf", srv.ExportPagePDF)
+	mux.HandleFunc("GET /api/pages/{id}/md", srv.ExportPageMarkdown)
 	mux.HandleFunc("GET /api/print/{token}", srv.GetPrintPage)
 
 	mux.HandleFunc("GET /api/pages/{id}/comments", srv.ListComments)

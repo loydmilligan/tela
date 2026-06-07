@@ -43,6 +43,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/zcag/tela/backend/internal/pagemd"
 )
 
 // propsJSON marshals a props bag to a JSON string for a JSONB column, falling
@@ -161,7 +163,7 @@ func Import(
 	)
 	if rootDir := singleTopLevelDir(mdFiles); rootDir != "" {
 		if idx := findRootReadme(mdFiles, rootDir); idx >= 0 {
-			rawBody, _, rawProps := StripFrontmatter(mdFiles[idx].content)
+			rawBody, _, rawProps := pagemd.Decode(mdFiles[idx].content)
 			havePendingWrapper = true
 			wrapperTitle = path.Base(rootDir)
 			wrapperBody = rawBody
@@ -411,7 +413,7 @@ func Import(
 		if readmeIdx >= 0 {
 			// README props attach to the dir-index page; the dir basename still
 			// wins the title (so the frontmatter title is intentionally ignored).
-			rawBody, _, rawProps := StripFrontmatter(mdFiles[readmeIdx].content)
+			rawBody, _, rawProps := pagemd.Decode(mdFiles[readmeIdx].content)
 			body = rawBody
 			props = rawProps
 			importPath = mdFiles[readmeIdx].path
@@ -442,7 +444,7 @@ func Import(
 			return nil, err
 		}
 
-		body, fmTitle, fmProps := StripFrontmatter(mdFiles[i].content)
+		body, fmTitle, fmProps := pagemd.Decode(mdFiles[i].content)
 		title := fmTitle
 		if title == "" {
 			title = FirstH1Title(body)
