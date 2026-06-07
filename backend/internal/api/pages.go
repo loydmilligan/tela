@@ -423,6 +423,8 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	// Lives in the core so both POST /api/pages and the MCP create_page tool
 	// enqueue a reindex.
 	s.rag.QueueReindex(id)
+	// Notify anyone @-mentioned in the new page's body (post-commit, best-effort).
+	s.notifyPageMentions(ctx, u, id, req.SpaceID, page.Title, page.Body)
 	return page, nil
 }
 
@@ -598,6 +600,8 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		// Title is folded into each chunk's embed text and body is the source,
 		// so reindex on either change (debounced, async; no-op when RAG is off).
 		s.rag.QueueReindex(id)
+		// Notify anyone newly @-mentioned in the body (idempotent per page+user).
+		s.notifyPageMentions(ctx, u, id, existing.SpaceID, p.Title, p.Body)
 	}
 	// When an agent rewrites the body out-of-band (MCP update_page), drop the
 	// Yjs collab overlay so live + next editors re-seed from the new body instead
