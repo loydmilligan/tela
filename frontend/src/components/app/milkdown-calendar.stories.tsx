@@ -47,9 +47,9 @@ export const LaunchMonth: Story = {
     month: '2026-05',
     events: [
       ['2026-05-04', ['Spec freeze']],
-      ['2026-05-11', ['Beta cohort opens']],
+      ['2026-05-11', ['Beta cohort opens to design partners']],
       ['2026-05-18', ['Dogfood week']],
-      ['2026-05-28', ['GA launch']],
+      ['2026-05-28', ['GA launch', 'Blog post + changelog']],
     ],
   },
 }

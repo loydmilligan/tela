@@ -1034,11 +1034,8 @@
     border-radius: var(--radius-xs);
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--text-primary);
-    /* Wrap to at most two lines, then ellipsis — never a hard mid-word cut. */
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    /* Wrap fully — the cell grows to fit; never clip or cut a title. */
+    white-space: normal;
     overflow-wrap: anywhere;
   }
   .tela-calendar-source {
