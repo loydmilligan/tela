@@ -16,15 +16,18 @@ export interface RecentChange {
 
 export const recentChangesKeys = {
   all: ['recent-changes'] as const,
-  list: () => [...recentChangesKeys.all, 'list'] as const,
+  list: (mine: boolean) => [...recentChangesKeys.all, mine ? 'mine' : 'all'] as const,
 }
 
-export function useRecentChanges() {
+// mine=true narrows to pages the caller themselves edited ("My recent edits");
+// otherwise it's the team-wide feed of every accessible page's latest edit.
+export function useRecentChanges(opts?: { mine?: boolean }) {
+  const mine = opts?.mine ?? false
   return useQuery({
-    queryKey: recentChangesKeys.list(),
+    queryKey: recentChangesKeys.list(mine),
     queryFn: async () => {
       const { changes } = await api<{ changes: RecentChange[] }>(
-        '/api/recent-changes',
+        `/api/recent-changes${mine ? '?mine=1' : ''}`,
       )
       return changes
     },

@@ -50,3 +50,38 @@ func TestRecentChanges_LatestPerPage_GatedByAccess(t *testing.T) {
 		t.Fatalf("page appears %d times, want 1: body=%q", n, body)
 	}
 }
+
+// ?mine=1 narrows the feed to pages the caller edited, even when a teammate's
+// edit is more recent and equally visible.
+func TestRecentChanges_MineFiltersToOwnEdits(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	ctx := context.Background()
+
+	alice := seedUser(t, d, "alice", "alicepw123", false)
+	bob := seedUser(t, d, "bob", "bobpw12345", false)
+	spaceID := seedSpace(t, d, "Engineering", "engineering", alice)
+	seedMember(t, d, spaceID, bob, "editor")
+	alicePage := seedPage(t, d, spaceID, "Alice Page")
+	bobPage := seedPage(t, d, spaceID, "Bob Page")
+
+	if _, err := insertPageRevision(ctx, d, alicePage, "a", "Alice Page", nil, &alice, "test"); err != nil {
+		t.Fatalf("rev alice: %v", err)
+	}
+	if _, err := insertPageRevision(ctx, d, bobPage, "b", "Bob Page", nil, &bob, "test"); err != nil {
+		t.Fatalf("rev bob: %v", err)
+	}
+
+	rec := routedRecorder("GET /api/recent-changes", srv.ListRecentChanges,
+		userRequest(http.MethodGet, "/api/recent-changes?mine=1", "", authUser(alice, "alice", false)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mine: code=%d body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Alice Page") {
+		t.Fatalf("mine missing own edit: %q", body)
+	}
+	if strings.Contains(body, "Bob Page") {
+		t.Fatalf("mine leaked a teammate's edit: %q", body)
+	}
+}

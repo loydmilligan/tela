@@ -3,7 +3,6 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  isRedirect,
   lazyRouteComponent,
   Link,
   Outlet,
@@ -12,11 +11,9 @@ import {
   useNavigate,
   useParams,
 } from '@tanstack/react-router'
-import { FilePlus, FileQuestion, Menu, Plus } from 'lucide-react'
+import { FilePlus, FileQuestion, Menu } from 'lucide-react'
 import { AppCommandHost } from '../components/app/AppCommandHost'
-import { BrandMark } from '../components/BrandMark'
 import { EmptyState } from '../components/ui/empty-state'
-import { NewSpaceDialog } from '../components/app/NewSpaceDialog'
 import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
@@ -36,9 +33,8 @@ import {
   type AuthUser,
 } from '../lib/queries/auth'
 import { spaceKeys } from '../lib/queries/spaces'
-import { pageKeys } from '../lib/queries/pages'
-import { api, ApiError } from '../lib/api'
-import { clearLastPage, readLastPage, writeLastPage } from '../lib/lastPage'
+import { api } from '../lib/api'
+import { writeLastPage } from '../lib/lastPage'
 import { useCreatePage, usePages } from '../lib/queries/pages'
 import { LoginPage } from './login'
 import { RegisterPage } from './register'
@@ -222,85 +218,19 @@ const resetPasswordRoute = createRoute({
   component: ResetPasswordPage,
 })
 
-async function ensureSpaces(): Promise<Space[]> {
-  return queryClient.ensureQueryData({
-    queryKey: spaceKeys.list(),
-    queryFn: async () => {
-      const { spaces } = await api<{ spaces: Space[] }>('/api/spaces')
-      return spaces
-    },
-  })
-}
-
+// Home dashboard at `/` — the app's landing surface (recent changes, your
+// edits, favorites, recently-visited, your spaces). This is where login and the
+// logo land. Replaces the old resume-last-page redirect; the dashboard's
+// "Recently visited" widget covers the resume case, and it handles the
+// no-spaces first-run state itself. Lazy so its feed queries stay off the main
+// chunk.
 const indexRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/',
-  beforeLoad: async () => {
-    const spaces = await ensureSpaces()
-    if (spaces.length === 0) return
-
-    // Prefer the last-viewed page, but only if it still exists and is in a
-    // space we know about. Falls back to the first space's landing when the
-    // saved id has been deleted or otherwise can't be resolved.
-    const last = readLastPage()
-    if (last && spaces.some((s) => s.id === last.spaceId)) {
-      try {
-        const page = await queryClient.ensureQueryData({
-          queryKey: pageKeys.detail(last.pageId),
-          queryFn: async () => {
-            const { page } = await api<{ page: Page }>(
-              `/api/pages/${last.pageId}`,
-            )
-            return page
-          },
-        })
-        if (page.space_id === last.spaceId) {
-          throw redirect({
-            to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
-            params: { spaceId: page.space_id, pageId: page.id, slug: undefined },
-          })
-        }
-        // Page lives in a different space now — drop the stale pointer.
-        clearLastPage()
-      } catch (err) {
-        // Re-throw the redirect so TanStack Router can act on it; only treat
-        // genuine fetch failures as "saved id is dead".
-        if (isRedirect(err)) throw err
-        if (err instanceof ApiError) clearLastPage()
-        // Other errors fall through to the default first-space redirect.
-      }
-    }
-
-    throw redirect({
-      to: '/spaces/$spaceId',
-      params: { spaceId: spaces[0].id },
-    })
-  },
-  component: function IndexEmpty() {
-    const [open, setOpen] = useState(false)
-    return (
-      <div className="flex-1 flex items-center justify-center p-[var(--space-7)]">
-        <Card className="w-full max-w-[28rem] text-center">
-          <CardHeader className="items-center">
-            <BrandMark size={40} className="mb-[var(--space-2)]" />
-            <CardTitle className="text-[length:var(--text-2xl)]">
-              Welcome to tela
-            </CardTitle>
-            <CardDescription>
-              Spaces hold trees of pages. Create your first space to start
-              writing.
-            </CardDescription>
-          </CardHeader>
-          <CardFooter className="justify-center">
-            <Button variant="primary" size="lg" onClick={() => setOpen(true)}>
-              <Plus width={16} height={16} /> Create your first space
-            </Button>
-          </CardFooter>
-          <NewSpaceDialog open={open} onOpenChange={setOpen} />
-        </Card>
-      </div>
-    )
-  },
+  component: lazyRouteComponent(
+    () => import('../components/app/HomeView'),
+    'HomeRoute',
+  ),
 })
 
 const settingsRoute = createRoute({
@@ -326,18 +256,6 @@ const quickNotesRoute = createRoute({
     })
   },
   component: () => null,
-})
-
-// Home dashboard — the landing surface (recent changes, favorites, recently
-// visited). Lazy so its feed queries + widget chrome stay off the main chunk
-// until the user navigates here from the sidebar.
-const homeRoute = createRoute({
-  getParentRoute: () => appLayoutRoute,
-  path: '/home',
-  component: lazyRouteComponent(
-    () => import('../components/app/HomeView'),
-    'HomeRoute',
-  ),
 })
 
 // Cross-space "Shared" audit view (docs/visibility-model.md). Lazy so its
@@ -623,7 +541,6 @@ const routeTree = rootRoute.addChildren([
   printRoute,
   appLayoutRoute.addChildren([
     indexRoute,
-    homeRoute,
     quickNotesRoute,
     settingsRoute,
     sharedRoute,

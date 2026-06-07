@@ -50,7 +50,7 @@ export function Sidebar({ open = false }: { open?: boolean }) {
           size="sm"
           className="w-full justify-start"
         >
-          <Link to="/home" aria-label="Home" title="Home">
+          <Link to="/" aria-label="Home" title="Home">
             <Home width={14} height={14} />
             <span className="flex-1 text-left">Home</span>
           </Link>
