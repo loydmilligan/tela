@@ -45,6 +45,10 @@ export interface Page {
   title: string
   body: string
   position: number
+  // Free-form page properties (frontmatter). Reserved/system keys (id, title,
+  // slug, created, …) never appear here — only the user/agent bag. Omitted by
+  // the backend when empty, so optional; treat absent as `{}`.
+  props?: Record<string, unknown>
   created_at: string
   updated_at: string
   // Present on tree (`?tree=1`) and flat list rows, and attached by `usePage`

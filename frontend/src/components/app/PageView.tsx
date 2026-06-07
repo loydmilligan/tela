@@ -37,6 +37,7 @@ import { useMe } from '../../lib/queries/auth'
 import { useSpaceMembers } from '../../lib/queries/members'
 import { useRevision } from '../../lib/queries/page-revisions'
 import { CommentsPanel } from './CommentsPanel'
+import { PageProperties } from './PageProperties'
 import { PresenceAvatars } from './presence-avatars'
 import { WikilinkHoverPreview } from './wikilink-hover-preview'
 
@@ -856,6 +857,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
             'focus-visible:border-[var(--border-subtle)]',
           )}
         />
+
+        <PageProperties props={page.props} />
 
         {isDraftMode ? (
           draftRevisionQuery.isError ? (
