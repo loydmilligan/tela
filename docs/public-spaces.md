@@ -63,6 +63,10 @@ envelope.
 - **Space front page** `/public/spaces/{id}` — a blog-style index: space title +
   top-level posts (title + date) linking to the reader. The reader's topbar
   breadcrumb links back to it.
+- **User home page** `/u/{handle}` — a person's front door: their public spaces
+  (each → front page) with the spaces' top-level posts (each → reader). Data via
+  `GET /api/public/users/{username}` (public spaces by direct membership only;
+  404 when the user is missing or has nothing public).
 
 ## Deferred / follow-ups
 
