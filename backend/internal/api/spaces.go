@@ -392,6 +392,16 @@ func (s *Server) deleteSpaceCore(ctx context.Context, u *auth.User, k *auth.APIK
 	if role != roleOwner {
 		return &apiErr{http.StatusForbidden, "forbidden", "owner role required"}
 	}
+	// Clear polymorphic follows for the space + its pages before the cascade —
+	// subscriptions have no FK, so the space delete won't reach them (it does
+	// reach notifications, which carry space_id). Done first while the pages
+	// still exist.
+	if _, err := s.DB.ExecContext(ctx, `
+		DELETE FROM subscriptions
+		 WHERE (subject_kind = 'space' AND subject_id = $1)
+		    OR (subject_kind = 'page'  AND subject_id IN (SELECT id FROM pages WHERE space_id = $1))`, id); err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete space subscriptions failed"}
+	}
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM spaces WHERE id = $1`, id)
 	if err != nil {
 		return &apiErr{http.StatusInternalServerError, "internal", "delete space failed"}

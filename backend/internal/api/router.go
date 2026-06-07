@@ -209,6 +209,17 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/notifications/read-all", srv.MarkAllNotificationsRead)
 	mux.HandleFunc("POST /api/notifications/{id}/read", srv.MarkNotificationRead)
 
+	// Follow/subscribe (page + space) → opts into page_updated notifications.
+	// Per-user notification preferences (event_type × channel toggles).
+	mux.HandleFunc("GET /api/pages/{id}/subscription", srv.GetPageSubscription)
+	mux.HandleFunc("POST /api/pages/{id}/subscription", srv.SubscribePage)
+	mux.HandleFunc("DELETE /api/pages/{id}/subscription", srv.UnsubscribePage)
+	mux.HandleFunc("GET /api/spaces/{id}/subscription", srv.GetSpaceSubscription)
+	mux.HandleFunc("POST /api/spaces/{id}/subscription", srv.SubscribeSpace)
+	mux.HandleFunc("DELETE /api/spaces/{id}/subscription", srv.UnsubscribeSpace)
+	mux.HandleFunc("GET /api/users/me/notification-prefs", srv.GetNotificationPrefs)
+	mux.HandleFunc("PUT /api/users/me/notification-prefs", srv.UpdateNotificationPref)
+
 	// M16.A.1 API keys: bearer-token management. Instance-admin only via the
 	// session cookie path, OR a bearer key with admin scope. Keys are issued
 	// once on POST and never re-exposed — list/delete operate over key_prefix

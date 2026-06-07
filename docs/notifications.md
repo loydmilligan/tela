@@ -1,85 +1,93 @@
 # Notifications
 
 A small, extensible notification system: "something happened that a specific
-user should know about." Designed so new **event types** and new **delivery
+user should know about." Designed so new **event types** and **delivery
 channels** are additive — no schema churn, no second source of truth.
 
-Status: **v1 ships in-app delivery for page-body @-mentions.** Everything below
-the "Extension points" line is wired to grow without rework.
+Status (v1, in-app):
+- **@-mention** on a page → the mentioned member is notified.
+- **Follow a page or space** → its `page_updated` edits notify you.
+- **Preferences** — turn any event type off per channel.
+- Delivery is **in-app only** today; the email channel is wired through prefs but
+  not yet delivered.
 
-## Model
+## Tables
 
-One row per (recipient, event). A notification is generic over its subject so any
-entity can be the thing-you're-notified-about — the same shape the `access_audit`
-table uses for `target_kind`/`target_id`.
-
-`notifications` (migration `0007_notifications.sql`):
+**`notifications`** (`0007`) — one row per (recipient, event). Generic over its
+subject (`subject_kind`/`subject_id`, like `access_audit`) and its `type` (text,
+not an enum), so a new kind is data, not DDL.
 
 | column | meaning |
 |---|---|
-| `id` | identity PK |
-| `user_id` | **recipient** (FK users, cascade) |
-| `type` | event code — `mention` today; `comment_reply`, `space_added`, … later. Text, not an enum, so adding a type is data, not DDL. |
-| `actor_id` | who caused it (FK users, set-null). NULL = system. |
-| `subject_kind` + `subject_id` | the primary entity — `('page', 42)`. Generic. |
-| `space_id` | for the deep-link + access context (FK spaces, cascade). NULL for space-less events. |
-| `data` | `jsonb` — a small denormalized render payload (page title, actor username) so the inbox renders with no N+1 and survives the source being edited/deleted. |
-| `dedup_key` | nullable idempotency key. A partial unique index on `(user_id, dedup_key)` makes re-emits no-ops. |
-| `read_at` | NULL = unread. |
-| `created_at` | `tela_now()`. |
+| `user_id` | recipient (FK users, cascade) |
+| `type` | `mention`, `page_updated`, … |
+| `actor_id` | who caused it (FK users, set-null) |
+| `subject_kind` + `subject_id` | the entity — `('page', 42)` |
+| `space_id` | deep-link + access context (FK spaces, cascade) |
+| `data` | `jsonb` denormalized render payload (page title, actor name) — renders with no N+1, survives the source changing |
+| `dedup_key` | nullable idempotency key; partial-unique on `(user_id, dedup_key)` |
+| `read_at` | NULL = unread |
 
-Indexes: `(user_id, created_at DESC)` for the inbox; partial `(user_id) WHERE
-read_at IS NULL` for the unread badge; partial unique `(user_id, dedup_key)
-WHERE dedup_key IS NOT NULL` for idempotency.
+**`subscriptions`** (`0008`) — who follows what. Polymorphic
+`(user_id, subject_kind ∈ page|space, subject_id)`. No FK on `subject_id`, so the
+page/space delete paths clear them explicitly (notifications, which carry
+`space_id`, cascade on space delete; a page delete clears both by hand).
+
+**`notification_prefs`** (`0008`) — `(user_id, event_type, channel, enabled)`.
+**Opt-out**: absence of a row means enabled, so a new user gets everything and a
+row is written only to turn something off. `channel ∈ inapp | email`.
 
 ## Emit seam
 
-A single internal entry point — `Server.emitNotifications(ctx, ...notificationInput)`
-in `internal/api/notifications.go`:
+One entry point — `Server.emitNotifications(ctx, ...notificationInput)`. It is
+**best-effort** (errors logged, never surfaced; called after the triggering tx
+commits), **preference-gated** (skips a recipient who turned the event type off
+in-app), and recipients are **access-gated** before the call (never notify about,
+or leak the title of, something you can't see). Three emission policies on
+`notificationInput`:
 
-- **Best-effort.** Inserts are `ON CONFLICT … DO NOTHING`; any error is logged,
-  never surfaced. A notification failure must never roll back or fail the action
-  that triggered it. Called *after* the triggering transaction commits.
-- **Idempotent.** `dedup_key` (e.g. `mention:page:42:7`) means a user is
-  notified at most once for a given (page, mention) no matter how many times the
-  page is re-saved. Removes the need to diff old vs new mention sets.
-- **Access-gated at emit time.** Recipients are filtered through `space_access`
-  before a row is written — you are never notified about (and the `data` payload
-  never leaks the title of) a page you can't see.
+- **`DedupKey`** → one-ever per `(user, key)` via `ON CONFLICT DO NOTHING`. For
+  one-shot events: a mention (`mention:page:{id}:{uid}`).
+- **`CollapseUnread`** → at most one *unread* per `(user, type, subject)`; once
+  read, the next event makes a fresh row. For recurring events (a followed page
+  changed) so a flurry of edits doesn't pile up.
+- neither → always insert.
 
-### Today's only call site: page-body mentions
+### Emit sites
 
-Mentions are a structured token in canonical markdown — `[@Name](tela://user/{id})`
-— so they parse reliably (`parseUserMentions`, mirroring `parseWikiLinks`).
-`notifyPageMentions` runs post-commit in `createPageCore` and in the
-body-changed branch of `updatePageCore` (so both REST and the MCP `update_page`
-tool notify). It parses the body, drops the actor, filters to space members, and
-emits one `mention` per recipient.
+- **Mentions** — `parseUserMentions` over `tela://user/{id}` in the page body
+  (mirrors `parseWikiLinks`), wired post-commit into `createPageCore` +
+  `updatePageCore`, so REST and the MCP `update_page` tool both notify.
+- **page_updated** — on a body/title change, `notifyPageUpdate` notifies
+  followers of the page *and* of its space (minus the editor), `CollapseUnread`.
+- **Author auto-follow** — creating a page subscribes its author, so they hear
+  about later edits without an explicit follow.
 
-## Read / manage API
+## API
 
-All caller-scoped (a user only ever sees their own rows):
+Notifications (caller-scoped): `GET /api/notifications`,
+`GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`,
+`POST /api/notifications/read-all`.
 
-- `GET  /api/notifications?limit=N` — recent, newest first (actor username joined, `data` inlined).
-- `GET  /api/notifications/unread-count` — `{ count }` for the bell badge.
-- `POST /api/notifications/{id}/read` — mark one read (404 if not yours).
-- `POST /api/notifications/read-all` — mark all read.
+Follow: `GET|POST|DELETE /api/pages/{id}/subscription` and the `…/spaces/{id}/…`
+counterparts (viewer+ gated).
 
-Frontend: a bell in the app-shell header (`NotificationBell`) polls the unread
-count (30s) and opens an inbox panel; rows deep-link from
-`subject_kind`/`space_id`/`subject_id` and mark-read on click.
+Preferences: `GET /api/users/me/notification-prefs` (full matrix, defaulting
+enabled), `PUT /api/users/me/notification-prefs` (`{event_type, channel,
+enabled}`).
 
-## Extension points (how it grows — no rework)
+Frontend: a header **bell** (polled unread badge + inbox panel), a **follow**
+toggle in the page header, and a **Notifications** settings tab (the event ×
+channel matrix).
 
-- **New event type** → pick a `type` string, add an emit call at its source, add
-  a render case in the frontend `NotificationBell`. No migration.
-- **Comment mentions / replies** → same `emitNotifications`, `subject_kind='comment'`,
-  `dedup_key='mention:comment:{id}:{uid}'`. Drops in when the comment composer
-  gains the mention picker.
-- **New delivery channel (email, Slack)** → add a `deliver()` fan-out inside
-  `emitNotifications` keyed on a future per-user `notification_prefs`. The emit
-  call sites don't change. In-app is just the first channel.
-- **Watch/subscribe** → a `subscriptions(user_id, subject_kind, subject_id)`
-  table feeds recipient lists into the same emit path.
-- **Real-time** → today the badge polls; swap to SSE/WS later behind the same
-  read API.
+## Extension points (additive — no rework)
+
+- **New event type** → add a `notif*` const + emit call + a frontend render case
+  + a row in the settings matrix. No migration.
+- **Comment mentions / replies** → same seam, `subject_kind='comment'`. Drops in
+  when the comment composer gains the mention picker.
+- **New page in a followed space** → a `page_created` type emitted to space
+  followers on create (deliberately not done yet to keep `page_updated` = edits).
+- **Email channel** → a `deliver()` fan-out in `emitNotifications` reading the
+  `email` prefs already stored. The emit sites don't change.
+- **Realtime** → today the badge polls; swap to SSE/WS behind the same read API.

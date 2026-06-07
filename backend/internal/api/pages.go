@@ -419,12 +419,24 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	if err := tx.Commit(); err != nil {
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
+	// Snapshot the as-created state as the first revision (source='create'): gives
+	// history a baseline to diff/restore against, and surfaces the new page in the
+	// recent-changes / my-edits feeds immediately — creation IS recent activity,
+	// not just later edits. Post-commit + best-effort, like the edit snapshot.
+	createAuthor := u.ID
+	if _, err := insertPageRevision(ctx, s.DB, id, page.Body, page.Title, props, &createAuthor, "create"); err != nil {
+		log.Printf("page %d create revision failed: %v", id, err)
+	}
 	// Index the new page's content (debounced, async; no-op when RAG is off).
 	// Lives in the core so both POST /api/pages and the MCP create_page tool
 	// enqueue a reindex.
 	s.rag.QueueReindex(id)
 	// Notify anyone @-mentioned in the new page's body (post-commit, best-effort).
 	s.notifyPageMentions(ctx, u, id, req.SpaceID, page.Title, page.Body)
+	// The author follows their new page, so they hear about others' edits to it.
+	if err := s.setSubscription(ctx, u.ID, "page", id); err != nil {
+		log.Printf("page %d author auto-subscribe failed: %v", id, err)
+	}
 	return page, nil
 }
 
@@ -602,6 +614,8 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		s.rag.QueueReindex(id)
 		// Notify anyone newly @-mentioned in the body (idempotent per page+user).
 		s.notifyPageMentions(ctx, u, id, existing.SpaceID, p.Title, p.Body)
+		// Notify followers of the page / its space that it changed (collapsed).
+		s.notifyPageUpdate(ctx, u, id, existing.SpaceID, p.Title)
 	}
 	// When an agent rewrites the body out-of-band (MCP update_page), drop the
 	// Yjs collab overlay so live + next editors re-seed from the new body instead
@@ -688,6 +702,17 @@ func (s *Server) deletePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	// triggers; nothing else would remove them.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM page_links WHERE source_id = $1`, id); err != nil {
 		return &apiErr{http.StatusInternalServerError, "internal", "delete page_links source rows failed"}
+	}
+	// Subscriptions + notifications are polymorphic (no FK on subject_id), so a
+	// page delete must clear its own — else orphaned follows / dead inbox rows
+	// pointing at a gone page survive. (favorites cascades via its FK.)
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM subscriptions WHERE subject_kind = 'page' AND subject_id = $1`, id); err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete page subscriptions failed"}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM notifications WHERE subject_kind = 'page' AND subject_id = $1`, id); err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete page notifications failed"}
 	}
 
 	if err := tx.Commit(); err != nil {
