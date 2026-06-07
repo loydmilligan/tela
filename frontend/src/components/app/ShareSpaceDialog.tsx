@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Building2, Trash2, UserPlus, Users } from 'lucide-react'
+import { Building2, Globe, Lock, Trash2, UserPlus, Users } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useMe } from '../../lib/queries/auth'
 import {
@@ -9,6 +9,7 @@ import {
   useSpaceMembers,
   useUpdateSpaceMember,
 } from '../../lib/queries/members'
+import { useUpdateSpace } from '../../lib/queries/spaces'
 import { useOrgs } from '../../lib/queries/orgs'
 import { useMyGroups } from '../../lib/queries/groups'
 import {
@@ -115,6 +116,8 @@ export function ShareSpaceDialog({
           </div>
 
           {open ? <SpaceOrgGrants space={space} iAmOwner={iAmOwner} /> : null}
+
+          <PublicAccessSection space={space} iAmOwner={iAmOwner} />
         </div>
 
         <DialogFooter>
@@ -768,4 +771,79 @@ function addMemberErrorMessage(err: unknown): string {
     return err.message
   }
   return 'Failed to add member.'
+}
+
+// PublicAccessSection — the Axis-2 space-level "publish to the web" control. A
+// public space is readable by anyone with no login (docs/public-spaces.md).
+// State is visible to every member (so anyone can tell the space is public);
+// only an owner can flip it.
+function PublicAccessSection({
+  space,
+  iAmOwner,
+}: {
+  space: Space
+  iAmOwner: boolean
+}) {
+  const updateSpace = useUpdateSpace()
+  const [error, setError] = useState<string | null>(null)
+  const isPublic = space.visibility === 'public'
+
+  async function toggle() {
+    setError(null)
+    try {
+      await updateSpace.mutateAsync({
+        id: space.id,
+        visibility: isPublic ? 'private' : 'public',
+      })
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : 'Failed to update visibility.',
+      )
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-[var(--space-2)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
+      <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+        Public access
+      </span>
+      <div className="flex items-start gap-[var(--space-3)]">
+        <span
+          className="mt-[2px] text-[var(--text-muted)]"
+          aria-hidden
+        >
+          {isPublic ? <Globe size="1.1em" /> : <Lock size="1.1em" />}
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-primary)]">
+            {isPublic ? 'Public on the web' : 'Private to members'}
+          </p>
+          <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            {isPublic
+              ? 'Anyone can read every page in this space — no login. Editing stays members-only.'
+              : 'Only members can read this space.'}
+          </p>
+        </div>
+        {iAmOwner ? (
+          <Button
+            type="button"
+            variant={isPublic ? 'ghost' : 'primary'}
+            size="sm"
+            onClick={() => void toggle()}
+            disabled={updateSpace.isPending}
+          >
+            {isPublic ? 'Make private' : 'Make public'}
+          </Button>
+        ) : null}
+      </div>
+      {error ? (
+        <p
+          role="alert"
+          className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]"
+        >
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
 }

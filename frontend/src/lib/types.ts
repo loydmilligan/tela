@@ -14,6 +14,9 @@ export interface Space {
   id: number
   name: string
   slug: string
+  // 'private' (members-only) or 'public' (whole space readable on the web, no
+  // login). Present on the spaces list + detail; optional on constructed Spaces.
+  visibility?: 'private' | 'public'
   created_at: string
   updated_at: string
   // Access summary — present on the spaces list (sidebar), optional elsewhere.
@@ -96,6 +99,7 @@ export interface CreateSpaceInput {
 export interface UpdateSpaceInput {
   name?: string
   slug?: string
+  visibility?: 'private' | 'public'
 }
 
 export interface CreatePageInput {
