@@ -72,6 +72,24 @@ A dev-only assertion in `milkdown-slash.tsx` additionally throws if the slash
    not an authorable block) in `scripts/blocks-manifest.mjs`.
 5. `make blocks-gen` to regenerate, then `make blocks-gate` to verify.
 
+## Known limitations of the gate
+
+The gate guarantees *every plugin file is classified*, which is weaker than
+*every renderable block is disclosed*. Two cases it does **not** catch — covered
+by the "Adding a new block" checklist by convention, not by CI:
+
+1. **A block added inside an existing (already-mapped or infra) file** — e.g. a
+   second block in `milkdown-math.ts`, a new directive in `milkdown-directives.ts`,
+   or a stock remark plugin wired directly into `milkdown-editor.tsx`. No new file
+   appears, so the gate stays green with no manifest entry. Closing this needs the
+   gate to enumerate actual registered ProseMirror schemas / directive names
+   rather than filenames.
+2. **Wrong `syntax`** — the `syntax` strings are hand-authored and never validated
+   against the real serializer, so a renamed directive (`:::quote` → `:::pullquote`)
+   would silently lie to agents. Closing this needs a headless editor round-trip
+   test (blocked on the frontend having any test infra — see CLAUDE.md "no test
+   infra"); a natural first FE test when that lands.
+
 ## Field reference
 
 | field | used by | meaning |
