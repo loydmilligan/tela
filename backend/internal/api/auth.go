@@ -90,6 +90,14 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Orgs may enforce SSO for their domains: password login is refused so the
+	// user is funnelled through their SSO provider. Instance admins are exempt
+	// so a misconfigured enforced connection can't lock the operator out.
+	if email.Valid && isAdmin != 1 && s.passwordLoginBlocked(ctx, email.String) {
+		writeError(w, http.StatusForbidden, "sso_required", "your organization requires single sign-on")
+		return
+	}
+
 	// Apply auto-join domains on every sign-in so a domain mapping added after
 	// the user already verified still takes effect (idempotent, best-effort).
 	if email.Valid {

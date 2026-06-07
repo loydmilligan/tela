@@ -53,6 +53,12 @@ type Server struct {
 	// unless TELA_WORKOS_ISSUER is set. Tests inject a configured one.
 	oauth *mcpOAuth
 
+	// sso is the federated-login registry (social providers from TELA_SSO_*).
+	// Never nil — an unconfigured instance just has an empty provider map, so
+	// the login screen shows no social buttons. Per-org OIDC connections aren't
+	// held here; they're built per-request from the org_sso row.
+	sso *ssoRegistry
+
 	// seedWelcome controls whether POST /api/spaces seeds a starter "Welcome"
 	// page into a freshly created space (so a new team doesn't land in an empty
 	// void). On by default; the test package disables it via
@@ -73,6 +79,7 @@ func New(db *sql.DB) *Server {
 		davDeletes:   newDavDeleteGuard(),
 		rag:          rag.NewService(db, rag.ConfigFromEnv()),
 		oauth:        loadMCPOAuth(context.Background()),
+		sso:          loadSSOProviders(context.Background()),
 		seedWelcome:  os.Getenv("TELA_DISABLE_WELCOME_SEED") == "",
 	}
 	// Sweep stale share-rate-limit buckets every shareRateWindow so the

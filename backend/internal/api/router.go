@@ -82,6 +82,14 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/request-password-reset", srv.RequestPasswordReset)
 	mux.HandleFunc("POST /api/auth/reset-password", srv.ResetPassword)
 
+	// Federated sign-in (sso.go): social providers (Google/Microsoft/GitHub) +
+	// per-org OIDC. Under /api/auth/, so already on auth.IsPublicPath — every
+	// handler self-authenticates (state cookie / IdP assertion). The 'org'
+	// provider segment is shared by all org connections (org id rides in state).
+	mux.HandleFunc("GET /api/auth/sso/providers", srv.SSOProviders)
+	mux.HandleFunc("GET /api/auth/sso/{provider}/start", srv.SSOStart)
+	mux.HandleFunc("GET /api/auth/sso/{provider}/callback", srv.SSOCallback)
+
 	mux.HandleFunc("GET /api/spaces", srv.ListSpaces)
 	mux.HandleFunc("POST /api/spaces", srv.CreateSpace)
 	mux.HandleFunc("GET /api/spaces/{id}", srv.GetSpace)
@@ -294,6 +302,11 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/orgs/{id}", srv.GetOrg)
 	mux.HandleFunc("PATCH /api/orgs/{id}", srv.UpdateOrg)
 	mux.HandleFunc("DELETE /api/orgs/{id}", srv.DeleteOrg)
+	// Per-org OIDC SSO connection (org_sso.go). Instance-admin only, like the
+	// auto-join domain admin below.
+	mux.HandleFunc("GET /api/orgs/{id}/sso", srv.GetOrgSSO)
+	mux.HandleFunc("PUT /api/orgs/{id}/sso", srv.PutOrgSSO)
+	mux.HandleFunc("DELETE /api/orgs/{id}/sso", srv.DeleteOrgSSO)
 	mux.HandleFunc("GET /api/orgs/{id}/members", srv.ListOrgMembers)
 	mux.HandleFunc("POST /api/orgs/{id}/members", srv.AddOrgMember)
 	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)

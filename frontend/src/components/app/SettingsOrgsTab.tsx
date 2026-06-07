@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Building2, Globe, History, MoreHorizontal, Trash2, UserPlus, Users } from 'lucide-react'
+import { Building2, Globe, History, KeyRound, MoreHorizontal, Trash2, UserPlus, Users } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useOrgAudit } from '../../lib/queries/org-audit'
 import { AuditRow } from './SettingsAuditTab'
@@ -25,6 +25,11 @@ import {
   useDeleteOrgDomain,
   useOrgDomains,
 } from '../../lib/queries/org-domains'
+import {
+  useDeleteOrgSSO,
+  useOrgSSO,
+  usePutOrgSSO,
+} from '../../lib/queries/org-sso'
 import type { Group, Org, OrgMember, OrgRole } from '../../lib/types'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
@@ -45,6 +50,7 @@ import {
 } from '../ui/dropdown-menu'
 import { Input } from '../ui/input'
 import { Select } from '../ui/select'
+import { Checkbox } from '../ui/checkbox'
 import { cn } from '../../lib/utils'
 
 // scope === 'instance' is the instance-admin view (every org, create/delete,
@@ -168,7 +174,7 @@ function OrgRow({ org, scope }: { org: Org; scope: 'instance' | 'admin' }) {
         </DropdownMenu>
       ) : null}
 
-      <ManageOrgDialog org={org} open={manageOpen} onOpenChange={setManageOpen} />
+      <ManageOrgDialog org={org} scope={scope} open={manageOpen} onOpenChange={setManageOpen} />
       {scope === 'instance' ? (
         <DeleteOrgDialog org={org} open={deleteOpen} onOpenChange={setDeleteOpen} />
       ) : null}
@@ -178,10 +184,12 @@ function OrgRow({ org, scope }: { org: Org; scope: 'instance' | 'admin' }) {
 
 function ManageOrgDialog({
   org,
+  scope,
   open,
   onOpenChange,
 }: {
   org: Org
+  scope: 'instance' | 'admin'
   open: boolean
   onOpenChange: (next: boolean) => void
 }) {
@@ -223,6 +231,10 @@ function ManageOrgDialog({
 
           <GroupsSection org={org} />
 
+          {scope === 'instance' ? (
+            <OrgSSOSection orgId={open ? org.id : null} />
+          ) : null}
+
           <OrgActivitySection orgId={open ? org.id : null} />
         </div>
 
@@ -235,6 +247,154 @@ function ManageOrgDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// OrgSSOSection configures a single OIDC connection for the org (instance-admin
+// only). The client_secret is write-only: it's never returned by the API, so it
+// must be re-entered on each save. enforced=on refuses password login for the
+// org's auto-join domains, funnelling those users through SSO.
+function OrgSSOSection({ orgId }: { orgId: number | null }) {
+  const sso = useOrgSSO(orgId)
+  const put = usePutOrgSSO(orgId ?? 0)
+  const del = useDeleteOrgSSO(orgId ?? 0)
+
+  const [issuer, setIssuer] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+  const [enforced, setEnforced] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  // Prefill issuer/client_id/enforced from the loaded connection once.
+  const [hydratedFor, setHydratedFor] = useState<number | null>(null)
+  if (sso.data && hydratedFor !== orgId) {
+    setIssuer(sso.data.issuer)
+    setClientId(sso.data.client_id)
+    setEnforced(sso.data.enforced)
+    setHydratedFor(orgId)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!issuer.trim() || !clientId.trim() || !clientSecret.trim()) {
+      setError('Issuer, client ID and client secret are all required.')
+      return
+    }
+    setError(null)
+    setSaved(false)
+    try {
+      await put.mutateAsync({
+        issuer: issuer.trim(),
+        client_id: clientId.trim(),
+        client_secret: clientSecret.trim(),
+        enforced,
+      })
+      setClientSecret('')
+      setSaved(true)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'issuer_unreachable') {
+        setError("Couldn't run OIDC discovery against that issuer URL.")
+      } else if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to save SSO connection.')
+      }
+    }
+  }
+
+  async function handleRemove() {
+    setError(null)
+    try {
+      await del.mutateAsync()
+      setIssuer('')
+      setClientId('')
+      setClientSecret('')
+      setEnforced(false)
+      setHydratedFor(orgId)
+    } catch {
+      setError('Failed to remove SSO connection.')
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-[var(--space-3)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
+      <header className="flex flex-col gap-[var(--space-1)]">
+        <h3 className="m-0 flex items-center gap-[var(--space-2)] font-[family-name:var(--font-sans)] text-[length:var(--text-base)] text-[var(--text-primary)]">
+          <KeyRound width={15} height={15} />
+          Single sign-on (OIDC)
+          {sso.data?.configured ? <Badge variant="muted">configured</Badge> : null}
+        </h3>
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+          Members sign in via this org's identity provider. Users land via the
+          org's auto-join domains, so map at least one domain above. Enforcing
+          SSO blocks password login for those domains.
+        </p>
+      </header>
+
+      <form
+        onSubmit={handleSubmit}
+        noValidate
+        className="flex flex-col gap-[var(--space-2)]"
+      >
+        <Input
+          aria-label="Issuer URL"
+          placeholder="https://idp.example.com"
+          value={issuer}
+          onChange={(e) => setIssuer(e.target.value)}
+        />
+        <Input
+          aria-label="Client ID"
+          placeholder="Client ID"
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+        />
+        <Input
+          type="password"
+          aria-label="Client secret"
+          autoComplete="off"
+          placeholder={
+            sso.data?.configured ? 'Client secret (re-enter to save)' : 'Client secret'
+          }
+          value={clientSecret}
+          onChange={(e) => setClientSecret(e.target.value)}
+        />
+        <label className="flex items-center gap-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-primary)]">
+          <Checkbox
+            checked={enforced}
+            onCheckedChange={(v) => setEnforced(v === true)}
+          />
+          Require SSO (block password login for this org's domains)
+        </label>
+
+        {error ? (
+          <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+            {error}
+          </p>
+        ) : saved ? (
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            Saved.
+          </p>
+        ) : null}
+
+        <div className="flex items-center gap-[var(--space-2)]">
+          <Button type="submit" variant="secondary" size="sm" disabled={put.isPending}>
+            {put.isPending ? 'Saving…' : 'Save connection'}
+          </Button>
+          {sso.data?.configured ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleRemove()}
+              disabled={del.isPending}
+              className="text-[var(--text-muted)] hover:text-[var(--danger)]"
+            >
+              Remove
+            </Button>
+          ) : null}
+        </div>
+      </form>
+    </section>
   )
 }
 

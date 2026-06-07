@@ -169,8 +169,15 @@ const appLayoutRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  validateSearch: (search: Record<string, unknown>): { next?: string } =>
-    typeof search.next === 'string' ? { next: search.next } : {},
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { next?: string; sso_error?: string } => ({
+    ...(typeof search.next === 'string' ? { next: search.next } : {}),
+    // Surfaced when a federated sign-in bounces back here (SSOCallback failure).
+    ...(typeof search.sso_error === 'string'
+      ? { sso_error: search.sso_error }
+      : {}),
+  }),
   beforeLoad: async ({ search }) => {
     const user = await ensureMe()
     if (!user) return

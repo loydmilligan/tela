@@ -16,19 +16,25 @@ import {
 } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { AuthShell, AuthField, AuthFooterLink } from '../components/app/AuthShell'
+import { SSOButtons } from '../components/app/SSOButtons'
 
 export function LoginPage() {
+  const navigate = useNavigate()
+  const search = useSearch({ from: '/login' }) as {
+    next?: string
+    sso_error?: string
+  }
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  // Seed with any federated-login failure bounced back via ?sso_error=.
+  const [error, setError] = useState<string | null>(search.sso_error ?? null)
   // When login fails because the account's email isn't confirmed, we surface a
   // dedicated "resend" affordance instead of the generic error.
   const [unverified, setUnverified] = useState(false)
   const [resent, setResent] = useState(false)
   const login = useLogin()
   const resend = useResendVerification()
-  const navigate = useNavigate()
-  const search = useSearch({ from: '/login' }) as { next?: string }
+  const nextPath = sanitizeNextPath(search.next) ?? '/'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -42,20 +48,23 @@ export function LoginPage() {
     setResent(false)
     try {
       await login.mutateAsync({ identifier: id, password })
-      const next = sanitizeNextPath(search.next) ?? '/'
       // The WorkOS OAuth bridge (/oauth/workos/login) is a BACKEND route, not an
       // SPA route — hard-navigate so the browser hits the server (which completes
       // the Connect flow), not the client router.
-      if (next.startsWith('/oauth/')) {
-        window.location.assign(next)
+      if (nextPath.startsWith('/oauth/')) {
+        window.location.assign(nextPath)
         return
       }
-      // Cast: `next` is an in-app path validated by sanitizeNextPath; the
+      // Cast: `nextPath` is an in-app path validated by sanitizeNextPath; the
       // router's typed route tree doesn't know it as a literal.
-      void navigate({ to: next as never })
+      void navigate({ to: nextPath as never })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'email_unverified') {
         setUnverified(true)
+      } else if (err instanceof ApiError && err.code === 'sso_required') {
+        setError(
+          'Your organization requires single sign-on. Use an SSO option below.',
+        )
       } else if (err instanceof ApiError && err.status === 401) {
         setError('Invalid credentials.')
       } else if (err instanceof ApiError) {
@@ -168,6 +177,9 @@ export function LoginPage() {
               {login.isPending ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
+          <div className="mt-[var(--space-5)]">
+            <SSOButtons next={nextPath} />
+          </div>
           <AuthFooterLink>
             New to tela?{' '}
             <Link

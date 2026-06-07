@@ -163,6 +163,41 @@ export function useResetPassword() {
   })
 }
 
+// A configured federated-login button. Mirrors backend ssoProviderDTO.
+export interface SSOProvider {
+  name: string
+  label: string
+}
+
+export interface SSOProviders {
+  providers: SSOProvider[]
+  // True when at least one org has an SSO connection (so the UI can offer the
+  // "Sign in with SSO" by-domain affordance).
+  org_sso: boolean
+}
+
+// Which social buttons to render + whether org SSO exists. Public + cacheable;
+// raw fetch (not api()) since there's no session to gate and api() would treat a
+// transient failure as an auth bounce. A failure degrades to "no buttons".
+export async function fetchSSOProviders(): Promise<SSOProviders> {
+  try {
+    const res = await fetch('/api/auth/sso/providers')
+    if (!res.ok) return { providers: [], org_sso: false }
+    return (await res.json()) as SSOProviders
+  } catch {
+    return { providers: [], org_sso: false }
+  }
+}
+
+export function useSSOProviders() {
+  return useQuery({
+    queryKey: ['sso', 'providers'],
+    queryFn: fetchSSOProviders,
+    staleTime: Infinity,
+    retry: false,
+  })
+}
+
 export function useLogout() {
   const qc = useQueryClient()
   return useMutation({
