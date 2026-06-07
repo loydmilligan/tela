@@ -232,6 +232,14 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// re-scanning. Session OR bearer-read; membership on space_id required.
 	mux.HandleFunc("GET /api/changes", srv.ListChanges)
 
+	// "Connect your vault" (sync §16): user self-service WebDAV sync tokens — a
+	// member mints a token for their own access (write or read-only, optionally
+	// space-pinned) and gets a ready-to-paste rclone setup. Personal + membership
+	// -gated, distinct from the instance-admin /api/api_keys CRUD. Revoke reuses
+	// the owner-gated DELETE /api/api_keys/{id}.
+	mux.HandleFunc("POST /api/sync/connections", srv.CreateSyncConnection)
+	mux.HandleFunc("GET /api/sync/connections", srv.ListSyncConnections)
+
 	// M16.A.1 API keys: bearer-token management. Instance-admin only via the
 	// session cookie path, OR a bearer key with admin scope. Keys are issued
 	// once on POST and never re-exposed — list/delete operate over key_prefix

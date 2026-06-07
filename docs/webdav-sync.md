@@ -6,10 +6,15 @@ can two-way-sync your wiki to local markdown files with stock
 WebDAV client). This is the dogfood path of the sync feature (spec §9); a
 tela-own engine with push + in-app conflict UX comes later.
 
+> **Easiest setup: Settings → Sync → Connect a vault.** It mints a sync token and
+> shows the exact `rclone config create` + sync commands to paste (token included,
+> `--ignore-size` baked in). The rest of this doc is the manual reference.
+
 - **Endpoint:** `https://tela.cagdas.io/dav/`
 - **Auth:** a **Personal Access Token (PAT)** as the password (any username).
-  Mint one in the app under API keys. Use a **write**-scope key to sync up,
-  **read** to sync down only. A **space-pinned** key exposes just that one space.
+  Mint one in **Settings → Sync** (or under API keys). Use a **write**-scope key
+  to sync up, **read** to sync down only. A **space-pinned** key exposes just
+  that one space.
 - **Layout:** the root lists each space as a folder (`<space-slug>/`); inside,
   pages are `<slug>.md`. A page that has children is *also* a `<slug>/` folder
   holding them (the sibling-folder layout — identical to `export.zip`).

@@ -7,6 +7,7 @@ import { SettingsNotificationsTab } from '../components/app/SettingsNotification
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
 import { SettingsSearchIndexTab } from '../components/app/SettingsSearchIndexTab'
+import { SettingsSyncTab } from '../components/app/SettingsSyncTab'
 import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
 import { Button } from '../components/ui/button'
 import { useMe } from '../lib/queries/auth'
@@ -82,6 +83,14 @@ const SEARCH_INDEX_TAB: SettingsTab = {
   render: () => <SettingsSearchIndexTab />,
 }
 
+// "Connect your vault" — user self-service WebDAV sync, available to everyone
+// (the backend gates token scope on the user's own space membership).
+const SYNC_TAB: SettingsTab = {
+  id: 'sync',
+  label: 'Sync',
+  render: () => <SettingsSyncTab />,
+}
+
 export function SettingsPage() {
   const me = useMe()
   const orgs = useOrgs()
@@ -96,12 +105,12 @@ export function SettingsPage() {
     (orgs.data?.some((o) => o.my_role === 'admin') ?? false)
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
     }
     if (isOrgAdmin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, ORG_ADMIN_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, ORG_ADMIN_TAB]
     }
-    return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB]
+    return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB]
   }, [me.data?.is_instance_admin, isOrgAdmin])
   const [activeId, setActiveId] = useState(tabs[0].id)
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
