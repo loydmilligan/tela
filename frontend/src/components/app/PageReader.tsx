@@ -7,6 +7,7 @@ import { buildWikilinkResolveIndex } from '../../lib/slug'
 import { Button } from '../ui/button'
 import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
+import { AttachmentStrip } from './AttachmentStrip'
 
 interface PageReaderProps {
   spaceId: number
@@ -107,6 +108,7 @@ function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewP
       enableLinkPreview
       onNavigateWikilink={onNavigateWikilink}
       onEscape={onEscape}
+      attachmentStrip={<AttachmentStrip pageId={pageId} />}
       topbarTrailing={<DownloadPdfButton url={`/api/pages/${pageId}/pdf`} themed />}
       topbarLeading={
         <Button

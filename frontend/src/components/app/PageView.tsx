@@ -37,6 +37,7 @@ import { useComments } from '../../lib/comments/use-comments'
 import { useMe } from '../../lib/queries/auth'
 import { useSpaceMembers } from '../../lib/queries/members'
 import { useRevision } from '../../lib/queries/page-revisions'
+import { AttachmentStrip } from './AttachmentStrip'
 import { CommentsPanel } from './CommentsPanel'
 import { PageProperties } from './PageProperties'
 import { LocalGraphCard } from './LocalGraphCard'
@@ -911,6 +912,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
             'focus-visible:border-[var(--border-subtle)]',
           )}
         />
+
+        {!isDraftMode ? <AttachmentStrip pageId={page.id} editable /> : null}
 
         {isDraftMode ? (
           draftRevisionQuery.isError ? (

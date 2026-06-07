@@ -248,6 +248,13 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/images/") {
 		return true
 	}
+	// Unified attachment blob serve — content-addressed space_files (migration
+	// 0015), same posture as /api/images/ (opaque hash URL, immutable cache). The
+	// serve handler validates the hash, forces download for non-image types, and
+	// serves bytes as public assets.
+	if strings.HasPrefix(p, "/api/files/") {
+		return true
+	}
 	// #3 PDF export: gotenberg's headless Chromium fetches /api/print/{token}
 	// (page id encoded in the signed token) with no session. The handler
 	// validates the short-lived HMAC token itself.

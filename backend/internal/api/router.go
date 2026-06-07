@@ -146,6 +146,13 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// be served without a session (incl. share-mode). Mirrors diagrams.
 	mux.HandleFunc("POST /api/pages/{id}/images", srv.UploadPageImage)
 
+	// Page attachments — the space_files parented to this page (incl. files
+	// rclone-synced into its folder). Session-authed read; the bytes are served
+	// by the public /api/files/ route below.
+	mux.HandleFunc("GET /api/pages/{id}/attachments", srv.ListPageAttachments)
+	mux.HandleFunc("POST /api/pages/{id}/attachments", srv.UploadPageAttachment)
+	mux.HandleFunc("DELETE /api/pages/{id}/attachments/{file_id}", srv.DeletePageAttachment)
+
 	// URL unfurl for paste-as-titled-link. Session-authed (makes an outbound
 	// SSRF-guarded request); never public.
 	mux.HandleFunc("GET /api/unfurl", srv.Unfurl)
@@ -363,6 +370,11 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// Public image serve — content-addressed, immutable. MUST be on
 	// auth.IsPublicPath via the /api/images/ HasPrefix branch.
 	mux.HandleFunc("GET /api/images/{page_id}/{file}", srv.ServePageImage)
+
+	// Unified attachment blob serve — content-addressed space_files, public
+	// (incl. share/public readers). MUST be on auth.IsPublicPath via the
+	// /api/files/ HasPrefix branch. Non-image types are forced to download.
+	mux.HandleFunc("GET /api/files/{space_id}/{file}", srv.ServeSpaceFile)
 
 	// M11.0 OG share: public unauthenticated route. Crawler UAs get OG HTML;
 	// real browsers get 302'd to the SPA. MUST be on auth.IsPublicPath.

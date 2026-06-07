@@ -193,6 +193,8 @@ export interface ReaderShellProps {
   publishedAt?: string
   /** Rendered after the article body — e.g. previous/next post navigation. */
   articleFooter?: ReactNode
+  /** Attachments strip rendered just below the title (page files). */
+  attachmentStrip?: ReactNode
 }
 
 // Set on the window once the reader has painted (fonts ready + a short settle so
@@ -228,6 +230,7 @@ export function ReaderShell({
   byline,
   publishedAt,
   articleFooter,
+  attachmentStrip,
 }: ReaderShellProps) {
   // Preferences — text size + typeface, persisted; theme is global.
   const [size, setSize] = useState<ReaderSize>(() =>
@@ -581,6 +584,7 @@ export function ReaderShell({
                 <img className="reader-cover" src={coverImage} alt="" />
               ) : null}
               <h1 className="reader-title">{title || 'Untitled'}</h1>
+              {attachmentStrip}
               <div className="reader-meta">
                 {byline ? (
                   <>
