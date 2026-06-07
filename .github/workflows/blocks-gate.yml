@@ -1,0 +1,40 @@
+name: blocks-gate
+
+# Enforces the block authoring manifest contract (see docs/agent-authoring.md):
+# the backend's generated copy is in sync with the frontend source of truth AND
+# every renderer plugin is classified (a new block can't ship invisible to
+# agents / missing from the slash menu). Node-only — no docker, no npm install
+# (the script uses stdlib), so it's seconds. Triggers on every path that can
+# break the contract, including frontend-only changes the heavy ci.yml ignores.
+
+on:
+  pull_request:
+    paths:
+      - "frontend/src/components/app/blocks-manifest.json"
+      - "frontend/src/components/app/blocks-manifest.ts"
+      - "frontend/src/components/app/milkdown-*"
+      - "backend/internal/api/blocks_gen.json"
+      - "scripts/blocks-manifest.mjs"
+      - ".github/workflows/blocks-gate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/src/components/app/blocks-manifest.json"
+      - "frontend/src/components/app/blocks-manifest.ts"
+      - "frontend/src/components/app/milkdown-*"
+      - "backend/internal/api/blocks_gen.json"
+      - "scripts/blocks-manifest.mjs"
+      - ".github/workflows/blocks-gate.yml"
+
+jobs:
+  blocks-gate:
+    name: block manifest in sync + covered
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check manifest freshness + plugin coverage
+        run: node scripts/blocks-manifest.mjs --check

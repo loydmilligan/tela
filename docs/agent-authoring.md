@@ -45,7 +45,11 @@ silently rot — forget an entry and the human palette breaks first, visibly.
 
 ## Anti-drift gates
 
-`make blocks-gate` (run first by `make test`) enforces two things:
+`make blocks-gate` enforces two things. It runs first in `make test` locally
+**and** as its own `blocks-gate` CI workflow (`.github/workflows/blocks-gate.yml`)
+on every push/PR that touches the manifest, a `milkdown-*` plugin, the codegen
+script, or the generated copy — so the contract holds even on a frontend-only
+change (which the heavier `ci.yml` integration job ignores by path):
 
 1. **Freshness** — regenerates the backend copy and fails if `blocks_gen.json` is
    out of sync with the source. Fix: `make blocks-gen` and commit.
