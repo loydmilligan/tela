@@ -102,6 +102,12 @@ export interface ReaderShellProps {
    */
   aliveWikilinkIds: Set<number> | null
   /**
+   * Slug→id map for resolving `[[Name]]` bracket wikilinks, scoped to the
+   * reading context (the page's space in read mode, the in-scope subtree in
+   * share mode). `null` leaves bracket links neutral/non-navigable.
+   */
+  wikilinkResolveIndex: Map<string, number> | null
+  /**
    * Navigation policy for a clicked wikilink. The shell preventDefaults every
    * `tela://page/N` anchor (the scheme is dead to the browser); the caller
    * decides whether/where to navigate (no-op for out-of-scope or broken).
@@ -140,6 +146,7 @@ export function ReaderShell({
   updatedAt,
   wikilinkMode,
   aliveWikilinkIds,
+  wikilinkResolveIndex,
   onNavigateWikilink,
   topbarLeading,
   topbarTrailing,
@@ -418,6 +425,7 @@ export function ReaderShell({
                   onChange={noop}
                   ariaLabel="Page body"
                   aliveWikilinkIds={aliveWikilinkIds}
+                  wikilinkResolveIndex={wikilinkResolveIndex}
                   collabPageId={null}
                   readOnly
                   wikilinkMode={wikilinkMode}

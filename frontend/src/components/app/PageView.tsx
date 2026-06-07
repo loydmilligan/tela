@@ -27,7 +27,7 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { ApiError } from '../../lib/api'
 import { pushRecentPage } from '../../lib/recentPages'
-import { pageSlug } from '../../lib/slug'
+import { buildWikilinkResolveIndex, pageSlug } from '../../lib/slug'
 import type { TelaProvider } from '../../lib/collab/tela-provider'
 import { captureAnchor, type CommentAnchor } from '../../lib/comments/anchor'
 import { scrollAndFlashPanelThread } from '../../lib/comments/coordination'
@@ -538,6 +538,15 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
     return new Set(allPagesData.map((p) => p.id))
   }, [allPagesData])
 
+  // Slug→id map for `[[Name]]` bracket-wikilink resolution, scoped to this
+  // page's space to match the backend's space-scoped backlink resolution.
+  const wikilinkResolveIndex = useMemo<Map<string, number> | null>(() => {
+    if (!allPagesData) return null
+    return buildWikilinkResolveIndex(
+      allPagesData.filter((p) => p.space_id === page.space_id),
+    )
+  }, [allPagesData, page.space_id])
+
   // Record this visit in the recently-viewed list (consumed by the M5.1
   // palette empty state). Re-fires only when the page id changes — renaming
   // the open page shouldn't bump its position in the recents list, and the
@@ -866,6 +875,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
                 ariaLabel="Page body (draft)"
                 className={EDITOR_MIN_H}
                 aliveWikilinkIds={aliveWikilinkIds}
+                wikilinkResolveIndex={wikilinkResolveIndex}
                 collabPageId={null}
                 readOnly={false}
                 pageId={page.id}
@@ -884,6 +894,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
               ariaLabel="Page body"
               className={EDITOR_MIN_H}
               aliveWikilinkIds={aliveWikilinkIds}
+              wikilinkResolveIndex={wikilinkResolveIndex}
               collabPageId={isViewer ? null : page.id}
               readOnly={isViewer}
               onCollabReady={setProvider}

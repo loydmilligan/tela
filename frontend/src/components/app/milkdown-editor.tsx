@@ -120,6 +120,13 @@ import {
   type WikilinkDecorationMode,
 } from './milkdown-wikilink-decoration'
 import {
+  WIKILINK_RESOLVE_META,
+  wikilinkBracketRemarkPlugin,
+  wikilinkBracketSchema,
+  wikilinkResolveCtx,
+  wikilinkResolvePlugin,
+} from './milkdown-wikilink-bracket'
+import {
   COMMENT_ANCHOR_META,
   commentAnchorCallbacksCtx,
   commentShowResolvedCtx,
@@ -141,6 +148,10 @@ export interface MilkdownEditorProps {
   // treats every wikilink as alive in that state to avoid a redline flash on
   // first paint. M5.2d.
   aliveWikilinkIds?: Set<number> | null
+  // Slug→id map for resolving `[[Name]]` bracket wikilinks within the page's
+  // space. `null` means "not loaded yet" (bracket links stay neutral, not
+  // redlined). See milkdown-wikilink-bracket.ts.
+  wikilinkResolveIndex?: Map<string, number> | null
   // M7.2 LiveCollab. When set, the editor opens a Yjs WebSocket session
   // against /ws/pages/{collabPageId} via our custom 5-tag wire protocol
   // (NOT y-websocket). y-prosemirror's sync + undo plugins are wired in;
@@ -219,6 +230,7 @@ function MilkdownEditorInner({
   ariaLabel,
   className,
   aliveWikilinkIds,
+  wikilinkResolveIndex,
   collabPageId,
   readOnly,
   onCollabReady,
@@ -450,6 +462,7 @@ function MilkdownEditorInner({
           ctx.update(prosePluginsCtx, (existing) => [...existing, blockHandle])
         }
         ctx.set(wikilinkModeCtx.key, wikilinkMode)
+        ctx.set(wikilinkResolveCtx.key, wikilinkResolveIndex ?? null)
         // M13.4 — share-mode + viewer-mode render collapsibles CLOSED by
         // default (matching native <details> UX); editable mode forces them
         // open so caret-routing into the body works. See detailsReadOnlyCtx
@@ -650,6 +663,13 @@ function MilkdownEditorInner({
       .use(wikilinkAliveIdsCtx)
       .use(wikilinkModeCtx)
       .use(wikilinkDecorationPlugin)
+      // Obsidian-style `[[Name]]` bracket wikilinks: remark transform + atom
+      // node (round-trips the `[[…]]` source) + a resolve plugin that injects
+      // `tela://page/{id}` hrefs so the existing nav handlers pick them up.
+      .use(wikilinkBracketRemarkPlugin)
+      .use(wikilinkBracketSchema)
+      .use(wikilinkResolveCtx)
+      .use(wikilinkResolvePlugin)
       .use(commentThreadsCtx)
       .use(commentAnchorCallbacksCtx)
       .use(commentShowResolvedCtx)
@@ -737,6 +757,19 @@ function MilkdownEditorInner({
       view.dispatch(view.state.tr.setMeta(WIKILINK_ALIVE_IDS_META, true))
     })
   }, [loading, get, aliveWikilinkIds])
+
+  // Push the `[[Name]]` resolution index (slug→id) and repaint the bracket
+  // wikilink decorations — same deferred-snapshot mechanism as the alive-ids
+  // effect above.
+  useEffect(() => {
+    if (loading) return
+    const editor = get()
+    editor?.action((ctx) => {
+      ctx.set(wikilinkResolveCtx.key, wikilinkResolveIndex ?? null)
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(WIKILINK_RESOLVE_META, true))
+    })
+  }, [loading, get, wikilinkResolveIndex])
 
   // M8.4 — push thread-list updates into the comment-anchor ctx slice and
   // trigger an immediate rebuild via the COMMENT_ANCHOR_META tx. The plugin's

@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { X } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useAllPages, usePage } from '../../lib/queries/pages'
+import { buildWikilinkResolveIndex } from '../../lib/slug'
 import { Button } from '../ui/button'
 import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
@@ -66,6 +67,16 @@ function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewP
     for (const p of allPages.data ?? []) m.set(p.id, p.space_id)
     return m
   }, [allPages.data])
+  // `[[Name]]` resolution, scoped to this page's space (backend parity).
+  const wikilinkResolveIndex = useMemo<Map<string, number> | null>(
+    () =>
+      allPages.data
+        ? buildWikilinkResolveIndex(
+            allPages.data.filter((p) => p.space_id === spaceId),
+          )
+        : null,
+    [allPages.data, spaceId],
+  )
 
   const onNavigateWikilink = useCallback(
     (targetPageId: number) => {
@@ -92,6 +103,7 @@ function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewP
       updatedAt={updatedAt}
       wikilinkMode="edit"
       aliveWikilinkIds={aliveIds}
+      wikilinkResolveIndex={wikilinkResolveIndex}
       onNavigateWikilink={onNavigateWikilink}
       onEscape={onEscape}
       topbarTrailing={<DownloadPdfButton url={`/api/pages/${pageId}/pdf`} themed />}

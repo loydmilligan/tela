@@ -38,6 +38,24 @@ export function pageSlug(title: string): string {
   return s
 }
 
+// buildWikilinkResolveIndex maps page-title slugs to ids for resolving
+// Obsidian-style `[[Name]]` bracket wikilinks (milkdown-wikilink-bracket.ts).
+// Lowest id wins on a slug clash, matching the backend's `ORDER BY id ASC`
+// (resolveWikiTitleSlugs in pages.go). Callers pass a space-scoped page list so
+// resolution can't cross a space (membership) boundary. Lives here — not in the
+// milkdown module — so the lazy reader/editor hosts can build the index without
+// pulling the heavy Milkdown chunk into their entry bundle.
+export function buildWikilinkResolveIndex(
+  pages: ReadonlyArray<{ id: number; title: string }>,
+): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const p of [...pages].sort((a, b) => a.id - b.id)) {
+    const s = pageSlug(p.title)
+    if (s && !m.has(s)) m.set(s, p.id)
+  }
+  return m
+}
+
 // pagePath builds the in-app route path for a page, with the cosmetic slug
 // appended when the title yields one.
 export function pagePath(spaceId: number, pageId: number, title: string): string {

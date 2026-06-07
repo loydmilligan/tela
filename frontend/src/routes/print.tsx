@@ -55,6 +55,7 @@ export function PrintRoute() {
       updatedAt={page.updated_at}
       wikilinkMode="share"
       aliveWikilinkIds={noIds}
+      wikilinkResolveIndex={null}
       onNavigateWikilink={() => {}}
       sourceLabel={page.source_url.replace(/^https?:\/\//, '')}
     />

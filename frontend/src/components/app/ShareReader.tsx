@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { applyPdfThemeParam } from '../../lib/theme'
+import { buildWikilinkResolveIndex } from '../../lib/slug'
 import { useShareTree, type SharePublicMeta } from '../../lib/queries/share'
 import { Button } from '../ui/button'
 import { DownloadPdfButton } from './DownloadPdfButton'
@@ -45,6 +46,14 @@ export function ShareReaderView({
   const pages = tree.data?.pages ?? []
   const showSidebar = treeEnabled && pages.length > 1
 
+  // `[[Name]]` resolution within the shared subtree only — never resolve names
+  // to pages outside the share (no leak). A single-page share has no tree, so
+  // bracket links there stay non-navigable. `null` until the tree lands.
+  const wikilinkResolveIndex = useMemo<Map<string, number> | null>(
+    () => (tree.data ? buildWikilinkResolveIndex(tree.data.pages) : null),
+    [tree.data],
+  )
+
   const onNavigateWikilink = useCallback(
     (targetPageId: number) => {
       // In-scope links route within share-mode; out-of-scope ones are painted
@@ -66,6 +75,7 @@ export function ShareReaderView({
       updatedAt={updatedAt}
       wikilinkMode="share"
       aliveWikilinkIds={inScopePageIds}
+      wikilinkResolveIndex={wikilinkResolveIndex}
       onNavigateWikilink={onNavigateWikilink}
       sidebar={showSidebar ? <ShareSidebar token={token} pages={pages} /> : undefined}
       topbarLeading={
