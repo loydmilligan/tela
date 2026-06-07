@@ -28,6 +28,11 @@ import { cn } from '../../lib/utils'
 // visited. Flat + token-driven to match the app (depth via surface + accent
 // tints, not shadows).
 
+// Per-widget row cap — the dashboard is a glance, so no single list shoves the
+// others far down. (The sidebar Favorites list + the command palette show the
+// full sets.)
+const DASH_LIMIT = 5
+
 function greetingFor(hour: number): string {
   if (hour < 5) return 'Good evening'
   if (hour < 12) return 'Good morning'
@@ -38,13 +43,15 @@ function greetingFor(hour: number): string {
 export function HomeRoute() {
   const me = useMe()
   const spaces = useSpaces()
-  const recent = useRecentChanges()
-  const agentChanges = useRecentChanges({ source: 'agent' })
-  const myEdits = useRecentChanges({ mine: true })
+  const recent = useRecentChanges({ limit: DASH_LIMIT })
+  const agentChanges = useRecentChanges({ source: 'agent', limit: DASH_LIMIT })
+  const myEdits = useRecentChanges({ mine: true, limit: DASH_LIMIT })
   const favorites = useFavorites()
   const visited = useMemo(() => readRecentPages(), [])
   const greeting = useMemo(() => greetingFor(new Date().getHours()), [])
 
+  const favItems = (favorites.data ?? []).slice(0, DASH_LIMIT)
+  const visitedItems = visited.slice(0, DASH_LIMIT)
   const spaceCount = spaces.data?.length ?? 0
   const favCount = favorites.data?.length ?? 0
   const noSpaces = spaces.isSuccess && spaceCount === 0
@@ -145,13 +152,13 @@ export function HomeRoute() {
                 <Widget
                   icon={Star}
                   title="Favorites"
-                  count={favorites.data?.length}
+                  count={favItems.length}
                   loading={favorites.isLoading}
                   error={favorites.isError}
-                  empty={!favorites.data || favorites.data.length === 0}
+                  empty={favItems.length === 0}
                   emptyText="Star a page to pin it here."
                 >
-                  {favorites.data?.map((f) => (
+                  {favItems.map((f) => (
                     <PageRow
                       key={`fav-${f.page_id}`}
                       spaceId={f.space_id}
@@ -185,11 +192,11 @@ export function HomeRoute() {
                 <Widget
                   icon={Clock}
                   title="Recently visited"
-                  count={visited.length}
-                  empty={visited.length === 0}
+                  count={visitedItems.length}
+                  empty={visitedItems.length === 0}
                   emptyText="Pages you open will appear here."
                 >
-                  {visited.map((v) => (
+                  {visitedItems.map((v) => (
                     <PageRow
                       key={`visited-${v.pageId}`}
                       spaceId={v.spaceId}
