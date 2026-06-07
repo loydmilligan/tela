@@ -50,6 +50,7 @@ const PLUGIN_BLOCKS = {
   'milkdown-collapsibles': ['collapsible'],
   'milkdown-embed': ['embed'],
   'milkdown-excalidraw': ['excalidraw'],
+  'milkdown-file': ['file'],
   'milkdown-highlight': ['highlight'],
   'milkdown-kanban': ['kanban'],
   'milkdown-math': ['equation', 'inline-math'],

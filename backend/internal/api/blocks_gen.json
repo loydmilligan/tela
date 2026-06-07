@@ -346,6 +346,23 @@
       "note": "In the editor, drag-drop or paste uploads the file automatically."
     },
     {
+      "id": "file",
+      "label": "File attachment",
+      "hint": "Downloadable file card",
+      "category": "Media & diagrams",
+      "slash": false,
+      "agent": true,
+      "keywords": [
+        "file",
+        "attachment",
+        "download",
+        "pdf"
+      ],
+      "syntax": ":::file{name=\"report.pdf\" size=\"248000\"}\nhttps://tela.example/api/files/9/<hash>.pdf\n:::",
+      "when": "Embed a downloadable file (PDF, archive, dataset) as a card.",
+      "note": "In the editor, drag-drop or paste any non-image file to upload + insert this automatically. The URL must be a tela file URL (an existing attachment); images use the image block instead."
+    },
+    {
       "id": "code",
       "label": "Code block",
       "hint": "Syntax-highlighted code",

@@ -108,7 +108,8 @@ import {
   type MiraPasteRequest,
 } from './milkdown-mira-paste'
 import { MiraPastePopover } from './milkdown-mira-paste-popover'
-import { createImageUploadPlugin } from './milkdown-image-upload'
+import { createAttachmentDropPlugin } from './milkdown-image-upload'
+import { fileSchema } from './milkdown-file'
 import { createUrlUnfurlPlugin } from './milkdown-url-unfurl'
 import { useQueryClient } from '@tanstack/react-query'
 import { pageKeys } from '../../lib/queries/pages'
@@ -579,8 +580,8 @@ function MilkdownEditorInner({
         // nothing. Image files and mira/URL pastes are disjoint clipboard
         // payloads, so ordering against the mira hook above is immaterial.
         if (imageUploadEnabled) {
-          const imageUpload = createImageUploadPlugin(pageId)
-          ctx.update(prosePluginsCtx, (existing) => [imageUpload, ...existing])
+          const attachmentDrop = createAttachmentDropPlugin(pageId)
+          ctx.update(prosePluginsCtx, (existing) => [attachmentDrop, ...existing])
         }
 
         // M7.2: bind y-prosemirror's sync + undo plugins when collab is
@@ -727,6 +728,7 @@ function MilkdownEditorInner({
       // for allowlisted providers (YouTube/Vimeo/Loom), link card otherwise.
       // See milkdown-embed.ts.
       .use(embedSchema)
+      .use(fileSchema)
       // M13.1 — collapsibles via raw `<details><summary>` HTML pass-through.
       // The remark plugin detects post-html-transformer paragraph-wrapped
       // `<details>` / `</details>` brackets and rewrites them into structured

@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Download, FileText, Paperclip, Trash2, CornerLeftUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import {
+  attachmentKeys,
   useAttachments,
   useDeleteAttachment,
   type Attachment,
@@ -170,7 +172,7 @@ function AttachmentChip({
               onClick={() => onDelete(a)}
               disabled={deleting}
               aria-label={`Remove ${a.name}`}
-              className="text-[var(--text-muted)] hover:text-[var(--danger,var(--text-primary))]"
+              className="text-[var(--text-muted)] hover:text-[var(--accent-negative-fg)]"
             >
               <Trash2 width={13} height={13} aria-hidden />
             </button>
@@ -196,6 +198,17 @@ export function AttachmentStrip({
 }: AttachmentStripProps) {
   const { data } = useAttachments(pageId)
   const del = useDeleteAttachment(pageId)
+  const qc = useQueryClient()
+  // Refetch when the editor uploads a file (drop/paste) so it appears in the strip.
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      if ((e as CustomEvent<{ pageId: number }>).detail?.pageId === pageId) {
+        void qc.invalidateQueries({ queryKey: attachmentKeys.page(pageId) })
+      }
+    }
+    window.addEventListener('tela:attachments-changed', onChange)
+    return () => window.removeEventListener('tela:attachments-changed', onChange)
+  }, [pageId, qc])
   if (!data || data.length === 0) return null
   return (
     <AttachmentStripView
