@@ -520,7 +520,7 @@ func (s *Server) mcpCreatePage(ctx context.Context, req *mcp.CallToolRequest, in
 	if ae := mcpRequireWrite(k); ae != nil {
 		return mcpErr(ae), getPageOut{}, nil
 	}
-	p, ae := s.createPageCore(ctx, u, k, pageCreateRequest{
+	p, ae := s.createPageCore(withAgentWrite(ctx), u, k, pageCreateRequest{
 		SpaceID:  in.SpaceID,
 		ParentID: in.ParentID,
 		Title:    in.Title,

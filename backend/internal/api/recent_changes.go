@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 )
 
 // Recent changes feed for the home dashboard: the latest edit per page across
@@ -23,20 +24,27 @@ type recentChangeItem struct {
 
 // ListRecentChanges returns the most recently edited pages the caller can see.
 // DISTINCT ON collapses a page's many revisions to its newest one; the outer
-// sort then orders pages by recency. With ?mine=1 the feed narrows to pages the
-// caller themselves edited (their latest edit each) — the "My recent edits"
-// dashboard widget.
+// sort then orders pages by recency. Filters (applied to the revisions before
+// the collapse): ?mine=1 → only the caller's own edits ("My recent edits");
+// ?source=agent → only agent/MCP edits ("Changes by your AI").
 func (s *Server) ListRecentChanges(w http.ResponseWriter, r *http.Request) {
 	u, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
 	limit := clampLimit(r.URL.Query().Get("limit"), 20, 50)
-	// When mine=1, restrict to the caller's own revisions before collapsing to
-	// one row per page — "pages you changed", not "pages that changed".
-	mineFilter := ""
+	// Filters restrict which revisions count before collapsing to one row per
+	// page — "pages you changed" / "pages your AI changed", not just "changed".
+	conds := []string{}
 	if r.URL.Query().Get("mine") == "1" {
-		mineFilter = "WHERE pr.author_id = $1"
+		conds = append(conds, "pr.author_id = $1")
+	}
+	if r.URL.Query().Get("source") == "agent" {
+		conds = append(conds, "pr.source = 'agent'")
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT t.page_id, t.title, t.space_id, t.space_name, t.username, t.created_at
@@ -50,7 +58,7 @@ func (s *Server) ListRecentChanges(w http.ResponseWriter, r *http.Request) {
 		      JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sa
 		        ON sa.space_id = p.space_id
 		      LEFT JOIN users u ON u.id = pr.author_id
-		      `+mineFilter+`
+		      `+where+`
 		     ORDER BY p.id, pr.created_at DESC
 		  ) t
 		 ORDER BY t.created_at DESC

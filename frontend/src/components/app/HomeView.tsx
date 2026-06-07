@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
+  Bot,
   Clock,
   FileClock,
   FilePlus,
@@ -30,6 +31,7 @@ export function HomeRoute() {
   const spaces = useSpaces()
   const recent = useRecentChanges()
   const myEdits = useRecentChanges({ mine: true })
+  const agentChanges = useRecentChanges({ source: 'agent' })
   const favorites = useFavorites()
   const visited = useMemo(() => readRecentPages(), [])
 
@@ -82,27 +84,50 @@ export function HomeRoute() {
             <SpacesGrid />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-[var(--space-5)]">
-              <Widget
-                className="lg:col-span-2"
-                icon={FileClock}
-                title="Recent changes"
-                loading={recent.isLoading}
-                error={recent.isError}
-                empty={!recent.data || recent.data.length === 0}
-                emptyText="No edits yet. Create or edit a page and it shows up here."
-              >
-                {recent.data?.map((c) => (
-                  <PageRow
-                    key={`change-${c.page_id}`}
-                    spaceId={c.space_id}
-                    pageId={c.page_id}
-                    title={c.title}
-                    meta={`${c.space_name} · ${
-                      c.author_username ? `${c.author_username} · ` : ''
-                    }${relativeTimeFromSqlite(c.updated_at)}`}
-                  />
-                ))}
-              </Widget>
+              <div className="lg:col-span-2 flex flex-col gap-[var(--space-5)]">
+                <Widget
+                  icon={FileClock}
+                  title="Recent changes"
+                  loading={recent.isLoading}
+                  error={recent.isError}
+                  empty={!recent.data || recent.data.length === 0}
+                  emptyText="No edits yet. Create or edit a page and it shows up here."
+                >
+                  {recent.data?.map((c) => (
+                    <PageRow
+                      key={`change-${c.page_id}`}
+                      spaceId={c.space_id}
+                      pageId={c.page_id}
+                      title={c.title}
+                      meta={`${c.space_name} · ${
+                        c.author_username ? `${c.author_username} · ` : ''
+                      }${relativeTimeFromSqlite(c.updated_at)}`}
+                    />
+                  ))}
+                </Widget>
+
+                {/* Changes your agents made — only shows once an agent edits via MCP. */}
+                <Widget
+                  icon={Bot}
+                  title="Changes by your AI"
+                  loading={agentChanges.isLoading}
+                  error={agentChanges.isError}
+                  empty={!agentChanges.data || agentChanges.data.length === 0}
+                  emptyText="When an agent edits a page (via MCP), it shows up here."
+                >
+                  {agentChanges.data?.map((c) => (
+                    <PageRow
+                      key={`agent-${c.page_id}`}
+                      spaceId={c.space_id}
+                      pageId={c.page_id}
+                      title={c.title}
+                      meta={`${c.space_name} · ${
+                        c.author_username ? `${c.author_username} · ` : ''
+                      }${relativeTimeFromSqlite(c.updated_at)}`}
+                    />
+                  ))}
+                </Widget>
+              </div>
 
               <div className="flex flex-col gap-[var(--space-5)]">
                 <Widget

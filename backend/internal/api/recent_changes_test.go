@@ -85,3 +85,49 @@ func TestRecentChanges_MineFiltersToOwnEdits(t *testing.T) {
 		t.Fatalf("mine leaked a teammate's edit: %q", body)
 	}
 }
+
+// ?source=agent surfaces pages an agent (MCP) created or edited, and excludes
+// purely-human pages — the "Changes by your AI" feed.
+func TestRecentChanges_SourceAgentFilter(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	ctx := context.Background()
+
+	alice := seedUser(t, d, "alice", "alicepw123", false)
+	spaceID := seedSpace(t, d, "Engineering", "engineering", alice)
+	au := authUser(alice, "alice", false)
+
+	// Human-created page, later edited by an agent (agentWrite=true → source=agent).
+	human, ae := srv.createPageCore(ctx, au, nil, pageCreateRequest{SpaceID: spaceID, Title: "Human Page", Body: "h"})
+	if ae != nil {
+		t.Fatalf("human create: %v", ae)
+	}
+	nb := "rewritten by agent"
+	if _, ae := srv.updatePageCore(ctx, au, nil, human.ID, pageUpdateRequest{Body: &nb}, true); ae != nil {
+		t.Fatalf("agent update: %v", ae)
+	}
+	// Agent-created page (source=agent via the agent-write context).
+	if _, ae := srv.createPageCore(withAgentWrite(ctx), au, nil, pageCreateRequest{SpaceID: spaceID, Title: "Agent Page", Body: "a"}); ae != nil {
+		t.Fatalf("agent create: %v", ae)
+	}
+	// Purely-human page — must NOT show in the agent feed.
+	if _, ae := srv.createPageCore(ctx, au, nil, pageCreateRequest{SpaceID: spaceID, Title: "Pure Human", Body: "p"}); ae != nil {
+		t.Fatalf("pure human create: %v", ae)
+	}
+
+	rec := routedRecorder("GET /api/recent-changes", srv.ListRecentChanges,
+		userRequest(http.MethodGet, "/api/recent-changes?source=agent", "", au))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("agent feed: code=%d body=%q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Agent Page") {
+		t.Fatalf("agent-created page missing from agent feed: %q", body)
+	}
+	if !strings.Contains(body, "Human Page") {
+		t.Fatalf("agent-edited page missing from agent feed: %q", body)
+	}
+	if strings.Contains(body, "Pure Human") {
+		t.Fatalf("purely-human page leaked into agent feed: %q", body)
+	}
+}

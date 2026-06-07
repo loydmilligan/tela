@@ -301,6 +301,22 @@ func (s *Server) CreatePage(w http.ResponseWriter, r *http.Request) {
 // whitespace may precede it), capturing the heading text.
 var leadingTitleH1RE = regexp.MustCompile(`\A\s*#[ \t]+([^\r\n]+?)[ \t]*(\r?\n|\z)`)
 
+// agentWriteCtxKey marks a context as originating from an agent (MCP) write so
+// the page cores tag the revision source 'agent' — what the "changes by your AI"
+// feed filters on. updatePageCore already gets an agentWrite param; createPageCore
+// is called by 9 sites, so the agent signal rides the context instead (set by the
+// one MCP create_page handler) to avoid churning every caller.
+type agentWriteCtxKey struct{}
+
+func withAgentWrite(ctx context.Context) context.Context {
+	return context.WithValue(ctx, agentWriteCtxKey{}, true)
+}
+
+func isAgentWrite(ctx context.Context) bool {
+	v, _ := ctx.Value(agentWriteCtxKey{}).(bool)
+	return v
+}
+
 // stripLeadingTitleH1 drops a leading `# Heading` from body when its text equals
 // title (case-insensitive). Title and body are separate columns, but MCP/agent
 // clients habitually open the markdown with `# Same Title`, which then renders
@@ -424,7 +440,11 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	// recent-changes / my-edits feeds immediately — creation IS recent activity,
 	// not just later edits. Post-commit + best-effort, like the edit snapshot.
 	createAuthor := u.ID
-	if _, err := insertPageRevision(ctx, s.DB, id, page.Body, page.Title, props, &createAuthor, "create"); err != nil {
+	createSource := "create"
+	if isAgentWrite(ctx) {
+		createSource = "agent"
+	}
+	if _, err := insertPageRevision(ctx, s.DB, id, page.Body, page.Title, props, &createAuthor, createSource); err != nil {
 		log.Printf("page %d create revision failed: %v", id, err)
 	}
 	// Index the new page's content (debounced, async; no-op when RAG is off).
@@ -606,7 +626,11 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	// here cannot roll the user's save back — we log and proceed.
 	if p.Body != existing.Body || p.Title != existing.Title {
 		authorID := u.ID
-		if _, err := insertPageRevision(ctx, s.DB, id, p.Body, p.Title, p.Props, &authorID, "manual"); err != nil {
+		editSource := "manual"
+		if agentWrite {
+			editSource = "agent"
+		}
+		if _, err := insertPageRevision(ctx, s.DB, id, p.Body, p.Title, p.Props, &authorID, editSource); err != nil {
 			log.Printf("page %d snapshot revision failed: %v", id, err)
 		}
 		// Title is folded into each chunk's embed text and body is the source,

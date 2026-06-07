@@ -16,18 +16,23 @@ export interface RecentChange {
 
 export const recentChangesKeys = {
   all: ['recent-changes'] as const,
-  list: (mine: boolean) => [...recentChangesKeys.all, mine ? 'mine' : 'all'] as const,
+  list: (variant: string) => [...recentChangesKeys.all, variant] as const,
 }
 
-// mine=true narrows to pages the caller themselves edited ("My recent edits");
-// otherwise it's the team-wide feed of every accessible page's latest edit.
-export function useRecentChanges(opts?: { mine?: boolean }) {
-  const mine = opts?.mine ?? false
+// Variants of the same feed:
+//   default       → every accessible page's latest edit ("Recent changes")
+//   { mine }      → only the caller's own edits ("My recent edits")
+//   { source }    → only agent/MCP edits ("Changes by your AI")
+export function useRecentChanges(opts?: { mine?: boolean; source?: 'agent' }) {
+  const params = new URLSearchParams()
+  if (opts?.mine) params.set('mine', '1')
+  if (opts?.source) params.set('source', opts.source)
+  const qs = params.toString()
   return useQuery({
-    queryKey: recentChangesKeys.list(mine),
+    queryKey: recentChangesKeys.list(qs || 'all'),
     queryFn: async () => {
       const { changes } = await api<{ changes: RecentChange[] }>(
-        `/api/recent-changes${mine ? '?mine=1' : ''}`,
+        `/api/recent-changes${qs ? `?${qs}` : ''}`,
       )
       return changes
     },
