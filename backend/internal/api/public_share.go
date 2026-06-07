@@ -45,17 +45,18 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		title     string
-		body      string
-		spaceName string
-		spaceID   int64
+		title      string
+		body       string
+		spaceName  string
+		spaceID    int64
+		visibility string
 	)
 	err := s.DB.QueryRowContext(r.Context(),
-		`SELECT p.title, p.body, sp.name, p.space_id
+		`SELECT p.title, p.body, sp.name, p.space_id, sp.visibility
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
 		  WHERE p.id = $1 AND p.deleted_at IS NULL`, pageID,
-	).Scan(&title, &body, &spaceName, &spaceID)
+	).Scan(&title, &body, &spaceName, &spaceID, &visibility)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)
 		return
@@ -66,10 +67,16 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !isBotUA(r.Header.Get("User-Agent")) {
-		// The SPA page route is nested under the space
-		// (/spaces/{spaceID}/pages/{id}/{slug}); a bare /pages/{id} no longer
-		// resolves and renders the SPA's not-found view.
-		http.Redirect(w, r, pageAppPath(spaceID, pageID, title), http.StatusFound)
+		// A page in a PUBLIC space reads without login — send the browser to the
+		// no-token public reader. Everything else goes to the in-app page route
+		// (the SPA gates it on a session as before). The SPA page route is nested
+		// under the space (/spaces/{spaceID}/pages/{id}/{slug}); a bare
+		// /pages/{id} no longer resolves and renders the SPA's not-found view.
+		dest := pageAppPath(spaceID, pageID, title)
+		if visibility == spaceVisibilityPublic {
+			dest = publicReaderPath(spaceID, pageID, title)
+		}
+		http.Redirect(w, r, dest, http.StatusFound)
 		return
 	}
 

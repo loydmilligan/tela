@@ -35,3 +35,14 @@ func pageAppPath(spaceID, id int64, title string) string {
 	}
 	return base
 }
+
+// publicReaderPath returns the no-login public reader SPA route for a page in a
+// public space: /public/spaces/{spaceID}/pages/{id}/{slug}. Mirrors pageAppPath
+// under the /public prefix; the reader fetches the /api/public/ data.
+func publicReaderPath(spaceID, id int64, title string) string {
+	base := "/public/spaces/" + strconv.FormatInt(spaceID, 10) + "/pages/" + strconv.FormatInt(id, 10)
+	if s := pageSlug(title); s != "" {
+		return base + "/" + s
+	}
+	return base
+}

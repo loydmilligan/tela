@@ -523,6 +523,42 @@ const readRoute = createRoute({
   component: lazyRouteComponent(() => import('./read'), 'ReadRoute'),
 })
 
+// A user's public home page (/u/{handle}). Child of rootRoute (NO ensureMe gate).
+const publicUserRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/u/$username',
+  component: lazyRouteComponent(() => import('./public'), 'PublicUserRoute'),
+})
+
+// Public-space front page (curated index). Child of rootRoute (NO ensureMe gate).
+const publicSpaceIndexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/public/spaces/$spaceId',
+  parseParams: (raw) => ({ spaceId: Number(raw.spaceId) }),
+  stringifyParams: (params) => ({ spaceId: String(params.spaceId) }),
+  component: lazyRouteComponent(() => import('./public'), 'PublicSpaceIndexRoute'),
+})
+
+// Public-space reader. Child of rootRoute (NO ensureMe gate — a public space is
+// readable logged-out). One route matches both /pages/{id} and /pages/{id}/{slug}
+// via the optional slug, so slug canonicalisation never swaps routes. Lazy so
+// the reader bundle stays off the main chunk.
+const publicReaderRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/public/spaces/$spaceId/pages/$pageId/{-$slug}',
+  parseParams: (raw) => ({
+    spaceId: Number(raw.spaceId),
+    pageId: Number(raw.pageId),
+    slug: raw.slug,
+  }),
+  stringifyParams: (params) => ({
+    spaceId: String(params.spaceId),
+    pageId: String(params.pageId),
+    slug: params.slug,
+  }),
+  component: lazyRouteComponent(() => import('./public'), 'PublicReaderRoute'),
+})
+
 // #3 PDF print surface. Public child of rootRoute (NO ensureMe gate — the
 // signed print token is the authorization), loaded only by gotenberg's headless
 // Chromium during PDF export. Lazy so it never lands in the main chunk.
@@ -541,6 +577,9 @@ const routeTree = rootRoute.addChildren([
   shareRootRoute,
   shareSlugRoute,
   shareDescendantRoute,
+  publicUserRoute,
+  publicSpaceIndexRoute,
+  publicReaderRoute,
   readRoute,
   printRoute,
   appLayoutRoute.addChildren([

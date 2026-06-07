@@ -59,6 +59,10 @@ type spaceCreateRequest struct {
 type spaceUpdateRequest struct {
 	Name *string `json:"name"`
 	Slug *string `json:"slug"`
+	// Visibility flips the space between 'private' and 'public'. Owner-only
+	// (stricter than name/slug, which is editor+) — publishing a whole space is
+	// an owner decision.
+	Visibility *string `json:"visibility"`
 }
 
 func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +84,7 @@ func (s *Server) ListSpaces(w http.ResponseWriter, r *http.Request) {
 // HTTP route and the MCP tool can share one implementation.
 func (s *Server) listSpacesCore(ctx context.Context, u *auth.User) ([]spaceListItem, *apiErr) {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT s.id, s.name, s.slug, s.created_at, s.updated_at,
+		SELECT s.id, s.name, s.slug, s.visibility, s.created_at, s.updated_at,
 		       (SELECT COUNT(DISTINCT user_id) FROM space_access a WHERE a.space_id = s.id) AS member_count,
 		       CASE WHEN s.personal_user_id IS NOT NULL THEN 1 ELSE 0 END AS is_personal
 		  FROM spaces s
@@ -98,7 +102,7 @@ func (s *Server) listSpacesCore(ctx context.Context, u *auth.User) ([]spaceListI
 			it       spaceListItem
 			personal int
 		)
-		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount, &personal); err != nil {
+		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.Visibility, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount, &personal); err != nil {
 			return nil, &apiErr{http.StatusInternalServerError, "internal", "scan space row failed"}
 		}
 		it.IsPersonal = personal == 1
@@ -303,8 +307,13 @@ func (s *Server) updateSpaceCore(ctx context.Context, u *auth.User, k *auth.APIK
 	if !canEdit(role) {
 		return models.Space{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
-	if req.Name == nil && req.Slug == nil {
-		return models.Space{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of name, slug must be provided"}
+	// Publishing a whole space (visibility) is an owner-only decision, stricter
+	// than the editor+ gate that covers name/slug.
+	if req.Visibility != nil && role != roleOwner {
+		return models.Space{}, &apiErr{http.StatusForbidden, "forbidden", "owner role required to change visibility"}
+	}
+	if req.Name == nil && req.Slug == nil && req.Visibility == nil {
+		return models.Space{}, &apiErr{http.StatusBadRequest, "no_fields", "at least one of name, slug, visibility must be provided"}
 	}
 
 	sets := make([]string, 0, 3)
@@ -337,6 +346,15 @@ func (s *Server) updateSpaceCore(ctx context.Context, u *auth.User, k *auth.APIK
 		argN++
 		sets = append(sets, "slug = $"+strconv.Itoa(argN))
 		args = append(args, slug)
+	}
+	if req.Visibility != nil {
+		vis := strings.TrimSpace(*req.Visibility)
+		if vis != spaceVisibilityPrivate && vis != spaceVisibilityPublic {
+			return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_visibility", "visibility must be 'private' or 'public'"}
+		}
+		argN++
+		sets = append(sets, "visibility = $"+strconv.Itoa(argN))
+		args = append(args, vis)
 	}
 	sets = append(sets, "updated_at = tela_now()")
 	argN++
@@ -458,16 +476,16 @@ func attachSpacePrincipals(ctx context.Context, db *sql.DB, byID map[int64]*spac
 func selectSpaceByID(ctx context.Context, db *sql.DB, id int64) (models.Space, error) {
 	var sp models.Space
 	err := db.QueryRowContext(ctx,
-		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = $1`, id,
-	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.CreatedAt, &sp.UpdatedAt)
+		`SELECT id, name, slug, visibility, created_at, updated_at FROM spaces WHERE id = $1`, id,
+	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.Visibility, &sp.CreatedAt, &sp.UpdatedAt)
 	return sp, err
 }
 
 func selectSpaceByIDTx(ctx context.Context, tx *sql.Tx, id int64) (models.Space, error) {
 	var sp models.Space
 	err := tx.QueryRowContext(ctx,
-		`SELECT id, name, slug, created_at, updated_at FROM spaces WHERE id = $1`, id,
-	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.CreatedAt, &sp.UpdatedAt)
+		`SELECT id, name, slug, visibility, created_at, updated_at FROM spaces WHERE id = $1`, id,
+	).Scan(&sp.ID, &sp.Name, &sp.Slug, &sp.Visibility, &sp.CreatedAt, &sp.UpdatedAt)
 	return sp, err
 }
 
