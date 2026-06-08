@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/llm"
 	"github.com/zcag/tela/backend/internal/mailer"
 	"github.com/zcag/tela/backend/internal/rag"
 	"github.com/zcag/tela/backend/internal/settings"
@@ -57,6 +58,13 @@ type Server struct {
 	// inject a fake embedder by overwriting this field.
 	rag *rag.Service
 
+	// llm is the chat-completion service (OpenAI-compatible / Ollama). Sibling
+	// to rag: constructed from env (TELA_LLM_URL), disabled — but never nil —
+	// when unconfigured, so handlers can `if !s.llm.Enabled()` → 503. Consumed
+	// in-process by /api/rag/ask and over HTTP via the managed cloud proxy.
+	// Tests inject a fake completer by overwriting this field.
+	llm *llm.Service
+
 	// oauth is the MCP endpoint's OAuth 2.1 Resource-Server config (WorkOS JWT
 	// acceptance + Protected Resource Metadata). nil = disabled (PAT-only),
 	// unless TELA_WORKOS_ISSUER is set. Tests inject a configured one.
@@ -99,6 +107,7 @@ func New(db *sql.DB) *Server {
 		authLimiter:  newAuthRateLimiter(),
 		davDeletes:   newDavDeleteGuard(),
 		rag:          rag.NewService(db, rag.ConfigFromEnv()),
+		llm:          llm.NewService(llm.ConfigFromEnv()),
 		oauth:        loadMCPOAuth(context.Background()),
 		sso:          loadSSOProviders(context.Background()),
 		seedWelcome:  os.Getenv("TELA_DISABLE_WELCOME_SEED") == "",
