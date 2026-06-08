@@ -933,10 +933,19 @@
   /* Featured column — a header cell written as ==Label== washes its whole
      column in a soft accent. */
   .tela-milkdown .ProseMirror table td.tela-cell-featured {
-    background: color-mix(in srgb, var(--accent) 7%, var(--surface-1));
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface-1));
   }
   .tela-milkdown .ProseMirror table th.tela-cell-featured {
-    background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+    background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  /* The featured column is marked by a `==highlighted==` header — neutralise the
+     highlight mark's own yellow so the header reads cleanly; the column wash is
+     the signal. */
+  .tela-milkdown .ProseMirror table .tela-cell-featured mark {
+    background: transparent;
+    color: inherit;
+    padding: 0;
   }
 
   /* Sort headers + filter box (reader-side, added by the plugin in read-only). */
@@ -1032,53 +1041,57 @@
     outline: none;
     color: var(--text-primary);
   }
-  .tela-milkdown .ProseMirror .tela-stat-value {
+  /* All tile-internal rules are prefixed with `.tela-stats` (4 classes) so they
+     out-specify the reader's prose rules (`.tela-reader .tela-milkdown
+     .ProseMirror p { margin: 1.15em; font-size: 1em }`, 3 classes) — otherwise
+     the reader loosens + resizes the rows and the cards stop looking like a
+     dashboard. */
+  .tela-milkdown .ProseMirror .tela-stats .tela-stat-value {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin-top: 2px;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
     color: var(--text-primary);
     word-break: break-word;
   }
-  .tela-milkdown .ProseMirror .tela-stat-value > p {
+  .tela-milkdown .ProseMirror .tela-stats .tela-stat-value > p {
     margin: 0;
   }
-  /* Value line: a big bold number with the trailing text as a small muted unit
-     (so `**$43** /MWh` reads as a headline figure). When the author doesn't bold
-     anything the whole line still shows at a readable size via the fallback. */
-  .tela-milkdown .ProseMirror p.tela-stat-figure {
+  /* Value line: big bold number; trailing text becomes a small muted unit. */
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-figure {
     font-size: var(--text-xl);
     font-weight: 700;
     line-height: var(--leading-tight);
     color: var(--text-primary);
   }
-  .tela-milkdown .ProseMirror p.tela-stat-figure:has(strong) {
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-figure:has(strong) {
     font-size: var(--text-sm);
     font-weight: 400;
     color: var(--text-muted);
   }
-  .tela-milkdown .ProseMirror p.tela-stat-figure strong {
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-figure strong {
     font-size: var(--text-3xl);
     font-weight: 700;
+    line-height: 1.1;
     color: var(--text-primary);
   }
   /* Trend line: coloured by direction (↑ positive / ↓ negative / → flat). */
-  .tela-milkdown .ProseMirror p.tela-stat-trend {
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-trend {
     font-size: var(--text-sm);
     font-weight: 500;
     line-height: var(--leading-tight);
   }
-  .tela-milkdown .ProseMirror p.tela-stat-trend-up {
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-trend-up {
     color: var(--accent-positive-fg);
   }
-  .tela-milkdown .ProseMirror p.tela-stat-trend-down {
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-trend-down {
     color: var(--accent-negative-fg);
   }
-  .tela-milkdown .ProseMirror p.tela-stat-trend-flat {
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-trend-flat {
     color: var(--text-muted);
   }
   /* Description line(s): muted footnote under the figure. */
-  .tela-milkdown .ProseMirror p.tela-stat-desc {
+  .tela-milkdown .ProseMirror .tela-stats p.tela-stat-desc {
     font-size: var(--text-xs);
     color: var(--text-muted);
     line-height: var(--leading-normal);

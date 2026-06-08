@@ -15,10 +15,14 @@ interface Tile {
 }
 
 function StatGrid({ tiles }: { tiles: Tile[] }) {
+  // Wrapped in .tela-reader so the story exercises the reader's prose CSS
+  // (p { margin: 1.15em }, etc.) — the published-view context, where the tile
+  // spacing must stay tight.
   return (
-    <div className="tela-milkdown">
-      <div className="ProseMirror">
-        <div className="tela-stats">
+    <div className="tela-reader">
+      <div className="tela-milkdown">
+        <div className="ProseMirror">
+          <div className="tela-stats">
           {tiles.map((t) => (
             <div key={t.label} className="tela-stat">
               <div className="tela-stat-head" contentEditable={false}>
@@ -38,6 +42,7 @@ function StatGrid({ tiles }: { tiles: Tile[] }) {
               </div>
             </div>
           ))}
+          </div>
         </div>
       </div>
     </div>

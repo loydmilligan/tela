@@ -189,8 +189,11 @@ export const tableEnhancePlugin = $prose(() => {
     view(editorView) {
       const run = () => {
         if (editorView.editable) return
+        // Only GFM content tables (Milkdown wraps those in `.tableWrapper`) —
+        // NOT block-internal tables like the calendar month grid, which is a
+        // <table> too but must never get sort/filter chrome.
         editorView.dom
-          .querySelectorAll('table')
+          .querySelectorAll('.tableWrapper table')
           .forEach((t) => enhanceReadonlyTable(t as HTMLTableElement))
       }
       run()
