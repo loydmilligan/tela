@@ -14,6 +14,8 @@ export const publicKeys = {
   page: (spaceId: number, pageId: number) =>
     [...publicKeys.all, 'page', spaceId, pageId] as const,
   user: (username: string) => [...publicKeys.all, 'user', username] as const,
+  discover: (sort: DiscoverSort, offset: number) =>
+    [...publicKeys.all, 'discover', sort, offset] as const,
 }
 
 export interface PublicSpacePayload {
@@ -140,6 +142,41 @@ export function usePublicUser(username: string) {
     queryKey: publicKeys.user(username),
     queryFn: () =>
       publicFetch(`/api/public/users/${encodeURIComponent(username)}`),
+    retry: false,
+    staleTime: 60_000,
+  })
+}
+
+// Cross-tenant public-space discovery directory: every public space on the
+// instance, sortable + paginated. Read-only, no login (GET /api/public/discover).
+export type DiscoverSort = 'recent' | 'popular'
+
+export const DISCOVER_PAGE_SIZE = 24
+
+export interface DiscoverSpace {
+  id: number
+  name: string
+  slug: string
+  description: string
+  owner_handle?: string
+  page_count: number
+  // Most-recent page activity in the space. '' when the space has no pages.
+  updated_at: string
+}
+
+export interface DiscoverResponse {
+  spaces: DiscoverSpace[]
+  limit: number
+  offset: number
+}
+
+export function usePublicDiscover(sort: DiscoverSort, offset: number) {
+  return useQuery<DiscoverResponse, PublicError>({
+    queryKey: publicKeys.discover(sort, offset),
+    queryFn: () =>
+      publicFetch(
+        `/api/public/discover?sort=${sort}&limit=${DISCOVER_PAGE_SIZE}&offset=${offset}`,
+      ),
     retry: false,
     staleTime: 60_000,
   })

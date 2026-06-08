@@ -550,6 +550,23 @@ const readRoute = createRoute({
   component: lazyRouteComponent(() => import('./read'), 'ReadRoute'),
 })
 
+// Cross-tenant public-space discovery directory (/discover). Child of rootRoute
+// (NO ensureMe gate — the network view is readable logged-out). Sort + offset
+// live in the URL so a view is shareable. Lazy so it stays off the main chunk.
+const publicDiscoverRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/discover',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { sort: 'recent' | 'popular'; offset: number } => {
+    const sort = search.sort === 'popular' ? 'popular' : 'recent'
+    const rawOffset = Number(search.offset)
+    const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0
+    return { sort, offset }
+  },
+  component: lazyRouteComponent(() => import('./public'), 'PublicDiscoverRoute'),
+})
+
 // A user's public home page (/u/{handle}). Child of rootRoute (NO ensureMe gate).
 const publicUserRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -611,6 +628,7 @@ const routeTree = rootRoute.addChildren([
   shareRootRoute,
   shareSlugRoute,
   shareDescendantRoute,
+  publicDiscoverRoute,
   publicUserRoute,
   publicSpaceIndexRoute,
   publicReaderRoute,

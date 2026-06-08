@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
-import { useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   usePublicSpace,
   usePublicSpacePage,
   usePublicSpaceTree,
   usePublicUser,
+  type DiscoverSort,
 } from '../lib/queries/public'
 import { pageSlug } from '../lib/slug'
+import { PublicDiscover } from '../components/app/PublicDiscover'
 import { PublicReaderView } from '../components/app/PublicReader'
 import { PublicSpaceIndex } from '../components/app/PublicSpaceIndex'
 import { PublicUserHome } from '../components/app/PublicUserHome'
@@ -54,6 +56,25 @@ function PublicUnavailable({
         </CardHeader>
       </Card>
     </PublicShell>
+  )
+}
+
+// The cross-tenant public-space directory: /discover. Sort + pagination live in
+// the URL (?sort=&offset=) so a view is shareable and back-button friendly.
+export function PublicDiscoverRoute() {
+  const { sort, offset } = useSearch({ from: '/discover' })
+  const navigate = useNavigate({ from: '/discover' })
+  return (
+    <PublicDiscover
+      sort={sort}
+      offset={offset}
+      onSort={(s: DiscoverSort) =>
+        void navigate({ search: { sort: s, offset: 0 } })
+      }
+      onOffset={(o: number) =>
+        void navigate({ search: (prev) => ({ ...prev, offset: o }) })
+      }
+    />
   )
 }
 
