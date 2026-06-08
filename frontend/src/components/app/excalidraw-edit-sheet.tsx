@@ -260,6 +260,7 @@ export function ExcalidrawEditSheet({
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   // Stash latest snapshot from onChange — fallback for environments where the
   // imperative API ref doesn't bind in time (very fast Save clicks on slow
   // hardware). The api ref is the preferred source when set.
@@ -284,6 +285,42 @@ export function ExcalidrawEditSheet({
     latestSnapshotRef.current = null
     apiRef.current = null
   }, [open, initialAltText])
+
+  // Pointer-offset fix — defer mounting Excalidraw until the Sheet's slide-in
+  // settles. The Sheet enters via a `transform: translateX` animation (see
+  // .tela-sheet-content--right in index.css). Excalidraw measures its container
+  // offset/size on mount and, for a SAVED drawing, immediately runs
+  // scrollToContent to fit the existing elements. If it mounts mid-slide (every
+  // open after the first, once the lazy chunk is cached — i.e. reopening saved
+  // diagrams) those measurements are taken against a still-translated container,
+  // so the pointer→scene mapping is shifted and drawing lands away from the
+  // cursor. A fresh/empty diagram has no elements to fit, which is why the bug
+  // only shows on saved ones. We can't patch this after the fact (re-measuring
+  // the offset doesn't re-run the content fit), so we wait for the slide's
+  // `animationend` (with a duration-based fallback) before rendering the canvas
+  // at all — it then mounts into a stable, final-position container.
+  const [settled, setSettled] = useState(false)
+  useEffect(() => {
+    if (!open) {
+      setSettled(false)
+      return
+    }
+    let done = false
+    const settle = () => {
+      if (done) return
+      done = true
+      setSettled(true)
+    }
+    const content = containerRef.current?.closest('.tela-sheet-content')
+    content?.addEventListener('animationend', settle)
+    // Fallback if animationend never fires (animation interrupted/absent) —
+    // comfortably past --duration-base.
+    const fallback = window.setTimeout(settle, 450)
+    return () => {
+      content?.removeEventListener('animationend', settle)
+      window.clearTimeout(fallback)
+    }
+  }, [open])
 
   async function handleSave() {
     setStatus('saving')
@@ -357,16 +394,24 @@ export function ExcalidrawEditSheet({
         </SheetHeader>
 
         <SheetBody className="p-0 min-h-0 flex-1">
-          <Suspense fallback={<CanvasFallback />}>
-            <ExcalidrawCanvas
-              initialData={initialData}
-              theme={theme}
-              apiRef={apiRef}
-              onSnapshot={(snap) => {
-                latestSnapshotRef.current = snap
-              }}
-            />
-          </Suspense>
+          <div ref={containerRef} className="h-full w-full">
+            {/* Hold the canvas back until the slide-in settles (see `settled`
+                above) so Excalidraw measures the final container position. */}
+            {settled ? (
+              <Suspense fallback={<CanvasFallback />}>
+                <ExcalidrawCanvas
+                  initialData={initialData}
+                  theme={theme}
+                  apiRef={apiRef}
+                  onSnapshot={(snap) => {
+                    latestSnapshotRef.current = snap
+                  }}
+                />
+              </Suspense>
+            ) : (
+              <CanvasFallback />
+            )}
+          </div>
         </SheetBody>
 
         <SheetFooter className="flex-col items-stretch gap-[var(--space-2)] sm:flex-row sm:items-center">
