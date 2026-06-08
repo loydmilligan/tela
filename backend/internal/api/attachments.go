@@ -149,6 +149,10 @@ func (s *Server) UploadPageAttachment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "uploaded file is empty")
 		return
 	}
+	if ae := s.checkStorageQuota(ctx, page.SpaceID, int64(len(data))); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
 	name := sanitizeUploadName(hdr.Filename)
 
 	sf, err := createPageUploadFile(ctx, s.DB, page.SpaceID, pageID, name, data)

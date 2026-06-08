@@ -27,6 +27,7 @@ type adminUserDTO struct {
 	EmailVerified   bool    `json:"email_verified"`
 	IsInstanceAdmin bool    `json:"is_instance_admin"`
 	IsActive        bool    `json:"is_active"`
+	PlanKey         string  `json:"plan_key"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
 }
@@ -51,7 +52,7 @@ func (s *Server) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
+		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at
 		  FROM users
 		 ORDER BY username ASC`)
 	if err != nil {
@@ -367,7 +368,7 @@ func scanAdminUserRow(s adminUserScanner) (adminUserDTO, error) {
 		email, verified sql.NullString
 		isAdmin, active int
 	)
-	if err := s.Scan(&dto.ID, &dto.Username, &email, &verified, &isAdmin, &active, &dto.CreatedAt, &dto.UpdatedAt); err != nil {
+	if err := s.Scan(&dto.ID, &dto.Username, &email, &verified, &isAdmin, &active, &dto.PlanKey, &dto.CreatedAt, &dto.UpdatedAt); err != nil {
 		return adminUserDTO{}, err
 	}
 	dto.Email = nullableString(email)
@@ -379,14 +380,14 @@ func scanAdminUserRow(s adminUserScanner) (adminUserDTO, error) {
 
 func selectAdminUserByID(ctx context.Context, d *sql.DB, id int64) (adminUserDTO, error) {
 	row := d.QueryRowContext(ctx, `
-		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
+		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at
 		  FROM users WHERE id = $1`, id)
 	return scanAdminUserRow(row)
 }
 
 func selectAdminUserByIDTx(ctx context.Context, tx *sql.Tx, id int64) (adminUserDTO, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, created_at, updated_at
+		SELECT id, username, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at
 		  FROM users WHERE id = $1`, id)
 	return scanAdminUserRow(row)
 }

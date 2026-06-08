@@ -314,6 +314,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/orgs/{id}/sso", srv.GetOrgSSO)
 	mux.HandleFunc("PUT /api/orgs/{id}/sso", srv.PutOrgSSO)
 	mux.HandleFunc("DELETE /api/orgs/{id}/sso", srv.DeleteOrgSSO)
+	// Metering & tiers (limits.go / usage.go). Usage is readable by the account's
+	// own principals; plans are public to any user; setting a plan is operator-only.
+	mux.HandleFunc("GET /api/usage", srv.GetMyUsage)
+	mux.HandleFunc("GET /api/plans", srv.ListPlans)
+	mux.HandleFunc("GET /api/orgs/{id}/usage", srv.GetOrgUsage)
+	mux.HandleFunc("PATCH /api/admin/plan", srv.SetAccountPlan)
 	mux.HandleFunc("GET /api/orgs/{id}/members", srv.ListOrgMembers)
 	mux.HandleFunc("POST /api/orgs/{id}/members", srv.AddOrgMember)
 	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)

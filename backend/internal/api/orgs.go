@@ -24,6 +24,7 @@ type orgDTO struct {
 	models.Org
 	MemberCount int     `json:"member_count"`
 	MyRole      *string `json:"my_role"`
+	PlanKey     string  `json:"plan_key"`
 }
 
 type orgCreateRequest struct {
@@ -52,7 +53,7 @@ func (s *Server) ListOrgs(w http.ResponseWriter, r *http.Request) {
 	base := `
 		SELECT o.id, o.name, o.slug, o.created_at, o.updated_at,
 		       (SELECT COUNT(*) FROM org_members m WHERE m.org_id = o.id) AS member_count,
-		       om.org_role
+		       om.org_role, o.plan_key
 		  FROM orgs o
 		  LEFT JOIN org_members om ON om.org_id = o.id AND om.user_id = $1`
 	if u.IsInstanceAdmin {
@@ -73,7 +74,7 @@ func (s *Server) ListOrgs(w http.ResponseWriter, r *http.Request) {
 			it   orgDTO
 			role sql.NullString
 		)
-		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount, &role); err != nil {
+		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount, &role, &it.PlanKey); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan org row failed")
 			return
 		}

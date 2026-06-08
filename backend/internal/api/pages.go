@@ -392,6 +392,10 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup space failed"}
 	}
 
+	if ae := s.checkPageQuota(ctx, req.SpaceID); ae != nil {
+		return models.Page{}, ae
+	}
+
 	if req.ParentID != nil {
 		var parentSpaceID int64
 		err := tx.QueryRowContext(ctx,

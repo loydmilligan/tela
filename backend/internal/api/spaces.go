@@ -54,6 +54,10 @@ type spaceListItem struct {
 type spaceCreateRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+	// OrgID, when set, makes the new space owned by that org (the caller must be a
+	// member): the org's plan governs its quotas and org members get editor
+	// access. Omit/null for a personal space owned by the caller.
+	OrgID *int64 `json:"org_id"`
 }
 
 type spaceUpdateRequest struct {
@@ -138,7 +142,7 @@ func (s *Server) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
-	sp, ae := s.createSpaceCore(r.Context(), u, req.Name, req.Slug)
+	sp, ae := s.createSpaceCore(r.Context(), u, req.Name, req.Slug, req.OrgID)
 	if ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
@@ -187,7 +191,7 @@ func welcomePageBody(spaceName string) string {
 // MCP create_space tool: validate name + (derived-or-given) slug, then insert
 // the space and the creator's owner-membership row in one tx so a crash can't
 // lock the creator out (M6.1 auto-own).
-func (s *Server) createSpaceCore(ctx context.Context, u *auth.User, rawName, rawSlug string) (models.Space, *apiErr) {
+func (s *Server) createSpaceCore(ctx context.Context, u *auth.User, rawName, rawSlug string, ownerOrgID *int64) (models.Space, *apiErr) {
 	name := strings.TrimSpace(rawName)
 	if name == "" {
 		return models.Space{}, &apiErr{http.StatusBadRequest, "invalid_name", "name is required"}
@@ -215,6 +219,23 @@ func (s *Server) createSpaceCore(ctx context.Context, u *auth.User, rawName, raw
 		}
 	}
 
+	// Resolve the owning account (org if requested + caller is a member, else the
+	// caller's personal account) and gate on its space quota before inserting.
+	owner := account{Kind: accountUser, ID: u.ID}
+	if ownerOrgID != nil {
+		if !u.IsInstanceAdmin {
+			if _, err := orgRole(ctx, s.DB, u.ID, *ownerOrgID); errors.Is(err, sql.ErrNoRows) {
+				return models.Space{}, &apiErr{http.StatusForbidden, "forbidden", "not a member of this org"}
+			} else if err != nil {
+				return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "lookup org membership failed"}
+			}
+		}
+		owner = account{Kind: accountOrg, ID: *ownerOrgID}
+	}
+	if ae := s.checkSpaceQuota(ctx, owner); ae != nil {
+		return models.Space{}, ae
+	}
+
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
@@ -223,7 +244,7 @@ func (s *Server) createSpaceCore(ctx context.Context, u *auth.User, rawName, raw
 
 	var id int64
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO spaces(name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id)
+		`INSERT INTO spaces(name, slug, org_id) VALUES ($1, $2, $3) RETURNING id`, name, slug, ownerOrgID).Scan(&id)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			return models.Space{}, &apiErr{http.StatusConflict, "slug_conflict", "a space with that slug already exists"}
@@ -234,6 +255,15 @@ func (s *Server) createSpaceCore(ctx context.Context, u *auth.User, rawName, raw
 		`INSERT INTO space_members(space_id, user_id, role) VALUES ($1, $2, 'owner')`,
 		id, u.ID); err != nil {
 		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "assign space owner failed"}
+	}
+	// An org-owned space is shared with the whole org as editors (owner stays the
+	// human creator — the no-principal-owner trigger forbids org owners).
+	if ownerOrgID != nil {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO space_grants(space_id, principal_kind, principal_id, role) VALUES ($1, 'org', $2, 'editor')`,
+			id, *ownerOrgID); err != nil {
+			return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "share space with org failed"}
+		}
 	}
 	sp, err := selectSpaceByIDTx(ctx, tx, id)
 	if err != nil {

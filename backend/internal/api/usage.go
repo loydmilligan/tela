@@ -1,0 +1,177 @@
+package api
+
+// usage.go — read APIs for metering (the write/enforcement side is limits.go):
+//   GET  /api/usage              caller's personal-account plan + usage
+//   GET  /api/orgs/{id}/usage    an org's plan + usage (org member or instance-admin)
+//   GET  /api/plans              every tier (for the UI's plan comparison)
+//   PATCH /api/admin/plan        instance-admin sets an account's plan (no payments)
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+)
+
+// usageOut is the plan + current usage for one account. Members is nil for a
+// personal account (seats are an org concept).
+type usageOut struct {
+	AccountKind string `json:"account_kind"`
+	AccountID   int64  `json:"account_id"`
+	Plan        plan   `json:"plan"`
+	Usage       struct {
+		Spaces       int64  `json:"spaces"`
+		StorageBytes int64  `json:"storage_bytes"`
+		Members      *int64 `json:"members,omitempty"`
+	} `json:"usage"`
+}
+
+// buildUsage assembles the plan + live usage snapshot for an account.
+func (s *Server) buildUsage(ctx context.Context, acct account) (usageOut, error) {
+	var out usageOut
+	out.AccountKind, out.AccountID = acct.Kind, acct.ID
+
+	p, err := planFor(ctx, s.DB, acct)
+	if err != nil {
+		return usageOut{}, err
+	}
+	out.Plan = p
+
+	if out.Usage.Spaces, err = countOwnedSpaces(ctx, s.DB, acct); err != nil {
+		return usageOut{}, err
+	}
+	if out.Usage.StorageBytes, err = sumOwnedStorage(ctx, s.DB, acct); err != nil {
+		return usageOut{}, err
+	}
+	if acct.Kind == accountOrg {
+		n, err := countOrgMembers(ctx, s.DB, acct.ID)
+		if err != nil {
+			return usageOut{}, err
+		}
+		out.Usage.Members = &n
+	}
+	return out, nil
+}
+
+// GetMyUsage returns the caller's personal-account plan + usage.
+func (s *Server) GetMyUsage(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	out, err := s.buildUsage(r.Context(), account{Kind: accountUser, ID: u.ID})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load usage failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// GetOrgUsage returns an org's plan + usage. Any org member (or instance-admin)
+// may read it.
+func (s *Server) GetOrgUsage(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	if _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
+	out, err := s.buildUsage(r.Context(), account{Kind: accountOrg, ID: orgID})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load usage failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ListPlans returns every tier so the UI can render a plan comparison. Any
+// authenticated user may read.
+func (s *Server) ListPlans(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	rows, err := s.DB.QueryContext(r.Context(),
+		`SELECT `+planCols+` FROM plans p ORDER BY p.account_kind, p.max_storage_bytes NULLS LAST`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "list plans failed")
+		return
+	}
+	defer rows.Close()
+	plans := []plan{}
+	for rows.Next() {
+		p, err := scanPlan(rows)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "scan plan failed")
+			return
+		}
+		plans = append(plans, p)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "iterate plans failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"plans": plans})
+}
+
+type setPlanRequest struct {
+	AccountKind string `json:"account_kind"` // "user" | "org"
+	AccountID   int64  `json:"account_id"`
+	PlanKey     string `json:"plan_key"`
+}
+
+// SetAccountPlan assigns a plan to a user or org. Instance-admin only — plan
+// changes are an operator action (there's no self-serve billing). The plan's
+// account_kind must match the target, so a user can't be put on an org plan.
+func (s *Server) SetAccountPlan(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireInstanceAdmin(w, r); !ok {
+		return
+	}
+	var req setPlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
+		return
+	}
+	if req.AccountKind != accountUser && req.AccountKind != accountOrg {
+		writeError(w, http.StatusBadRequest, "bad_request", "account_kind must be 'user' or 'org'")
+		return
+	}
+	if req.AccountID <= 0 || req.PlanKey == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "account_id and plan_key are required")
+		return
+	}
+	ctx := r.Context()
+
+	// The plan must exist and be for the same account kind.
+	var planKind string
+	err := s.DB.QueryRowContext(ctx, `SELECT account_kind FROM plans WHERE key = $1`, req.PlanKey).Scan(&planKind)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "unknown plan_key")
+		return
+	}
+	if planKind != req.AccountKind {
+		writeError(w, http.StatusBadRequest, "bad_request", "plan_key does not match account_kind")
+		return
+	}
+
+	table := "users"
+	if req.AccountKind == accountOrg {
+		table = "orgs"
+	}
+	res, err := s.DB.ExecContext(ctx,
+		`UPDATE `+table+` SET plan_key = $1, updated_at = tela_now() WHERE id = $2`, req.PlanKey, req.AccountID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "set plan failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "account not found")
+		return
+	}
+	s.audit(ctx, r, "account.set_plan", req.AccountKind, req.AccountID, req.PlanKey)
+	out, err := s.buildUsage(ctx, account{Kind: req.AccountKind, ID: req.AccountID})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load usage failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}

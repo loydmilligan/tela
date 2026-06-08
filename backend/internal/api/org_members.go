@@ -107,6 +107,11 @@ func (s *Server) AddOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if ae := s.checkSeatQuota(ctx, orgID); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+
 	if _, err := s.DB.ExecContext(ctx,
 		`INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1, $2, $3)`,
 		orgID, targetID, req.OrgRole); err != nil {

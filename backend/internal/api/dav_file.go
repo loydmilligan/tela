@@ -271,6 +271,16 @@ func (f *davSpaceWriteFile) flush() error {
 	if f.err != nil { // a size-cap failure recorded during Write
 		return f.err
 	}
+	// Storage quota: charge only the net new bytes vs whatever lives at this
+	// location, so an idempotent re-PUT (rclone) at the cap isn't blocked.
+	var oldSize int64
+	_ = f.fs.s.DB.QueryRowContext(f.ctx,
+		`SELECT byte_size FROM space_files WHERE space_id = $1 AND COALESCE(parent_page_id, 0) = $2 AND name = $3 AND deleted_at IS NULL`,
+		f.spaceID, parentKey(f.parentID), f.name).Scan(&oldSize)
+	if ae := f.fs.s.checkStorageQuota(f.ctx, f.spaceID, int64(f.buf.Len())-oldSize); ae != nil {
+		f.err = errors.New(ae.Message)
+		return f.err
+	}
 	sf, err := upsertSpaceFile(f.ctx, f.fs.s.DB, f.spaceID, f.parentID, f.name, f.buf.Bytes())
 	if err != nil {
 		f.err = err

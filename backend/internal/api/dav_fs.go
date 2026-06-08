@@ -375,7 +375,7 @@ func (fs *davFS) createSpaceFromMkcol(ctx context.Context, folder string) error 
 	if slugValidRe.MatchString(folder) {
 		slug = folder // round-trips at the exact folder name the client created
 	}
-	_, ae := fs.s.createSpaceCore(ctx, pr.u, folder, slug)
+	_, ae := fs.s.createSpaceCore(ctx, pr.u, folder, slug, nil)
 	if ae != nil {
 		if ae.Status == http.StatusConflict {
 			return os.ErrExist // slug taken (possibly by a space the caller can't see)

@@ -672,8 +672,9 @@ func (s *Server) mcpAddComment(ctx context.Context, req *mcp.CallToolRequest, in
 // ---- create_space / update_space / delete_space --------------------------
 
 type createSpaceIn struct {
-	Name string `json:"name" jsonschema:"space name (1-200 chars)"`
-	Slug string `json:"slug,omitempty" jsonschema:"optional url slug; derived from name when omitted"`
+	Name  string `json:"name" jsonschema:"space name (1-200 chars)"`
+	Slug  string `json:"slug,omitempty" jsonschema:"optional url slug; derived from name when omitted"`
+	OrgID *int64 `json:"org_id,omitempty" jsonschema:"optional org id to own the space (caller must be a member); omit for a personal space"`
 }
 
 type spaceOut struct {
@@ -688,7 +689,7 @@ func (s *Server) mcpCreateSpace(ctx context.Context, req *mcp.CallToolRequest, i
 	if ae := mcpRequireWrite(k); ae != nil {
 		return mcpErr(ae), spaceOut{}, nil
 	}
-	sp, ae := s.createSpaceCore(ctx, u, in.Name, in.Slug)
+	sp, ae := s.createSpaceCore(ctx, u, in.Name, in.Slug, in.OrgID)
 	if ae != nil {
 		return mcpErr(ae), spaceOut{}, nil
 	}
