@@ -628,6 +628,27 @@ const publicReaderRoute = createRoute({
   component: lazyRouteComponent(() => import('./public'), 'PublicReaderRoute'),
 })
 
+// Unified GitHub-style handle routes. Children of rootRoute (NO ensureMe gate —
+// a handle's public spaces are readable logged-out). These are the catch-all-ish
+// root routes: a single `/$handle` segment and `/$handle/$spaceSlug`. They MUST
+// be registered AFTER every explicit app route (/login, /register, /discover,
+// /share, /public, …) so those win the match; only an unclaimed top-level
+// segment falls through to the handle home.
+const publicHandleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/$handle',
+  component: lazyRouteComponent(() => import('./public'), 'PublicHandleRoute'),
+})
+
+const publicHandleSpaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/$handle/$spaceSlug',
+  component: lazyRouteComponent(
+    () => import('./public'),
+    'PublicHandleSpaceRoute',
+  ),
+})
+
 // #3 PDF print surface. Public child of rootRoute (NO ensureMe gate — the
 // signed print token is the authorization), loaded only by gotenberg's headless
 // Chromium during PDF export. Lazy so it never lands in the main chunk.
@@ -652,6 +673,10 @@ const routeTree = rootRoute.addChildren([
   publicReaderRoute,
   readRoute,
   printRoute,
+  // Registered AFTER every explicit route so a static path (/login, /discover,
+  // /share, /public, …) always out-matches the single-segment handle route.
+  publicHandleRoute,
+  publicHandleSpaceRoute,
   appLayoutRoute.addChildren([
     indexRoute,
     quickNotesRoute,

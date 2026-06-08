@@ -9,7 +9,7 @@ import {
   useSpaceMembers,
   useUpdateSpaceMember,
 } from '../../lib/queries/members'
-import { useUpdateSpace } from '../../lib/queries/spaces'
+import { useTransferSpace, useUpdateSpace } from '../../lib/queries/spaces'
 import { useOrgs } from '../../lib/queries/orgs'
 import { useMyGroups } from '../../lib/queries/groups'
 import {
@@ -21,6 +21,7 @@ import {
 } from '../../lib/queries/space-grants'
 import type {
   AccessSource,
+  Org,
   Space,
   SpaceGrant,
   SpaceMember,
@@ -119,6 +120,8 @@ export function ShareSpaceDialog({
           {open ? <SpaceOrgGrants space={space} iAmOwner={iAmOwner} /> : null}
 
           <PublicAccessSection space={space} iAmOwner={iAmOwner} />
+
+          {iAmOwner ? <TransferOwnershipSection space={space} /> : null}
         </div>
 
         <DialogFooter>
@@ -858,6 +861,135 @@ function PublicAccessSection({
 
       {isPublic && iAmOwner ? <BlogDescriptionField space={space} /> : null}
     </div>
+  )
+}
+
+// Owner-only: hand the whole space to an organization. The space keeps its
+// human owner row; the org gets it as its owning account (and editor access).
+// Picks a target org, then confirms before the irreversible-feeling move.
+function TransferOwnershipSection({ space }: { space: Space }) {
+  const orgs = useOrgs()
+  const [orgId, setOrgId] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  const orgOptions = orgs.data ?? []
+  const targetOrg = orgOptions.find((o) => String(o.id) === orgId)
+
+  // No orgs to transfer into — stay quiet rather than show an empty picker.
+  if (orgOptions.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-[var(--space-2)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
+      <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+        Transfer ownership to an organization
+      </span>
+      <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        The organization becomes this space's owning account and gets editor
+        access. You stay the human owner.
+      </p>
+      <div className="flex items-start gap-[var(--space-2)]">
+        <div className="flex-1 min-w-0">
+          <Select
+            size="md"
+            aria-label="Organization to transfer to"
+            value={orgId}
+            onChange={(e) => setOrgId(e.target.value)}
+          >
+            <option value="">Choose an organization…</option>
+            {orgOptions.map((o) => (
+              <option key={o.id} value={String(o.id)}>
+                {o.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={orgId === ''}
+          onClick={() => setConfirmOpen(true)}
+        >
+          <Building2 width={14} height={14} />
+          <span>Transfer</span>
+        </Button>
+      </div>
+      {targetOrg ? (
+        <TransferConfirmDialog
+          space={space}
+          org={targetOrg}
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          onTransferred={() => setOrgId('')}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function TransferConfirmDialog({
+  space,
+  org,
+  open,
+  onOpenChange,
+  onTransferred,
+}: {
+  space: Space
+  org: Org
+  open: boolean
+  onOpenChange: (next: boolean) => void
+  onTransferred: () => void
+}) {
+  const transfer = useTransferSpace()
+  const [error, setError] = useState<string | null>(null)
+
+  function handleClose(next: boolean) {
+    if (!next) setError(null)
+    onOpenChange(next)
+  }
+
+  async function handleConfirm() {
+    setError(null)
+    try {
+      await transfer.mutateAsync({ id: space.id, org_id: org.id })
+      handleClose(false)
+      onTransferred()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to transfer.')
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Transfer "{space.name}" to {org.name}?</DialogTitle>
+          <DialogDescription>
+            {org.name} becomes the owning account for this space and gets editor
+            access. You'll remain its human owner.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? (
+          <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
+            {error}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleConfirm()}
+            disabled={transfer.isPending}
+          >
+            {transfer.isPending ? 'Transferring…' : 'Transfer'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

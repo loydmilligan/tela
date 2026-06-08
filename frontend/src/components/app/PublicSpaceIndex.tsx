@@ -20,7 +20,12 @@ interface PublicSpaceIndexProps {
 // into a grid. A tag bar filters the list (?tag=, shareable). Chrome mirrors the
 // reader/author surfaces so it all reads as one site.
 export function PublicSpaceIndex({ space, pages }: PublicSpaceIndexProps) {
-  const { tag: activeTag } = useSearch({ from: '/public/spaces/$spaceId' })
+  // strict: false — this index renders under BOTH /public/spaces/$spaceId and
+  // the unified /$handle/$spaceSlug route, so it can't bind to one route's
+  // search schema. The tag filter is a plain optional string either way.
+  const search = useSearch({ strict: false }) as { tag?: string }
+  const activeTag =
+    typeof search.tag === 'string' && search.tag.trim() ? search.tag.trim() : undefined
 
   const posts = useMemo(
     () =>

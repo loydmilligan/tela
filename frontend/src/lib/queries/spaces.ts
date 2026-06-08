@@ -96,6 +96,31 @@ export function useUpdateSpace() {
   })
 }
 
+// POST /api/spaces/{id}/transfer — move a space's owning account to an org
+// (org_id) or back to personal (org_id: null). Owner-only on the backend.
+export interface TransferSpaceInput {
+  id: number
+  org_id: number | null
+}
+
+export function useTransferSpace() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, org_id }: TransferSpaceInput) => {
+      const { space } = await api<{ space: Space }>(
+        `/api/spaces/${id}/transfer`,
+        { method: 'POST', body: JSON.stringify({ org_id }) },
+      )
+      return space
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData(spaceKeys.detail(updated.id), updated)
+      void qc.invalidateQueries({ queryKey: spaceKeys.lists() })
+      void qc.invalidateQueries({ queryKey: spaceKeys.detail(updated.id) })
+    },
+  })
+}
+
 export function useDeleteSpace() {
   const qc = useQueryClient()
   return useMutation({

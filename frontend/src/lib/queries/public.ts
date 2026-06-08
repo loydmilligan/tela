@@ -147,6 +147,63 @@ export function usePublicUser(username: string) {
   })
 }
 
+// GitHub-style handle home: /{handle}. One endpoint resolves either a user or
+// an org handle to its public presence (name + public spaces). 404 when the
+// handle has no public spaces — rendered as a neutral not-found, never a bounce
+// to /login (raw publicFetch, like every other /api/public/ read).
+export interface ByHandleSpace {
+  id: number
+  name: string
+  slug: string
+  description: string
+  page_count: number
+  updated_at: string
+}
+
+export interface ByHandleResponse {
+  kind: 'user' | 'org'
+  handle: string
+  name: string
+  spaces: ByHandleSpace[]
+}
+
+export const handleKeys = {
+  all: ['by-handle'] as const,
+  home: (handle: string) => [...handleKeys.all, handle] as const,
+  space: (handle: string, slug: string) =>
+    [...handleKeys.all, handle, 'space', slug] as const,
+}
+
+export function usePublicByHandle(handle: string) {
+  return useQuery<ByHandleResponse, PublicError>({
+    queryKey: handleKeys.home(handle),
+    queryFn: () =>
+      publicFetch(`/api/public/by-handle/${encodeURIComponent(handle)}`),
+    retry: false,
+    staleTime: 60_000,
+  })
+}
+
+// /{handle}/{space-slug}: the same payload the single-space endpoint returns,
+// consumed exactly like usePublicSpace — so the existing reader/index render it
+// unchanged.
+export function usePublicByHandleSpace(
+  handle: string,
+  slug: string,
+  enabled = true,
+) {
+  return useQuery<{ space: PublicSpacePayload }, PublicError>({
+    queryKey: handleKeys.space(handle, slug),
+    queryFn: () =>
+      publicFetch(
+        `/api/public/by-handle/${encodeURIComponent(handle)}/spaces/${encodeURIComponent(slug)}`,
+      ),
+    retry: false,
+    staleTime: 60_000,
+    enabled,
+  })
+}
+
 // Cross-tenant public-space discovery directory: every public space on the
 // instance, sortable + paginated. Read-only, no login (GET /api/public/discover).
 export type DiscoverSort = 'recent' | 'popular'
