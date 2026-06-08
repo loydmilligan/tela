@@ -108,6 +108,13 @@ func (s *Server) CreateOrg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Unified-handle guard: the org slug shares one public namespace with user
+	// usernames, so reject a reserved word or a collision with an existing
+	// username (the slug's own uniqueness is caught by the INSERT below).
+	if ae := checkHandleAvailable(r.Context(), slug, usernameTaken, s.DB); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
 
 	var id int64
 	err := s.DB.QueryRowContext(r.Context(),
