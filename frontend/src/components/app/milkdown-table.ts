@@ -73,7 +73,7 @@ function buildDecorations(doc: ProseNode): DecorationSet {
     if (node.type.name !== 'table') return true
     const featured = new Set<number>()
     // Pass 1: glyph cells + detect featured columns from the header row.
-    node.forEach((row, rowOffset) => {
+    node.forEach((row, rowOffset, rowIndex) => {
       if (row.type.name !== 'table_row') return
       const rowPos = pos + 1 + rowOffset
       let col = 0
@@ -87,7 +87,10 @@ function buildDecorations(doc: ProseNode): DecorationSet {
             }),
           )
         }
-        if (cell.type.name === 'table_header' && cellFullyHighlighted(cell)) {
+        // Featured column = a fully-`==highlighted==` cell in the header (the
+        // first row). Keyed off row index, not a node-type name (Milkdown's GFM
+        // header cells aren't reliably named `table_header`).
+        if (rowIndex === 0 && cellFullyHighlighted(cell)) {
           featured.add(col)
         }
         col++
