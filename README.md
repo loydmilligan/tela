@@ -27,7 +27,7 @@ Public instance: **https://tela.cagdas.io**
 make dev        # backend (go run ./cmd/tela, :8080) + frontend (vite, :5173) in parallel
 ```
 
-The Vite dev server proxies `/api` → backend `:8080`. `make dev` boots a local Postgres (`tela-dev-pg` on :55432) and points `TELA_DATABASE_URL` at it; the schema is migrated automatically on backend start (embedded migrations run by `db.Migrate()` — no separate migrate step). Open http://localhost:5173.
+The Vite dev server proxies `/api` → backend `:8080`. `make dev` boots a local Postgres (`tela-dev-pg` on :55433) and points `TELA_DATABASE_URL` at it; the schema is migrated automatically on backend start (embedded migrations run by `db.Migrate()` — no separate migrate step). Open http://localhost:5173.
 
 Run parts individually:
 
@@ -40,34 +40,37 @@ make storybook  # Storybook — the component dev surface (:6006)
 ## Production (Docker Compose)
 
 ```bash
-cp deploy/.env.example deploy/.env   # fill in secrets — see below
-make up                              # build + start the stack (auto-stamps git version/commit)
+make setup                           # write deploy/.env from the example with generated secrets
+$EDITOR deploy/.env                  # set admin creds, public base URL, SMTP
+make up                              # build + start the stack (Docker only — no host Node)
 make logs                            # tail logs
 make down                            # stop
 ```
 
-The stack publishes a single host port **8780** (Caddy). Required secrets in `deploy/.env` (generate with `openssl rand -hex 32`, and **keep them stable across deploys** — rotating invalidates outstanding PATs / share cookies):
+The stack publishes a single host port **8780** (Caddy). `make setup` fills the
+load-bearing secrets (`TELA_SHARE_SECRET`, `TELA_API_KEY_SECRET`,
+`TELA_PG_PASSWORD`); set `TELA_PUBLIC_BASE_URL` and the `TELA_ADMIN_*` /
+`TELA_SMTP_*` values yourself. If you leave the HMAC secrets unset entirely,
+tela now generates and **persists** them on first boot (stable across restarts).
 
-- `TELA_PUBLIC_BASE_URL` — e.g. `https://tela.cagdas.io`
-- `TELA_SHARE_SECRET` — HMAC key for public-share password cookies
-- `TELA_API_KEY_SECRET` — HMAC key for personal access tokens (PATs)
-
-See `deploy/.env.example` for the full list.
+**Full setup, TLS, backups, and upgrades: see [`docs/self-hosting.md`](docs/self-hosting.md)** and the operations runbook [`docs/operations.md`](docs/operations.md). `deploy/.env.example` documents every variable.
 
 ## Make targets
 
 ```
+make setup      # first run: write deploy/.env from the example with generated secrets
 make dev        # backend + frontend in dev mode (parallel, no compose)
 make be-dev     # backend only           make fe-dev     # frontend only
 make storybook  # Storybook
 make up         # build + start the compose stack on :8780 (stamps version/commit)
 make down       # stop          make logs   # tail logs       make build  # rebuild images
+make backup     # dump Postgres to ./backups   make restore FILE=...  # restore a dump
 make clean FORCE=1            # stop AND delete volumes (destroys data)
 make test-mcp-integration     # boot stack + run MCP↔backend E2E + tear down
 make help
 ```
 
-> Note: there is no `make test`, `make lint`, or `make migrate`. Tests are run per-component (below); migrations run automatically on backend start.
+> Note: there is no `make lint` or `make migrate` — migrations run automatically on backend start. `make test` runs the backend suite (below).
 
 ## Tests
 
