@@ -233,6 +233,44 @@ func TestHostContextAndLoginSettings(t *testing.T) {
 		`{"password_enabled":false,"social_enabled":false}`, http.StatusBadRequest)
 }
 
+// Org branding is validated and surfaced through host-context.
+func TestOrgBranding(t *testing.T) {
+	ts, d := newWiredServer(t)
+	seedUser(t, d, "admin", "adminpass1", true)
+	org := seedOrg(t, d, "Acme", "acme")
+	if _, err := d.Exec(
+		`INSERT INTO org_hostnames (hostname, org_id, status, verify_token) VALUES ($1,$2,'active',$3)`,
+		"wiki.example.com", org, "tok"); err != nil {
+		t.Fatalf("seed hostname: %v", err)
+	}
+	admin := loginClient(t, ts, "admin", "adminpass1")
+	base := ts.URL + "/api/orgs/" + itoa(org) + "/branding"
+
+	// Reject a CSS-injection-shaped accent and a non-https logo.
+	cdPut(t, admin, base, `{"logo_url":"https://acme.example/logo.png","accent":"red;}body{}"}`, http.StatusBadRequest)
+	cdPut(t, admin, base, `{"logo_url":"ftp://acme.example/logo.png","accent":"#ff0000"}`, http.StatusBadRequest)
+
+	// Accept a clean logo + accent, and surface them via host-context.
+	cdPut(t, admin, base, `{"logo_url":"https://acme.example/logo.png","accent":"oklch(0.7 0.1 250)"}`, http.StatusOK)
+	var hc hostContextDTO
+	getHost(t, http.DefaultClient, ts.URL+"/api/host-context", "wiki.example.com", http.StatusOK, &hc)
+	if hc.Org == nil || hc.Org.LogoURL != "https://acme.example/logo.png" || hc.Org.Accent != "oklch(0.7 0.1 250)" {
+		t.Fatalf("host-context branding = %+v", hc.Org)
+	}
+}
+
+// The health probe is gated to the org's own hostnames (no DNS call on the 404
+// path — keeps the test hermetic).
+func TestOrgHostnameHealthGate(t *testing.T) {
+	ts, d := newWiredServer(t)
+	seedUser(t, d, "admin", "adminpass1", true)
+	org := seedOrg(t, d, "Acme", "acme")
+	c := loginClient(t, ts, "admin", "adminpass1")
+	if code := getStatus(t, c, ts.URL+"/api/orgs/"+itoa(org)+"/hostnames/notmine.example.com/health"); code != http.StatusNotFound {
+		t.Fatalf("health for non-org hostname = %d, want 404", code)
+	}
+}
+
 // --- small test helpers (itoa lives in attachments_test.go) ---
 
 func cdPut(t *testing.T, c *http.Client, url, body string, wantStatus int) {

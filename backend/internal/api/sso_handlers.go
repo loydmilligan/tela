@@ -84,15 +84,27 @@ func (s *Server) SSOStart(w http.ResponseWriter, r *http.Request) {
 		orgID            int64
 	)
 	if provider == "org" {
-		domain := normalizeDomain(r.URL.Query().Get("domain"))
-		if domain == "" {
-			domain = emailDomain(normalizeEmail(r.URL.Query().Get("email")))
+		var (
+			conn orgSSOConn
+			ok   bool
+			err  error
+		)
+		// On the org's own custom domain we already know which org this is, so
+		// the SSO flow needs no email/domain prompt — resolve straight from the
+		// host context. Off a custom domain, fall back to email/domain matching.
+		if oc, hasOrg := auth.OrgContextFromContext(ctx); hasOrg {
+			conn, ok, err = s.orgSSOByID(ctx, oc.OrgID)
+		} else {
+			domain := normalizeDomain(r.URL.Query().Get("domain"))
+			if domain == "" {
+				domain = emailDomain(normalizeEmail(r.URL.Query().Get("email")))
+			}
+			if domain == "" {
+				writeError(w, http.StatusBadRequest, "bad_request", "a domain or email is required")
+				return
+			}
+			conn, ok, err = s.orgSSOByDomain(ctx, domain)
 		}
-		if domain == "" {
-			writeError(w, http.StatusBadRequest, "bad_request", "a domain or email is required")
-			return
-		}
-		conn, ok, err := s.orgSSOByDomain(ctx, domain)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "lookup sso failed")
 			return

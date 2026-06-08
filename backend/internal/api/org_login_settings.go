@@ -33,9 +33,11 @@ func (s *Server) orgHasSSO(ctx context.Context, orgID int64) bool {
 }
 
 type hostOrgDTO struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
+	LogoURL string `json:"logo_url"`
+	Accent  string `json:"accent"`
 }
 
 type hostLoginDTO struct {
@@ -73,7 +75,8 @@ func (s *Server) HostContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pw, social := s.orgLoginSettings(ctx, oc.OrgID)
-	out.Org = &hostOrgDTO{ID: oc.OrgID, Name: name, Slug: slug}
+	logoURL, accent := s.orgBranding(ctx, oc.OrgID)
+	out.Org = &hostOrgDTO{ID: oc.OrgID, Name: name, Slug: slug, LogoURL: logoURL, Accent: accent}
 	out.Login = hostLoginDTO{PasswordEnabled: pw, SocialEnabled: social, OrgSSOAvailable: s.orgHasSSO(ctx, oc.OrgID)}
 	writeJSON(w, http.StatusOK, out)
 }

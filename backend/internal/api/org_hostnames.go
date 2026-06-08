@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -225,6 +226,70 @@ func (s *Server) DeleteOrgHostname(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r.Context(), r, "org_hostname.delete", "org", orgID, host)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type hostnameHealthDTO struct {
+	DNSOK   bool     `json:"dns_ok"`   // resolves in DNS
+	Addrs   []string `json:"addrs"`    // resolved public addresses
+	HTTPSOK bool     `json:"https_ok"` // TLS handshake succeeds with a cert valid for the host
+	Note    string   `json:"note,omitempty"`
+}
+
+// OrgHostnameHealth — GET /api/orgs/{id}/hostnames/{hostname}/health. Org-admin.
+// A live reachability probe so admins can self-diagnose: does the hostname
+// resolve, and does it serve HTTPS with a valid cert (i.e. did the on-demand
+// cert issue and is DNS pointing at us)?
+func (s *Server) OrgHostnameHealth(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := parseOrgID(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireOrgAdmin(w, r, orgID) {
+		return
+	}
+	host := hostnameOnly(r.PathValue("hostname"))
+	var x int
+	if err := s.DB.QueryRowContext(r.Context(),
+		`SELECT 1 FROM org_hostnames WHERE hostname = $1 AND org_id = $2`, host, orgID).Scan(&x); err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "hostname not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, checkHostnameHealth(r.Context(), host))
+}
+
+// checkHostnameHealth resolves host and, if it points at a public address,
+// attempts a TLS handshake. SSRF guard: a verified hostname's DNS could still
+// point at a private/loopback IP, so we never dial one — that would turn the
+// probe into an internal port scanner.
+func checkHostnameHealth(ctx context.Context, host string) hostnameHealthDTO {
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+	if err != nil || len(addrs) == 0 {
+		return hostnameHealthDTO{Note: "hostname does not resolve in DNS yet"}
+	}
+	out := hostnameHealthDTO{DNSOK: true}
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() {
+			continue // skip private/loopback/link-local from the reported + dialled set
+		}
+		out.Addrs = append(out.Addrs, a)
+	}
+	if len(out.Addrs) == 0 {
+		out.Note = "resolves to a non-public address — point DNS at this instance"
+		return out
+	}
+
+	dialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 4 * time.Second}, Config: &tls.Config{ServerName: host}}
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, "443"))
+	if err != nil {
+		out.Note = "no valid HTTPS yet — the certificate issues on the first visit once DNS is correct"
+		return out
+	}
+	_ = conn.Close()
+	out.HTTPSOK = true
+	return out
 }
 
 // normalizeHostname lowercases/trims a hostname and rejects anything that

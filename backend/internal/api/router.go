@@ -361,10 +361,14 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/orgs/{id}/hostnames", srv.ListOrgHostnames)
 	mux.HandleFunc("POST /api/orgs/{id}/hostnames", srv.AddOrgHostname)
 	mux.HandleFunc("POST /api/orgs/{id}/hostnames/{hostname}/verify", srv.VerifyOrgHostname)
+	mux.HandleFunc("GET /api/orgs/{id}/hostnames/{hostname}/health", srv.OrgHostnameHealth)
 	mux.HandleFunc("DELETE /api/orgs/{id}/hostnames/{hostname}", srv.DeleteOrgHostname)
-	// Per-org login-method toggles (org_login_settings.go), org-admin.
+	// Per-org login-method toggles + visual branding (org_login_settings.go /
+	// org_branding.go), org-admin.
 	mux.HandleFunc("GET /api/orgs/{id}/login-settings", srv.GetOrgLoginSettings)
 	mux.HandleFunc("PUT /api/orgs/{id}/login-settings", srv.PutOrgLoginSettings)
+	mux.HandleFunc("GET /api/orgs/{id}/branding", srv.GetOrgBranding)
+	mux.HandleFunc("PUT /api/orgs/{id}/branding", srv.PutOrgBranding)
 	// Host context: org branding + enabled sign-in methods for the request's
 	// host. Public (host-derived, pre-login) — see IsPublicPath.
 	mux.HandleFunc("GET /api/host-context", srv.HostContext)
