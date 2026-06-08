@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { Link } from '@tanstack/react-router'
 import { ThemeSwitcher } from '../ThemeSwitcher'
 import { BrandMark } from '../BrandMark'
 
@@ -10,14 +9,17 @@ export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh flex flex-col bg-[var(--surface-1)] text-[var(--text-primary)]">
       <header className="flex items-center justify-between px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
-        <Link
-          to="/login"
-          aria-label="tela"
+        {/* The landing lives at "/" (served by Caddy, not an SPA route), so this
+            is a real navigation with the ?home=1 hatch — not a router Link, which
+            would resolve "/" in-app and bounce back. */}
+        <a
+          href="/?home=1"
+          aria-label="tela — home"
           className="m-0 inline-flex items-center gap-[var(--space-2)] text-[length:var(--text-lg)] leading-[var(--leading-tight)] font-[family-name:var(--font-sans)] text-[var(--text-primary)] no-underline"
         >
           <BrandMark size={22} />
           tela
-        </Link>
+        </a>
         <ThemeSwitcher />
       </header>
       <main className="flex-1 flex items-center justify-center p-[var(--space-7)]">
