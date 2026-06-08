@@ -25,6 +25,7 @@ import { Input } from '../ui/input'
 import { Select } from '../ui/select'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle'
 import { cn } from '../../lib/utils'
+import { DOCS } from '../../lib/docs'
 
 const NAME_MAX_LEN = 64
 const ALL_SPACES_VALUE = '__all__'
@@ -53,6 +54,16 @@ export function SettingsSyncTab() {
           and edit them as plain markdown in any app. Connect a vault below — it
           mints a sync token and walks you through the setup. Edits merge on the
           server, so editing in the app and on disk at once is safe.
+        </p>
+        <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          <a
+            href={DOCS.webdav}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--accent)] underline underline-offset-2"
+          >
+            WebDAV &amp; rclone setup guide →
+          </a>
         </p>
       </header>
 

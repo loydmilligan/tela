@@ -1,5 +1,6 @@
 import { Link, useParams } from '@tanstack/react-router'
-import { FilePlus, Home, Search, Share2, Sparkles } from 'lucide-react'
+import { BookOpen, FilePlus, Home, Search, Share2, Sparkles } from 'lucide-react'
+import { DOCS } from '../../lib/docs'
 import { PagesTree } from './PagesTree'
 import { SpacesList } from './SpacesList'
 import { FavoritesSidebarSection } from './FavoritesSidebarSection'
@@ -110,6 +111,17 @@ export function Sidebar({ open = false }: { open?: boolean }) {
             <Share2 width={14} height={14} />
             <span className="flex-1 text-left">Graph</span>
           </Link>
+        </Button>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+        >
+          <a href={DOCS.home} target="_blank" rel="noopener" aria-label="Documentation" title="Documentation">
+            <BookOpen width={14} height={14} />
+            <span className="flex-1 text-left">Docs</span>
+          </a>
         </Button>
       </div>
       <FavoritesSidebarSection activePageId={activePageId} />
