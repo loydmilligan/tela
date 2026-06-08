@@ -150,7 +150,7 @@ func (s *Server) GetPrintPage(w http.ResponseWriter, r *http.Request) {
 			"title":      p.Title,
 			"body":       p.Body,
 			"updated_at": p.UpdatedAt,
-			"source_url": publicBaseURL(),
+			"source_url": canonicalBaseURL(),
 		},
 	})
 }

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 )
@@ -98,13 +97,6 @@ func isBotUA(ua string) bool {
 	return false
 }
 
-// publicBaseURL returns the env-configured base URL with a single trailing
-// slash trimmed. Empty when TELA_PUBLIC_BASE_URL is unset, producing path-only
-// og:url / og:image — Slack and Twitter handle that fine in dev.
-func publicBaseURL() string {
-	return strings.TrimRight(os.Getenv("TELA_PUBLIC_BASE_URL"), "/")
-}
-
 // writeOGHTML emits the OG HTML payload. All user-controlled fields go through
 // html.EscapeString — page titles and bodies are end-user input, and a stored
 // XSS via crawler-rendered OG cards is a real concern even though the bot
@@ -114,7 +106,7 @@ func writeOGHTML(w http.ResponseWriter, pageID int64, title, body, spaceName str
 	// Canonical permalink carries the cosmetic slug (/p/{id}/{slug}); the id is
 	// still what resolves, so a stale slug never breaks.
 	writeOGHTMLWithURL(w, pageID, title, body, spaceName,
-		publicBaseURL()+pagePermalinkPath(pageID, title))
+		canonicalBaseURL()+pagePermalinkPath(pageID, title))
 }
 
 func writeNotFoundHTML(w http.ResponseWriter) {

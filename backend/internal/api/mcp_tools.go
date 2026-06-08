@@ -209,7 +209,7 @@ func mcpCapBody(body string) (string, bool) {
 }
 
 func mcpPageURL(p models.Page) string {
-	return publicBaseURL() + pageAppPath(p.SpaceID, p.ID, p.Title)
+	return canonicalBaseURL() + pageAppPath(p.SpaceID, p.ID, p.Title)
 }
 
 // ---- list_spaces ---------------------------------------------------------

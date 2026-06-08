@@ -15,21 +15,24 @@ import (
 // requests emit api_key_audit rows. Tests that need to assert on the audit
 // table flush via srv.AuditWriter().Flush() before reading.
 func Handler(d *sql.DB) http.Handler {
-	srv := New(d)
-	mux := http.NewServeMux()
-	registerRoutes(srv, mux)
-	return requestLogger(mux, auth.Middleware(d, srv.auditWriter)(mux))
+	h, _ := HandlerWithServer(d)
+	return h
 }
 
 // HandlerWithServer is the wired-handler variant that also returns the
 // underlying *Server. Used by integration tests so they can reach
 // srv.AuditWriter().Flush() between issuing a bearer request and querying
 // the api_key_audit table.
+//
+// Middleware order (outermost→innermost): requestLogger → hostOrgMiddleware →
+// auth.Middleware → mux. hostOrgMiddleware runs before auth so the request's
+// org context (from a custom-domain host) is set for the login screen, session
+// creation, and the session↔org binding check.
 func HandlerWithServer(d *sql.DB) (http.Handler, *Server) {
 	srv := New(d)
 	mux := http.NewServeMux()
 	registerRoutes(srv, mux)
-	return requestLogger(mux, auth.Middleware(d, srv.auditWriter)(mux)), srv
+	return requestLogger(mux, srv.hostOrgMiddleware(auth.Middleware(d, srv.auditWriter)(mux))), srv
 }
 
 func registerRoutes(srv *Server, mux *http.ServeMux) {
@@ -352,6 +355,16 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/orgs/{id}/sso", srv.GetOrgSSO)
 	mux.HandleFunc("PUT /api/orgs/{id}/sso", srv.PutOrgSSO)
 	mux.HandleFunc("DELETE /api/orgs/{id}/sso", srv.DeleteOrgSSO)
+	// Per-org custom domains (org_hostnames.go). Org-admin self-serve (instance-
+	// admin passes virtually); the verify step proves DNS ownership, instance-
+	// admins may force-activate. Distinct from the email auto-join domains below.
+	mux.HandleFunc("GET /api/orgs/{id}/hostnames", srv.ListOrgHostnames)
+	mux.HandleFunc("POST /api/orgs/{id}/hostnames", srv.AddOrgHostname)
+	mux.HandleFunc("POST /api/orgs/{id}/hostnames/{hostname}/verify", srv.VerifyOrgHostname)
+	mux.HandleFunc("DELETE /api/orgs/{id}/hostnames/{hostname}", srv.DeleteOrgHostname)
+	// Caddy on-demand-TLS ask endpoint (tls_check.go). Public (internal-network
+	// only — see IsPublicPath and the proxy 404 for /api/internal/ from the WAN).
+	mux.HandleFunc("GET /api/internal/tls-check", srv.TLSCheck)
 	// Metering & tiers (limits.go / usage.go). Usage is readable by the account's
 	// own principals; plans are public to any user; setting a plan is operator-only.
 	mux.HandleFunc("GET /api/usage", srv.GetMyUsage)

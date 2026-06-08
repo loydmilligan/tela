@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/mail"
-	"os"
 	"strings"
 	"time"
 )
@@ -117,21 +116,14 @@ func validEmail(s string) bool {
 	return err == nil && addr.Address == s
 }
 
-// appBaseURL is the public origin the SPA is served from, used to build verify
-// / reset links. Mirrors shareURLFor's resolution: TELA_PUBLIC_BASE_URL, with a
-// localhost fallback so dev still produces a complete (if log-only) link.
-func appBaseURL() string {
-	base := strings.TrimRight(os.Getenv("TELA_PUBLIC_BASE_URL"), "/")
-	if base == "" {
-		base = "http://localhost:8780"
-	}
-	return base
+// origin is the browser-facing origin the verify/reset link should point at —
+// Server.linkOrigin(r), which follows an org custom domain when the request
+// arrived on one, else the canonical origin (with a dev fallback). Passed in by
+// the handlers so an org user's email links land on their own front door.
+func verifyLink(origin, rawToken string) string {
+	return origin + "/verify-email?token=" + rawToken
 }
 
-func verifyLink(rawToken string) string {
-	return appBaseURL() + "/verify-email?token=" + rawToken
-}
-
-func resetLink(rawToken string) string {
-	return appBaseURL() + "/reset-password?token=" + rawToken
+func resetLink(origin, rawToken string) string {
+	return origin + "/reset-password?token=" + rawToken
 }

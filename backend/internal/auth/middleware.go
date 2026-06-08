@@ -75,19 +75,28 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 		username string
 		email    sql.NullString
 		isAdmin  int
+		boundOrg sql.NullInt64
 	)
 	err := d.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.email, u.is_instance_admin
+		SELECT u.id, u.username, u.email, u.is_instance_admin, s.org_id
 		  FROM sessions s
 		  JOIN users u ON u.id = s.user_id
 		 WHERE s.id = $1
 		   AND s.expires_at > tela_now()
-		   AND u.is_active = 1`, sessionID).Scan(&userID, &username, &email, &isAdmin)
+		   AND u.is_active = 1`, sessionID).Scan(&userID, &username, &email, &isAdmin, &boundOrg)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidSession
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	// Session↔org binding: a session is valid only on the front door it was
+	// created under. The host→org middleware put the request's org context on
+	// ctx (absent ⇒ canonical host). A mismatch ⇒ this cookie is being presented
+	// on the wrong host; treat it as invalid so login happens per front door.
+	if !sessionOrgMatches(boundOrg, ctx) {
+		return nil, ErrInvalidSession
 	}
 
 	newExpires := time.Now().UTC().Add(SessionMaxAge).Format("2006-01-02 15:04:05")
@@ -102,6 +111,9 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 
 // CreateSession inserts a fresh session row for userID. The id is base64url
 // of 32 random bytes — collision-resistant and URL-safe for the cookie value.
+// The session is bound to the org front door it was created under (read from
+// ctx's OrgContext; NULL on the canonical host) so it can't later be replayed
+// on a different host — see LoadSessionAndSlide.
 func CreateSession(ctx context.Context, d *sql.DB, userID int64, userAgent string) (string, error) {
 	buf := make([]byte, sessionIDBytes)
 	if _, err := rand.Read(buf); err != nil {
@@ -109,13 +121,29 @@ func CreateSession(ctx context.Context, d *sql.DB, userID int64, userAgent strin
 	}
 	id := base64.RawURLEncoding.EncodeToString(buf)
 	expires := time.Now().UTC().Add(SessionMaxAge).Format("2006-01-02 15:04:05")
+	var orgID sql.NullInt64
+	if oc, ok := OrgContextFromContext(ctx); ok {
+		orgID = sql.NullInt64{Int64: oc.OrgID, Valid: true}
+	}
 	if _, err := d.ExecContext(ctx, `
-		INSERT INTO sessions(id, user_id, expires_at, last_seen_at, user_agent)
-		VALUES ($1, $2, $3, tela_now(), $4)`,
-		id, userID, expires, userAgent); err != nil {
+		INSERT INTO sessions(id, user_id, expires_at, last_seen_at, user_agent, org_id)
+		VALUES ($1, $2, $3, tela_now(), $4, $5)`,
+		id, userID, expires, userAgent, orgID); err != nil {
 		return "", err
 	}
 	return id, nil
+}
+
+// sessionOrgMatches reports whether a session bound to boundOrg may be used on
+// the front door described by ctx's OrgContext. The binding is exact: a
+// canonical-host session (boundOrg NULL) is valid only where there is no org
+// context, and an org-bound session only on that same org's host.
+func sessionOrgMatches(boundOrg sql.NullInt64, ctx context.Context) bool {
+	oc, ok := OrgContextFromContext(ctx)
+	if !ok {
+		return !boundOrg.Valid
+	}
+	return boundOrg.Valid && boundOrg.Int64 == oc.OrgID
 }
 
 // DeleteSession removes a session row by id. No error if the row is missing.
@@ -215,6 +243,13 @@ func IsPublicPath(p string) bool {
 	// is enforced inside the tool handlers. The verifier rejects missing/invalid
 	// tokens with 401 + WWW-Authenticate (RFC 9728), so this is not an open hole.
 	if strings.HasPrefix(p, "/api/mcp") {
+		return true
+	}
+	// Caddy on-demand-TLS ask endpoint (/api/internal/tls-check). Called by the
+	// proxy over the internal docker network with no session — must bypass
+	// Middleware. Discloses only "is this host active" (200/404); the public
+	// site blocks 404 the /api/internal/ prefix from the WAN.
+	if strings.HasPrefix(p, "/api/internal/") {
 		return true
 	}
 	// Cloud control plane — managed services (RAG embed proxy, entitlements)

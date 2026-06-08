@@ -36,7 +36,7 @@ func (s *Server) ExportPageMarkdown(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", mdSlugOr(p.Title, "page")+".md"))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write(pagemd.Encode(p, publicBaseURL()))
+	_, _ = w.Write(pagemd.Encode(p, canonicalBaseURL()))
 }
 
 // ExportSpaceMarkdownZip (GET /api/spaces/{id}/export.zip): session-authed.
@@ -120,7 +120,7 @@ func writeSpaceZip(zw *zip.Writer, pages []models.Page) {
 		for _, p := range nodes {
 			slug := slugs[p.ID]
 			if fw, err := zw.Create(prefix + slug + ".md"); err == nil {
-				_, _ = fw.Write(pagemd.Encode(p, publicBaseURL()))
+				_, _ = fw.Write(pagemd.Encode(p, canonicalBaseURL()))
 			}
 			if kids := children[p.ID]; len(kids) > 0 {
 				walk(kids, prefix+slug+"/")

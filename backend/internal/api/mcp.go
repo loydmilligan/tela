@@ -69,7 +69,7 @@ const mcpMaxRequestBytes = 4 << 20 // 4 MiB
 // URL so self-hosters get their own.
 func (s *Server) newMCPServer() *mcp.Server {
 	impl := &mcp.Implementation{Name: mcpServerName, Title: "Tela", Version: Version}
-	if base := publicBaseURL(); base != "" {
+	if base := canonicalBaseURL(); base != "" {
 		impl.WebsiteURL = base
 	}
 	// Full-bleed square icon as a data URI — the favicon has baked-in rounded

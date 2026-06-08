@@ -140,7 +140,7 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			Title:      h.Title,
 			Snippet:    h.Snippet,
 			Breadcrumb: bc,
-			URL:        publicBaseURL() + pageAppPath(h.SpaceID, h.ID, h.Title),
+			URL:        canonicalBaseURL() + pageAppPath(h.SpaceID, h.ID, h.Title),
 			ID:         strconv.FormatInt(h.ID, 10),
 			Text:       h.Snippet,
 		})

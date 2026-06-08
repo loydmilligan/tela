@@ -214,5 +214,5 @@ func (s *Server) ExportPublicSpacePageMarkdown(w http.ResponseWriter, r *http.Re
 	// forcing a download on a normal browse.
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", mdSlugOr(page.Title, "page")+".md"))
 	w.Header().Set("Cache-Control", "public, max-age=300")
-	_, _ = w.Write(pagemd.Encode(page, publicBaseURL()))
+	_, _ = w.Write(pagemd.Encode(page, canonicalBaseURL()))
 }

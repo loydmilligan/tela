@@ -45,11 +45,12 @@ func (s *Server) HandlePublicShareLink(w http.ResponseWriter, r *http.Request) {
 		writeNotFoundHTML(w)
 		return
 	}
+	origin := s.shareOriginForPage(r.Context(), share.PageID)
 	if share.PasswordHash.Valid {
-		writeLockedShareOGHTML(w, share.Token)
+		writeLockedShareOGHTML(w, origin, share.Token)
 		return
 	}
-	s.writeShareOGHTML(w, &share, share.PageID, shareRootURL(share.Token), true)
+	s.writeShareOGHTML(w, &share, share.PageID, shareRootURL(origin, share.Token), true)
 }
 
 // HandlePublicShareLinkPage — GET /share/{token}/p/{page_id}. Same gate as the
@@ -100,10 +101,10 @@ func (s *Server) HandlePublicShareLinkPage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if share.PasswordHash.Valid {
-		writeLockedShareOGHTML(w, share.Token)
+		writeLockedShareOGHTML(w, s.shareOriginForPage(r.Context(), share.PageID), share.Token)
 		return
 	}
-	s.writeShareOGHTML(w, &share, pageID, shareDescendantURL(share.Token, pageID), false)
+	s.writeShareOGHTML(w, &share, pageID, shareDescendantURL(s.shareOriginForPage(r.Context(), pageID), share.Token, pageID), false)
 }
 
 // parseShareLinkPageID parses the {page_id} path value as a positive int64,
@@ -120,16 +121,17 @@ func parseShareLinkPageID(r *http.Request) (int64, bool) {
 	return id, true
 }
 
-// shareRootURL builds the absolute (or path-only when TELA_PUBLIC_BASE_URL is
-// unset) URL Slack / Twitter / etc. should display for the share root.
-func shareRootURL(token string) string {
-	return fmt.Sprintf("%s/share/%s", publicBaseURL(), token)
+// shareRootURL builds the absolute (or path-only when origin is empty) URL
+// Slack / Twitter / etc. should display for the share root. origin is the
+// share's effective origin (org custom domain when applicable, else canonical).
+func shareRootURL(origin, token string) string {
+	return fmt.Sprintf("%s/share/%s", origin, token)
 }
 
 // shareDescendantURL builds the absolute (or path-only) URL for a descendant
 // page within a share's subtree.
-func shareDescendantURL(token string, pageID int64) string {
-	return fmt.Sprintf("%s/share/%s/p/%d", publicBaseURL(), token, pageID)
+func shareDescendantURL(origin, token string, pageID int64) string {
+	return fmt.Sprintf("%s/share/%s/p/%d", origin, token, pageID)
 }
 
 // writeShareOGHTML emits the OG envelope for an unlocked share. The og:image
@@ -167,7 +169,7 @@ func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID in
 }
 
 // writeOGHTMLWithURL is the URL-overridable variant of writeOGHTML. The /p/{id}
-// flavour calls writeOGHTML which builds og:url from publicBaseURL()+/p/{id};
+// flavour calls writeOGHTML which builds og:url from canonicalBaseURL()+/p/{id};
 // shares need /share/{token} or /share/{token}/p/{id}. og:image stays
 // /p/{page_id}/og.png — it's public and the renderer is keyed only on page id.
 func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceName, pageURL string) {
@@ -182,7 +184,7 @@ func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceN
 	//   ogDesc := runeTruncate(plain, 200)
 	ogDesc := runeTruncate(title, 200)
 
-	imageURL := fmt.Sprintf("%s/p/%d/og.png", publicBaseURL(), pageID)
+	imageURL := fmt.Sprintf("%s/p/%d/og.png", canonicalBaseURL(), pageID)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")
@@ -225,11 +227,11 @@ func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceN
 // share so crawlers don't leak the real title / description / image. og:image
 // is intentionally absent — sharing the page's image card on a locked share
 // would defeat the password.
-func writeLockedShareOGHTML(w http.ResponseWriter, token string) {
+func writeLockedShareOGHTML(w http.ResponseWriter, origin, token string) {
 	const lockedTitle = "Protected page on Tela"
 	const lockedDesc = "This page is password-protected. Open the link to enter the password."
 
-	pageURL := shareRootURL(token)
+	pageURL := shareRootURL(origin, token)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")

@@ -73,9 +73,9 @@ func (s *Server) registerMCPWidgets(server *mcp.Server) {
 
 // widgetResourceMeta is the OpenAI widget CSP. The bridge is inlined (no external
 // imports), so the iframe only needs to reach the tela origin — derived from
-// publicBaseURL so self-hosters get their own.
+// canonicalBaseURL so self-hosters get their own.
 func (s *Server) widgetResourceMeta() mcp.Meta {
-	base := publicBaseURL()
+	base := canonicalBaseURL()
 	resourceDomains := []string{}
 	connectDomains := []string{}
 	if base != "" {

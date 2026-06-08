@@ -161,7 +161,7 @@ func (s *Server) ListSyncConnections(w http.ResponseWriter, r *http.Request) {
 // on write, so rclone must not size-check — see docs/webdav-sync.md) are
 // server-authoritative, not hardcoded in the client.
 func buildRcloneSetup(user, spaceSlug, rawKey string, readOnly bool) rcloneSetup {
-	url := strings.TrimRight(publicBaseURL(), "/") + "/dav/"
+	url := strings.TrimRight(canonicalBaseURL(), "/") + "/dav/"
 	const remote = "tela"
 	remotePath := remote + ":"
 	localRel := "tela" // relative to $HOME

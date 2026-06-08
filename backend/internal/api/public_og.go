@@ -159,7 +159,7 @@ func (s *Server) HandlePublicSpaceOG(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	base := publicBaseURL()
+	base := canonicalBaseURL()
 	canonical := base + publicSpacePath(sp.ID)
 	owner := s.spaceOwnerHandle(r, sp.ID)
 	desc := sp.Description
@@ -218,7 +218,7 @@ func (s *Server) HandlePublicReaderOG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := publicBaseURL()
+	base := canonicalBaseURL()
 	canonical := base + publicReaderPath(sp.ID, pageID, page.Title)
 	imageURL := base + fmt.Sprintf("/p/%d/og.png", pageID)
 	desc := postExcerpt(page.Body, page.Props, 200)
@@ -277,7 +277,7 @@ func (s *Server) HandlePublicUserOG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := publicBaseURL()
+	base := canonicalBaseURL()
 	canonical := base + "/u/" + name
 	desc := bio
 	if desc == "" {
@@ -366,7 +366,7 @@ func (s *Server) HandlePublicSitemap(w http.ResponseWriter, r *http.Request) {
 		NS      string     `xml:"xmlns,attr"`
 		URLs    []urlEntry `xml:"url"`
 	}
-	base := publicBaseURL()
+	base := canonicalBaseURL()
 	set := urlset{NS: "http://www.sitemaps.org/schemas/sitemap/0.9"}
 	ctx := r.Context()
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"os"
@@ -47,12 +48,17 @@ func (r *ssoRegistry) lookup(name string) (*ssoProvider, bool) {
 	return p, ok
 }
 
-// ssoCallbackURL is the registered redirect URI for a provider segment. Social
-// providers use their own name ('google'); every org connection shares the
-// single 'org' segment (the org id rides in the signed state), so an operator
-// registers exactly one org redirect URI per instance regardless of tenant.
-func ssoCallbackURL(provider string) string {
-	return appBaseURL() + "/api/auth/sso/" + provider + "/callback"
+// ssoCallbackURL is the registered redirect URI for a provider segment, on a
+// given origin. Social providers use their own name ('google') and a fixed
+// canonical origin (one registered redirect URI per instance). Org connections
+// share the 'org' segment (the org id rides in the signed state) but follow the
+// request's origin — an org on a custom domain registers
+// https://tela.ngss.io/api/auth/sso/org/callback at its IdP. OIDC requires the
+// redirect_uri at authorize and token-exchange to byte-match the registration,
+// so the org callback must use the same origin at both ends (it does — the IdP
+// returns to that host, and providerForCallback rebuilds from the same request).
+func ssoCallbackURL(origin, provider string) string {
+	return origin + "/api/auth/sso/" + provider + "/callback"
 }
 
 // loadSSOProviders builds the social registry from env. Each provider is skipped
@@ -61,8 +67,13 @@ func ssoCallbackURL(provider string) string {
 func loadSSOProviders(ctx context.Context) *ssoRegistry {
 	reg := &ssoRegistry{social: map[string]*ssoProvider{}}
 
+	// Social providers register a single canonical redirect URI per instance —
+	// they are NOT offered on org custom-domain login screens (org SSO is), so
+	// they never need a per-host callback. See custom_domains.go / docs.
+	origin := cmp.Or(canonicalBaseURL(), devBaseURL)
+
 	if id, sec := os.Getenv("TELA_SSO_GOOGLE_CLIENT_ID"), os.Getenv("TELA_SSO_GOOGLE_CLIENT_SECRET"); id != "" && sec != "" {
-		if p, err := buildOIDCProvider(ctx, "google", "Google", "https://accounts.google.com",
+		if p, err := buildOIDCProvider(ctx, origin, "google", "Google", "https://accounts.google.com",
 			id, sec, []string{oidc.ScopeOpenID, "email", "profile"}, false, nil); err != nil {
 			slog.Warn("sso: google disabled", "err", err)
 		} else {
@@ -80,7 +91,7 @@ func loadSSOProviders(ctx context.Context) *ssoRegistry {
 		issuerOK := func(iss string) bool {
 			return strings.HasPrefix(iss, "https://login.microsoftonline.com/") && strings.HasSuffix(iss, "/v2.0")
 		}
-		if p, err := buildOIDCProvider(oidc.InsecureIssuerURLContext(ctx, msIssuer), "microsoft", "Microsoft", msIssuer,
+		if p, err := buildOIDCProvider(oidc.InsecureIssuerURLContext(ctx, msIssuer), origin, "microsoft", "Microsoft", msIssuer,
 			id, sec, []string{oidc.ScopeOpenID, "email", "profile"}, true, issuerOK); err != nil {
 			slog.Warn("sso: microsoft disabled", "err", err)
 		} else {
@@ -97,7 +108,7 @@ func loadSSOProviders(ctx context.Context) *ssoRegistry {
 				ClientID:     id,
 				ClientSecret: sec,
 				Endpoint:     githuboauth.Endpoint,
-				RedirectURL:  ssoCallbackURL("github"),
+				RedirectURL:  ssoCallbackURL(origin, "github"),
 				Scopes:       []string{"read:user", "user:email"},
 			},
 			userInfoURL: "https://api.github.com/user",
@@ -116,7 +127,7 @@ func loadSSOProviders(ctx context.Context) *ssoRegistry {
 // Microsoft path overrides it via InsecureIssuerURLContext). skipIssuerCheck +
 // issuerOK cover multi-tenant issuers; for normal single-issuer providers both
 // are zero-valued.
-func buildOIDCProvider(discoveryCtx context.Context, name, label, issuer, clientID, clientSecret string, scopes []string, skipIssuerCheck bool, issuerOK func(string) bool) (*ssoProvider, error) {
+func buildOIDCProvider(discoveryCtx context.Context, origin, name, label, issuer, clientID, clientSecret string, scopes []string, skipIssuerCheck bool, issuerOK func(string) bool) (*ssoProvider, error) {
 	provider, err := oidc.NewProvider(discoveryCtx, issuer)
 	if err != nil {
 		return nil, err
@@ -128,7 +139,7 @@ func buildOIDCProvider(discoveryCtx context.Context, name, label, issuer, client
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
 			Endpoint:     provider.Endpoint(),
-			RedirectURL:  ssoCallbackURL(name),
+			RedirectURL:  ssoCallbackURL(origin, name),
 			Scopes:       scopes,
 		},
 		verifier: provider.Verifier(&oidc.Config{ClientID: clientID, SkipIssuerCheck: skipIssuerCheck}),
@@ -138,8 +149,10 @@ func buildOIDCProvider(discoveryCtx context.Context, name, label, issuer, client
 
 // buildOrgProvider constructs a per-org OIDC provider from its org_sso row at
 // request time (org connections are dynamic, so they aren't held in the
-// registry). The redirect URI is the shared 'org' callback.
-func buildOrgProvider(ctx context.Context, issuer, clientID, clientSecret string) (*ssoProvider, error) {
-	return buildOIDCProvider(ctx, "org", "SSO", issuer, clientID, clientSecret,
+// registry). origin is the request's origin so the 'org' redirect URI follows
+// the org's custom domain when the login happens there; the authorize and
+// callback legs must pass the same origin (they do — same host round-trip).
+func buildOrgProvider(ctx context.Context, origin, issuer, clientID, clientSecret string) (*ssoProvider, error) {
+	return buildOIDCProvider(ctx, origin, "org", "SSO", issuer, clientID, clientSecret,
 		[]string{oidc.ScopeOpenID, "email", "profile"}, false, nil)
 }

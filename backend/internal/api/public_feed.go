@@ -70,7 +70,7 @@ func (s *Server) GetPublicSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	base := publicBaseURL()
+	base := canonicalBaseURL()
 	items := []rssItem{}
 	for rows.Next() {
 		var (

@@ -1,0 +1,12 @@
+-- 0025_session_org_binding.sql — bind a session to the org front-door it was
+-- created under (defense-in-depth for custom domains).
+--
+-- Cookies are already host-only (no Domain attribute), so a session minted on
+-- tela.ngss.io is never *sent* to another host by the browser — login is
+-- naturally per-domain. This column hardens that: a session created on the
+-- canonical host has org_id NULL; one created on an org's custom domain has
+-- that org's id. The auth middleware rejects a session presented on a host
+-- whose org context doesn't match its binding, so a forced/exfiltrated cookie
+-- can't be replayed across front doors. NULL ⇒ canonical (the common case;
+-- every pre-existing session is canonical).
+ALTER TABLE sessions ADD COLUMN org_id BIGINT REFERENCES orgs(id) ON DELETE CASCADE;

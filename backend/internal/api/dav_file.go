@@ -73,7 +73,7 @@ func (i *davInfo) Size() int64 {
 		return 0
 	}
 	if i.enc == nil {
-		i.enc = pagemd.Encode(*i.page, publicBaseURL())
+		i.enc = pagemd.Encode(*i.page, canonicalBaseURL())
 	}
 	return int64(len(i.enc))
 }
@@ -121,7 +121,7 @@ type davReadFile struct {
 }
 
 func newDavReadFile(name string, p models.Page) *davReadFile {
-	enc := pagemd.Encode(p, publicBaseURL())
+	enc := pagemd.Encode(p, canonicalBaseURL())
 	cp := p
 	info := &davInfo{name: name, page: &cp, enc: enc}
 	return &davReadFile{info: info, rd: bytes.NewReader(enc)}
