@@ -27,6 +27,8 @@ const PLUGIN_DIR = join(ROOT, 'frontend/src/components/app')
 const INFRA = new Set([
   'milkdown-block-handle', // drag/insert handle in the gutter
   'milkdown-bubble-toolbar', // inline selection toolbar
+  'milkdown-emoji', // `:shortcode:` input rule + `/`-picker plumbing (stores Unicode, not a block node)
+  'milkdown-emoji-autocomplete', // `:query` emoji autocomplete view
   'milkdown-directives', // shared remark directive container plumbing
   'milkdown-editor', // the editor host component
   'milkdown-floating', // slash/bubble positioning helper

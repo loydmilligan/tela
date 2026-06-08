@@ -489,6 +489,22 @@
         "now"
       ],
       "syntax": "YYYY-MM-DD"
+    },
+    {
+      "id": "emoji",
+      "label": "Emoji",
+      "hint": "Pick an emoji",
+      "category": "Utility",
+      "slash": true,
+      "agent": false,
+      "keywords": [
+        "emoji",
+        "emoticon",
+        "smiley",
+        "icon",
+        "reaction"
+      ],
+      "syntax": ":rocket:"
     }
   ]
 }

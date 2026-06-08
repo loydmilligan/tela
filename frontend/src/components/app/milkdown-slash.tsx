@@ -30,6 +30,7 @@ import { insertTimeline } from './milkdown-timeline'
 import { insertCalendar } from './milkdown-calendar'
 import { insertPullquote } from './milkdown-pullquote'
 import { insertEmbed } from './milkdown-embed'
+import { openEmojiPicker } from './milkdown-emoji'
 import { SLASH_BLOCKS } from './blocks-manifest'
 
 export const slashPlugin = slashFactory('tela-slash')
@@ -72,6 +73,7 @@ const RUN: Record<string, (ctx: Ctx) => void> = {
   'stat-grid': insertStatGrid,
   timeline: insertTimeline,
   calendar: insertCalendar,
+  emoji: openEmojiPicker,
   date: (ctx) => {
     const view = ctx.get(editorViewCtx)
     // YYYY-MM-DD, matching the project's date convention.

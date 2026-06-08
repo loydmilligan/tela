@@ -73,6 +73,17 @@ import { calendarNodeView, calendarSchema } from './milkdown-calendar'
 import { tableEnhancePlugin } from './milkdown-table'
 import { wikilinkPlugin, WikilinkView } from './milkdown-wikilink'
 import {
+  emojiInputRule,
+  emojiPickerOpenCtx,
+  insertEmojiAt,
+  type EmojiPickerRequest,
+} from './milkdown-emoji'
+import {
+  emojiAutocompletePlugin,
+  EmojiAutocompleteView,
+} from './milkdown-emoji-autocomplete'
+import { EmojiPicker } from './emoji-picker'
+import {
   calloutInputRule,
   calloutSchema,
   calloutsRemarkPlugin,
@@ -304,6 +315,13 @@ function MilkdownEditorInner({
   // tight `https://mira.cagdas.io/p/<slug>` URL is pasted into the editor.
   const [miraPastePopover, setMiraPastePopover] =
     useState<MiraPasteRequest | null>(null)
+
+  // `/`-triggered emoji picker. The slash "Emoji" item fires the
+  // `emojiPickerOpenCtx` handler (set below to this setter in editable modes),
+  // which captures the caret coords + position; the picker inserts back there.
+  const [emojiPicker, setEmojiPicker] = useState<EmojiPickerRequest | null>(
+    null,
+  )
   // The plugin is only wired in editable, non-share, page-id-known modes. In
   // any other mode the URL falls through to the default paste-as-link path
   // (see milkdown-mira-paste.ts for the guards).
@@ -464,6 +482,9 @@ function MilkdownEditorInner({
           ctx.set(wikilinkPlugin.key, {
             view: pluginViewFactory({ component: WikilinkView }),
           })
+          ctx.set(emojiAutocompletePlugin.key, {
+            view: pluginViewFactory({ component: EmojiAutocompleteView }),
+          })
           // Block drag-handle + add-block gutter. The `block` plugin (added to
           // the .use() chain) supplies the drag service; BlockHandleView owns
           // the gutter DOM + the BlockProvider. Mounted as its own PM plugin
@@ -496,6 +517,16 @@ function MilkdownEditorInner({
             ? null
             : (req) => setExcalidrawSheet(req)
         ctx.set(excalidrawOpenCtx.key, openTrampoline)
+        // Emoji picker open-handler — same gating as the excalidraw sheet:
+        // off in share / read-only, where the slash menu (and thus the
+        // "Emoji" item) isn't mounted anyway. `setEmojiPicker` is
+        // reference-stable, so capturing once at build time is correct.
+        ctx.set(
+          emojiPickerOpenCtx.key,
+          wikilinkMode === 'share' || readOnly
+            ? null
+            : (req) => setEmojiPicker(req),
+        )
         // M13.5 (#116) — modifier-click follow. Off in share and viewer
         // modes (those keep native click behaviour: share has its own
         // ShareReader wrapper, viewer doesn't need to follow links from
@@ -695,6 +726,12 @@ function MilkdownEditorInner({
       .use(slashPlugin)
       .use(bubblePlugin)
       .use(wikilinkPlugin)
+      // Emoji shortcodes: `:rocket:` → 🚀 input rule + a caret-anchored
+      // `:query` autocomplete picker. The Unicode char is what's stored in the
+      // canonical markdown — no schema node, no reader/serialize path. See
+      // milkdown-emoji.ts + milkdown-emoji-autocomplete.tsx.
+      .use(emojiInputRule)
+      .use(emojiAutocompletePlugin)
       .use(wikilinkAliveIdsCtx)
       .use(wikilinkModeCtx)
       .use(wikilinkDecorationPlugin)
@@ -749,6 +786,7 @@ function MilkdownEditorInner({
       // edit-mode and lazy-loads the Excalidraw library only then.
       .use(pageIdCtx)
       .use(excalidrawOpenCtx)
+      .use(emojiPickerOpenCtx)
       .use(excalidrawRemarkPlugin)
       .use(excalidrawSchema)
       .use(excalidrawClickPlugin)
@@ -1040,6 +1078,16 @@ function MilkdownEditorInner({
           onCancel={() => {
             setMiraPastePopover(null)
           }}
+        />
+      ) : null}
+      {emojiPicker ? (
+        <EmojiPicker
+          anchor={emojiPicker.anchor}
+          onSelect={(emoji) => {
+            get()?.action((ctx) => insertEmojiAt(ctx, emojiPicker.pos, emoji))
+            setEmojiPicker(null)
+          }}
+          onClose={() => setEmojiPicker(null)}
         />
       ) : null}
     </div>
