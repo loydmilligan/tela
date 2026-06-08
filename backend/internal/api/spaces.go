@@ -39,6 +39,16 @@ type spacePrincipal struct {
 	Name string `json:"name"`
 }
 
+// spaceOwnerOrg is the org that *owns* a space (spaces.org_id), distinct from
+// the orgs it's merely shared with. nil for a personally-owned space. Lets the
+// UI say "Owned by <Org>" unambiguously — an owning org also appears in
+// Principals (auto-granted editor on transfer), so the two can't be told apart
+// from principals alone.
+type spaceOwnerOrg struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // spaceListItem is the sidebar row shape: a space plus a compact access summary
 // so the row can show who/what can reach it at a glance. MemberCount is the
 // effective distinct-user count (direct ∪ via org/group); IsPersonal flags the
@@ -49,6 +59,9 @@ type spaceListItem struct {
 	MemberCount int              `json:"member_count"`
 	IsPersonal  bool             `json:"is_personal"`
 	Principals  []spacePrincipal `json:"principals"`
+	// OwnerOrg is set when the space is owned by an org (spaces.org_id); nil for
+	// a personally-owned space. Surfaced as the "Owned by <Org>" indicator.
+	OwnerOrg *spaceOwnerOrg `json:"owner_org,omitempty"`
 }
 
 type spaceCreateRequest struct {
@@ -95,9 +108,11 @@ func (s *Server) listSpacesCore(ctx context.Context, u *auth.User) ([]spaceListI
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT s.id, s.name, s.slug, s.visibility, s.description, s.created_at, s.updated_at,
 		       (SELECT COUNT(DISTINCT user_id) FROM space_access a WHERE a.space_id = s.id) AS member_count,
-		       CASE WHEN s.personal_user_id IS NOT NULL THEN 1 ELSE 0 END AS is_personal
+		       CASE WHEN s.personal_user_id IS NOT NULL THEN 1 ELSE 0 END AS is_personal,
+		       o.id, o.name
 		  FROM spaces s
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sa ON sa.space_id = s.id
+		  LEFT JOIN orgs o ON o.id = s.org_id
 		 ORDER BY s.name ASC`, u.ID)
 	if err != nil {
 		return nil, &apiErr{http.StatusInternalServerError, "internal", "list spaces failed"}
@@ -110,12 +125,17 @@ func (s *Server) listSpacesCore(ctx context.Context, u *auth.User) ([]spaceListI
 		var (
 			it       spaceListItem
 			personal int
+			orgID    sql.NullInt64
+			orgName  sql.NullString
 		)
-		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.Visibility, &it.Description, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount, &personal); err != nil {
+		if err := rows.Scan(&it.ID, &it.Name, &it.Slug, &it.Visibility, &it.Description, &it.CreatedAt, &it.UpdatedAt, &it.MemberCount, &personal, &orgID, &orgName); err != nil {
 			return nil, &apiErr{http.StatusInternalServerError, "internal", "scan space row failed"}
 		}
 		it.IsPersonal = personal == 1
 		it.Principals = []spacePrincipal{}
+		if orgID.Valid && orgName.Valid {
+			it.OwnerOrg = &spaceOwnerOrg{ID: orgID.Int64, Name: orgName.String}
+		}
 		spaces = append(spaces, it)
 	}
 	if err := rows.Err(); err != nil {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
+  Building2,
   ChevronDown,
   ChevronRight,
   FilePlus,
@@ -18,6 +19,7 @@ import {
 } from '../../lib/queries/pages'
 import { useSpaces } from '../../lib/queries/spaces'
 import { useSpaceFreshness } from '../../lib/queries/freshness'
+import { spaceOwnership } from '../../lib/space-owner'
 import type { PageTreeNode } from '../../lib/types'
 import { useExpandedNodes } from '../../lib/useExpandedNodes'
 import { StalenessDot } from './StalenessDot'
@@ -71,7 +73,13 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
   const createPage = useCreatePage()
   const { expanded, toggle, expand, expandMany } = useExpandedNodes(spaceId)
   const spaces = useSpaces()
-  const spaceName = spaces.data?.find((s) => s.id === spaceId)?.name
+  const space = spaces.data?.find((s) => s.id === spaceId)
+  const spaceName = space?.name
+  // Surface org ownership as a quiet chip next to the name — a transferred
+  // space otherwise looks identical to a personal one in the shell.
+  const ownerOrg = space && spaceOwnership(space).kind === 'org'
+    ? spaceOwnership(space).org
+    : undefined
 
   const treeData = tree.data as PageTreeNode[] | undefined
   const nodes = treeData ?? []
@@ -125,13 +133,26 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
     >
       <div className="flex items-center justify-between gap-[var(--space-2)] pl-[var(--space-2)] pr-[var(--space-1)]">
         {/* The tree always shows the active space's pages — name the space here
-            so the section reads as "<Space> · its pages", not a stray list. */}
+            so the section reads as "<Space> · its pages", not a stray list.
+            When an org owns the space, a quiet chip trails the name so the
+            shell makes ownership visible (a transferred space otherwise looks
+            personal). */}
         <h2
           id="sidebar-pages-heading"
-          className="m-0 min-w-0 truncate font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] font-medium leading-[var(--leading-tight)] text-[var(--text-primary)]"
-          title={spaceName ?? 'Pages'}
+          className="m-0 min-w-0 flex items-baseline gap-[var(--space-2)] font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] font-medium leading-[var(--leading-tight)] text-[var(--text-primary)]"
+          title={
+            ownerOrg
+              ? `${spaceName ?? 'Pages'} · owned by ${ownerOrg}`
+              : (spaceName ?? 'Pages')
+          }
         >
-          {spaceName ?? 'Pages'}
+          <span className="truncate">{spaceName ?? 'Pages'}</span>
+          {ownerOrg ? (
+            <span className="shrink-0 inline-flex items-center gap-[3px] text-[length:var(--text-xs)] font-normal text-[var(--text-muted)]">
+              <Building2 width={11} height={11} aria-hidden />
+              <span className="max-w-[7rem] truncate">{ownerOrg}</span>
+            </span>
+          ) : null}
         </h2>
         <Button
           variant="ghost"
