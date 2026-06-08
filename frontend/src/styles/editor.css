@@ -930,25 +930,7 @@
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E");
   }
 
-  /* Featured column — a header cell written as ==Label== washes its whole
-     column in a soft accent. */
-  .tela-milkdown .ProseMirror table td.tela-cell-featured {
-    background: color-mix(in srgb, var(--accent) 10%, var(--surface-1));
-  }
-  .tela-milkdown .ProseMirror table th.tela-cell-featured {
-    background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
-    box-shadow: inset 0 2px 0 var(--accent);
-  }
-  /* The featured column is marked by a `==highlighted==` header — neutralise the
-     highlight mark's own yellow so the header reads cleanly; the column wash is
-     the signal. */
-  .tela-milkdown .ProseMirror table .tela-cell-featured mark {
-    background: transparent;
-    color: inherit;
-    padding: 0;
-  }
-
-  /* Sort headers + filter box (reader-side, added by the plugin in read-only). */
+  /* Sort headers + filter box (reader-side, added by the plugin on large tables). */
   .tela-milkdown .ProseMirror table th.tela-th-sortable {
     cursor: pointer;
     user-select: none;

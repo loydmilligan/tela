@@ -12,20 +12,16 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 //     (check=green, cross=red, dash=muted). Click into the cell to edit the
 //     keyword (the icon reveals the text on focus). This is the comparison-
 //     matrix ✓/✗ grid, absorbed into the table.
-//   • Featured column — a header cell whose text is fully ==highlighted==
-//     marks that whole column as featured (a soft accent wash). Explicit and
-//     intentional (a plain bold header won't trigger it), and it round-trips
-//     as the `==…==` highlight mark.
 //   • Sticky first column — the row-label column pins while you scroll a wide
 //     table horizontally (pure CSS; invisible when there's nothing to scroll).
-//   • Sort + filter — in read-only / reader / share / PDF views, a column-
-//     headed table gets clickable sort headers, and tables with enough rows get
-//     a filter box. Reader-only so it never fights editing.
+//   • Sort + filter — in read-only / reader / share / PDF views, a genuinely
+//     large table (≥8 rows) gets clickable sort headers + a filter box. Reader-
+//     only so it never fights editing; small tables stay clean.
 //
-// Glyph + featured are ProseMirror node decorations (both edit and read modes,
-// CSS does the visual). Sort/filter is a pure DOM enhancement applied to the
-// rendered read-only table via the plugin's view() — exported standalone so the
-// Storybook story exercises the exact same code path.
+// Glyph cells are ProseMirror node decorations (both edit + read modes, CSS does
+// the visual). Sort/filter is a pure DOM enhancement applied to the rendered
+// read-only table via the plugin's view() — exported standalone so the Storybook
+// story exercises the exact same code path.
 
 const tableKey = new PluginKey('tela-table-enhance')
 
@@ -53,30 +49,13 @@ function glyphFor(text: string): 'check' | 'cross' | 'dash' | null {
   return GLYPHS[t.toLowerCase()] ?? null
 }
 
-// A header cell counts as "featured" when it has text and every text node in it
-// carries the highlight mark (i.e. the author wrote `==Label==`).
-function cellFullyHighlighted(cell: ProseNode): boolean {
-  let hasText = false
-  let allMarked = true
-  cell.descendants((n) => {
-    if (n.isText && n.text && n.text.trim()) {
-      hasText = true
-      if (!n.marks.some((m) => m.type.name === 'highlight')) allMarked = false
-    }
-  })
-  return hasText && allMarked
-}
-
 function buildDecorations(doc: ProseNode): DecorationSet {
   const decos: Decoration[] = []
   doc.descendants((node, pos) => {
     if (node.type.name !== 'table') return true
-    const featured = new Set<number>()
-    // Pass 1: glyph cells + detect featured columns from the header row.
-    node.forEach((row, rowOffset, rowIndex) => {
+    node.forEach((row, rowOffset) => {
       if (row.type.name !== 'table_row') return
       const rowPos = pos + 1 + rowOffset
-      let col = 0
       row.forEach((cell, cellOffset) => {
         const cellPos = rowPos + 1 + cellOffset
         const g = glyphFor(cell.textContent)
@@ -87,34 +66,8 @@ function buildDecorations(doc: ProseNode): DecorationSet {
             }),
           )
         }
-        // Featured column = a fully-`==highlighted==` cell in the header (the
-        // first row). Keyed off row index, not a node-type name (Milkdown's GFM
-        // header cells aren't reliably named `table_header`).
-        if (rowIndex === 0 && cellFullyHighlighted(cell)) {
-          featured.add(col)
-        }
-        col++
       })
     })
-    // Pass 2: tag every cell in a featured column.
-    if (featured.size) {
-      node.forEach((row, rowOffset) => {
-        if (row.type.name !== 'table_row') return
-        const rowPos = pos + 1 + rowOffset
-        let col = 0
-        row.forEach((cell, cellOffset) => {
-          const cellPos = rowPos + 1 + cellOffset
-          if (featured.has(col)) {
-            decos.push(
-              Decoration.node(cellPos, cellPos + cell.nodeSize, {
-                class: 'tela-cell-featured',
-              }),
-            )
-          }
-          col++
-        })
-      })
-    }
     return false // handled the whole table; don't descend into its cells
   })
   return DecorationSet.create(doc, decos)
@@ -145,6 +98,9 @@ export function enhanceReadonlyTable(table: HTMLTableElement): void {
   if (!headRow || !tbody) return
   const headCells = Array.from(headRow.cells)
   if (headCells.length === 0) return
+  // Only earn the sort/filter chrome on genuinely large tables (mira's ~8-row
+  // threshold) — small comparison tables stay clean.
+  if (tbody.rows.length < 8) return
   table.dataset.telaEnhanced = '1'
 
   headCells.forEach((th, i) => {
@@ -160,25 +116,23 @@ export function enhanceReadonlyTable(table: HTMLTableElement): void {
     })
   })
 
-  // Filter box only earns its place on tables with enough rows to scan.
-  if (tbody.rows.length >= 5) {
-    const wrap = table.closest('.tableWrapper') ?? table
-    const bar = document.createElement('div')
-    bar.className = 'tela-table-filter'
-    const input = document.createElement('input')
-    input.type = 'text'
-    input.placeholder = 'Filter rows…'
-    input.setAttribute('aria-label', 'Filter table rows')
-    input.addEventListener('input', () => {
-      const q = input.value.trim().toLowerCase()
-      for (const row of Array.from(tbody.rows)) {
-        const hit = !q || (row.textContent ?? '').toLowerCase().includes(q)
-        row.style.display = hit ? '' : 'none'
-      }
-    })
-    bar.appendChild(input)
-    wrap.parentElement?.insertBefore(bar, wrap)
-  }
+  // Filter box (we're already past the ≥8-row gate).
+  const wrap = table.closest('.tableWrapper') ?? table
+  const bar = document.createElement('div')
+  bar.className = 'tela-table-filter'
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.placeholder = 'Filter rows…'
+  input.setAttribute('aria-label', 'Filter table rows')
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase()
+    for (const row of Array.from(tbody.rows)) {
+      const hit = !q || (row.textContent ?? '').toLowerCase().includes(q)
+      row.style.display = hit ? '' : 'none'
+    }
+  })
+  bar.appendChild(input)
+  wrap.parentElement?.insertBefore(bar, wrap)
 }
 
 export const tableEnhancePlugin = $prose(() => {
@@ -192,11 +146,12 @@ export const tableEnhancePlugin = $prose(() => {
     view(editorView) {
       const run = () => {
         if (editorView.editable) return
-        // Only GFM content tables (Milkdown wraps those in `.tableWrapper`) —
-        // NOT block-internal tables like the calendar month grid, which is a
-        // <table> too but must never get sort/filter chrome.
+        // GFM content tables only — exclude block-internal tables like the
+        // calendar month grid (`.tela-calendar-table`), which is a <table> too
+        // but must never get sort/filter chrome. (In the reader, GFM tables are
+        // NOT wrapped in `.tableWrapper`, so we can't filter on that.)
         editorView.dom
-          .querySelectorAll('.tableWrapper table')
+          .querySelectorAll('table:not(.tela-calendar-table)')
           .forEach((t) => enhanceReadonlyTable(t as HTMLTableElement))
       }
       run()

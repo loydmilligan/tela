@@ -292,9 +292,9 @@
       "slash": true,
       "agent": true,
       "keywords": ["table", "grid", "comparison", "matrix", "checklist", "sortable"],
-      "syntax": "| Feature | Free | ==Pro== |\n| --- | --- | --- |\n| SSO | cross | check |\n| Seats | 3 | dash |",
+      "syntax": "| Feature | Free | Pro |\n| --- | --- | --- |\n| SSO | cross | check |\n| Seats | 3 | dash |",
       "when": "Tabular data, comparisons, and feature matrices (GitHub-flavored markdown).",
-      "note": "Upgrades that round-trip as plain markdown: a cell that is exactly `check`, `cross`, or `dash` (also ✓/✗/–, yes/no, n/a) renders as a green ✓ / red ✗ / muted – icon — ideal for feature-comparison grids. A header cell written as `==Label==` (highlight) marks that whole column as featured. The first column pins when a wide table scrolls, and in the reader large tables get clickable sort headers + a filter box."
+      "note": "Upgrades that round-trip as plain markdown: a cell that is exactly `check`, `cross`, or `dash` (also ✓/✗/–, yes/no, n/a) renders as a green ✓ / red ✗ / muted – icon — ideal for feature-comparison grids. The first column pins when a wide table scrolls, and in the reader, large tables (8+ rows) get clickable sort headers + a filter box."
     },
     {
       "id": "highlight",

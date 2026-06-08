@@ -10,7 +10,6 @@ type Cell = { glyph?: 'check' | 'cross' | 'dash'; text?: string }
 type Row = Cell[]
 
 const HEAD = ['Feature', 'Free', 'Pro', 'Team']
-const FEATURED = 2 // Pro
 const ROWS: Row[] = [
   [{ text: 'Pages' }, { text: '50' }, { text: '5,000' }, { text: 'Unlimited' }],
   [{ text: 'SSO / SAML' }, { glyph: 'cross' }, { glyph: 'check' }, { glyph: 'check' }],
@@ -33,11 +32,8 @@ function ComparisonTable() {
           <table ref={ref}>
             <thead>
               <tr>
-                {HEAD.map((h, i) => (
-                  <th
-                    key={h}
-                    className={i === FEATURED ? 'tela-cell-featured' : undefined}
-                  >
+                {HEAD.map((h) => (
+                  <th key={h}>
                     <p>{h}</p>
                   </th>
                 ))}
@@ -46,19 +42,18 @@ function ComparisonTable() {
             <tbody>
               {ROWS.map((row, r) => (
                 <tr key={r}>
-                  {row.map((cell, c) => {
-                    const cls = [
-                      cell.glyph && `tela-cell-glyph tela-cell-glyph-${cell.glyph}`,
-                      c === FEATURED && 'tela-cell-featured',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')
-                    return (
-                      <td key={c} className={cls || undefined}>
-                        <p>{cell.glyph ?? cell.text}</p>
-                      </td>
-                    )
-                  })}
+                  {row.map((cell, c) => (
+                    <td
+                      key={c}
+                      className={
+                        cell.glyph
+                          ? `tela-cell-glyph tela-cell-glyph-${cell.glyph}`
+                          : undefined
+                      }
+                    >
+                      <p>{cell.glyph ?? cell.text}</p>
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
