@@ -1,4 +1,4 @@
-import { HardDrive, Layers, Users } from 'lucide-react'
+import { Check, HardDrive, Layers, Users } from 'lucide-react'
 import { useMe } from '../../lib/queries/auth'
 import { useOrgs } from '../../lib/queries/orgs'
 import { useMyUsage, useOrgUsage, usePlans } from '../../lib/queries/billing'
@@ -15,6 +15,16 @@ import { Progress } from '../ui/progress'
 // operator action).
 
 const INFINITY = '∞'
+
+// Capabilities every tier ships — tiers only change limits, never features.
+const INCLUDED = [
+  'Semantic (RAG) + full-text search',
+  'MCP connector for Claude & ChatGPT',
+  'Local folder sync over WebDAV',
+  'Real-time multiplayer editing',
+  'SSO, organizations & per-space roles',
+  'Plain markdown you own — export anytime',
+]
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -264,6 +274,40 @@ export function SettingsBillingTab() {
           <PlanCatalog plans={plans.data} currentKey={myUsage.data?.plan.key} />
         </section>
       ) : null}
+
+      <section className="flex flex-col gap-[var(--space-3)]">
+        <h3 className="m-0 text-[length:var(--text-xs)] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+          Every plan includes
+        </h3>
+        <ul className="m-0 grid list-none grid-cols-1 gap-[var(--space-2)] p-0 sm:grid-cols-2">
+          {INCLUDED.map((f) => (
+            <li
+              key={f}
+              className="flex items-start gap-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-muted)]"
+            >
+              <Check
+                width={15}
+                height={15}
+                aria-hidden
+                className="mt-[2px] shrink-0 text-[var(--accent)]"
+              />
+              {f}
+            </li>
+          ))}
+        </ul>
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          Prefer to run it yourself? tela is open source and self-hostable —{' '}
+          <a
+            href="https://github.com/zcag/tela"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--accent)] no-underline hover:underline"
+          >
+            self-host it
+          </a>
+          .
+        </p>
+      </section>
     </div>
   )
 }
