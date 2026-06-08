@@ -3,10 +3,14 @@
 // product's tiers (backend plans table). Honest + low-hype: every plan is the
 // same markdown you own; tiers only change the limits. Indigo is earned on the
 // one recommended org tier. Cards stack on mobile.
+// Every tier ships the whole product — tiers only change limits, never features.
+// These are the real, shipped pillars (see the feature showcase + docs).
 const includes = [
-  'Semantic + full-text search',
+  'Semantic (RAG) + full-text search',
   'MCP connector for Claude & ChatGPT',
+  'Local folder sync over WebDAV',
   'Real-time multiplayer editing',
+  'SSO, organizations & per-space roles',
   'Plain markdown you own — export anytime',
 ];
 
@@ -104,9 +108,30 @@ const org = [
     </div>
   </div>
 
-  <p class="price-includes reveal-up">
-    Every plan includes {includes.join(' · ')}.
-  </p>
+  <div class="includes reveal-up">
+    <p class="includes-label">Every plan includes</p>
+    <ul class="includes-grid">
+      {includes.map((f) => (
+        <li>
+          <svg class="tick" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>{f}</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+
+  <div class="selfhost reveal-up">
+    <div class="selfhost-copy">
+      <p class="selfhost-label">Or run it yourself</p>
+      <p class="selfhost-text">
+        tela is open source and self-hostable — Docker Compose, your Postgres, your disk,
+        your markdown. No seats to buy and no limits but the ones you set.
+      </p>
+    </div>
+    <a href="https://github.com/zcag/tela" class="selfhost-cta" target="_blank" rel="noopener">
+      Self-host it <span class="arr" aria-hidden="true">→</span>
+    </a>
+  </div>
 </section>
 
 <style>
@@ -225,13 +250,94 @@ const org = [
   }
   .price-cta--primary:hover { background: var(--cta-bg-hover); }
 
-  .price-includes {
-    margin: 2.5rem auto 0;
-    max-width: 64ch;
-    text-align: center;
+  .includes {
+    margin-top: 2.5rem;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-sunk);
+  }
+  .includes-label {
+    margin: 0 0 1rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--fg-faint);
+  }
+  .includes-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem 1.5rem;
+  }
+  .includes-grid li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+    color: var(--fg-soft);
+  }
+  .includes-grid .tick {
+    color: var(--brand);
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+  }
+
+  .selfhost {
+    margin-top: 1rem;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .selfhost-copy { max-width: 60ch; }
+  .selfhost-label {
+    margin: 0 0 0.35rem;
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    color: var(--fg);
+  }
+  .selfhost-text {
+    margin: 0;
     font-size: var(--text-sm);
     line-height: var(--leading-normal);
-    color: var(--fg-faint);
+    color: var(--fg-soft);
+  }
+  .selfhost-cta {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1.1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--cta-ghost-border);
+    color: var(--fg);
+    background: transparent;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+  }
+  .selfhost-cta:hover { border-color: var(--brand); background: var(--surface-sunk); }
+  .selfhost-cta .arr { transition: transform var(--dur) var(--ease-out); }
+  .selfhost-cta:hover .arr { transform: translateX(3px); }
+
+  @media (max-width: 900px) {
+    .includes-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 620px) {
+    .includes-grid { grid-template-columns: 1fr; }
   }
 
   @media (max-width: 900px) {

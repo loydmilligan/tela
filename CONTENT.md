@@ -210,7 +210,8 @@ Section order is the narrative arc. Tier = visual prominence (1 = hero/max, 4 = 
 - **Lede:** `A personal account and every organization carry their own tier. Tiers only change the limits — the wiki, the search, and the agent connector are the same.`
 - **Personal tiers (cards):** `Free` (3 spaces · 100 pages/space · 100 MB) · `Plus` (25 · 1,000 · 5 GB).
 - **Organization tiers (cards):** `Free` (10 · 500 · 1 GB · 5 members) · `Team` *(recommended — the one earned-indigo card)* (100 · unlimited pages · 50 GB · 50 members) · `Enterprise` (unlimited everything; `Get in touch`).
-- **Every-plan-includes line:** `Semantic + full-text search · MCP connector for Claude & ChatGPT · Real-time multiplayer editing · Plain markdown you own — export anytime.`
+- **Every-plan-includes (checklist band — tiers change limits, never features):** `Semantic (RAG) + full-text search · MCP connector for Claude & ChatGPT · Local folder sync over WebDAV · Real-time multiplayer editing · SSO, organizations & per-space roles · Plain markdown you own — export anytime.`
+- **Self-host callout:** `Or run it yourself` — `tela is open source and self-hostable — Docker Compose, your Postgres, your disk, your markdown. No seats to buy and no limits but the ones you set.` CTA `Self-host it` → GitHub.
 - **Honesty line:** numbers mirror the backend `plans` table (the source of truth); no self-serve billing yet — plans are operator-assigned, and the CTA starts you on the hosted instance free.
 
 ### 9. Credibility — "Open. Live. In the directories."  — Tier 3  (transparency as proof; NO fake logos)
