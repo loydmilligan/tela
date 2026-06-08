@@ -169,7 +169,7 @@ Section order is the narrative arc. Tier = visual prominence (1 = hero/max, 4 = 
 - No CTA.
 
 ### 6. Feature showcase — "What's actually in the box."  — Tier 2  (scannable bento, FAB cells)
-- **Purpose:** Prove the pivot. A scannable grid of real capabilities. Cells carry a `real` | `planned` flag; planned cells get a muted style + a small **Planned** tag and never imply they ship today. ~9 cells, majority shipped.
+- **Purpose:** Prove the pivot. A scannable grid of real capabilities. Cells carry a `real` | `planned` flag; planned cells get a muted style + a small **Planned** tag and never imply they ship today. ~9 cells. As of 2026-06-08 **all cells are `real`** (the graph shipped; the planned Templates cell was replaced by the shipped local-sync cell).
 - **Cells (title · one-line description · flag):**
   - **`real`** — **Real-time multiplayer.** `Live cursors and edits over Yjs, rebased onto canonical markdown on save.`
   - **`real`** — **Comments that don't drift.** `Comments anchor to the surrounding text (prefix · exact · suffix), so they stay put when the page is reflowed.`
@@ -178,8 +178,8 @@ Section order is the narrative arc. Tier = visual prominence (1 = hero/max, 4 = 
   - **`real`** — **Diagrams & math inline.** `Excalidraw renders in the page; KaTeX math and Mermaid round-trip as markdown.`
   - **`real`** — **Bring your markdown — and take it back.** `Import a directory; export anytime. Plain files in, plain files out.`
   - **`real`** — **Share links, your way.** `Publish any page at a public link with optional password gating and expiry.`
-  - **`planned` (Planned)** — **The link graph.** `Backlinks exist on every page today. The graph view that draws them is on the roadmap.`
-  - **`planned` (Planned)** — **Templates.** `Scaffold runbooks, RFCs, and postmortems in a click. On the roadmap.`
+  - **`real`** — **The link graph.** `Wikilinks and backlinks draw a live graph of how pages connect — whole-space or local to the current page.` (shipped 2026-06)
+  - **`real`** — **Edit in your own editor.** `Mount a space as a local folder over WebDAV and sync with rclone — Obsidian, VS Code, anything. Round-trips as plain markdown, attachments and all.`
 - **Honesty note for the build:** `planned` cells MUST be visually distinct (muted + a "Planned" tag) and never styled identically to shipped cells. Do not promote a planned feature without updating this contract.
 - No CTA (momentum carries to the comparison).
 
@@ -227,6 +227,7 @@ Section order is the narrative arc. Tier = visual prominence (1 = hero/max, 4 = 
 - `How is search different from a normal wiki?` → `tela does hybrid retrieval: keyword full-text (Postgres) and vector similarity (pgvector) fused with reciprocal-rank fusion, over heading-aware chunks. Agents get semantic_search + read_chunk, so they retrieve the section that answers the question — not just keyword matches — with a citation.`
 - `Do I need to run an embedder?` → `Only for semantic/vector search, and only on self-host — point tela at an Ollama-compatible embedder (the live instance uses mxbai-embed-large). Keyword full-text needs nothing extra.`
 - `Is it really markdown, with all that block editing?` → `Yes. The editor is full block editing — drag, slash menu, turn-into, tables, diagrams — but pages.body is plain markdown. There is no block table; reordering a block reorders markdown lines. Import a directory, export anytime.`
+- `Can I edit in my own editor — Obsidian, VS Code?` → `Yes. Mount a space as a local folder over WebDAV and sync it with rclone, then edit in any editor. Pages round-trip as plain markdown and non-markdown files (images, PDFs, diagrams) sync too — local folder and tela stay in step both ways.`
 - `How do agents authenticate?` → `OAuth 2.1 for the Claude/ChatGPT connectors (one sign-in, no token to paste), or a scoped personal access token (tela_pat_…) for code agents. Keys are read/write/admin, expirable, pinnable to one space, and audited.`
 - `Is my team's data access-controlled?` → `Yes — SSO, organizations and groups, and per-space roles (owner/editor/viewer) with hard invariants. Keys are scoped and audited. The access model is documented and open.`
 - `Can I self-host it?` → `Yes. It's open and self-hostable with Docker Compose (Postgres + an optional embedder for semantic search). Your data on your disk, your markdown exportable. Self-host is the option, not the requirement — the hosted instance is ready to use now.`

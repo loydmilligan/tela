@@ -1,9 +1,9 @@
 ---
 // §6 — The visual feature bento: a scannable grid of real, demonstrated wiki
-// features — multiplayer, sharing, canonical markdown, history, diagrams,
-// import. Each cell is a token-driven visual, not an icon. Two planned features
-// carry an honest "Planned" tag and a muted style. (Search + editor have their
-// own dedicated sections; they're intentionally not duplicated here.)
+// features — blocks, multiplayer, sharing, canonical markdown, history,
+// wikilinks/graph, local WebDAV sync, import/export. Each cell is a token-driven
+// visual, not an icon; every cell is a shipped feature (no "Planned" tags).
+// (Search + editor have their own dedicated sections; not duplicated here.)
 ---
 <section id="features" class="bento-section">
   <div class="bento-head reveal-up">
@@ -144,9 +144,8 @@ When a service degrades, the
       </div>
     </article>
 
-    <!-- ── The link graph (planned) ─────────────────────────────────── -->
+    <!-- ── The link graph ───────────────────────────────────────────── -->
     <article class="cell cell-graph reveal-up">
-      <span class="tag-planned">Planned</span>
       <div class="viz graph">
         <svg viewBox="0 0 360 210" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A knowledge graph of linked pages">
           <g class="edges">
@@ -177,28 +176,23 @@ When a service degrades, the
       </div>
       <div class="cap">
         <h3>The link graph</h3>
-        <p>Backlinks exist on every page today. The graph that draws them is on the roadmap.</p>
+        <p>Wikilinks and backlinks draw a live graph of how your pages connect — for the whole space or around the page you're on.</p>
       </div>
     </article>
 
-    <!-- ── Templates (planned) ──────────────────────────────────────── -->
-    <article class="cell cell-templates reveal-up">
-      <span class="tag-planned">Planned</span>
-      <div class="viz tmpl">
-        <div class="tmpl-bar">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          New page from template
+    <!-- ── Local folder sync (WebDAV / rclone) ──────────────────────── -->
+    <article class="cell cell-sync reveal-up">
+      <div class="viz syncviz">
+        <div class="sync-term" role="img" aria-label="rclone syncing a space to a local folder of markdown files">
+          <div class="sync-cmd"><span class="sp">$</span> rclone sync <span class="sa">~/wiki</span> <span class="sb">tela:eng</span></div>
+          <div class="sync-line"><span class="sok">✓</span> on-call.md</div>
+          <div class="sync-line"><span class="sok">✓</span> postmortem.md</div>
+          <div class="sync-line"><span class="sok">✓</span> assets/topology.png</div>
         </div>
-        <ul class="tmpl-list">
-          <li class="active"><span class="ti">RB</span>Runbook</li>
-          <li><span class="ti">RFC</span>Design RFC</li>
-          <li><span class="ti">PM</span>Postmortem</li>
-          <li><span class="ti">MTG</span>Meeting notes</li>
-        </ul>
       </div>
       <div class="cap">
-        <h3>Start from a template</h3>
-        <p>Scaffold runbooks, RFCs, and postmortems in a click. On the roadmap.</p>
+        <h3>Edit in your own editor</h3>
+        <p>Mount a space as a local folder over WebDAV and sync it with rclone — work in Obsidian, VS Code, or any editor. Round-trips as plain markdown, attachments and all.</p>
       </div>
     </article>
 
@@ -291,21 +285,6 @@ When a service degrades, the
   }
   .cap p { margin-top: 0.35rem; font-size: var(--text-sm); color: var(--fg-faint); line-height: var(--leading-normal); }
 
-  .tag-planned {
-    position: absolute;
-    top: 0.9rem; right: 0.9rem;
-    z-index: 3;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    padding: 0.18rem 0.45rem;
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-xs);
-    color: var(--fg-faint);
-    background: var(--surface);
-  }
-
   @media (min-width: 760px) {
     .bento { grid-template-columns: repeat(6, 1fr); grid-auto-flow: row dense; }
     .cell-blocks    { grid-column: span 6; min-height: 0; flex-direction: row; align-items: stretch; }
@@ -322,7 +301,7 @@ When a service degrades, the
     .cell-share     { grid-column: span 2; }
     .cell-md        { grid-column: span 2; }
     .cell-graph     { grid-column: span 4; min-height: 250px; }
-    .cell-templates { grid-column: span 2; }
+    .cell-sync      { grid-column: span 2; }
     .cell-import    { grid-column: span 6; min-height: 0; flex-direction: row; align-items: stretch; }
     .cell-import .viz { flex: 1.1; }
     .cell-import .cap-wide {
@@ -352,22 +331,23 @@ When a service degrades, the
     font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-soft);
   }
 
-  /* ── templates viz ────────────────────────────────────────────────── */
-  .tmpl { display: flex; flex-direction: column; gap: 0.7rem; }
-  .tmpl-bar {
-    display: inline-flex; align-items: center; gap: 0.4rem; width: fit-content;
-    padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: var(--surface-sunk); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint);
+  /* ── local-sync viz (terminal) ────────────────────────────────────── */
+  .syncviz { display: flex; align-items: center; height: 100%; }
+  .sync-term {
+    width: 100%;
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--surface-sunk);
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    line-height: var(--leading-snug);
   }
-  .tmpl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-  .tmpl-list li {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    font-size: var(--text-sm); color: var(--fg-soft);
-  }
-  .tmpl-list li.active { border-color: var(--brand); background: var(--brand-wash); color: var(--fg); }
-  .ti { font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 4px; border-radius: var(--radius-xs); background: var(--surface-sunk); color: var(--fg-soft); flex: none; }
-  .tmpl-list li.active .ti { background: var(--brand); color: var(--brand-fg); }
+  .sync-cmd { color: var(--fg); margin-bottom: 0.15rem; }
+  .sync-cmd .sp { color: var(--fg-faint); }
+  .sync-cmd .sa { color: var(--accent); }
+  .sync-cmd .sb { color: var(--brand); }
+  .sync-line { display: flex; align-items: center; gap: 0.4rem; color: var(--fg-faint); }
+  .sync-line .sok { color: var(--brand); }
 
   /* ── tasks viz ────────────────────────────────────────────────────── */
   .tasks { display: flex; flex-direction: column; gap: 0.6rem; }
