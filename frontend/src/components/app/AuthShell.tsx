@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { ThemeSwitcher } from '../ThemeSwitcher'
 import { BrandLogo } from '../BrandLogo'
+import { PoweredByTela } from '../PoweredByTela'
 import { useHostContext } from '../../lib/queries/host-context'
 
 // Shared chrome for the unauthenticated auth surfaces (login / register /
@@ -32,6 +33,13 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <div aria-hidden className="tela-auth-backdrop" />
         <div className="relative w-full max-w-[25rem]">{children}</div>
       </main>
+      {/* On a custom domain, a discreet product credit (renders nothing on the
+          canonical host, which is already tela-branded). */}
+      {org ? (
+        <footer className="shrink-0 flex justify-center pb-[var(--space-6)]">
+          <PoweredByTela />
+        </footer>
+      ) : null}
     </div>
   )
 }

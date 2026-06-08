@@ -6,6 +6,7 @@ import { SpacesList } from './SpacesList'
 import { FavoritesSidebarSection } from './FavoritesSidebarSection'
 import { UserMenu } from './UserMenu'
 import { BrandLogo } from '../BrandLogo'
+import { PoweredByTela } from '../PoweredByTela'
 import { Button } from '../ui/button'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { emitOpenPalette } from '../../lib/paletteEvent'
@@ -134,6 +135,9 @@ export function Sidebar({ open = false }: { open?: boolean }) {
         <div className="flex-1" />
       )}
       <UserMenu />
+      {/* Discreet product credit on org custom domains (renders nothing on the
+          canonical host). */}
+      <PoweredByTela className="px-[var(--space-3)] pb-[var(--space-2)] text-center" />
     </aside>
   )
 }
