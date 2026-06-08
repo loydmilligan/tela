@@ -8,9 +8,14 @@
 	}
 }
 
-:80 {
-	# HSTS — honored by browsers over the Cloudflare HTTPS edge that fronts this
-	# origin. Applies to every response (SEO/security baseline). No preload.
+# Site address. Defaults to :80 — the right value behind an external TLS
+# terminator (Cloudflare, a load balancer). For DIRECT TLS with no terminator,
+# set TELA_SITE_ADDRESS=your.domain in deploy/.env and publish 80+443 on the
+# proxy (see docker-compose.yml); Caddy then auto-provisions a Let's Encrypt
+# certificate. See docs/self-hosting.md.
+{$TELA_SITE_ADDRESS::80} {
+	# HSTS — honored by browsers over HTTPS (the terminator's edge, or Caddy's
+	# own cert in direct-TLS mode). Applies to every response. No preload.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
 	# ── Backend: API + websockets + public page permalinks ──────────────────

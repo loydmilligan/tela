@@ -85,6 +85,8 @@ func main() {
 	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	logStartupConfig()
+
 	handler, apiSrv := api.HandlerWithServer(d)
 
 	// M16.A.2 API-key audit retention GC. Background goroutine sweeps
@@ -115,6 +117,33 @@ func main() {
 			log.Printf("http shutdown: %v", err)
 		}
 		apiSrv.AuditWriter().Close()
+	}
+}
+
+// logStartupConfig prints the effective operational config at boot so silent
+// misconfigurations become visible: the cookie-Secure ↔ TELA_PUBLIC_BASE_URL
+// coupling (https base URL behind plain HTTP drops the login cookie), the SMTP
+// log-fallback (registration emails go to stdout, blocking multi-user signup),
+// and the RAG embedder target.
+func logStartupConfig() {
+	base := os.Getenv("TELA_PUBLIC_BASE_URL")
+	if base == "" {
+		base = "(unset; defaulting to http://localhost:8780)"
+	}
+	log.Printf("config: public_base_url=%s cookie_secure=%t", base, auth.CookieSecure())
+
+	if os.Getenv("TELA_SMTP_HOST") == "" {
+		log.Printf("config: SMTP unset — verify/reset emails are LOGGED, not sent. " +
+			"Open self-registration needs SMTP to be usable; set TELA_SMTP_* for multi-user.")
+	} else {
+		log.Printf("config: SMTP host=%s", os.Getenv("TELA_SMTP_HOST"))
+	}
+
+	if rcfg := rag.ConfigFromEnv(); rcfg.EmbedURL == "" {
+		log.Printf("config: RAG/semantic search DISABLED (TELA_RAG_EMBED_URL unset). " +
+			"Full-text search still works; set the URL to enable embeddings.")
+	} else {
+		log.Printf("config: RAG embedder url=%s model=%s dim=%d", rcfg.EmbedURL, rcfg.EmbedModel, rcfg.Dim)
 	}
 }
 

@@ -1,3 +1,6 @@
 .playwright-mcp/
 deploy/.env
 .cila/
+
+# Local database backups (make backup)
+backups/

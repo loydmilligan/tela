@@ -124,6 +124,14 @@ services:
       dockerfile: deploy/proxy/Dockerfile
     ports:
       - "8780:80"
+      # Direct TLS (no external terminator): set TELA_SITE_ADDRESS=your.domain in
+      # .env, then publish 80 + 443 (uncomment) so Caddy can run the ACME HTTP
+      # challenge and serve HTTPS. Leave commented when behind Cloudflare/an LB.
+      # - "80:80"
+      # - "443:443"
+    environment:
+      # Passed through from .env; empty → Caddyfile default of :80.
+      - TELA_SITE_ADDRESS
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -133,7 +141,20 @@ services:
       - frontend
     restart: unless-stopped
 
+  # Optional self-hosted embedder for RAG / semantic search. Off by default;
+  # start it with `docker compose --profile embed up -d`. Then set
+  # TELA_RAG_EMBED_URL=http://ollama:11434 in .env and pull the model:
+  # `docker compose exec ollama ollama pull qwen3-embedding:0.6b`.
+  # Without this, full-text search still works; only semantic search is dark.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["embed"]
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
 volumes:
   tela-pgdata:
   caddy-data:
   caddy-config:
+  ollama-data:

@@ -40,7 +40,7 @@ else
 endif
 
 .PHONY: up down logs build clean dev be-dev fe-dev storybook help test-mcp-integration \
-        test dev-db dev-db-clean setup \
+        test dev-db dev-db-clean setup backup restore \
         landing-dev landing-build landing-gate landing-clean \
         deploy deploy-backend deploy-frontend deploy-landing release-mcp reset-prod-db \
         health-gate
@@ -66,6 +66,8 @@ help:
 	@echo "  make up         # build and start the stack (auto-stamps git version/commit) on http://localhost:8780"
 	@echo "  make down       # stop the stack"
 	@echo "  make logs       # tail logs from all services"
+	@echo "  make backup     # dump Postgres to ./backups/tela-<timestamp>.sql"
+	@echo "  make restore FILE=backups/...  # restore a dump"
 	@echo "  make build      # rebuild images without starting (auto-stamps git version/commit)"
 	@echo "  make clean      # stop and DELETE volumes (requires FORCE=1)"
 	@echo "  make dev        # run backend + frontend in dev mode in parallel (no compose)"
@@ -105,6 +107,23 @@ down:
 
 logs:
 	$(COMPOSE) logs -f --tail=100
+
+# backup: dump the Postgres DB to ./backups/tela-<timestamp>.sql via the running
+# postgres container, using the container's own POSTGRES_USER/DB so no host
+# credentials are needed. restore: load a dump back (drops + recreates objects;
+# the dump is taken with --clean --if-exists). The sanctioned self-host data
+# backup/restore path. Stop writers (or accept a slightly inconsistent snapshot)
+# while dumping a live instance.
+backup:
+	@mkdir -p backups
+	@out=backups/tela-$$(date +%Y%m%d-%H%M%S).sql; \
+	  $(COMPOSE) exec -T postgres sh -c 'pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" --no-owner --clean --if-exists' > $$out && \
+	  echo "wrote $$out"
+
+restore:
+	@test -n "$(FILE)" || { echo "usage: make restore FILE=backups/tela-YYYYMMDD-HHMMSS.sql"; exit 1; }
+	@$(COMPOSE) exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < $(FILE) && \
+	  echo "restored from $(FILE)"
 
 build:
 	$(EXPORT_BUILD) $(COMPOSE) build
