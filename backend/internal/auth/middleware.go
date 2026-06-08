@@ -200,6 +200,14 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/auth/") {
 		return true
 	}
+	// First-run setup wizard (api/setup.go). Public because a fresh instance has
+	// no users (so no session can exist yet). GET /api/setup/status reports
+	// emptiness; POST /api/setup creates the first admin and self-gates by only
+	// succeeding while the users table is empty (atomic insert-if-empty), so a
+	// missing session here is expected, not a hole.
+	if p == "/api/setup" || strings.HasPrefix(p, "/api/setup/") {
+		return true
+	}
 	// MCP Streamable-HTTP transport. Bypasses Middleware because it
 	// self-authenticates via the SDK's bearer verifier (mcp.go) over the same
 	// tela PATs — a single transport endpoint serves both read and write tools

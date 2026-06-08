@@ -31,7 +31,7 @@ The ones you must get right:
 | `TELA_PG_PASSWORD` | No default — Postgres won't start without it. `make setup` generates one. |
 | `TELA_PUBLIC_BASE_URL` | Drives emailed links, cookie `Secure`, and OAuth audience. **Must match how users reach the instance** (see the cookie gotcha below). |
 | `TELA_SHARE_SECRET`, `TELA_API_KEY_SECRET` | HMAC keys for share cookies and PATs. If unset, tela generates and **persists** them on first boot (stable across restarts). Set them explicitly if you want to pin/rotate from the environment. |
-| `TELA_ADMIN_USERNAME` / `_PASSWORD` / `_EMAIL` | The first admin, created only when the users table is empty. **Set all three** so you have a known login and a working password-reset address. If `_PASSWORD` is empty a random one is generated and printed to the log once. |
+| `TELA_ADMIN_USERNAME` / `_PASSWORD` / `_EMAIL` | Optional env path for the first admin, created only when the users table is empty **and `_PASSWORD` is set**. If you leave the admin env unset, the first admin is created instead through the web **setup wizard** at `/setup` — a fresh instance redirects there automatically. Setting `_PASSWORD` skips the wizard and seeds the admin at boot (set `_EMAIL` too for a working password-reset address). |
 | `TELA_SMTP_*` | Required for a usable multi-user instance — see below. |
 
 The backend logs its effective config at boot (`config: …` lines): the public

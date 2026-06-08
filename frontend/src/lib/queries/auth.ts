@@ -77,6 +77,47 @@ export function useUpdateProfile() {
   })
 }
 
+export interface SetupInput {
+  username: string
+  email: string
+  password: string
+}
+
+// First-run setup status. Public + raw fetch (no session exists yet on a fresh
+// instance, and api() would treat any failure as an auth bounce). A failure
+// degrades to needs_setup=false so a transient blip never strands a working
+// instance on the setup screen.
+export async function fetchSetupStatus(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/setup/status')
+    if (!res.ok) return false
+    const body = (await res.json()) as { needs_setup?: boolean }
+    return body.needs_setup === true
+  } catch {
+    return false
+  }
+}
+
+// Create the FIRST instance admin via the setup wizard. On success the backend
+// signs the user in (sets the session cookie) and returns the user, so we seed
+// the me cache and land straight in the app. 409 already_setup → an admin
+// already exists (race / refresh).
+export function useSetup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: SetupInput) => {
+      const { user } = await api<{ user: AuthUser }>('/api/setup', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+      return user
+    },
+    onSuccess: (user) => {
+      qc.setQueryData(authKeys.me(), user)
+    },
+  })
+}
+
 export function useLogin() {
   const qc = useQueryClient()
   return useMutation({

@@ -92,6 +92,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /oauth/workos/login", srv.WorkOSLogin)
 	mux.HandleFunc("POST /oauth/workos/login", srv.WorkOSLoginComplete)
 
+	// First-run setup wizard (setup.go). Public (see auth.IsPublicPath): on a
+	// fresh instance the users table is empty and there is no session yet. The
+	// POST self-gates by only succeeding while the table is empty.
+	mux.HandleFunc("GET /api/setup/status", srv.SetupStatus)
+	mux.HandleFunc("POST /api/setup", srv.Setup)
+
 	mux.HandleFunc("POST /api/auth/login", srv.Login)
 	mux.HandleFunc("POST /api/auth/logout", srv.Logout)
 	mux.HandleFunc("GET /api/auth/me", srv.Me)

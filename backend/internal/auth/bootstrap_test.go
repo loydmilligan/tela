@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"strings"
 	"testing"
@@ -15,7 +14,9 @@ func newAuthTestDB(t *testing.T) *sql.DB {
 	return testdb.New(t)
 }
 
-func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
+// With TELA_ADMIN_PASSWORD provided, the env bootstrap seeds the admin and
+// owns every existing space; a second call is a no-op (idempotent).
+func TestBootstrapAdmin_SeedsAdminFromEnvPasswordAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
@@ -24,7 +25,8 @@ func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 		t.Fatalf("seed spaces: %v", err)
 	}
 
-	res1, err := BootstrapAdmin(ctx, d, "", "", "", rand.Reader)
+	const password = "S3cr3t!Provided"
+	res1, err := BootstrapAdmin(ctx, d, "", password, "")
 	if err != nil {
 		t.Fatalf("first BootstrapAdmin: %v", err)
 	}
@@ -33,9 +35,6 @@ func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 	}
 	if res1.Username != "admin" {
 		t.Fatalf("first call: Username=%q, want %q", res1.Username, "admin")
-	}
-	if res1.GeneratedPassword == "" {
-		t.Fatalf("first call with empty TELA_ADMIN_PASSWORD should generate one")
 	}
 
 	var userCount, adminID, isAdmin, isActive int
@@ -60,15 +59,15 @@ func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 		t.Fatalf("admin owns %d spaces, want 2", sm)
 	}
 
-	ok, err := VerifyPassword(res1.GeneratedPassword, mustQueryString(t, d, `SELECT password_hash FROM users WHERE id=$1`, adminID))
+	ok, err := VerifyPassword(password, mustQueryString(t, d, `SELECT password_hash FROM users WHERE id=$1`, adminID))
 	if err != nil {
-		t.Fatalf("verify generated password: %v", err)
+		t.Fatalf("verify env password: %v", err)
 	}
 	if !ok {
-		t.Fatalf("generated password did not verify")
+		t.Fatalf("env password did not verify")
 	}
 
-	res2, err := BootstrapAdmin(ctx, d, "", "", "", rand.Reader)
+	res2, err := BootstrapAdmin(ctx, d, "", password, "")
 	if err != nil {
 		t.Fatalf("second BootstrapAdmin: %v", err)
 	}
@@ -84,21 +83,40 @@ func TestBootstrapAdmin_SeedsAdminAndIsIdempotent(t *testing.T) {
 	}
 }
 
+// With TELA_ADMIN_PASSWORD unset, the bootstrap is a no-op: the users table is
+// left empty so the web setup wizard can create the first admin.
+func TestBootstrapAdmin_SkipsWhenNoPassword(t *testing.T) {
+	ctx := context.Background()
+	d := newAuthTestDB(t)
+
+	res, err := BootstrapAdmin(ctx, d, "", "", "")
+	if err != nil {
+		t.Fatalf("BootstrapAdmin: %v", err)
+	}
+	if res.Created {
+		t.Fatalf("Created=true; want false (no password env → wizard handles setup)")
+	}
+	var n int
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("users count=%d, want 0 (no admin auto-created)", n)
+	}
+}
+
 func TestBootstrapAdmin_UsesEnvPasswordAndUsername(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
 	const username = "root"
 	const password = "S3cr3t!Provided"
-	res, err := BootstrapAdmin(ctx, d, username, password, "", rand.Reader)
+	res, err := BootstrapAdmin(ctx, d, username, password, "")
 	if err != nil {
 		t.Fatalf("BootstrapAdmin: %v", err)
 	}
 	if !res.Created || res.Username != username {
 		t.Fatalf("res=%+v; want Created=true Username=%q", res, username)
-	}
-	if res.GeneratedPassword != "" {
-		t.Fatalf("GeneratedPassword=%q; want empty (env-provided)", res.GeneratedPassword)
 	}
 
 	hash := mustQueryString(t, d, `SELECT password_hash FROM users WHERE username=$1`, username)

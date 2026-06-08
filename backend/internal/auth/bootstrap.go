@@ -2,11 +2,8 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -16,14 +13,20 @@ import (
 // BootstrapResult describes what BootstrapAdmin did, for the caller's
 // banner-printing convenience.
 type BootstrapResult struct {
-	Created           bool   // true if an admin row was inserted on this call
-	Username          string // the admin username (always set when Created)
-	GeneratedPassword string // non-empty only when a random password was generated
+	Created  bool   // true if an admin row was inserted on this call
+	Username string // the admin username (always set when Created)
 }
 
-// BootstrapAdmin ensures the instance has exactly one bootstrap admin user
-// when the users table is empty. It is idempotent: subsequent calls are
-// no-ops once any user exists.
+// BootstrapAdmin seeds the instance's first admin from env config, but ONLY
+// when an admin password is explicitly provided (passwordEnv != ""). It is
+// idempotent: subsequent calls are no-ops once any user exists.
+//
+// When passwordEnv is empty the function is a deliberate no-op: it leaves the
+// users table untouched so the first-run web setup wizard (POST /api/setup) can
+// create the first admin instead. This replaces the old behaviour of generating
+// a random password and logging it. An operator who still wants the env path
+// just sets TELA_ADMIN_PASSWORD; existing instances already have users and so
+// short-circuit on the count check regardless.
 //
 // When triggered, all work happens in a single tx:
 //  1. INSERT the admin user (is_instance_admin=1, is_active=1).
@@ -35,12 +38,14 @@ type BootstrapResult struct {
 //
 // Inputs:
 //   - usernameEnv: TELA_ADMIN_USERNAME value (empty → default "admin").
-//   - passwordEnv: TELA_ADMIN_PASSWORD value (empty → generate a 24-char
-//     URL-safe random password via crypto/rand).
-//
-// randSrc is used for the generated-password path; pass crypto/rand.Reader
-// in production. Tests can inject deterministic readers.
-func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv, emailEnv string, randSrc io.Reader) (BootstrapResult, error) {
+//   - passwordEnv: TELA_ADMIN_PASSWORD value (empty → skip, let the wizard run).
+func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv, emailEnv string) (BootstrapResult, error) {
+	// No admin password configured → leave the table empty for the web setup
+	// wizard. Never auto-create a credential-less or random-password admin.
+	if passwordEnv == "" {
+		return BootstrapResult{Created: false}, nil
+	}
+
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("auth: begin bootstrap tx: %w", err)
@@ -60,18 +65,7 @@ func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv, em
 		username = "admin"
 	}
 
-	password := passwordEnv
-	generated := false
-	if password == "" {
-		pw, err := generatePassword(randSrc, 18)
-		if err != nil {
-			return BootstrapResult{}, err
-		}
-		password = pw
-		generated = true
-	}
-
-	hash, err := HashPassword(password)
+	hash, err := HashPassword(passwordEnv)
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("auth: hash bootstrap password: %w", err)
 	}
@@ -105,30 +99,16 @@ func BootstrapAdmin(ctx context.Context, d *sql.DB, usernameEnv, passwordEnv, em
 		return BootstrapResult{}, fmt.Errorf("auth: commit bootstrap tx: %w", err)
 	}
 
-	out := BootstrapResult{Created: true, Username: username}
-	if generated {
-		out.GeneratedPassword = password
-	}
-	return out, nil
-}
-
-// generatePassword returns a URL-safe random string. byteLen=18 yields
-// a 24-character base64 (RawURLEncoding) output.
-func generatePassword(r io.Reader, byteLen int) (string, error) {
-	buf := make([]byte, byteLen)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return "", fmt.Errorf("auth: read random password bytes: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+	return BootstrapResult{Created: true, Username: username}, nil
 }
 
 // BootstrapFromEnv is the convenience wrapper used from main.go.
-// Reads TELA_ADMIN_USERNAME / TELA_ADMIN_PASSWORD / TELA_ADMIN_EMAIL, calls
-// BootstrapAdmin with crypto/rand.Reader, and returns the result.
+// Reads TELA_ADMIN_USERNAME / TELA_ADMIN_PASSWORD / TELA_ADMIN_EMAIL and calls
+// BootstrapAdmin. With TELA_ADMIN_PASSWORD unset it is a no-op (the web setup
+// wizard creates the first admin instead).
 func BootstrapFromEnv(ctx context.Context, d *sql.DB) (BootstrapResult, error) {
 	return BootstrapAdmin(ctx, d,
-		os.Getenv("TELA_ADMIN_USERNAME"), os.Getenv("TELA_ADMIN_PASSWORD"), os.Getenv("TELA_ADMIN_EMAIL"),
-		rand.Reader)
+		os.Getenv("TELA_ADMIN_USERNAME"), os.Getenv("TELA_ADMIN_PASSWORD"), os.Getenv("TELA_ADMIN_EMAIL"))
 }
 
 // BackfillAdminEmailFromEnv assigns TELA_ADMIN_EMAIL to the bootstrap admin on
