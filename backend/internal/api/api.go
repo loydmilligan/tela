@@ -3,16 +3,25 @@ package api
 import (
 	"context"
 	"database/sql"
+	"log"
 	"os"
 
 	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/mailer"
 	"github.com/zcag/tela/backend/internal/rag"
+	"github.com/zcag/tela/backend/internal/settings"
 )
 
 // Server bundles dependencies shared across HTTP handlers.
 type Server struct {
-	DB           *sql.DB
+	DB *sql.DB
+
+	// settings is the instance-level runtime config store (instance_settings
+	// table, cached). It backs the admin settings API, persisted secrets, and
+	// (later) per-plan feature flags + the cloud-connect token. Never nil —
+	// built in New().
+	settings *settings.Store
+
 	rooms        *roomRegistry
 	shareSecret  []byte
 	shareLimiter *shareRateLimiter
@@ -68,10 +77,22 @@ type Server struct {
 }
 
 func New(db *sql.DB) *Server {
+	ctx := context.Background()
+	st, err := settings.New(ctx, db)
+	if err != nil {
+		log.Fatalf("settings: load instance_settings: %v", err)
+	}
+	// Resolve the api-key HMAC secret through the store (env → persisted →
+	// generated-and-persisted) so it survives restarts. Must run before any
+	// bearer request; New() is called once at boot.
+	if err := auth.InitAPIKeySecret(ctx, st); err != nil {
+		log.Fatalf("settings: init api-key secret: %v", err)
+	}
 	s := &Server{
 		DB:           db,
+		settings:     st,
 		rooms:        newRoomRegistry(),
-		shareSecret:  loadOrGenerateShareSecret(),
+		shareSecret:  resolveShareSecret(ctx, st),
 		shareLimiter: newShareRateLimiter(),
 		auditWriter:  auth.NewAuditWriter(db),
 		Mailer:       mailer.FromEnv(),

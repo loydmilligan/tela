@@ -93,11 +93,7 @@ var (
 func LoadAPIKeySecret() []byte {
 	apiKeySecretOnce.Do(func() {
 		if v := os.Getenv("TELA_API_KEY_SECRET"); v != "" {
-			if decoded, err := hex.DecodeString(v); err == nil && len(decoded) > 0 {
-				apiKeySecretVal = decoded
-				return
-			}
-			apiKeySecretVal = []byte(v)
+			apiKeySecretVal = decodeAPIKeySecret(v)
 			return
 		}
 		buf := make([]byte, 32)
@@ -106,12 +102,53 @@ func LoadAPIKeySecret() []byte {
 		}
 		apiKeySecretVal = buf
 		log.Println("==================================================================")
-		log.Println(">>> TELA_API_KEY_SECRET not set — generated a random per-process secret.")
-		log.Println(">>>   ALL existing API keys are invalidated on every restart.")
-		log.Println(">>>   Set TELA_API_KEY_SECRET (32-byte hex) in the environment.")
+		log.Println(">>> TELA_API_KEY_SECRET not set and no persisted secret — generated a")
+		log.Println(">>>   random per-process key. ALL API keys invalidate on restart.")
+		log.Println(">>>   This path is only hit when InitAPIKeySecret was not called.")
 		log.Println("==================================================================")
 	})
 	return apiKeySecretVal
+}
+
+// SecretStore persists a generated secret so it survives process restarts.
+// Implemented by *settings.Store; the interface keeps the auth package free of
+// a settings import so the dependency direction stays clean.
+type SecretStore interface {
+	GetOrInitSecret(ctx context.Context, key string, nbytes int) ([]byte, error)
+}
+
+// InitAPIKeySecret resolves the api-key HMAC secret with precedence
+// env override → persisted store value → freshly generated-and-persisted, and
+// primes the package cache so LoadAPIKeySecret returns it. Call once at boot
+// before any bearer request is served. This is what fixes the "random
+// per-process secret invalidates every PAT on restart" footgun for operators
+// who don't set TELA_API_KEY_SECRET: the generated secret is persisted once.
+func InitAPIKeySecret(ctx context.Context, store SecretStore) error {
+	if v := os.Getenv("TELA_API_KEY_SECRET"); v != "" {
+		setAPIKeySecret(decodeAPIKeySecret(v))
+		return nil
+	}
+	b, err := store.GetOrInitSecret(ctx, "api_key", 32)
+	if err != nil {
+		return err
+	}
+	setAPIKeySecret(b)
+	return nil
+}
+
+// decodeAPIKeySecret mirrors the env path: hex-decode when it looks hex, else
+// use the raw bytes (HMAC keys are length-agnostic).
+func decodeAPIKeySecret(v string) []byte {
+	if decoded, err := hex.DecodeString(v); err == nil && len(decoded) > 0 {
+		return decoded
+	}
+	return []byte(v)
+}
+
+// setAPIKeySecret primes the cache by consuming the sync.Once with b, so a
+// later LoadAPIKeySecret returns b rather than generating a per-process key.
+func setAPIKeySecret(b []byte) {
+	apiKeySecretOnce.Do(func() { apiKeySecretVal = b })
 }
 
 // ResetAPIKeySecretCache is exposed for tests so each newWiredServer call can

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/settings"
 )
 
 // M15.0 PublicShare. Editors create per-page share links that can be opened
@@ -116,25 +117,20 @@ type shareAuthRequest struct {
 	Password string `json:"password"`
 }
 
-// loadOrGenerateShareSecret reads TELA_SHARE_SECRET, falling back to a freshly
-// generated 32-byte key. Logs a banner on the fallback path so the operator
-// notices — without a stable secret, every restart invalidates outstanding
-// share password cookies (callers re-submit the password and the FE re-sets
-// the cookie, so the worst case is a forced re-prompt, not data loss).
-func loadOrGenerateShareSecret() []byte {
+// resolveShareSecret reads TELA_SHARE_SECRET, else returns a stable secret
+// persisted in instance_settings (generated once on first boot). Precedence:
+// env override → persisted store value → generated-and-persisted. This replaces
+// the old random-per-process fallback that invalidated outstanding share
+// cookies on every restart; the persisted secret now survives restarts.
+func resolveShareSecret(ctx context.Context, st *settings.Store) []byte {
 	if v := os.Getenv("TELA_SHARE_SECRET"); v != "" {
 		return []byte(v)
 	}
-	buf := make([]byte, shareSecretBytes)
-	if _, err := rand.Read(buf); err != nil {
-		log.Fatalf("share: generate secret: %v", err)
+	b, err := st.GetOrInitSecret(ctx, "share", shareSecretBytes)
+	if err != nil {
+		log.Fatalf("share: resolve persisted secret: %v", err)
 	}
-	log.Println("==================================================================")
-	log.Println(">>> TELA_SHARE_SECRET not set — generated a random per-process secret.")
-	log.Println(">>>   Share password cookies are invalidated on restart.")
-	log.Println(">>>   Set TELA_SHARE_SECRET in the environment to keep them stable.")
-	log.Println("==================================================================")
-	return buf
+	return b
 }
 
 // newShareToken returns a 43-char URL-safe random token. crypto/rand is the

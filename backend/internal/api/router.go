@@ -229,6 +229,8 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/users", srv.CreateAdminUser)
 	mux.HandleFunc("PATCH /api/admin/users/{id}", srv.PatchAdminUser)
 	mux.HandleFunc("DELETE /api/admin/users/{id}", srv.DeleteAdminUser)
+	mux.HandleFunc("GET /api/admin/settings", srv.GetInstanceSettings)
+	mux.HandleFunc("PATCH /api/admin/settings", srv.PatchInstanceSettings)
 
 	// Mention directory — active users for the @-mention picker (any member).
 	mux.HandleFunc("GET /api/users", srv.ListUsers)
