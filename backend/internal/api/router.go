@@ -114,6 +114,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/spaces/{id}", srv.GetSpace)
 	mux.HandleFunc("PATCH /api/spaces/{id}", srv.UpdateSpace)
 	mux.HandleFunc("DELETE /api/spaces/{id}", srv.DeleteSpace)
+	mux.HandleFunc("POST /api/spaces/{id}/transfer", srv.TransferSpace)
 	mux.HandleFunc("GET /api/spaces/{id}/index-version", srv.GetSpaceIndexVersion)
 	mux.HandleFunc("POST /api/spaces/{id}/import", srv.ImportSpace)
 	mux.HandleFunc("GET /api/spaces/{id}/export.zip", srv.ExportSpaceMarkdownZip)
