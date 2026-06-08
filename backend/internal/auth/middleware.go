@@ -209,6 +209,15 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/mcp") {
 		return true
 	}
+	// Cloud control plane — managed services (RAG embed proxy, entitlements)
+	// that a connected self-hoster's instance calls over HTTP. Bypasses
+	// Middleware because the cloud handlers self-authenticate the bearer PAT via
+	// the same auth.LookupAPIKey path the rest of the system uses, then gate on
+	// the account's plan entitlement (api/cloud.go). The main instance hosts
+	// these and consumes the underlying code in-process.
+	if strings.HasPrefix(p, "/api/cloud/") {
+		return true
+	}
 	// WebDAV file-sync (sync spec §7–9). Self-authenticates via PAT-as-Basic and
 	// scope-gates per verb inside the handler — stock WebDAV clients send Basic,
 	// not Bearer, so the generic Middleware can't authenticate them. The bare

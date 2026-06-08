@@ -19,13 +19,20 @@ import (
 type OllamaEmbedder struct {
 	base   string
 	model  string
+	token  string // optional bearer; set when the embed URL is tela's managed endpoint
 	client *http.Client
 }
 
-func NewOllamaEmbedder(base, model string) *OllamaEmbedder {
+// NewOllamaEmbedder builds an embedder for an Ollama-compatible /api/embed
+// endpoint. token is optional: empty for a direct Ollama (tardis), or a tela
+// PAT when base points at tela cloud's managed embed proxy (/api/cloud/ollama).
+// The managed endpoint speaks the same Ollama shape, so this one client serves
+// both BYO and cloud-backed — no separate cloud embedder type.
+func NewOllamaEmbedder(base, model, token string) *OllamaEmbedder {
 	return &OllamaEmbedder{
 		base:   strings.TrimRight(base, "/"),
 		model:  model,
+		token:  token,
 		client: &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -84,6 +91,9 @@ func (e *OllamaEmbedder) embedOnce(ctx context.Context, input string) (vec []flo
 		return nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if e.token != "" {
+		req.Header.Set("Authorization", "Bearer "+e.token)
+	}
 
 	resp, err := e.client.Do(req)
 	if err != nil {

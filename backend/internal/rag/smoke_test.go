@@ -35,7 +35,7 @@ func TestSmoke_LiveSemantic(t *testing.T) {
 	newPage(t, d, sp, "Banana bread",
 		"## Recipe\nMash ripe bananas, fold in flour and sugar, bake at 180C for an hour until golden.")
 
-	svc := NewServiceWithEmbedder(d, NewOllamaEmbedder(url, model))
+	svc := NewServiceWithEmbedder(d, NewOllamaEmbedder(url, model, ""))
 	if _, _, err := svc.ReindexSpace(ctx, sp); err != nil {
 		t.Fatalf("reindex: %v", err)
 	}

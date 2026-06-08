@@ -97,6 +97,24 @@ The embedding model **must be 1024-dimensional** (`page_chunks.embedding` is
 model means re-embedding everything: after editing the model, run
 `docker compose -f deploy/docker-compose.yml exec backend /tela reindex-all`.
 
+### Managed embedder (tela cloud)
+
+Don't want to run an embedder at all? Point at tela cloud's managed endpoint
+with a tela.cagdas.io PAT (requires a plan that includes managed semantic
+search):
+
+```bash
+# in deploy/.env
+TELA_RAG_EMBED_URL=https://tela.cagdas.io/api/cloud/ollama
+TELA_RAG_EMBED_TOKEN=tela_pat_xxxxxxxx
+TELA_RAG_EMBED_MODEL=qwen3-embedding:0.6b   # match the cloud's model/dim
+```
+
+This is the same embedder client — it just calls tela cloud's managed embed
+proxy instead of a local Ollama. Your instance stays fully open-source; only the
+embedding compute is offloaded. Everything else (search, indexing, storage) runs
+locally as before.
+
 ## Backups
 
 The sanctioned backup path dumps Postgres (all your wiki data lives there):

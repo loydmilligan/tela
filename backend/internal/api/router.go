@@ -56,6 +56,13 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// in the handlers, not by HTTP method). Method-less pattern matches all verbs.
 	mux.Handle("/api/mcp", srv.MCPHandler())
 
+	// Cloud control plane (api/cloud.go) — managed services the main instance
+	// hosts and connected self-hosters reach over HTTP. Self-authenticating
+	// bearer-PAT (on IsPublicPath); the embed proxy path mirrors Ollama's
+	// /api/embed so the existing rag embedder is a drop-in client.
+	mux.HandleFunc("GET /api/cloud/entitlements", srv.CloudEntitlements)
+	mux.HandleFunc("POST /api/cloud/ollama/api/embed", srv.CloudEmbed)
+
 	// OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint.
 	// Public + static (see auth.IsPublicPath); 404s when OAuth is unconfigured.
 	// Served at BOTH the root well-known and the path-scoped variant — Claude

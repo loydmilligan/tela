@@ -20,6 +20,7 @@ package rag
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"strconv"
 	"sync"
@@ -28,18 +29,21 @@ import (
 
 // Config is the env-driven configuration. EmbedURL empty => feature disabled.
 type Config struct {
-	EmbedURL   string // Ollama base, e.g. http://tardis:11435
+	EmbedURL   string // Ollama base, e.g. http://tardis:11435, or tela cloud's /api/cloud/ollama
 	EmbedModel string // default qwen3-embedding:0.6b (1024-d)
+	EmbedToken string // optional bearer (a tela PAT) when EmbedURL is the managed cloud endpoint
 	Dim        int    // expected embedding dimension (advisory; column is vector(1024))
 }
 
-// ConfigFromEnv reads TELA_RAG_EMBED_URL / _MODEL / _DIM. The default model
-// tracks the prod embed instance (qwen3-embedding:0.6b, 1024-d); override per
-// deployment with TELA_RAG_EMBED_MODEL.
+// ConfigFromEnv reads TELA_RAG_EMBED_URL / _MODEL / _TOKEN / _DIM. The default
+// model tracks the prod embed instance (qwen3-embedding:0.6b, 1024-d); override
+// per deployment with TELA_RAG_EMBED_MODEL. _TOKEN is set only when pointing at
+// tela cloud's managed embed endpoint.
 func ConfigFromEnv() Config {
 	return Config{
 		EmbedURL:   os.Getenv("TELA_RAG_EMBED_URL"),
 		EmbedModel: getenv("TELA_RAG_EMBED_MODEL", "qwen3-embedding:0.6b"),
+		EmbedToken: os.Getenv("TELA_RAG_EMBED_TOKEN"),
 		Dim:        atoiDefault(os.Getenv("TELA_RAG_EMBED_DIM"), 1024),
 	}
 }
@@ -71,10 +75,30 @@ type Service struct {
 func NewService(db *sql.DB, cfg Config) *Service {
 	s := &Service{db: db, cfg: cfg}
 	if cfg.EmbedURL != "" {
-		s.emb = NewOllamaEmbedder(cfg.EmbedURL, cfg.EmbedModel)
+		s.emb = NewOllamaEmbedder(cfg.EmbedURL, cfg.EmbedModel, cfg.EmbedToken)
 	}
 	return s
 }
+
+// Embed exposes the active embedder for the managed cloud embed proxy
+// (api.CloudEmbed), so a connected self-hoster's embeddings are produced by the
+// SAME embedder the provider uses in-process — no second embedding path.
+func (s *Service) Embed(ctx context.Context, text string) ([]float32, error) {
+	if !s.Enabled() {
+		return nil, errEmbedderDisabled
+	}
+	return s.emb.Embed(ctx, text)
+}
+
+// EmbedModel returns the active model name (for the managed proxy response).
+func (s *Service) EmbedModel() string {
+	if s.emb == nil {
+		return ""
+	}
+	return s.emb.Model()
+}
+
+var errEmbedderDisabled = errors.New("rag: embedder disabled")
 
 // NewServiceWithEmbedder injects an embedder directly — used by tests with a
 // deterministic fake, bypassing the env/Ollama path.
