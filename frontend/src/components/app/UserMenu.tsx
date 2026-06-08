@@ -1,6 +1,8 @@
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronUp, Globe, Link2, LogOut, Settings } from 'lucide-react'
 import { useLogout, useMe } from '../../lib/queries/auth'
+import { useMyUsage } from '../../lib/queries/billing'
+import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import {
   DropdownMenu,
@@ -15,9 +17,11 @@ import {
 // rather than off the bottom edge.
 export function UserMenu() {
   const me = useMe()
+  const usage = useMyUsage()
   const logout = useLogout()
   const navigate = useNavigate()
   const user = me.data ?? null
+  const planName = usage.data?.plan.name
 
   async function handleSignOut() {
     try {
@@ -42,6 +46,11 @@ export function UserMenu() {
             aria-label={`Account menu for ${user.username}`}
           >
             <span className="flex-1 text-left truncate">{user.username}</span>
+            {planName ? (
+              <Badge variant="muted" className="shrink-0">
+                {planName}
+              </Badge>
+            ) : null}
             <ChevronUp width={14} height={14} aria-hidden />
           </Button>
         </DropdownMenuTrigger>

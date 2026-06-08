@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ImportSection } from '../components/app/ImportSection'
 import { MiraImportSection } from '../components/app/MiraImportSection'
 import { SettingsApiKeysTab } from '../components/app/SettingsApiKeysTab'
+import { SettingsBillingTab } from '../components/app/SettingsBillingTab'
 import { SettingsAuditTab } from '../components/app/SettingsAuditTab'
 import { SettingsNotificationsTab } from '../components/app/SettingsNotificationsTab'
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
@@ -91,6 +92,14 @@ const SYNC_TAB: SettingsTab = {
   render: () => <SettingsSyncTab />,
 }
 
+// Plan & usage — every account (personal + each org) carries a tier; available
+// to all users.
+const BILLING_TAB: SettingsTab = {
+  id: 'billing',
+  label: 'Plan & Usage',
+  render: () => <SettingsBillingTab />,
+}
+
 export function SettingsPage() {
   const me = useMe()
   const orgs = useOrgs()
@@ -105,12 +114,12 @@ export function SettingsPage() {
     (orgs.data?.some((o) => o.my_role === 'admin') ?? false)
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
     }
     if (isOrgAdmin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, ORG_ADMIN_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, ORG_ADMIN_TAB]
     }
-    return [PROFILE_TAB, NOTIFICATIONS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB]
+    return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB]
   }, [me.data?.is_instance_admin, isOrgAdmin])
   const [activeId, setActiveId] = useState(tabs[0].id)
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]

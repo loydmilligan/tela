@@ -96,6 +96,38 @@ export interface Backlink {
 export interface CreateSpaceInput {
   name: string
   slug?: string
+  // When set, the space is owned by that org (caller must be a member): the
+  // org's plan governs quotas and org members get editor access. Omit for a
+  // personal space owned by the caller.
+  org_id?: number
+}
+
+// Metering & tiers (backend internal/api/limits.go). A plan is a tier carried by
+// an account (a user's personal account or an org). A null max_* means
+// unlimited. Mirrors backend's `plan`.
+export interface Plan {
+  key: string
+  account_kind: 'user' | 'org'
+  name: string
+  max_spaces: number | null
+  max_pages_per_space: number | null
+  max_storage_bytes: number | null
+  max_members: number | null
+  // false = an internal/comp tier kept out of the public catalog (still
+  // admin-assignable). The plan-comparison UI shows only listed tiers.
+  listed: boolean
+}
+
+// GET /api/usage and /api/orgs/{id}/usage. members is present for orgs only.
+export interface Usage {
+  account_kind: 'user' | 'org'
+  account_id: number
+  plan: Plan
+  usage: {
+    spaces: number
+    storage_bytes: number
+    members?: number
+  }
 }
 
 export interface UpdateSpaceInput {
@@ -163,6 +195,8 @@ export interface AdminUserRow {
   email_verified: boolean
   is_instance_admin: boolean
   is_active: boolean
+  // The user's personal-account plan tier key (metering). Settable by an admin.
+  plan_key: string
   created_at: string
   updated_at: string
 }
@@ -180,6 +214,8 @@ export interface Org {
   // The caller's own org_role, or null when they only see the org as an
   // instance-admin (no membership row).
   my_role: OrgRole | null
+  // The org's plan tier key (metering). Settable by an admin.
+  plan_key: string
   created_at: string
   updated_at: string
 }

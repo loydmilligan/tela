@@ -9,6 +9,7 @@ import {
 } from '../../lib/queries/admin-users'
 import { localDateFromSqlite } from '../../lib/relativeTime'
 import type { AdminUserRow } from '../../lib/types'
+import { PlanTierSelect } from './PlanTierSelect'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Checkbox } from '../ui/checkbox'
@@ -152,6 +153,12 @@ function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
           </span>
         ) : null}
       </div>
+      <PlanTierSelect
+        accountKind="user"
+        accountId={row.id}
+        currentKey={row.plan_key}
+        className="w-[9rem] shrink-0"
+      />
       {isSelf ? null : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

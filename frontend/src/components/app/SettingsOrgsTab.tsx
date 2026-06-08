@@ -31,6 +31,7 @@ import {
   usePutOrgSSO,
 } from '../../lib/queries/org-sso'
 import type { Group, Org, OrgMember, OrgRole } from '../../lib/types'
+import { PlanTierSelect } from './PlanTierSelect'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import {
@@ -151,6 +152,14 @@ function OrgRow({ org, scope }: { org: Org; scope: 'instance' | 'admin' }) {
         </span>
       </div>
 
+      {scope === 'instance' ? (
+        <PlanTierSelect
+          accountKind="org"
+          accountId={org.id}
+          currentKey={org.plan_key}
+          className="w-[9rem] shrink-0"
+        />
+      ) : null}
       <Button type="button" variant="secondary" size="sm" onClick={() => setManageOpen(true)}>
         Manage members
       </Button>
@@ -1176,6 +1185,9 @@ function addOrgMemberErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 404) return 'User not found.'
     if (err.status === 409) return 'Already a member.'
+    // 402 quota_exceeded — the org's seat limit. The backend message already
+    // names the plan + cap; surface it verbatim.
+    if (err.status === 402) return err.message
     return err.message
   }
   return 'Failed to add member.'
