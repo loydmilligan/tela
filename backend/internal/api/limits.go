@@ -18,6 +18,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -54,6 +55,9 @@ type plan struct {
 	// Display pricing (no billing engine). PriceCents nil = custom/contact, 0 = free.
 	PriceCents  *int64 `json:"price_cents"`
 	PricePeriod string `json:"price_period"`
+	// Features is the boolean entitlement map (e.g. managed_rag, publishing).
+	// Quotas say "how many"; features say "is X allowed". Never nil after scan.
+	Features map[string]bool `json:"features"`
 }
 
 func nullToPtr(n sql.NullInt64) *int64 {
@@ -68,21 +72,26 @@ func nullToPtr(n sql.NullInt64) *int64 {
 // `name` column with orgs — every query selecting these must alias plans as p.
 // listed is INTEGER 0/1 (SQLite-era convention) — scanned into an int, not a
 // bool, because pgx is strict about the integer→bool mismatch.
-const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period`
+const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period, p.features`
 
 func scanPlan(row interface{ Scan(...any) error }) (plan, error) {
 	var (
 		p                                      plan
 		spaces, pages, storage, members, cents sql.NullInt64
 		listed                                 int
+		featuresRaw                            []byte
 	)
-	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod); err != nil {
+	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod, &featuresRaw); err != nil {
 		return plan{}, err
 	}
 	p.MaxSpaces, p.MaxPagesPerSpace = nullToPtr(spaces), nullToPtr(pages)
 	p.MaxStorageBytes, p.MaxMembers = nullToPtr(storage), nullToPtr(members)
 	p.Listed = listed == 1
 	p.PriceCents = nullToPtr(cents)
+	p.Features = map[string]bool{}
+	if len(featuresRaw) > 0 {
+		_ = json.Unmarshal(featuresRaw, &p.Features) // malformed JSON → empty map, never fatal
+	}
 	return p, nil
 }
 
@@ -121,9 +130,28 @@ func planFor(ctx context.Context, q queryer, acct account) (plan, error) {
 	case accountOrg:
 		src = `SELECT ` + planCols + ` FROM plans p JOIN orgs o ON o.plan_key = p.key WHERE o.id = $1`
 	default:
-		src = `SELECT ` + planCols + ` FROM plans p JOIN users u ON u.plan_key = p.key WHERE u.id = $1`
+		// Resolve the EFFECTIVE plan: the trial tier while trial_ends_at is in
+		// the future, else the base plan_key. Text-datetime comparison is
+		// chronological for the fixed 'YYYY-MM-DD HH:MM:SS' format. Expiry needs
+		// no job — a past trial_ends_at simply stops winning the CASE.
+		src = `SELECT ` + planCols + ` FROM plans p JOIN users u ON p.key = CASE
+			WHEN u.trial_ends_at IS NOT NULL AND u.trial_ends_at > tela_now() THEN u.trial_plan_key
+			ELSE u.plan_key END
+			WHERE u.id = $1`
 	}
 	return scanPlan(q.QueryRowContext(ctx, src, acct.ID))
+}
+
+// featureEnabled reports whether acct's effective plan grants the named feature.
+// Errors (missing account, etc.) resolve to false — fail closed. This is the
+// boolean-entitlement sibling to the quota gates; the cloud-connect path will
+// later overlay remote entitlements here.
+func (s *Server) featureEnabled(ctx context.Context, acct account, feat string) bool {
+	p, err := planFor(ctx, s.DB, acct)
+	if err != nil {
+		return false
+	}
+	return p.Features[feat]
 }
 
 // ── usage counters ────────────────────────────────────────────────────────────

@@ -57,9 +57,15 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var userID int64
+	// Auto-apply a 30-day trial of the paid personal tier. planFor resolves the
+	// effective plan from trial_ends_at, so this needs no billing engine and
+	// downgrades gracefully to personal_free at expiry.
 	err = s.DB.QueryRowContext(ctx, `
-		INSERT INTO users (username, email, password_hash, is_instance_admin, is_active)
-		VALUES ($1, $2, $3, 0, 1) RETURNING id`, username, email, hash).Scan(&userID)
+		INSERT INTO users (username, email, password_hash, is_instance_admin, is_active,
+			trial_plan_key, trial_ends_at)
+		VALUES ($1, $2, $3, 0, 1, 'personal_plus',
+			to_char((now() AT TIME ZONE 'UTC') + interval '30 days', 'YYYY-MM-DD HH24:MI:SS'))
+		RETURNING id`, username, email, hash).Scan(&userID)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			// Either the username or the email collided. The message stays
