@@ -7,6 +7,9 @@ import { spaceKeys } from './spaces'
 export interface AuthUser {
   id: number
   username: string
+  // Human-readable name used to address the user (greeting, etc.), distinct
+  // from the URL-safe username. '' when unset → fall back to username.
+  display_name: string
   email: string | null
   email_verified: boolean
   is_instance_admin: boolean
@@ -53,21 +56,22 @@ export function useMe() {
   })
 }
 
-// Patch the caller's own profile (bio). Updates the me cache in place so the
-// settings form and any open /u/{handle} preview reflect the new value.
+// Patch the caller's own profile (display name and/or bio). Only the supplied
+// fields are sent; the server echoes back the saved values, which we merge into
+// the me cache in place so the settings form and any open /u/{handle} preview
+// reflect them.
 export function useUpdateProfile() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { bio: string }) => {
-      const { bio } = await api<{ bio: string }>('/api/users/me', {
+    mutationFn: async (input: { display_name?: string; bio?: string }) => {
+      return api<{ display_name?: string; bio?: string }>('/api/users/me', {
         method: 'PATCH',
         body: JSON.stringify(input),
       })
-      return bio
     },
-    onSuccess: (bio) => {
+    onSuccess: (saved) => {
       qc.setQueryData<AuthUser | null>(authKeys.me(), (curr) =>
-        curr ? { ...curr, bio } : curr,
+        curr ? { ...curr, ...saved } : curr,
       )
     },
   })

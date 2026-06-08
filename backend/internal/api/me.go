@@ -16,14 +16,20 @@ type changePasswordRequest struct {
 }
 
 const maxBioLen = 280
+const maxDisplayNameLen = 80
 
 type updateProfileRequest struct {
+	// DisplayName is the human-readable name used to address the user (greeting,
+	// etc.), distinct from the URL-safe username. Empty string clears it (the UI
+	// then falls back to the username).
+	DisplayName *string `json:"display_name"`
 	// Bio is the author blurb shown on /u/{handle}. Empty string clears it.
 	Bio *string `json:"bio"`
 }
 
-// UpdateMyProfile patches the caller's own public profile fields (currently just
-// bio). PATCH /api/users/me. Self-service, no privilege beyond being signed in.
+// UpdateMyProfile patches the caller's own profile fields (display name, bio).
+// PATCH /api/users/me. Self-service, no privilege beyond being signed in. Only
+// the supplied fields are touched; the response echoes the saved values.
 func (s *Server) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	u, ok := requireUser(w, r)
 	if !ok {
@@ -34,21 +40,39 @@ func (s *Server) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
-	if req.Bio == nil {
+	if req.Bio == nil && req.DisplayName == nil {
 		writeError(w, http.StatusBadRequest, "no_fields", "nothing to update")
 		return
 	}
-	bio := strings.TrimSpace(*req.Bio)
-	if len(bio) > maxBioLen {
-		writeError(w, http.StatusBadRequest, "invalid_bio", "bio exceeds 280 characters")
-		return
+
+	out := map[string]any{}
+	if req.DisplayName != nil {
+		displayName := strings.TrimSpace(*req.DisplayName)
+		if len(displayName) > maxDisplayNameLen {
+			writeError(w, http.StatusBadRequest, "invalid_display_name", "display name exceeds 80 characters")
+			return
+		}
+		if _, err := s.DB.ExecContext(r.Context(),
+			`UPDATE users SET display_name = $1, updated_at = tela_now() WHERE id = $2`, displayName, u.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "update profile failed")
+			return
+		}
+		out["display_name"] = displayName
 	}
-	if _, err := s.DB.ExecContext(r.Context(),
-		`UPDATE users SET bio = $1, updated_at = tela_now() WHERE id = $2`, bio, u.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "update profile failed")
-		return
+	if req.Bio != nil {
+		bio := strings.TrimSpace(*req.Bio)
+		if len(bio) > maxBioLen {
+			writeError(w, http.StatusBadRequest, "invalid_bio", "bio exceeds 280 characters")
+			return
+		}
+		if _, err := s.DB.ExecContext(r.Context(),
+			`UPDATE users SET bio = $1, updated_at = tela_now() WHERE id = $2`, bio, u.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "update profile failed")
+			return
+		}
+		out["bio"] = bio
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"bio": bio})
+	writeJSON(w, http.StatusOK, out)
 }
 
 type sessionDTO struct {

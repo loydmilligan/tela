@@ -22,6 +22,7 @@ type authLoginRequest struct {
 type authUserDTO struct {
 	ID              int64   `json:"id"`
 	Username        string  `json:"username"`
+	DisplayName     string  `json:"display_name"`
 	Email           *string `json:"email"`
 	EmailVerified   bool    `json:"email_verified"`
 	IsInstanceAdmin bool    `json:"is_instance_admin"`
@@ -156,15 +157,18 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 	if u.Email != "" {
 		email = &u.Email
 	}
-	// bio isn't on the session-loaded user struct; fetch it directly (cheap,
-	// single-row) so /api/auth/me can prefill the profile editor.
-	var bio string
-	_ = s.DB.QueryRowContext(r.Context(), `SELECT bio FROM users WHERE id = $1`, u.ID).Scan(&bio)
+	// display_name + bio aren't on the session-loaded user struct; fetch them
+	// directly (cheap, single-row) so /api/auth/me can address the user by name
+	// and prefill the profile editor.
+	var displayName, bio string
+	_ = s.DB.QueryRowContext(r.Context(),
+		`SELECT display_name, bio FROM users WHERE id = $1`, u.ID).Scan(&displayName, &bio)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user": authUserDTO{
-			ID:       u.ID,
-			Username: u.Username,
-			Email:    email,
+			ID:          u.ID,
+			Username:    u.Username,
+			DisplayName: displayName,
+			Email:       email,
 			// A live session implies the account cleared the login email gate
 			// (or has no email at all), so an email here is a confirmed one.
 			EmailVerified:   u.Email != "",

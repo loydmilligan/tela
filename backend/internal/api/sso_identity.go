@@ -85,13 +85,25 @@ func resolveSSOUser(ctx context.Context, tx *sql.Tx, id ssoIdentity) (int64, str
 		userID   int64
 		username string
 	)
+	var displayName string
 	err := tx.QueryRowContext(ctx, `
-		SELECT u.id, u.username
+		SELECT u.id, u.username, u.display_name
 		  FROM sso_identities si
 		  JOIN users u ON u.id = si.user_id
 		 WHERE si.provider = $1 AND si.subject = $2 AND u.is_active = 1`,
-		id.provider, id.subject).Scan(&userID, &username)
+		id.provider, id.subject).Scan(&userID, &username, &displayName)
 	if err == nil {
+		// Self-heal accounts provisioned before display_name existed (or before
+		// the IdP exposed a name): backfill from this login's claim, but never
+		// overwrite a name the user has since set themselves.
+		if displayName == "" {
+			if name := strings.TrimSpace(id.displayName); name != "" {
+				if _, err := tx.ExecContext(ctx,
+					`UPDATE users SET display_name = $1 WHERE id = $2`, name, userID); err != nil {
+					return 0, "", err
+				}
+			}
+		}
 		return userID, username, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -135,10 +147,14 @@ func resolveSSOUser(ctx context.Context, tx *sql.Tx, id ssoIdentity) (int64, str
 	if email.Valid {
 		verifiedAt = "tela_now()"
 	}
+	// Keep the IdP's original, properly-cased name as the display name — the
+	// username is just its slug. '' when the provider gave us nothing usable,
+	// which the UI falls back from to the username.
+	displayName = strings.TrimSpace(id.displayName)
 	err = tx.QueryRowContext(ctx, fmt.Sprintf(`
-		INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
-		VALUES ($1, $2, %s, $3, 0, 1)
-		RETURNING id`, verifiedAt), username, email, hash).Scan(&userID)
+		INSERT INTO users (username, display_name, email, email_verified_at, password_hash, is_instance_admin, is_active)
+		VALUES ($1, $2, $3, %s, $4, 0, 1)
+		RETURNING id`, verifiedAt), username, displayName, email, hash).Scan(&userID)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			// Email collided with an account we weren't allowed to link into.

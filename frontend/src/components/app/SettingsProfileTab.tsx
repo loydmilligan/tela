@@ -40,6 +40,8 @@ export function SettingsProfileTab() {
     <div className="flex flex-col gap-[var(--space-7)]">
       <AccountSection />
       <Separator />
+      <DisplayNameSection />
+      <Separator />
       <BioSection />
       <Separator />
       <ChangePasswordSection />
@@ -92,6 +94,76 @@ function AccountSection() {
         <span className="text-[length:var(--text-base)] text-[var(--text-primary)] font-[family-name:var(--font-sans)]">
           {me.data?.username ?? '—'}
         </span>
+      </div>
+    </section>
+  )
+}
+
+const MAX_DISPLAY_NAME_LEN = 80
+
+function DisplayNameSection() {
+  const me = useMe()
+  const updateProfile = useUpdateProfile()
+  const saved = me.data?.display_name ?? ''
+  const [value, setValue] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+  // null = uninitialised → mirror the loaded value; once edited we own it.
+  const name = value ?? saved
+  const dirty = value != null && value.trim() !== saved
+
+  async function handleSave() {
+    setSuccess(false)
+    setError(null)
+    try {
+      await updateProfile.mutateAsync({ display_name: name.trim() })
+      setValue(null)
+      setSuccess(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="settings-display-name"
+      className="flex flex-col gap-[var(--space-3)]"
+    >
+      <SectionHeader
+        title="Display name"
+        description="How tela addresses you (e.g. in the home greeting). Falls back to your username when blank."
+      />
+      <div className="flex flex-col gap-[var(--space-2)] max-w-[24rem]" id="settings-display-name">
+        <Input
+          aria-label="Display name"
+          value={name}
+          onChange={(e) => {
+            setValue(e.target.value.slice(0, MAX_DISPLAY_NAME_LEN))
+            setSuccess(false)
+          }}
+          placeholder={me.data?.username ?? 'Your name'}
+        />
+        {error ? (
+          <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p role="status" className="m-0 text-[length:var(--text-sm)] text-[var(--success)]">
+            Display name saved.
+          </p>
+        ) : null}
+        <div className="flex">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => void handleSave()}
+            disabled={!dirty || updateProfile.isPending}
+          >
+            {updateProfile.isPending ? 'Saving…' : 'Save name'}
+          </Button>
+        </div>
       </div>
     </section>
   )

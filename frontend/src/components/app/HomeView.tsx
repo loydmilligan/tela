@@ -51,6 +51,8 @@ export function HomeRoute() {
   const favorites = useFavorites()
   const visited = useMemo(() => readRecentPages(), [])
   const greeting = useMemo(() => greetingFor(new Date().getHours()), [])
+  // Address the user by their human name; fall back to the (slug) username.
+  const displayName = me.data?.display_name?.trim() || me.data?.username
 
   const favItems = (favorites.data ?? []).slice(0, DASH_LIMIT)
   const visitedItems = visited.slice(0, DASH_LIMIT)
@@ -63,7 +65,7 @@ export function HomeRoute() {
       <div className="max-w-[64rem] w-full mx-auto px-[var(--space-6)] py-[var(--space-7)] flex flex-col gap-[var(--space-6)]">
         <header className="flex flex-col gap-[var(--space-2)]">
           <h1 className="m-0 font-[family-name:var(--font-sans)] text-[length:var(--text-2xl)] leading-[var(--leading-tight)] font-semibold text-[var(--text-primary)]">
-            {me.data?.username ? `${greeting}, ${me.data.username}` : greeting}
+            {displayName ? `${greeting}, ${displayName}` : greeting}
           </h1>
           <div className="flex items-center gap-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-muted)]">
             <Stat value={spaceCount} label={spaceCount === 1 ? 'space' : 'spaces'} />

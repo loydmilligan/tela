@@ -319,6 +319,93 @@ func mustQueryRow(t *testing.T, d *sql.DB, query string, dest any, args ...any) 
 	}
 }
 
+// TestSSO_CapturesDisplayName — a new SSO account keeps the IdP's properly-cased
+// name as display_name, while the username is its slug. This is what lets the UI
+// greet "Ekrem Mert Esen" instead of the "ekrem-mert-esen" handle.
+func TestSSO_CapturesDisplayName(t *testing.T) {
+	d := newAPITestDB(t)
+	ctx := context.Background()
+
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	id := ssoIdentity{
+		provider:    "google",
+		subject:     "ext-ekrem",
+		email:       "ekrem@example.test",
+		displayName: "Ekrem Mert Esen",
+		linkTrusted: true,
+	}
+	userID, username, err := resolveSSOUser(ctx, tx, id)
+	if err != nil {
+		t.Fatalf("resolveSSOUser: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if username != "ekrem-mert-esen" {
+		t.Fatalf("username = %q, want slug ekrem-mert-esen", username)
+	}
+	if got := displayNameOf(t, d, userID); got != "Ekrem Mert Esen" {
+		t.Fatalf("display_name = %q, want %q", got, "Ekrem Mert Esen")
+	}
+}
+
+// TestSSO_BackfillsBlankDisplayName — a returning login on an account whose
+// display_name is blank (provisioned before the column / before the IdP gave a
+// name) self-heals from the claim; a name the user later set is never clobbered.
+func TestSSO_BackfillsBlankDisplayName(t *testing.T) {
+	d := newAPITestDB(t)
+
+	// Seed an account + identity with a blank display_name (the pre-migration shape).
+	var userID int64
+	hash, _ := auth.HashPassword("x")
+	mustQueryRow(t, d, `INSERT INTO users (username, display_name, email, password_hash, is_active)
+		VALUES ('ekrem-mert-esen','','ekrem@example.test',$1,1) RETURNING id`, &userID, hash)
+	mustExec(t, d, `INSERT INTO sso_identities (user_id, provider, subject, email)
+		VALUES ($1, 'google', 'ext-ekrem', 'ekrem@example.test')`, userID)
+
+	id := ssoIdentity{provider: "google", subject: "ext-ekrem", email: "ekrem@example.test", displayName: "Ekrem Mert Esen"}
+	resolveInTx(t, d, id)
+	if got := displayNameOf(t, d, userID); got != "Ekrem Mert Esen" {
+		t.Fatalf("after backfill: display_name = %q, want %q", got, "Ekrem Mert Esen")
+	}
+
+	// A subsequent login with a different claim must NOT overwrite the now-set name.
+	id.displayName = "Someone Else"
+	resolveInTx(t, d, id)
+	if got := displayNameOf(t, d, userID); got != "Ekrem Mert Esen" {
+		t.Fatalf("backfill clobbered a set name: display_name = %q", got)
+	}
+}
+
+func resolveInTx(t *testing.T, d *sql.DB, id ssoIdentity) {
+	t.Helper()
+	tx, err := d.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, _, err := resolveSSOUser(context.Background(), tx, id); err != nil {
+		t.Fatalf("resolveSSOUser: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func displayNameOf(t *testing.T, d *sql.DB, userID int64) string {
+	t.Helper()
+	var name string
+	if err := d.QueryRowContext(context.Background(), `SELECT display_name FROM users WHERE id = $1`, userID).Scan(&name); err != nil {
+		t.Fatalf("scan display_name: %v", err)
+	}
+	return name
+}
+
 func userIDByEmail(t *testing.T, d *sql.DB, email string) int64 {
 	t.Helper()
 	var id int64
