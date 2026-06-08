@@ -8,6 +8,7 @@ import { SettingsAuditTab } from '../components/app/SettingsAuditTab'
 import { SettingsNotificationsTab } from '../components/app/SettingsNotificationsTab'
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
+import { SettingsInstanceTab } from '../components/app/SettingsInstanceTab'
 import { SettingsSearchIndexTab } from '../components/app/SettingsSearchIndexTab'
 import { SettingsSyncTab } from '../components/app/SettingsSyncTab'
 import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
@@ -78,6 +79,13 @@ const AUDIT_TAB: SettingsTab = {
   render: () => <SettingsAuditTab />,
 }
 
+// Instance-wide runtime config (settings substrate) — instance-admin only.
+const INSTANCE_TAB: SettingsTab = {
+  id: 'instance',
+  label: 'Instance',
+  render: () => <SettingsInstanceTab />,
+}
+
 // Search index freshness — available to all users (scoped to their own spaces).
 const SEARCH_INDEX_TAB: SettingsTab = {
   id: 'search-index',
@@ -115,7 +123,7 @@ export function SettingsPage() {
     (orgs.data?.some((o) => o.my_role === 'admin') ?? false)
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, AUDIT_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, INSTANCE_TAB, AUDIT_TAB]
     }
     if (isOrgAdmin) {
       return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, ORG_ADMIN_TAB]
