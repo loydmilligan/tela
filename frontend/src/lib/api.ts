@@ -142,3 +142,31 @@ export function searchSemantic(
     { signal },
   )
 }
+
+// "Ask your docs" — POST /api/rag/ask. The backend retrieves the top hybrid
+// chunks (scoped to the caller's space_access, same anti-leak path as
+// searchSemantic), grounds an LLM prompt on them, and returns a generated
+// answer plus the cited source chunks (same shape as SemanticHit, minus the
+// search-only score/heading framing — it IS rag.Hit). Sources may be empty when
+// retrieval found nothing, in which case the answer says so.
+//
+// 503 codes to handle as a tasteful "unavailable" state (not an error toast):
+//   rag_disabled — no embedder configured (TELA_RAG_EMBED_URL unset)
+//   llm_disabled — no managed AI / completion model configured
+export const ASK_UNAVAILABLE_CODES = ['rag_disabled', 'llm_disabled'] as const
+
+export interface AskAnswer {
+  answer: string
+  sources: SemanticHit[]
+}
+
+export function askDocs(
+  body: { question: string; space_id?: number },
+  signal?: AbortSignal,
+): Promise<AskAnswer> {
+  return api<AskAnswer>('/api/rag/ask', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    signal,
+  })
+}

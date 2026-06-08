@@ -1,5 +1,5 @@
 import { Link, useParams } from '@tanstack/react-router'
-import { FilePlus, Home, Search, Share2 } from 'lucide-react'
+import { FilePlus, Home, Search, Share2, Sparkles } from 'lucide-react'
 import { PagesTree } from './PagesTree'
 import { SpacesList } from './SpacesList'
 import { FavoritesSidebarSection } from './FavoritesSidebarSection'
@@ -71,6 +71,17 @@ export function Sidebar({ open = false }: { open?: boolean }) {
           >
             {searchShortcut}
           </kbd>
+        </Button>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+        >
+          <Link to="/ask" aria-label="Ask your docs" title="Ask your docs">
+            <Sparkles width={14} height={14} />
+            <span className="flex-1 text-left">Ask</span>
+          </Link>
         </Button>
         <Button
           variant="ghost"

@@ -336,6 +336,24 @@ const searchRoute = createRoute({
   ),
 })
 
+// "Ask your docs" — a question box → an LLM answer grounded in the user's
+// pages (POST /api/rag/ask) with the cited source pages as links. `?space=`
+// scopes retrieval to one space. Lazy so the view (and its deps) stays off the
+// main chunk until navigated to; 503s gracefully when the instance has no
+// embedder / AI model configured.
+const askRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/ask',
+  validateSearch: (search: Record<string, unknown>): { space?: number } => {
+    const space = Number(search.space)
+    return Number.isFinite(space) && space > 0 ? { space } : {}
+  },
+  component: lazyRouteComponent(
+    () => import('../components/app/AskView'),
+    'AskRoute',
+  ),
+})
+
 // Graph view — full-screen force-directed map of pages + their connections
 // (wikilinks and the page hierarchy). `?focus=` scopes to a page's
 // neighborhood; `?space=` scopes to one space. Lazy so d3-force + the canvas
@@ -641,6 +659,7 @@ const routeTree = rootRoute.addChildren([
     orgManageRoute,
     sharedRoute,
     searchRoute,
+    askRoute,
     graphRoute,
     spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
   ]),
