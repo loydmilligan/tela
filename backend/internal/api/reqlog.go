@@ -6,18 +6,23 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 )
 
 // requestLogger emits one structured access-log line per request (method, path,
-// status, duration). There was no request/access log before — this is the first
-// observability primitive. The /api/health probe is skipped to avoid spamming
-// the log with load-balancer/healthcheck noise.
+// status, duration) AND records the Prometheus HTTP metrics — one place so the
+// access log and the metrics can never disagree. There was no request/access
+// log before — this is the first observability primitive. The /api/health probe
+// is skipped to avoid spamming the log (and the metrics) with load-balancer
+// /healthcheck noise.
 //
 // It sits OUTERMOST (around auth.Middleware) so it sees the final status. The
-// statusRecorder delegates Hijack/Flush so it doesn't break the Yjs websocket
-// upgrade or any streaming response that passes through.
-func requestLogger(next http.Handler) http.Handler {
+// mux is passed in only to resolve the matched route pattern (mux.Handler(r))
+// for a low-cardinality metric label — per-id paths collapse to one series
+// (see routePattern). The statusRecorder delegates Hijack/Flush so it doesn't
+// break the Yjs websocket upgrade or any streaming response that passes through.
+func requestLogger(mux *http.ServeMux, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/health" {
 			next.ServeHTTP(w, r)
@@ -30,11 +35,15 @@ func requestLogger(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
+		dur := time.Since(start)
+		route := routePattern(mux, r)
+		httpRequests.WithLabelValues(r.Method, route, strconv.Itoa(status)).Inc()
+		httpDuration.WithLabelValues(r.Method, route).Observe(dur.Seconds())
 		slog.Info("http",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", status,
-			"dur_ms", time.Since(start).Milliseconds(),
+			"dur_ms", dur.Milliseconds(),
 		)
 	})
 }

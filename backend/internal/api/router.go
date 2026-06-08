@@ -18,7 +18,7 @@ func Handler(d *sql.DB) http.Handler {
 	srv := New(d)
 	mux := http.NewServeMux()
 	registerRoutes(srv, mux)
-	return requestLogger(auth.Middleware(d, srv.auditWriter)(mux))
+	return requestLogger(mux, auth.Middleware(d, srv.auditWriter)(mux))
 }
 
 // HandlerWithServer is the wired-handler variant that also returns the
@@ -29,11 +29,19 @@ func HandlerWithServer(d *sql.DB) (http.Handler, *Server) {
 	srv := New(d)
 	mux := http.NewServeMux()
 	registerRoutes(srv, mux)
-	return requestLogger(auth.Middleware(d, srv.auditWriter)(mux)), srv
+	return requestLogger(mux, auth.Middleware(d, srv.auditWriter)(mux)), srv
 }
 
 func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", srv.Health)
+
+	// Prometheus exposition. NOT on auth.IsPublicPath, so auth.Middleware runs
+	// first (session cookie OR bearer PAT); the handler then gates to instance-
+	// admins via requireInstanceAdmin. A scraper authenticates with an admin-
+	// scoped PAT: `Authorization: Bearer tela_pat_<key>`. Metrics are produced
+	// in the request-logging path (reqlog.go), so there is one source for both
+	// the access log and the counters. See metrics.go.
+	mux.Handle("GET /metrics", srv.metricsHandler())
 
 	// M16.A.1.5 build-metadata probe. Public (see auth.IsPublicPath) — the MCP
 	// server (M16.B.1) hits this at startup with no credentials to compat-check
