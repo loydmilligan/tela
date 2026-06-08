@@ -990,6 +990,20 @@ func (s *Server) applyMoveTx(ctx context.Context, tx *sql.Tx, u *auth.User, k *a
 			if !canEdit(targetRole) {
 				return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required in target space"}
 			}
+			// Quota: the page and all its descendants become new pages in the
+			// target space, so gate on the target owner's per-space page limit.
+			var subtreeN int64
+			if err := tx.QueryRowContext(ctx, `
+				WITH RECURSIVE sub AS (
+				  SELECT id FROM pages WHERE id = $1 AND deleted_at IS NULL
+				  UNION ALL
+				  SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id WHERE p.deleted_at IS NULL
+				) SELECT count(*) FROM sub`, id).Scan(&subtreeN); err != nil {
+				return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "count moved subtree failed"}
+			}
+			if ae := s.checkPageQuotaN(ctx, targetSpaceID, subtreeN); ae != nil {
+				return models.Page{}, ae
+			}
 		}
 	}
 

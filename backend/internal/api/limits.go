@@ -51,6 +51,9 @@ type plan struct {
 	MaxStorageBytes  *int64 `json:"max_storage_bytes"`
 	MaxMembers       *int64 `json:"max_members"`
 	Listed           bool   `json:"listed"`
+	// Display pricing (no billing engine). PriceCents nil = custom/contact, 0 = free.
+	PriceCents  *int64 `json:"price_cents"`
+	PricePeriod string `json:"price_period"`
 }
 
 func nullToPtr(n sql.NullInt64) *int64 {
@@ -65,20 +68,21 @@ func nullToPtr(n sql.NullInt64) *int64 {
 // `name` column with orgs — every query selecting these must alias plans as p.
 // listed is INTEGER 0/1 (SQLite-era convention) — scanned into an int, not a
 // bool, because pgx is strict about the integer→bool mismatch.
-const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed`
+const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period`
 
 func scanPlan(row interface{ Scan(...any) error }) (plan, error) {
 	var (
-		p                               plan
-		spaces, pages, storage, members sql.NullInt64
-		listed                          int
+		p                                      plan
+		spaces, pages, storage, members, cents sql.NullInt64
+		listed                                 int
 	)
-	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed); err != nil {
+	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod); err != nil {
 		return plan{}, err
 	}
 	p.MaxSpaces, p.MaxPagesPerSpace = nullToPtr(spaces), nullToPtr(pages)
 	p.MaxStorageBytes, p.MaxMembers = nullToPtr(storage), nullToPtr(members)
 	p.Listed = listed == 1
+	p.PriceCents = nullToPtr(cents)
 	return p, nil
 }
 
@@ -201,9 +205,19 @@ func (s *Server) checkSpaceQuota(ctx context.Context, acct account) *apiErr {
 	return nil
 }
 
-// checkPageQuota gates creating one more page in spaceID (against the space's
-// owning account's per-space page limit).
+// checkPageQuota gates creating one more page in spaceID.
 func (s *Server) checkPageQuota(ctx context.Context, spaceID int64) *apiErr {
+	return s.checkPageQuotaN(ctx, spaceID, 1)
+}
+
+// checkPageQuotaN gates adding n pages to spaceID against the space's owning
+// account's per-space page limit. Used by the single create paths (n=1) and the
+// bulk paths — import (n=files) and cross-space move (n=subtree) — so a quota
+// can't be sidestepped in bulk.
+func (s *Server) checkPageQuotaN(ctx context.Context, spaceID, n int64) *apiErr {
+	if n <= 0 {
+		return nil
+	}
 	acct, err := spaceOwner(ctx, s.DB, spaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil // space doesn't exist yet/anymore; the caller's own checks handle it
@@ -222,7 +236,7 @@ func (s *Server) checkPageQuota(ctx context.Context, spaceID int64) *apiErr {
 	if err != nil {
 		return internalQuotaErr()
 	}
-	if used+1 > *p.MaxPagesPerSpace {
+	if used+n > *p.MaxPagesPerSpace {
 		return quotaErr("%s plan page limit for this space reached (%d) — upgrade for more", p.Name, *p.MaxPagesPerSpace)
 	}
 	return nil

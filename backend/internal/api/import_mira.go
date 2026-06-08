@@ -169,6 +169,9 @@ func (s *Server) importMiraCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	if !canEdit(role) {
 		return models.Page{}, "", &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
+	if ae := s.checkPageQuota(ctx, spaceID); ae != nil {
+		return models.Page{}, "", ae
+	}
 
 	if parentID != nil {
 		var parentSpaceID int64

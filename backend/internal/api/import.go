@@ -123,6 +123,16 @@ func (s *Server) ImportSpace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Quota: a real import bulk-creates one page per markdown file (folder nodes
+	// may add a few more, so this is a lower bound — enough to stop an import that
+	// would blow the owner's per-space page limit). Skipped for dry-run previews.
+	if !dryRun {
+		if ae := s.checkPageQuotaN(ctx, spaceID, int64(len(files))); ae != nil {
+			writeError(w, ae.Status, ae.Code, ae.Message)
+			return
+		}
+	}
+
 	result, err := mdimport.Import(ctx, tx, spaceID, parentID, u.ID, files, dryRun)
 	if err != nil {
 		log.Printf("import space %d: %v", spaceID, err)

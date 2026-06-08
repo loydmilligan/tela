@@ -149,6 +149,27 @@ func TestCheckPageQuota(t *testing.T) {
 	}
 }
 
+// Bulk paths (import, cross-space move) gate N pages at once.
+func TestCheckPageQuotaN(t *testing.T) {
+	d := newAPITestDB(t)
+	s := &Server{DB: d}
+	ctx := context.Background()
+	u := seedUser(t, d, "u", "pw12345678", false)
+	space := seedSpace(t, d, "S", "s", u)
+	tunePlan(t, d, "personal_free", "max_pages_per_space", 5)
+
+	seedPage(t, d, space, "p1") // 1 used, 4 remaining
+	if ae := s.checkPageQuotaN(ctx, space, 4); ae != nil {
+		t.Fatalf("1+4 == limit should pass, got %v", ae)
+	}
+	if ae := s.checkPageQuotaN(ctx, space, 5); ae == nil || ae.Code != "quota_exceeded" {
+		t.Fatalf("1+5 > limit should 402, got %v", ae)
+	}
+	if ae := s.checkPageQuotaN(ctx, space, 0); ae != nil {
+		t.Fatalf("n=0 is a no-op, got %v", ae)
+	}
+}
+
 // ── storage quota ─────────────────────────────────────────────────────────────
 
 func TestCheckStorageQuota(t *testing.T) {
