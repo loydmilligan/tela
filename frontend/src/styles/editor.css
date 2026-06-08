@@ -930,6 +930,15 @@
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E");
   }
 
+  /* A highlight mark (`==text==`) in a header cell renders as a loud yellow box
+     that reads as a stray highlighter (agents sometimes ==mark== a header). The
+     header is already bold — neutralise the mark's chrome so it reads cleanly. */
+  .tela-milkdown .ProseMirror table th mark {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+
   /* Sort headers + filter box (reader-side, added by the plugin on large tables). */
   .tela-milkdown .ProseMirror table th.tela-th-sortable {
     cursor: pointer;
