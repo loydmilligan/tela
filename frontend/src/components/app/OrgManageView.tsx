@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
+  Copy,
   Globe,
   History,
   KeyRound,
@@ -30,7 +31,23 @@ import {
   useRemoveGroupMember,
 } from '../../lib/queries/groups'
 import { useDeleteOrgSSO, useOrgSSO, usePutOrgSSO } from '../../lib/queries/org-sso'
-import type { Group, Org, OrgMember, OrgRole } from '../../lib/types'
+import {
+  useAddOrgHostname,
+  useDeleteOrgHostname,
+  useOrgHostnames,
+  useVerifyOrgHostname,
+} from '../../lib/queries/org-hostnames'
+import {
+  useOrgLoginSettings,
+  usePutOrgLoginSettings,
+} from '../../lib/queries/org-login-settings'
+import type {
+  Group,
+  Org,
+  OrgHostname,
+  OrgMember,
+  OrgRole,
+} from '../../lib/types'
 import { AuditRow } from './SettingsAuditTab'
 import { PlanTierSelect } from './PlanTierSelect'
 import { Badge } from '../ui/badge'
@@ -148,6 +165,10 @@ function OrgManageBody({ org, isInstance }: { org: Org; isInstance: boolean }) {
               Single sign-on
             </TabsTrigger>
           ) : null}
+          <TabsTrigger value="domains">
+            <Globe width={14} height={14} />
+            Custom domains
+          </TabsTrigger>
           <TabsTrigger value="activity">
             <History width={14} height={14} />
             Activity
@@ -165,6 +186,9 @@ function OrgManageBody({ org, isInstance }: { org: Org; isInstance: boolean }) {
             <SSOPanel org={org} />
           </TabsContent>
         ) : null}
+        <TabsContent value="domains">
+          <CustomDomainsPanel org={org} />
+        </TabsContent>
         <TabsContent value="activity">
           <OrgActivityPanel orgId={org.id} />
         </TabsContent>
@@ -801,6 +825,373 @@ function SSOPanel({ org }: { org: Org }) {
         </div>
       </form>
     </div>
+  )
+}
+
+// Custom login domains — vanity hostnames that serve the org's white-labeled
+// sign-in screen (e.g. wiki.example.com). Distinct from the email-domain
+// auto-join mappings (those drive membership; these drive the login surface).
+// Org-admin accessible. Also hosts the per-org login-method toggles that govern
+// what that custom-domain login screen offers.
+function CustomDomainsPanel({ org }: { org: Org }) {
+  const orgId = org.id
+  const hostnames = useOrgHostnames(orgId)
+
+  return (
+    <div className="flex flex-col gap-[var(--space-6)]">
+      <div className="flex flex-col gap-[var(--space-4)]">
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+          Serve a white-labeled sign-in screen on your own domain (e.g.{' '}
+          <span className="font-[family-name:var(--font-mono)]">
+            wiki.example.com
+          </span>
+          ). Add the hostname, point DNS at us, then verify.
+        </p>
+
+        {hostnames.isLoading ? (
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            Loading domains…
+          </p>
+        ) : hostnames.isError ? (
+          <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+            Couldn't load custom domains.
+          </p>
+        ) : hostnames.data && hostnames.data.length > 0 ? (
+          <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-3)]">
+            {hostnames.data.map((h) => (
+              <OrgHostnameRow key={h.hostname} orgId={orgId} hostname={h} />
+            ))}
+          </ul>
+        ) : (
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            No custom domains yet.
+          </p>
+        )}
+
+        <AddHostnameForm orgId={orgId} />
+      </div>
+
+      <LoginMethodsSection orgId={orgId} />
+    </div>
+  )
+}
+
+function OrgHostnameRow({
+  orgId,
+  hostname,
+}: {
+  orgId: number
+  hostname: OrgHostname
+}) {
+  const verify = useVerifyOrgHostname(orgId)
+  const del = useDeleteOrgHostname(orgId)
+  const [error, setError] = useState<string | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const isActive = hostname.status === 'active'
+
+  async function handleVerify() {
+    setError(null)
+    try {
+      await verify.mutateAsync(hostname.hostname)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'verification_failed') {
+        setError('DNS not found yet — propagation can take a few minutes.')
+      } else if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to verify.')
+      }
+    }
+  }
+
+  return (
+    <li
+      className={cn(
+        'm-0 list-none flex flex-col gap-[var(--space-3)]',
+        'px-[var(--space-3)] py-[var(--space-3)]',
+        'rounded-[var(--radius-sm)]',
+        'border border-[var(--border-subtle)] bg-[var(--surface-1)]',
+      )}
+    >
+      <div className="flex items-center gap-[var(--space-3)]">
+        <span className="flex-1 min-w-0 truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-mono)]">
+          {hostname.hostname}
+        </span>
+        <Badge variant={isActive ? 'accent' : 'muted'}>
+          {isActive ? 'Active' : 'Pending'}
+        </Badge>
+        {!isActive ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => void handleVerify()}
+            disabled={verify.isPending}
+          >
+            {verify.isPending ? 'Verifying…' : 'Verify'}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label={`Remove ${hostname.hostname}`}
+          onClick={() => setConfirmOpen(true)}
+          disabled={del.isPending}
+          className="text-[var(--text-muted)] hover:text-[var(--danger)]"
+        >
+          <Trash2 width={14} height={14} />
+        </Button>
+      </div>
+
+      {error ? (
+        <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
+          {error}
+        </p>
+      ) : null}
+
+      {!isActive ? (
+        <div className="flex flex-col gap-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-2)] p-[var(--space-3)]">
+          <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+            Add these DNS records, then verify
+          </span>
+          <DnsRecord
+            kind="TXT"
+            name={hostname.txt_name}
+            value={hostname.txt_value}
+          />
+          <DnsRecord
+            kind="CNAME"
+            name={hostname.hostname}
+            value={hostname.cname_target}
+          />
+        </div>
+      ) : null}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove "{hostname.hostname}"?</DialogTitle>
+            <DialogDescription>
+              Its white-labeled login screen stops working. You can re-add it
+              later, but DNS verification will need to run again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => {
+                void del.mutateAsync(hostname.hostname)
+                setConfirmOpen(false)
+              }}
+              disabled={del.isPending}
+            >
+              {del.isPending ? 'Removing…' : 'Remove'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </li>
+  )
+}
+
+// A single read-only DNS record line (record type + name + value) with a copy
+// affordance on the value. Mirrors the CommandBlock copy pattern in
+// SettingsSyncTab.
+function DnsRecord({
+  kind,
+  name,
+  value,
+}: {
+  kind: 'TXT' | 'CNAME'
+  name: string
+  value: string
+}) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      if (!navigator.clipboard?.writeText) return
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Best-effort — the user can select the text manually.
+    }
+  }
+  return (
+    <div className="flex flex-col gap-[var(--space-1)]">
+      <div className="flex items-center justify-between gap-[var(--space-2)]">
+        <span className="flex items-center gap-[var(--space-2)] text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+          <Badge variant="muted">{kind}</Badge>
+          <span className="font-[family-name:var(--font-mono)] text-[var(--text-primary)] break-all">
+            {name}
+          </span>
+        </span>
+        <Button type="button" variant="ghost" size="sm" onClick={() => void copy()}>
+          <Copy width={13} height={13} />
+          <span>{copied ? 'Copied!' : 'Copy'}</span>
+        </Button>
+      </div>
+      <pre className="m-0 overflow-x-auto rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-1)] px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--text-xs)] text-[var(--text-primary)] font-[family-name:var(--font-mono)] leading-[var(--leading-relaxed)] whitespace-pre-wrap break-all">
+        {value}
+      </pre>
+    </div>
+  )
+}
+
+function AddHostnameForm({ orgId }: { orgId: number }) {
+  const [hostname, setHostname] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const add = useAddOrgHostname(orgId)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = hostname.trim()
+    if (!trimmed) {
+      setError('Hostname is required.')
+      return
+    }
+    setError(null)
+    try {
+      await add.mutateAsync(trimmed)
+      setHostname('')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError('That hostname is already in use.')
+      } else if (err instanceof ApiError && err.status === 400) {
+        setError(
+          "That's not a valid hostname — use a subdomain like wiki.example.com, not a bare domain.",
+        )
+      } else if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to add hostname.')
+      }
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      noValidate
+      className="flex flex-col gap-[var(--space-2)] pt-[var(--space-4)] border-t border-[var(--border-subtle)]"
+    >
+      <label
+        htmlFor={`add-hostname-${orgId}`}
+        className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
+      >
+        Add a custom domain
+      </label>
+      <div className="flex items-start gap-[var(--space-2)]">
+        <div className="flex-1 min-w-0">
+          <Input
+            id={`add-hostname-${orgId}`}
+            placeholder="wiki.example.com"
+            autoComplete="off"
+            value={hostname}
+            onChange={(e) => setHostname(e.target.value)}
+            aria-invalid={error != null}
+          />
+        </div>
+        <Button type="submit" variant="secondary" disabled={add.isPending || hostname.trim() === ''}>
+          <Globe width={14} height={14} />
+          <span>{add.isPending ? 'Adding…' : 'Add'}</span>
+        </Button>
+      </div>
+      {error ? (
+        <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
+          {error}
+        </p>
+      ) : null}
+    </form>
+  )
+}
+
+// Per-org login-method toggles. These ONLY affect the org's custom-domain login
+// screen, not the canonical-host login. The backend refuses to disable both
+// when the org has no SSO configured (it would lock everyone out) — we surface
+// that and roll the optimistic toggle back.
+function LoginMethodsSection({ orgId }: { orgId: number }) {
+  const settings = useOrgLoginSettings(orgId)
+  const put = usePutOrgLoginSettings(orgId)
+  const [error, setError] = useState<string | null>(null)
+
+  const current = settings.data
+  if (!current) {
+    return (
+      <section className="flex flex-col gap-[var(--space-2)] pt-[var(--space-5)] border-t border-[var(--border-subtle)]">
+        <h2 className="m-0 font-[family-name:var(--font-sans)] text-[length:var(--text-base)] text-[var(--text-primary)]">
+          Login methods
+        </h2>
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          {settings.isError ? "Couldn't load login methods." : 'Loading login methods…'}
+        </p>
+      </section>
+    )
+  }
+
+  async function save(next: { password_enabled: boolean; social_enabled: boolean }) {
+    setError(null)
+    try {
+      await put.mutateAsync(next)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        setError(
+          "You can't disable both without single sign-on — at least one sign-in method must stay on.",
+        )
+      } else if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to save login methods.')
+      }
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-[var(--space-3)] pt-[var(--space-5)] border-t border-[var(--border-subtle)]">
+      <header className="flex flex-col gap-[var(--space-1)]">
+        <h2 className="m-0 font-[family-name:var(--font-sans)] text-[length:var(--text-base)] text-[var(--text-primary)]">
+          Login methods
+        </h2>
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+          Choose what the sign-in screen on your custom domains offers. This
+          doesn't change the canonical {`${location.hostname}`} login.
+        </p>
+      </header>
+
+      <label className="flex items-center gap-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-primary)]">
+        <Checkbox
+          checked={current.password_enabled}
+          disabled={put.isPending}
+          onCheckedChange={(v) =>
+            void save({ ...current, password_enabled: v === true })
+          }
+        />
+        Password sign-in
+      </label>
+      <label className="flex items-center gap-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-primary)]">
+        <Checkbox
+          checked={current.social_enabled}
+          disabled={put.isPending}
+          onCheckedChange={(v) =>
+            void save({ ...current, social_enabled: v === true })
+          }
+        />
+        Social sign-in
+      </label>
+
+      {error ? (
+        <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
+          {error}
+        </p>
+      ) : null}
+    </section>
   )
 }
 

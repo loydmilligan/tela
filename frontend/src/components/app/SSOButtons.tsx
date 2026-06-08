@@ -3,6 +3,7 @@ import { Building2 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { useSSOProviders } from '../../lib/queries/auth'
+import { useHostContext } from '../../lib/queries/host-context'
 
 // Most-recognized first, so the list reads in a familiar order regardless of
 // the backend's alphabetical sort.
@@ -16,11 +17,17 @@ const PROVIDER_ORDER = ['google', 'microsoft', 'github']
 export function SSOButtons({ next }: { next: string }) {
   const { data } = useSSOProviders()
   const orgSSO = data?.org_sso ?? false
-  const providers = [...(data?.providers ?? [])].sort(
-    (a, b) =>
-      (PROVIDER_ORDER.indexOf(a.name) + 1 || 99) -
-      (PROVIDER_ORDER.indexOf(b.name) + 1 || 99),
-  )
+  // On a custom domain that's disabled social sign-in, suppress the social
+  // provider buttons — the org-SSO by-domain affordance stays. Degrades to
+  // "social on" while host context loads / on error.
+  const socialEnabled = useHostContext().data?.login.social_enabled ?? true
+  const providers = socialEnabled
+    ? [...(data?.providers ?? [])].sort(
+        (a, b) =>
+          (PROVIDER_ORDER.indexOf(a.name) + 1 || 99) -
+          (PROVIDER_ORDER.indexOf(b.name) + 1 || 99),
+      )
+    : []
 
   if (providers.length === 0 && !orgSSO) return null
 

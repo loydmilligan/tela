@@ -297,6 +297,44 @@ export interface OrgDomain {
   created_at: string
 }
 
+// A custom login domain (vanity hostname) an org can attach to white-label its
+// sign-in screen — e.g. wiki.example.com. DISTINCT from OrgDomain above: that's
+// an email-domain auto-join mapping (identity → membership); THIS is a DNS
+// hostname that serves the org's own login surface. Mirrors backend's
+// OrgHostname. `status` is 'pending' until DNS verification passes, then
+// 'active'. The txt_*/cname_target fields are the DNS records the admin must
+// add; verified_at is null while pending.
+export interface OrgHostname {
+  hostname: string
+  status: 'pending' | 'active'
+  txt_name: string
+  txt_value: string
+  cname_target: string
+  verified_at: string | null
+  created_at: string
+}
+
+// Per-org toggles for which sign-in methods its custom-domain login screen
+// offers. GET/PUT /api/orgs/{id}/login-settings. The backend rejects disabling
+// BOTH when the org has no SSO configured (you'd lock everyone out).
+export interface OrgLoginSettings {
+  password_enabled: boolean
+  social_enabled: boolean
+}
+
+// GET /api/host-context — PUBLIC, host-derived. `org` is null on the canonical
+// host and the owning org on a custom domain; `login` drives which sign-in
+// affordances the (white-labeled) login screen shows. Mirrors backend's
+// hostContextDTO.
+export interface HostContext {
+  org: { id: number; name: string; slug: string } | null
+  login: {
+    password_enabled: boolean
+    social_enabled: boolean
+    org_sso_available: boolean
+  }
+}
+
 // One way a user reaches a space (GET /api/spaces/{id}/access). Mirrors
 // backend's accessSource. name is the org/group name; absent for direct.
 export interface AccessSource {

@@ -6,6 +6,7 @@ import {
   useLogin,
   useResendVerification,
 } from '../lib/queries/auth'
+import { useHostContext } from '../lib/queries/host-context'
 import { Button } from '../components/ui/button'
 import {
   Card,
@@ -35,6 +36,12 @@ export function LoginPage() {
   const login = useLogin()
   const resend = useResendVerification()
   const nextPath = sanitizeNextPath(search.next) ?? '/'
+  // Host-derived white-labeling: on an org's custom domain we address the org by
+  // name and honor its login-method toggles. Degrades to the canonical default
+  // (org null, all methods on) while loading / on error — never blocks the form.
+  const host = useHostContext().data
+  const org = host?.org ?? null
+  const passwordEnabled = host?.login.password_enabled ?? true
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -89,13 +96,19 @@ export function LoginPage() {
       <Card className="tela-auth-card w-full bg-[var(--surface-1)] shadow-[var(--shadow-lg)]">
         <CardHeader className="gap-[var(--space-2)] px-[var(--space-7)] pt-[var(--space-7)] pb-[var(--space-2)]">
           <CardTitle className="text-[length:var(--text-2xl)] font-semibold tracking-[-0.01em]">
-            Sign in
+            {org ? `Sign in to ${org.name}` : 'Sign in'}
           </CardTitle>
           <CardDescription>
-            Welcome back — sign in to your tela workspace.
+            {org
+              ? `Welcome back — sign in to ${org.name}.`
+              : 'Welcome back — sign in to your tela workspace.'}
           </CardDescription>
         </CardHeader>
         <CardBody className="gap-[var(--space-5)] px-[var(--space-7)] pb-[var(--space-7)] pt-[var(--space-2)]">
+          {/* On a custom domain that's disabled password sign-in, the credential
+              form is hidden entirely — the user signs in via SSO / social below.
+              Any bounced-back error (e.g. ?sso_error) still surfaces. */}
+          {passwordEnabled ? (
           <form
             onSubmit={handleSubmit}
             className="flex flex-col gap-[var(--space-4)]"
@@ -183,6 +196,28 @@ export function LoginPage() {
               {login.isPending ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
+          ) : (
+            <div className="flex flex-col gap-[var(--space-4)]">
+              <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+                Password sign-in is turned off for this domain. Use one of the
+                options below.
+              </p>
+              {error ? (
+                <div
+                  role="alert"
+                  style={{
+                    borderColor:
+                      'color-mix(in oklch, var(--danger) 25%, transparent)',
+                    backgroundColor:
+                      'color-mix(in oklch, var(--danger) 8%, transparent)',
+                  }}
+                  className="m-0 rounded-[var(--radius-sm)] border px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--danger)]"
+                >
+                  {error}
+                </div>
+              ) : null}
+            </div>
+          )}
           <SSOButtons next={nextPath} />
           <AuthFooterLink>
             New to tela?{' '}
