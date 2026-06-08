@@ -77,15 +77,28 @@ session whose binding doesn't match the request's org context (canonical session
 a custom host, or vice-versa, or wrong org → `ErrInvalidSession`). A forced or
 exfiltrated cookie can't be replayed across front doors.
 
-## Login screen (per-org)
+## Login screen + branding (per-org)
 
 `GET /api/host-context` (public, host-derived; the SPA raw-fetches it pre-login)
-returns `{ org, login: { password_enabled, social_enabled, org_sso_available } }`.
-On a custom domain the SPA brands the login screen with the org name and shows only
-the enabled methods. `password_enabled=false` is **enforced server-side** in
-`Login` (not just hidden) — instance admins are exempt so a misconfig can't lock
-the operator out. Org admins manage hostnames + toggles under
-**Settings → org → Custom domains** (`OrgManageView`).
+returns `{ org: { id, name, slug, logo_url, accent }, login: { password_enabled,
+social_enabled, org_sso_available } }`. On a custom domain the SPA:
+
+- brands the login screen **and app shell** with the org — name, `logo_url`, and
+  `accent` (injected as a runtime `--accent` override that wins over the theme
+  stylesheet and survives theme switches; `BrandLogo` is the shared brand
+  component across auth header / sidebar / app header);
+- shows only the enabled sign-in methods; `password_enabled=false` is **enforced
+  server-side** in `Login` (not just hidden), instance admins exempt;
+- offers a **one-click org-SSO button** when `org_sso_available` — `SSOStart`
+  resolves the org from the request host (no email/domain prompt) when an
+  `OrgContext` is present.
+
+Branding (`org_branding`, migration `0027`) and login toggles (`org_login_settings`,
+`0026`) are validated (https logo; hex/oklch/rgb accent) and managed by org admins
+under **Settings → org → Custom domains** (`OrgManageView`). `GET
+/api/orgs/{id}/hostnames/{hostname}/health` is a live DNS + TLS reachability probe
+for admin self-diagnosis (SSRF-guarded: never dials a hostname resolving to a
+private/loopback address).
 
 ## TLS / serving (`deploy/proxy/Caddyfile`, `tls_check.go`)
 
