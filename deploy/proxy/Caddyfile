@@ -6,6 +6,16 @@
 		# the RIGHTMOST entry, so this pairs to deny client-supplied XFF spoofs.
 		trusted_proxies static private_ranges
 	}
+
+	# Org custom domains (direct-TLS mode only): Caddy provisions a Let's Encrypt
+	# cert on first request to an unknown SNI host, but ONLY if this ask endpoint
+	# returns 200 — i.e. the host is an ACTIVE org_hostname. Without the gate,
+	# anyone pointing DNS at the box could force unbounded cert issuance. Caddy
+	# appends ?domain=<host>; the backend answers 200/404. Reached container-to-
+	# container, so it bypasses the public site blocks (which 404 /api/internal/*).
+	on_demand_tls {
+		ask http://backend:8080/api/internal/tls-check
+	}
 }
 
 # Site address. Defaults to :80 — the right value behind an external TLS
@@ -17,6 +27,13 @@
 	# HSTS — honored by browsers over HTTPS (the terminator's edge, or Caddy's
 	# own cert in direct-TLS mode). Applies to every response. No preload.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# The on-demand-TLS ask endpoint is for Caddy only (container-to-container).
+	# 404 it from the WAN so the public internet can't probe which hostnames are
+	# active. Caddy's own `ask` call hits backend:8080 directly, not this block.
+	handle /api/internal/* {
+		respond 404
+	}
 
 	# ── Backend: API + websockets + public page permalinks ──────────────────
 	# /api + /p are noindex: API is JSON, /p permalinks are owner-private by
@@ -211,5 +228,75 @@
 			header X-Robots-Tag "noindex"
 			reverse_proxy frontend:80
 		}
+	}
+}
+
+# ── Org custom domains (tela.ngss.io & co.) ─────────────────────────────────
+# Every https host NOT matched by the canonical block above (more specific →
+# wins) lands here. on_demand provisions the cert (gated by the global ask).
+# This is the white-label APP surface only: it serves login + the app SPA +
+# /api + shares, and is BLANKET noindex — none of the canonical block's
+# indexable carve-outs (landing apex, /{handle}, /public, /u, /discover,
+# sitemap) exist here, so a custom-domain app page can never be mistaken for the
+# public/SEO surface. Requires direct-TLS mode (TELA_SITE_ADDRESS set to the
+# canonical host, 80+443 published); behind Cloudflare on-demand never fires.
+https:// {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	tls {
+		on_demand
+	}
+
+	# App-only surface → never indexed. Block-scoped, so it applies to every
+	# response regardless of which handle serves it.
+	header X-Robots-Tag "noindex"
+
+	# Internal ask endpoint is never WAN-reachable.
+	handle /api/internal/* {
+		respond 404
+	}
+
+	# Share ".pdf" trick + OG bot-gate, so shares created on this org's domain
+	# render + unfurl here too (mirror of the canonical block; keep the UA regex
+	# in sync with botUASubstrings in backend/internal/api/public_share.go).
+	@share_pdf_page path_regexp sharepdfpage ^/share/([^/]+)/p/([^/]+)\.pdf$
+	handle @share_pdf_page {
+		rewrite * /api/share/{re.sharepdfpage.1}/pdf?p={re.sharepdfpage.2}&{query}
+		reverse_proxy backend:8080
+	}
+	@share_pdf path_regexp sharepdf ^/share/([^/]+)\.pdf$
+	handle @share_pdf {
+		rewrite * /api/share/{re.sharepdf.1}/pdf
+		reverse_proxy backend:8080
+	}
+	@share_bots {
+		path /share/*
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|bot/|bot\s)"
+	}
+	handle @share_bots {
+		reverse_proxy backend:8080
+	}
+
+	# App needs these; all under the block-scoped noindex above.
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+	handle /ws/* {
+		reverse_proxy backend:8080
+	}
+	handle /p/* {
+		reverse_proxy backend:8080
+	}
+	@dav path /dav /dav/*
+	handle @dav {
+		reverse_proxy backend:8080
+	}
+	handle /share/* {
+		reverse_proxy frontend:80
+	}
+
+	# Everything else = the app SPA (login lands here, branded for the org).
+	# Never the marketing landing.
+	handle {
+		reverse_proxy frontend:80
 	}
 }

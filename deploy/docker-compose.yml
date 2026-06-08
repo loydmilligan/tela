@@ -14,6 +14,9 @@ services:
       TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
       TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}
       TELA_API_KEY_SECRET:  ${TELA_API_KEY_SECRET}
+      # Org custom domains: stable CNAME target shown to org admins when adding a
+      # hostname (defaults to the canonical host). See docs/custom-domains.md.
+      TELA_CUSTOM_DOMAIN_TARGET: ${TELA_CUSTOM_DOMAIN_TARGET:-}
       # Postgres DSN. Constructed here from the TELA_PG_* vars (see deploy/.env)
       # so the backend never needs the individual pieces — host is the compose
       # service name `postgres`, reachable on the internal network only.
@@ -127,10 +130,13 @@ services:
       # Direct TLS (no external terminator): set TELA_SITE_ADDRESS=your.domain in
       # .env, then publish 80 + 443 (uncomment) so Caddy can run the ACME HTTP
       # challenge and serve HTTPS. Leave commented when behind Cloudflare/an LB.
+      # Org custom domains REQUIRE this direct-TLS mode (Caddy on-demand-issues
+      # their certs); behind Cloudflare on-demand never fires. See docs/custom-domains.md.
       # - "80:80"
       # - "443:443"
     environment:
-      # Passed through from .env; empty → Caddyfile default of :80.
+      # Passed through from .env; empty → Caddyfile default of :80. For org
+      # custom domains set it to the canonical host (direct-TLS mode).
       - TELA_SITE_ADDRESS
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
