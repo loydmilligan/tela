@@ -189,7 +189,13 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "llm_disabled", "managed AI is not configured")
 		return
 	}
+	// Same per-account compute throttle as the cloud proxies — ask runs an LLM
+	// call, so an authenticated user can't hammer it unbounded.
+	if !s.cloudRateOK(w, "ask", account{Kind: accountUser, ID: u.ID}) {
+		return
+	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
 	var req askRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")

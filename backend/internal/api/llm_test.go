@@ -36,7 +36,7 @@ func TestCloudChat_GatedByEntitlement(t *testing.T) {
 	ts, d, srv := newWiredServerOnDiskWithSrv(t)
 	srv.llm = llm.NewServiceWithCompleter(&fakeCompleter{answer: "hi"})
 	uid := seedUser(t, d, "freeuser", "freepw1234", false) // default personal_free, no ask_docs
-	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeRead, nil)
+	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeWrite, nil)
 
 	resp := bearerRequest(t, http.MethodPost, ts.URL+"/api/cloud/llm/v1/chat/completions", rawKey,
 		`{"model":"x","messages":[{"role":"user","content":"hello"}]}`)
@@ -55,7 +55,7 @@ func TestCloudChat_EntitledReturnsCompletion(t *testing.T) {
 	if _, err := d.Exec(`UPDATE users SET plan_key='personal_plus' WHERE id=$1`, uid); err != nil {
 		t.Fatalf("set plan: %v", err)
 	}
-	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeRead, nil)
+	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeWrite, nil)
 
 	resp := bearerRequest(t, http.MethodPost, ts.URL+"/api/cloud/llm/v1/chat/completions", rawKey,
 		`{"model":"x","messages":[{"role":"system","content":"sys"},{"role":"user","content":"hello"}]}`)

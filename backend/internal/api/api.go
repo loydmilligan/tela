@@ -37,6 +37,11 @@ type Server struct {
 	// be turned into a mail bomb.
 	authLimiter *authRateLimiter
 
+	// cloudLimiter throttles the managed-compute proxies (cloud embed/chat,
+	// ask-your-docs) per ACCOUNT so a single entitled PAT can't hammer paid
+	// LLM/embedder compute into an unbounded bill or DoS the shared clients.
+	cloudLimiter *authRateLimiter
+
 	// davDeletes is the WebDAV mass-delete brake (sync §6): a per-(api_key,space)
 	// sliding window that refuses a sync client's delete once an anomalous
 	// fraction of the space has already vanished, so a runaway client can't wipe a
@@ -104,7 +109,8 @@ func New(db *sql.DB) *Server {
 		shareLimiter: newShareRateLimiter(),
 		auditWriter:  auth.NewAuditWriter(db),
 		Mailer:       mailer.FromEnv(),
-		authLimiter:  newAuthRateLimiter(),
+		authLimiter:  newAuthRateLimiter(authRateWindow, authRateLimit),
+		cloudLimiter: newAuthRateLimiter(cloudRateWindow, cloudRateLimit),
 		davDeletes:   newDavDeleteGuard(),
 		rag:          rag.NewService(db, rag.ConfigFromEnv()),
 		llm:          llm.NewService(llm.ConfigFromEnv()),
@@ -118,6 +124,7 @@ func New(db *sql.DB) *Server {
 	// is fine: each test process is short-lived.
 	go s.shareLimiter.sweepLoop(context.Background())
 	go s.authLimiter.sweepLoop(context.Background())
+	go s.cloudLimiter.sweepLoop(context.Background())
 	go s.davDeletes.sweepLoop(context.Background())
 	// Background auto-reindex worker (no-op when the embedder is unconfigured).
 	// Page writes call s.rag.QueueReindex; this drains the debounced queue.

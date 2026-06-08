@@ -37,6 +37,11 @@ func NewOpenAIClient(base, model, token string) *OpenAIClient {
 
 func (c *OpenAIClient) Model() string { return c.model }
 
+// maxChatResponseBytes caps how much we read from the provider's response. A
+// chat completion is at most a few hundred KB; 16 MiB is a generous ceiling
+// that still guards against an unbounded/malicious upstream body.
+const maxChatResponseBytes = 16 << 20
+
 // chatMessage / chatRequest / chatResponse are the minimal OpenAI chat shapes we
 // need. Defined here (and reused by the cloud proxy) so request/response framing
 // lives in one place.
@@ -84,7 +89,9 @@ func (c *OpenAIClient) Complete(ctx context.Context, systemPrompt, userPrompt st
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(resp.Body)
+	// Cap the upstream read so a malicious/buggy provider (or attacker-controlled
+	// TELA_LLM_URL in the BYO case) can't OOM the process with a huge body.
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxChatResponseBytes))
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("llm chat: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}

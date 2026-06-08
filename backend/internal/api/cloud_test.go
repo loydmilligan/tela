@@ -28,7 +28,7 @@ func TestCloudEntitlements_ReturnsPlanFeatures(t *testing.T) {
 	if _, err := d.Exec(`UPDATE users SET plan_key='personal_plus' WHERE id=$1`, uid); err != nil {
 		t.Fatalf("set plan: %v", err)
 	}
-	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeRead, nil)
+	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeWrite, nil)
 
 	resp := bearerRequest(t, http.MethodGet, ts.URL+"/api/cloud/entitlements", rawKey, "")
 	defer resp.Body.Close()
@@ -46,7 +46,7 @@ func TestCloudEmbed_GatedByEntitlement(t *testing.T) {
 	auth.ResetAPIKeySecretCache()
 	ts, d, _ := newWiredServerOnDiskWithSrv(t)
 	uid := seedUser(t, d, "freeuser", "freepw1234", false) // default personal_free, no managed_rag
-	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeRead, nil)
+	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeWrite, nil)
 
 	resp := bearerRequest(t, http.MethodPost, ts.URL+"/api/cloud/ollama/api/embed", rawKey,
 		`{"model":"x","input":"hello"}`)
@@ -65,7 +65,7 @@ func TestCloudEmbed_EntitledReturnsEmbedding(t *testing.T) {
 	if _, err := d.Exec(`UPDATE users SET plan_key='personal_plus' WHERE id=$1`, uid); err != nil {
 		t.Fatalf("set plan: %v", err)
 	}
-	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeRead, nil)
+	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeWrite, nil)
 
 	resp := bearerRequest(t, http.MethodPost, ts.URL+"/api/cloud/ollama/api/embed", rawKey,
 		`{"model":"x","input":"hello world"}`)
@@ -88,5 +88,25 @@ func TestCloudEndpoints_RejectNoToken(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("bogus token status=%d want 401", resp.StatusCode)
+	}
+}
+
+// A read-scoped (or space-pinned) PAT must NOT be able to spend managed compute,
+// even on an entitled account — a leaked low-privilege token can't run up a bill.
+func TestCloudEmbed_RejectsReadScopedToken(t *testing.T) {
+	t.Setenv("TELA_API_KEY_SECRET", cloudTestSecret)
+	auth.ResetAPIKeySecretCache()
+	ts, d, _ := newWiredServerOnDiskWithSrv(t)
+	uid := seedUser(t, d, "reader", "readerpw12", false)
+	if _, err := d.Exec(`UPDATE users SET plan_key='personal_plus' WHERE id=$1`, uid); err != nil {
+		t.Fatalf("set plan: %v", err)
+	}
+	rawKey, _ := seedAPIKeyForUser(t, d, uid, auth.ScopeRead, nil) // read scope
+
+	resp := bearerRequest(t, http.MethodPost, ts.URL+"/api/cloud/ollama/api/embed", rawKey,
+		`{"model":"x","input":"hello"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("read-scoped token status=%d want 403", resp.StatusCode)
 	}
 }

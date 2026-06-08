@@ -50,6 +50,11 @@ const maxEmbedChars = 1600
 // rather than embed a near-empty fragment.
 const embedMinChars = 64
 
+// maxEmbedResponseBytes caps how much we read from the embedder's response — a
+// 1024-d float vector is a few KB; 8 MiB is a generous ceiling that still
+// guards against an unbounded/malicious upstream body.
+const maxEmbedResponseBytes = 8 << 20
+
 func clampRunes(text string, n int) string {
 	r := []rune(text)
 	if len(r) <= n {
@@ -101,7 +106,10 @@ func (e *OllamaEmbedder) embedOnce(ctx context.Context, input string) (vec []flo
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(resp.Body)
+	// Cap the upstream read: a malicious or buggy embedder (or, in the BYO
+	// case, an attacker-controlled TELA_RAG_EMBED_URL) could otherwise return a
+	// huge body and OOM the process. An embedding response is tiny.
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxEmbedResponseBytes))
 	if resp.StatusCode != http.StatusOK {
 		over := resp.StatusCode == http.StatusBadRequest && strings.Contains(string(raw), "context length")
 		return nil, over, fmt.Errorf("ollama embed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
