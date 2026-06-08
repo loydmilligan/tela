@@ -9,7 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -98,7 +98,7 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("og_image: load page %d: %v", pageID, err)
+		slog.Error("og_image: load page", "page_id", pageID, "err", err)
 		writeInternalHTML(w)
 		return
 	}
@@ -121,7 +121,7 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 
 	pngBytes, err := renderOGImage(title, spaceName)
 	if err != nil {
-		log.Printf("og_image: render page %d: %v", pageID, err)
+		slog.Error("og_image: render page", "page_id", pageID, "err", err)
 		writeInternalHTML(w)
 		return
 	}

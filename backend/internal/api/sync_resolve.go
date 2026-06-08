@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -63,7 +63,7 @@ func (s *Server) ApplyFileSync(
 			return
 		}
 		if err := upsertSyncBase(ctx, s.DB, k.ID, page.ID, title, d.Body, props); err != nil {
-			log.Printf("sync base upsert (page %d, key %d): %v", page.ID, k.ID, err)
+			slog.Error("sync base upsert", "page_id", page.ID, "key_id", k.ID, "err", err)
 		}
 	}()
 

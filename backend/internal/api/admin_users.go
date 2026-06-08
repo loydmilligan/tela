@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -137,7 +137,7 @@ func (s *Server) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 	// exists, so a provisioning hiccup shouldn't fail the create — the startup
 	// backfill will catch it on next boot).
 	if _, err := EnsurePersonalSpace(ctx, s.DB, id, username); err != nil {
-		log.Printf("personal space for new user %d (%s): %v", id, username, err)
+		slog.Error("personal space for new user", "user_id", id, "username", username, "err", err)
 	}
 	dto, err := selectAdminUserByID(ctx, s.DB, id)
 	if err != nil {

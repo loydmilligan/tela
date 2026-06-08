@@ -8,7 +8,7 @@ package mailer
 
 import (
 	"context"
-	"log"
+	"log/slog"
 )
 
 // Message is one transactional email. Text is the plaintext fallback; HTML is
@@ -40,10 +40,10 @@ type Mailer interface {
 func FromEnv() Mailer {
 	cfg, ok := smtpConfigFromEnv()
 	if !ok {
-		log.Printf("mailer: TELA_SMTP_HOST unset — using log fallback (emails printed, not sent)")
+		slog.Warn("mailer: TELA_SMTP_HOST unset — using log fallback (emails printed, not sent)")
 		return &LogMailer{}
 	}
-	log.Printf("mailer: SMTP relay %s:%d (tls=%s, from=%s)", cfg.host, cfg.port, cfg.tls, cfg.from)
+	slog.Info("mailer: SMTP relay", "host", cfg.host, "port", cfg.port, "tls", cfg.tls, "from", cfg.from)
 	return &smtpMailer{cfg: cfg}
 }
 
@@ -53,6 +53,6 @@ func FromEnv() Mailer {
 type LogMailer struct{}
 
 func (m *LogMailer) Send(_ context.Context, msg Message) error {
-	log.Printf("mailer(log): to=%q subject=%q\n--- text ---\n%s\n--- end ---", msg.To, msg.Subject, msg.Text)
+	slog.Info("mailer(log): email not sent (no relay)", "to", msg.To, "subject", msg.Subject, "text", msg.Text)
 	return nil
 }

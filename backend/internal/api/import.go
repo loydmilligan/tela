@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -135,7 +135,7 @@ func (s *Server) ImportSpace(w http.ResponseWriter, r *http.Request) {
 
 	result, err := mdimport.Import(ctx, tx, spaceID, parentID, u.ID, files, dryRun)
 	if err != nil {
-		log.Printf("import space %d: %v", spaceID, err)
+		slog.Error("import space", "space_id", spaceID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "import failed")
 		return
 	}

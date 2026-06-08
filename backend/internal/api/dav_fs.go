@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -230,7 +230,7 @@ func (fs *davFS) openRead(ctx context.Context, segs []string) (webdavFile, error
 		// collapse the merge to LWW. Writes (PUT) own base updates thereafter.
 		if pr := davPrincipalFrom(ctx); pr.k != nil {
 			if err := insertSyncBaseIfAbsent(ctx, fs.s.DB, pr.k.ID, p.ID, p.Title, p.Body, p.Props); err != nil {
-				log.Printf("dav: sync base seed on read (page %d): %v", p.ID, err)
+				slog.Error("dav: sync base seed on read", "page_id", p.ID, "err", err)
 			}
 		}
 		return newDavReadFile(leaf, p), nil
@@ -425,7 +425,7 @@ func (fs *davFS) RemoveAll(ctx context.Context, name string) error {
 			return err
 		}
 		if !had {
-			log.Printf("dav: refused DELETE of page %d — key %d never synced it", p.ID, pr.k.ID)
+			slog.Warn("dav: refused DELETE of page — key never synced it", "page_id", p.ID, "key_id", pr.k.ID)
 			return os.ErrPermission
 		}
 		live, err := countLiveSpacePages(ctx, fs.s.DB, sp.id)
@@ -433,7 +433,7 @@ func (fs *davFS) RemoveAll(ctx context.Context, name string) error {
 			return err
 		}
 		if !fs.s.davDeletes.allow(pr.k.ID, sp.id, live) {
-			log.Printf("dav: refused DELETE of page %d — mass-delete guard tripped (key %d, space %d)", p.ID, pr.k.ID, sp.id)
+			slog.Warn("dav: refused DELETE of page — mass-delete guard tripped", "page_id", p.ID, "key_id", pr.k.ID, "space_id", sp.id)
 			return os.ErrPermission
 		}
 	}
@@ -476,7 +476,7 @@ func (fs *davFS) removeSpaceFile(ctx context.Context, st *davReqState, sp davSpa
 			return err
 		}
 		if !fs.s.davDeletes.allow(pr.k.ID, sp.id, live) {
-			log.Printf("dav: refused DELETE of file %d — mass-delete guard tripped (key %d, space %d)", f.id, pr.k.ID, sp.id)
+			slog.Warn("dav: refused DELETE of file — mass-delete guard tripped", "file_id", f.id, "key_id", pr.k.ID, "space_id", sp.id)
 			return os.ErrPermission
 		}
 	}

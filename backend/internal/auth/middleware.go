@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -94,7 +94,7 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 	if _, err := d.ExecContext(ctx,
 		`UPDATE sessions SET expires_at = $1, last_seen_at = tela_now() WHERE id = $2`,
 		newExpires, sessionID); err != nil {
-		log.Printf("auth: session slide failed for %s: %v", sessionID, err)
+		slog.Error("auth: session slide failed", "session_id", sessionID, "err", err)
 	}
 
 	return &User{ID: userID, Username: username, Email: email.String, IsInstanceAdmin: isAdmin == 1}, nil
@@ -324,7 +324,7 @@ func Middleware(d *sql.DB, aw *AuditWriter) func(http.Handler) http.Handler {
 					return
 				}
 				if err != nil {
-					log.Printf("auth: api key lookup failed: %v", err)
+					slog.Error("auth: api key lookup failed", "err", err)
 					writeInternal(w)
 					return
 				}
@@ -351,7 +351,7 @@ func Middleware(d *sql.DB, aw *AuditWriter) func(http.Handler) http.Handler {
 					return
 				}
 				if err != nil {
-					log.Printf("auth: api key user lookup failed: %v", err)
+					slog.Error("auth: api key user lookup failed", "err", err)
 					writeInternal(sw)
 					return
 				}
@@ -371,7 +371,7 @@ func Middleware(d *sql.DB, aw *AuditWriter) func(http.Handler) http.Handler {
 				return
 			}
 			if err != nil {
-				log.Printf("auth: session lookup failed: %v", err)
+				slog.Error("auth: session lookup failed", "err", err)
 				writeInternal(w)
 				return
 			}

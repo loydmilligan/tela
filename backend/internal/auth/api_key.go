@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
@@ -98,14 +98,14 @@ func LoadAPIKeySecret() []byte {
 		}
 		buf := make([]byte, 32)
 		if _, err := rand.Read(buf); err != nil {
-			log.Fatalf("auth: generate api-key secret: %v", err)
+			// Boot-fatal: no usable HMAC secret. Keep fatal semantics.
+			slog.Error("auth: generate api-key secret", "err", err)
+			os.Exit(1)
 		}
 		apiKeySecretVal = buf
-		log.Println("==================================================================")
-		log.Println(">>> TELA_API_KEY_SECRET not set and no persisted secret — generated a")
-		log.Println(">>>   random per-process key. ALL API keys invalidate on restart.")
-		log.Println(">>>   This path is only hit when InitAPIKeySecret was not called.")
-		log.Println("==================================================================")
+		slog.Warn("auth: TELA_API_KEY_SECRET not set and no persisted secret — generated a " +
+			"random per-process key; ALL API keys invalidate on restart " +
+			"(only hit when InitAPIKeySecret was not called)")
 	})
 	return apiKeySecretVal
 }
@@ -248,7 +248,7 @@ func LookupAPIKey(ctx context.Context, d *sql.DB, secret []byte, rawKey string) 
 	go func(id int64) {
 		if _, ierr := d.ExecContext(context.Background(),
 			`UPDATE api_keys SET last_used_at = tela_now() WHERE id = $1`, id); ierr != nil {
-			log.Printf("auth: api_key last_used_at update failed for %d: %v", id, ierr)
+			slog.Error("auth: api_key last_used_at update failed", "key_id", id, "err", ierr)
 		}
 	}(k.ID)
 

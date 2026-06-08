@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -165,7 +165,7 @@ func applyAutoJoin(ctx context.Context, db *sql.DB, userID int64, email string) 
 	if err := db.QueryRowContext(ctx,
 		`SELECT org_id FROM org_email_domains WHERE domain = $1`, domain).Scan(&orgID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			log.Printf("auto-join lookup for %s: %v", domain, err)
+			slog.Error("auto-join lookup", "domain", domain, "err", err)
 		}
 		return
 	}
@@ -174,7 +174,7 @@ func applyAutoJoin(ctx context.Context, db *sql.DB, userID int64, email string) 
 		VALUES ($1, $2, 'member')
 		ON CONFLICT (org_id, user_id) DO NOTHING`, orgID, userID)
 	if err != nil {
-		log.Printf("auto-join for user %d (%s): %v", userID, domain, err)
+		slog.Error("auto-join", "user_id", userID, "domain", domain, "err", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {

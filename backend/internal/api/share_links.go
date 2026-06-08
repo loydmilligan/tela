@@ -10,7 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -128,7 +128,9 @@ func resolveShareSecret(ctx context.Context, st *settings.Store) []byte {
 	}
 	b, err := st.GetOrInitSecret(ctx, "share", shareSecretBytes)
 	if err != nil {
-		log.Fatalf("share: resolve persisted secret: %v", err)
+		// Boot-fatal: share cookies can't be signed without the secret.
+		slog.Error("share: resolve persisted secret", "err", err)
+		os.Exit(1)
 	}
 	return b
 }

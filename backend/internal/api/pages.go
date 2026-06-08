@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -456,7 +456,7 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		createSource = "agent"
 	}
 	if _, err := insertPageRevision(ctx, s.DB, id, page.Body, page.Title, props, &createAuthor, createSource); err != nil {
-		log.Printf("page %d create revision failed: %v", id, err)
+		slog.Error("page create revision failed", "page_id", id, "err", err)
 	}
 	// Index the new page's content (debounced, async; no-op when RAG is off).
 	// Lives in the core so both POST /api/pages and the MCP create_page tool
@@ -466,7 +466,7 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	s.notifyPageMentions(ctx, u, id, req.SpaceID, page.Title, page.Body)
 	// The author follows their new page, so they hear about others' edits to it.
 	if err := s.setSubscription(ctx, u.ID, "page", id); err != nil {
-		log.Printf("page %d author auto-subscribe failed: %v", id, err)
+		slog.Error("page author auto-subscribe failed", "page_id", id, "err", err)
 	}
 	return page, nil
 }
@@ -651,7 +651,7 @@ func (s *Server) afterPageWrite(ctx context.Context, existing, p models.Page, bo
 		// Title is folded into each chunk's embed text and body is the source,
 		// so reindex on either change (debounced, async; no-op when RAG is off).
 		if _, err := insertPageRevision(ctx, s.DB, p.ID, p.Body, p.Title, p.Props, &authorID, source); err != nil {
-			log.Printf("page %d snapshot revision failed: %v", p.ID, err)
+			slog.Error("page snapshot revision failed", "page_id", p.ID, "err", err)
 		}
 		s.rag.QueueReindex(p.ID)
 	}
@@ -660,7 +660,7 @@ func (s *Server) afterPageWrite(ctx context.Context, existing, p models.Page, bo
 	// masking it with stale CRDT state. DB-wins, per the agent-backend sync design.
 	if agentWrite && bodyProvided && p.Body != existing.Body {
 		if err := s.rooms.resetPage(ctx, s.DB, p.ID); err != nil {
-			log.Printf("page %d collab overlay reset failed: %v", p.ID, err)
+			slog.Error("page collab overlay reset failed", "page_id", p.ID, "err", err)
 		}
 	}
 }

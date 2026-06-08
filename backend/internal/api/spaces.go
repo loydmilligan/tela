@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -168,7 +168,7 @@ func (s *Server) seedWelcomePage(ctx context.Context, u *auth.User, sp models.Sp
 		Title:   "Welcome to " + sp.Name,
 		Body:    welcomePageBody(sp.Name),
 	}); ae != nil {
-		log.Printf("seed welcome page for space %d: %s", sp.ID, ae.Message)
+		slog.Error("seed welcome page for space", "space_id", sp.ID, "err", ae.Message)
 	}
 }
 

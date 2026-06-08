@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -287,7 +287,7 @@ func gcPreSnapshotUpdates(db *sql.DB, pageID, seq int64) {
 	if _, err := db.ExecContext(context.Background(),
 		`DELETE FROM page_yjs_updates WHERE page_id = $1 AND seq < $2`,
 		pageID, seq); err != nil {
-		log.Printf("ws page %d: GC pre-snapshot updates failed (seq < %d): %v", pageID, seq, err)
+		slog.Error("ws: GC pre-snapshot updates failed", "page_id", pageID, "seq_lt", seq, "err", err)
 	}
 }
 
@@ -461,11 +461,11 @@ func (s *Server) handleWSConn(conn *websocket.Conn, pageID int64) {
 	defer s.rooms.release(rm, p)
 
 	if err := rm.initFromDB(ctx, s.DB); err != nil {
-		log.Printf("ws page %d: init room: %v", pageID, err)
+		slog.Error("ws: init room", "page_id", pageID, "err", err)
 		return
 	}
 	if err := s.sendSyncInit(ctx, conn, rm); err != nil {
-		log.Printf("ws page %d: sync-init: %v", pageID, err)
+		slog.Error("ws: sync-init", "page_id", pageID, "err", err)
 		return
 	}
 
@@ -514,7 +514,7 @@ func (s *Server) handleWSFrame(ctx context.Context, rm *room, sender *peer, fram
 	case tagUpdate:
 		seq, shouldRequest, err := rm.appendUpdate(ctx, s.DB, payload)
 		if err != nil {
-			log.Printf("ws page %d: append update: %v", rm.pageID, err)
+			slog.Error("ws: append update", "page_id", rm.pageID, "err", err)
 			return
 		}
 		broadcastToOthers(ctx, rm, sender, encodeFrame(tagUpdate, payload))
@@ -524,7 +524,7 @@ func (s *Server) handleWSFrame(ctx context.Context, rm *room, sender *peer, fram
 		}
 	case tagSnapshotResp:
 		if err := rm.applySnapshot(ctx, s.DB, payload); err != nil {
-			log.Printf("ws page %d: apply snapshot: %v", rm.pageID, err)
+			slog.Error("ws: apply snapshot", "page_id", rm.pageID, "err", err)
 		}
 	case tagAwareness:
 		// Awareness is ephemeral: rebroadcast to other peers, never persist.

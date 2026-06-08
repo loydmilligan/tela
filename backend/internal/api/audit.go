@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -35,7 +35,7 @@ func writeAudit(ctx context.Context, ex emailTokenExec, actorID *int64, action, 
 		`INSERT INTO access_audit (actor_user_id, action, target_kind, target_id, detail)
 		 VALUES ($1, $2, $3, $4, $5)`,
 		actorID, action, targetKind, targetID, detail); err != nil {
-		log.Printf("audit %s: %v", action, err)
+		slog.Error("audit write failed", "action", action, "err", err)
 	}
 }
 

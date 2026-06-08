@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -206,7 +206,7 @@ func (s *Server) SSOCallback(w http.ResponseWriter, r *http.Request) {
 			ssoFail(w, r, "an account already exists for this email; sign in with your original method")
 			return
 		}
-		log.Printf("sso: sign-in failed (provider=%s): %v", id.provider, err)
+		slog.Error("sso: sign-in failed", "provider", id.provider, "err", err)
 		ssoFail(w, r, "could not complete sign-in")
 		return
 	}

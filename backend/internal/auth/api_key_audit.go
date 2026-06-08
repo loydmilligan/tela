@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -78,7 +78,7 @@ func (aw *AuditWriter) Submit(ev AuditEvent) {
 	case aw.ch <- auditMsg{ev: ev}:
 	default:
 		if n := aw.dropped.Add(1); n%64 == 1 {
-			log.Printf("auth: api_key audit buffer full, dropped %d events total", n)
+			slog.Warn("auth: api_key audit buffer full, dropping events", "dropped_total", n)
 		}
 	}
 }
@@ -182,8 +182,8 @@ func (aw *AuditWriter) run() {
 			`INSERT INTO api_key_audit (api_key_id, method, path, status_code)
 			 VALUES ($1, $2, $3, $4)`,
 			msg.ev.APIKeyID, msg.ev.Method, msg.ev.Path, msg.ev.StatusCode); err != nil {
-			log.Printf("auth: api_key audit insert failed (key=%d %s %s -> %d): %v",
-				msg.ev.APIKeyID, msg.ev.Method, msg.ev.Path, msg.ev.StatusCode, err)
+			slog.Error("auth: api_key audit insert failed",
+				"key_id", msg.ev.APIKeyID, "method", msg.ev.Method, "path", msg.ev.Path, "status", msg.ev.StatusCode, "err", err)
 		}
 	}
 }

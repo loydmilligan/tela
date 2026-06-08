@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,7 +23,30 @@ import (
 // to SIGKILL (default 10s grace).
 const shutdownGrace = 10 * time.Second
 
+// initLogger installs the process-wide slog default: a text handler for
+// human-readable dev logs, or JSON when TELA_LOG_FORMAT=json so prod logs flow
+// into Loki/Grafana as structured records. Called first thing in main().
+func initLogger() {
+	var h slog.Handler
+	if os.Getenv("TELA_LOG_FORMAT") == "json" {
+		h = slog.NewJSONHandler(os.Stderr, nil)
+	} else {
+		h = slog.NewTextHandler(os.Stderr, nil)
+	}
+	slog.SetDefault(slog.New(h))
+}
+
+// fatal logs at Error level then exits non-zero. Replaces log.Fatalf while
+// keeping its boot-fatal semantics (no panic/Goexit, so deferred Close calls
+// in callers are intentionally skipped — same as the old log.Fatalf).
+func fatal(msg string, args ...any) {
+	slog.Error(msg, args...)
+	os.Exit(1)
+}
+
 func main() {
+	initLogger()
+
 	addr := ":8080"
 	if v := os.Getenv("TELA_ADDR"); v != "" {
 		addr = v
@@ -31,19 +54,19 @@ func main() {
 
 	dsn := os.Getenv("TELA_DATABASE_URL")
 	if dsn == "" {
-		log.Fatalf("TELA_DATABASE_URL is required (e.g. postgres://tela:pass@localhost:5432/tela?sslmode=disable)")
+		fatal("TELA_DATABASE_URL is required (e.g. postgres://tela:pass@localhost:5432/tela?sslmode=disable)")
 	}
 
 	d, err := db.Open(dsn)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		fatal("open db", "err", err)
 	}
 	defer d.Close()
 
 	if err := db.Migrate(context.Background(), d); err != nil {
-		log.Fatalf("migrate db: %v", err)
+		fatal("migrate db", "err", err)
 	}
-	log.Printf("db ready")
+	slog.Info("db ready")
 
 	// One-off CLI subcommands run after migrations, then exit (no server).
 	// Headless parity for the ops runbook (docs/operations.md).
@@ -64,21 +87,20 @@ func main() {
 			runListUsers(d)
 			return
 		default:
-			log.Fatalf("unknown subcommand %q (known: reindex-all, create-admin, set-plan, list-users)", os.Args[1])
+			fatal("unknown subcommand (known: reindex-all, create-admin, set-plan, list-users)", "subcommand", os.Args[1])
 		}
 	}
 
 	bs, err := auth.BootstrapFromEnv(context.Background(), d)
 	if err != nil {
-		log.Fatalf("bootstrap admin: %v", err)
+		fatal("bootstrap admin", "err", err)
 	}
 	if bs.Created {
 		if bs.GeneratedPassword != "" {
-			log.Println("==================================================================")
-			log.Printf(">>> Tela bootstrap admin: %s / %s — change it in Settings.", bs.Username, bs.GeneratedPassword)
-			log.Println("==================================================================")
+			slog.Warn("bootstrap admin created — change the password in Settings",
+				"username", bs.Username, "generated_password", bs.GeneratedPassword)
 		} else {
-			log.Printf(">>> Tela bootstrap admin '%s' created from TELA_ADMIN_PASSWORD env.", bs.Username)
+			slog.Info("bootstrap admin created from TELA_ADMIN_PASSWORD env", "username", bs.Username)
 		}
 	}
 
@@ -90,7 +112,7 @@ func main() {
 	// writing home (docs/visibility-model.md). Backfills the bootstrap admin
 	// and any pre-existing users; non-fatal so a hiccup never blocks boot.
 	if err := api.EnsurePersonalSpacesForAll(context.Background(), d); err != nil {
-		log.Printf("personal space backfill: %v", err)
+		slog.Error("personal space backfill", "err", err)
 	}
 
 	// rootCtx is cancelled on SIGINT/SIGTERM. Threaded into StartAuditGC so
@@ -113,22 +135,22 @@ func main() {
 	serverErr := make(chan error, 1)
 	go func() { serverErr <- httpSrv.ListenAndServe() }()
 
-	log.Printf("tela backend listening on %s", addr)
+	slog.Info("tela backend listening", "addr", addr)
 
 	select {
 	case err := <-serverErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server failed: %v", err)
+			fatal("server failed", "err", err)
 		}
 	case <-rootCtx.Done():
-		log.Printf("shutdown signal received, draining for up to %s", shutdownGrace)
+		slog.Info("shutdown signal received, draining", "grace", shutdownGrace)
 		// Order matters: HTTP shutdown FIRST so in-flight bearer requests
 		// finish populating the audit buffer, THEN AuditWriter.Close so
 		// those last rows make it to the DB before the worker stops.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 		defer cancel()
 		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("http shutdown: %v", err)
+			slog.Error("http shutdown", "err", err)
 		}
 		apiSrv.AuditWriter().Close()
 	}
@@ -144,20 +166,20 @@ func logStartupConfig() {
 	if base == "" {
 		base = "(unset; defaulting to http://localhost:8780)"
 	}
-	log.Printf("config: public_base_url=%s cookie_secure=%t", base, auth.CookieSecure())
+	slog.Info("config", "public_base_url", base, "cookie_secure", auth.CookieSecure())
 
 	if os.Getenv("TELA_SMTP_HOST") == "" {
-		log.Printf("config: SMTP unset — verify/reset emails are LOGGED, not sent. " +
+		slog.Warn("config: SMTP unset — verify/reset emails are LOGGED, not sent. " +
 			"Open self-registration needs SMTP to be usable; set TELA_SMTP_* for multi-user.")
 	} else {
-		log.Printf("config: SMTP host=%s", os.Getenv("TELA_SMTP_HOST"))
+		slog.Info("config: SMTP enabled", "host", os.Getenv("TELA_SMTP_HOST"))
 	}
 
 	if rcfg := rag.ConfigFromEnv(); rcfg.EmbedURL == "" {
-		log.Printf("config: RAG/semantic search DISABLED (TELA_RAG_EMBED_URL unset). " +
+		slog.Warn("config: RAG/semantic search DISABLED (TELA_RAG_EMBED_URL unset). " +
 			"Full-text search still works; set the URL to enable embeddings.")
 	} else {
-		log.Printf("config: RAG embedder url=%s model=%s dim=%d", rcfg.EmbedURL, rcfg.EmbedModel, rcfg.Dim)
+		slog.Info("config: RAG embedder", "url", rcfg.EmbedURL, "model", rcfg.EmbedModel, "dim", rcfg.Dim)
 	}
 }
 
@@ -167,14 +189,14 @@ func logStartupConfig() {
 func runReindexAll(d *sql.DB) {
 	cfg := rag.ConfigFromEnv()
 	if cfg.EmbedURL == "" {
-		log.Fatalf("reindex-all: TELA_RAG_EMBED_URL is not set — nothing to embed against")
+		fatal("reindex-all: TELA_RAG_EMBED_URL is not set — nothing to embed against")
 	}
 	svc := rag.NewService(d, cfg)
 	if !svc.Enabled() {
-		log.Fatalf("reindex-all: embedder disabled")
+		fatal("reindex-all: embedder disabled")
 	}
 	ctx := context.Background()
-	log.Printf("reindex-all: model=%q url=%q", cfg.EmbedModel, cfg.EmbedURL)
+	slog.Info("reindex-all: starting", "model", cfg.EmbedModel, "url", cfg.EmbedURL)
 
 	type spaceRef struct {
 		id   int64
@@ -182,32 +204,33 @@ func runReindexAll(d *sql.DB) {
 	}
 	rows, err := d.QueryContext(ctx, `SELECT id, name FROM spaces ORDER BY id`)
 	if err != nil {
-		log.Fatalf("reindex-all: list spaces: %v", err)
+		fatal("reindex-all: list spaces", "err", err)
 	}
 	var spaces []spaceRef
 	for rows.Next() {
 		var s spaceRef
 		if err := rows.Scan(&s.id, &s.name); err != nil {
 			rows.Close()
-			log.Fatalf("reindex-all: scan space: %v", err)
+			fatal("reindex-all: scan space", "err", err)
 		}
 		spaces = append(spaces, s)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		log.Fatalf("reindex-all: iterate spaces: %v", err)
+		fatal("reindex-all: iterate spaces", "err", err)
 	}
 
 	var totalPages, totalChunks int
 	for i, s := range spaces {
 		pages, chunks, err := svc.ReindexSpace(ctx, s.id)
 		if err != nil {
-			log.Fatalf("reindex-all: space %d %q: %v", s.id, s.name, err)
+			fatal("reindex-all: space failed", "space_id", s.id, "name", s.name, "err", err)
 		}
 		totalPages += pages
 		totalChunks += chunks
-		log.Printf("reindex-all: [%d/%d] space %d %q — %d pages, %d chunks", i+1, len(spaces), s.id, s.name, pages, chunks)
+		slog.Info("reindex-all: space done",
+			"progress", i+1, "total", len(spaces), "space_id", s.id, "name", s.name, "pages", pages, "chunks", chunks)
 	}
-	log.Printf("reindex-all: DONE — %d spaces, %d pages, %d chunks re-embedded with %q",
-		len(spaces), totalPages, totalChunks, cfg.EmbedModel)
+	slog.Info("reindex-all: DONE",
+		"spaces", len(spaces), "pages", totalPages, "chunks", totalChunks, "model", cfg.EmbedModel)
 }

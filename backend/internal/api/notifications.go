@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -91,7 +91,7 @@ func (s *Server) inAppEnabled(ctx context.Context, userID int64, eventType strin
 		return true
 	}
 	if err != nil {
-		log.Printf("notification pref lookup (%s/user %d): %v", eventType, userID, err)
+		slog.Error("notification pref lookup", "event_type", eventType, "user_id", userID, "err", err)
 		return true
 	}
 	return enabled == 1
@@ -111,7 +111,7 @@ func (s *Server) emitNotifications(ctx context.Context, ins ...notificationInput
 		}
 		payload, err := json.Marshal(data)
 		if err != nil {
-			log.Printf("notification marshal (%s): %v", in.Type, err)
+			slog.Error("notification marshal", "type", in.Type, "err", err)
 			continue
 		}
 		switch {
@@ -145,7 +145,7 @@ func (s *Server) emitNotifications(ctx context.Context, ins ...notificationInput
 				nullableInt64(in.SpaceID), string(payload))
 		}
 		if err != nil {
-			log.Printf("emit notification (%s → user %d): %v", in.Type, in.UserID, err)
+			slog.Error("emit notification", "type", in.Type, "user_id", in.UserID, "err", err)
 		}
 	}
 }
@@ -172,7 +172,7 @@ func (s *Server) notifyPageMentions(ctx context.Context, actor *auth.User, pageI
 		SELECT DISTINCT user_id FROM space_access
 		 WHERE space_id = $1 AND user_id <> $2 AND user_id IN (`+strings.Join(ph, ",")+`)`, args...)
 	if err != nil {
-		log.Printf("notify mentions: resolve recipients for page %d: %v", pageID, err)
+		slog.Error("notify mentions: resolve recipients", "page_id", pageID, "err", err)
 		return
 	}
 	defer rows.Close()
@@ -180,7 +180,7 @@ func (s *Server) notifyPageMentions(ctx context.Context, actor *auth.User, pageI
 	for rows.Next() {
 		var uid int64
 		if err := rows.Scan(&uid); err != nil {
-			log.Printf("notify mentions: scan recipient: %v", err)
+			slog.Error("notify mentions: scan recipient", "err", err)
 			return
 		}
 		recipients = append(recipients, uid)
@@ -219,7 +219,7 @@ func (s *Server) notifyPageUpdate(ctx context.Context, editor *auth.User, pageID
 		      OR (sub.subject_kind = 'space' AND sub.subject_id = $2) )`,
 		pageID, spaceID, editor.ID)
 	if err != nil {
-		log.Printf("notify page update: resolve followers for page %d: %v", pageID, err)
+		slog.Error("notify page update: resolve followers", "page_id", pageID, "err", err)
 		return
 	}
 	defer rows.Close()
@@ -227,7 +227,7 @@ func (s *Server) notifyPageUpdate(ctx context.Context, editor *auth.User, pageID
 	for rows.Next() {
 		var uid int64
 		if err := rows.Scan(&uid); err != nil {
-			log.Printf("notify page update: scan follower: %v", err)
+			slog.Error("notify page update: scan follower", "err", err)
 			return
 		}
 		recipients = append(recipients, uid)
@@ -260,7 +260,7 @@ func (s *Server) notifySpaceAdded(ctx context.Context, actor *auth.User, addedUs
 	}
 	var name string
 	if err := s.DB.QueryRowContext(ctx, `SELECT name FROM spaces WHERE id = $1`, spaceID).Scan(&name); err != nil {
-		log.Printf("notify space_added: lookup space %d: %v", spaceID, err)
+		slog.Error("notify space_added: lookup space", "space_id", spaceID, "err", err)
 		return
 	}
 	actorID := actor.ID
@@ -289,7 +289,7 @@ func (s *Server) notifyCommentReply(ctx context.Context, replier *auth.User, pag
 	)
 	if err := s.DB.QueryRowContext(ctx,
 		`SELECT title, space_id FROM pages WHERE id = $1`, pageID).Scan(&title, &spaceID); err != nil {
-		log.Printf("notify comment_reply: lookup page %d: %v", pageID, err)
+		slog.Error("notify comment_reply: lookup page", "page_id", pageID, "err", err)
 		return
 	}
 	var x int

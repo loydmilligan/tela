@@ -7,7 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -150,11 +150,11 @@ func BackfillAdminEmailFromEnv(ctx context.Context, d *sql.DB) {
 		 WHERE username = $4 AND is_instance_admin = 1 AND email IS NULL`,
 		email, nowStamp(), nowStamp(), username)
 	if err != nil {
-		log.Printf("auth: backfill admin email: %v", err)
+		slog.Error("auth: backfill admin email", "err", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		log.Printf("auth: assigned TELA_ADMIN_EMAIL to admin %q", username)
+		slog.Info("auth: assigned TELA_ADMIN_EMAIL to admin", "username", username)
 	}
 }
 

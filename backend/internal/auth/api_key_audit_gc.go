@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -36,13 +36,13 @@ func StartAuditGC(ctx context.Context, d *sql.DB) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			days = n
 		} else {
-			log.Printf("auth: ignoring invalid TELA_API_KEY_AUDIT_DAYS=%q, using default %d", v, days)
+			slog.Warn("auth: ignoring invalid TELA_API_KEY_AUDIT_DAYS, using default", "value", v, "default_days", days)
 		}
 	}
-	log.Printf("auth: api_key audit GC retention=%d days, sweep interval=%s", days, auditGCInterval)
+	slog.Info("auth: api_key audit GC", "retention_days", days, "sweep_interval", auditGCInterval)
 	go func() {
 		if err := purgeAuditOlderThan(ctx, d, days); err != nil {
-			log.Printf("auth: api_key audit GC initial sweep failed: %v", err)
+			slog.Error("auth: api_key audit GC initial sweep failed", "err", err)
 		}
 		t := time.NewTicker(auditGCInterval)
 		defer t.Stop()
@@ -52,7 +52,7 @@ func StartAuditGC(ctx context.Context, d *sql.DB) {
 				return
 			case <-t.C:
 				if err := purgeAuditOlderThan(ctx, d, days); err != nil {
-					log.Printf("auth: api_key audit GC sweep failed: %v", err)
+					slog.Error("auth: api_key audit GC sweep failed", "err", err)
 				}
 			}
 		}

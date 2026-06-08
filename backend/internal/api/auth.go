@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -149,7 +149,7 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("auth.Me: session lookup failed: %v", err)
+		slog.Error("auth.Me: session lookup failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "internal error")
 		return
 	}

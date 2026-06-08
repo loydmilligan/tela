@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -238,7 +238,7 @@ func (s *Server) DAVHandler() http.Handler {
 			// os.ErrNotExist is the normal "probe before create" 404 every client
 			// does — not worth logging. Everything else is a real surprise.
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				log.Printf("webdav %s %s: %v", r.Method, r.URL.Path, err)
+				slog.Error("webdav", "method", r.Method, "path", r.URL.Path, "err", err)
 			}
 		},
 	}

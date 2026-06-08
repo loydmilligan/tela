@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/zcag/tela/backend/internal/auth"
@@ -88,13 +88,17 @@ func New(db *sql.DB) *Server {
 	ctx := context.Background()
 	st, err := settings.New(ctx, db)
 	if err != nil {
-		log.Fatalf("settings: load instance_settings: %v", err)
+		// Boot-fatal: can't run without instance settings.
+		slog.Error("settings: load instance_settings", "err", err)
+		os.Exit(1)
 	}
 	// Resolve the api-key HMAC secret through the store (env → persisted →
 	// generated-and-persisted) so it survives restarts. Must run before any
 	// bearer request; New() is called once at boot.
 	if err := auth.InitAPIKeySecret(ctx, st); err != nil {
-		log.Fatalf("settings: init api-key secret: %v", err)
+		// Boot-fatal: a stable api-key secret is required.
+		slog.Error("settings: init api-key secret", "err", err)
+		os.Exit(1)
 	}
 	s := &Server{
 		DB:           db,

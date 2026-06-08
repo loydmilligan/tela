@@ -6,7 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"sort"
 	"strings"
 )
@@ -56,7 +56,7 @@ func Migrate(ctx context.Context, d *sql.DB) error {
 		if err := applyMigration(ctx, d, version, string(sqlBytes)); err != nil {
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
-		log.Printf("applied migration %s", name)
+		slog.Info("applied migration", "name", name)
 	}
 	return nil
 }

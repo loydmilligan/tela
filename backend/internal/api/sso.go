@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -64,7 +64,7 @@ func loadSSOProviders(ctx context.Context) *ssoRegistry {
 	if id, sec := os.Getenv("TELA_SSO_GOOGLE_CLIENT_ID"), os.Getenv("TELA_SSO_GOOGLE_CLIENT_SECRET"); id != "" && sec != "" {
 		if p, err := buildOIDCProvider(ctx, "google", "Google", "https://accounts.google.com",
 			id, sec, []string{oidc.ScopeOpenID, "email", "profile"}, false, nil); err != nil {
-			log.Printf("sso: google disabled: %v", err)
+			slog.Warn("sso: google disabled", "err", err)
 		} else {
 			reg.social["google"] = p
 		}
@@ -82,7 +82,7 @@ func loadSSOProviders(ctx context.Context) *ssoRegistry {
 		}
 		if p, err := buildOIDCProvider(oidc.InsecureIssuerURLContext(ctx, msIssuer), "microsoft", "Microsoft", msIssuer,
 			id, sec, []string{oidc.ScopeOpenID, "email", "profile"}, true, issuerOK); err != nil {
-			log.Printf("sso: microsoft disabled: %v", err)
+			slog.Warn("sso: microsoft disabled", "err", err)
 		} else {
 			p.trustEmail = true
 			reg.social["microsoft"] = p
@@ -106,7 +106,7 @@ func loadSSOProviders(ctx context.Context) *ssoRegistry {
 	}
 
 	if n := len(reg.social); n > 0 {
-		log.Printf("sso: %d social provider(s) enabled", n)
+		slog.Info("sso: social providers enabled", "count", n)
 	}
 	return reg
 }

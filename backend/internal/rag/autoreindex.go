@@ -2,7 +2,7 @@ package rag
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -71,7 +71,7 @@ func (s *Service) reindexLoop(ctx context.Context) {
 			for _, id := range s.dueReindexes() {
 				rctx, cancel := context.WithTimeout(ctx, reindexTimeout)
 				if _, err := s.ReindexPage(rctx, id); err != nil {
-					log.Printf("rag: auto-reindex page %d: %v", id, err)
+					slog.Error("rag: auto-reindex page", "page_id", id, "err", err)
 				}
 				cancel()
 			}

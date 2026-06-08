@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 )
 
@@ -103,13 +103,13 @@ func EnsurePersonalSpacesForAll(ctx context.Context, db *sql.DB) error {
 	created := 0
 	for _, p := range todo {
 		if _, err := EnsurePersonalSpace(ctx, db, p.id, p.username); err != nil {
-			log.Printf("personal space for user %d (%s): %v", p.id, p.username, err)
+			slog.Error("personal space for user", "user_id", p.id, "username", p.username, "err", err)
 			continue
 		}
 		created++
 	}
 	if created > 0 {
-		log.Printf("provisioned %d personal space(s)", created)
+		slog.Info("provisioned personal spaces", "count", created)
 	}
 	return nil
 }

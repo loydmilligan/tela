@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -65,12 +65,12 @@ func loadMCPOAuth(ctx context.Context) *mcpOAuth {
 	}
 	o, err := newMCPOAuth(ctx, issuer, resource, issuer+"/oauth2/jwks")
 	if err != nil {
-		log.Printf("mcp oauth: init failed (issuer=%s): %v — OAuth disabled, MCP stays PAT-only", issuer, err)
+		slog.Warn("mcp oauth: init failed — OAuth disabled, MCP stays PAT-only", "issuer", issuer, "err", err)
 		return nil
 	}
 	o.apiKey = strings.TrimSpace(os.Getenv("WORKOS_API_KEY"))
-	log.Printf("mcp oauth: enabled — issuer=%s resource=%s (login bridge %s)", issuer, resource,
-		map[bool]string{true: "ready", false: "disabled: WORKOS_API_KEY unset"}[o.apiKey != ""])
+	slog.Info("mcp oauth: enabled", "issuer", issuer, "resource", resource,
+		"login_bridge", map[bool]string{true: "ready", false: "disabled: WORKOS_API_KEY unset"}[o.apiKey != ""])
 	return o
 }
 
@@ -248,7 +248,7 @@ func (s *Server) WorkOSLoginComplete(w http.ResponseWriter, r *http.Request) {
 
 	redirectURI, err := s.oauth.completeStandalone(r.Context(), externalAuthID, u)
 	if err != nil {
-		log.Printf("workos standalone complete failed (user=%d): %v", u.ID, err)
+		slog.Error("workos standalone complete failed", "user_id", u.ID, "err", err)
 		http.Error(w, "could not complete authorization", http.StatusBadGateway)
 		return
 	}

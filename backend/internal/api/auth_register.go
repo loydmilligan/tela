@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -142,7 +142,7 @@ func (s *Server) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	var username, email string
 	if err := s.DB.QueryRowContext(ctx, `SELECT username, COALESCE(email, '') FROM users WHERE id = $1`, userID).Scan(&username, &email); err == nil {
 		if _, err := EnsurePersonalSpace(ctx, s.DB, userID, username); err != nil {
-			log.Printf("personal space for verified user %d (%s): %v", userID, username, err)
+			slog.Error("personal space for verified user", "user_id", userID, "username", username, "err", err)
 		}
 		// Enroll into any org whose auto-join domain matches the just-confirmed
 		// address (#153).
@@ -193,7 +193,7 @@ func (s *Server) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	if err == nil && !verified.Valid {
 		s.sendVerification(ctx, userID, username, email)
 	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.Printf("resend verification lookup: %v", err)
+		slog.Error("resend verification lookup", "err", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
@@ -222,12 +222,12 @@ func (s *Server) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		raw, terr := createEmailToken(ctx, s.DB, userID, "reset", resetTokenTTL)
 		if terr != nil {
-			log.Printf("create reset token for %d: %v", userID, terr)
+			slog.Error("create reset token", "user_id", userID, "err", terr)
 		} else if serr := s.Mailer.Send(ctx, mailer.ResetPassword(email, username, resetLink(raw))); serr != nil {
-			log.Printf("send reset email to %s: %v", email, serr)
+			slog.Error("send reset email", "email", email, "err", serr)
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		log.Printf("password reset lookup: %v", err)
+		slog.Error("password reset lookup", "err", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
@@ -303,11 +303,11 @@ func (s *Server) ResetPassword(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sendVerification(ctx context.Context, userID int64, username, email string) {
 	raw, err := createEmailToken(ctx, s.DB, userID, "verify", verifyTokenTTL)
 	if err != nil {
-		log.Printf("create verify token for %d: %v", userID, err)
+		slog.Error("create verify token", "user_id", userID, "err", err)
 		return
 	}
 	if err := s.Mailer.Send(ctx, mailer.VerifyEmail(email, username, verifyLink(raw))); err != nil {
-		log.Printf("send verify email to %s: %v", email, err)
+		slog.Error("send verify email", "email", email, "err", err)
 	}
 }
 

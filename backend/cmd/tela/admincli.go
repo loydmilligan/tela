@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"text/tabwriter"
 
@@ -23,12 +23,12 @@ import (
 // access is lost.
 func runCreateAdmin(d *sql.DB, args []string) {
 	if len(args) != 3 {
-		log.Fatalf("usage: tela create-admin <username> <email> <password>")
+		fatal("usage: tela create-admin <username> <email> <password>")
 	}
 	username, email, password := args[0], args[1], args[2]
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		log.Fatalf("create-admin: hash password: %v", err)
+		fatal("create-admin: hash password", "err", err)
 	}
 	ctx := context.Background()
 	var id int64
@@ -36,31 +36,31 @@ func runCreateAdmin(d *sql.DB, args []string) {
 		INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
 		VALUES ($1, $2, tela_now(), $3, 1, 1) RETURNING id`, username, email, hash).Scan(&id)
 	if err != nil {
-		log.Fatalf("create-admin: %v", err)
+		fatal("create-admin", "err", err)
 	}
 	if err := api.EnsurePersonalSpacesForAll(ctx, d); err != nil {
-		log.Printf("create-admin: personal space backfill: %v", err)
+		slog.Error("create-admin: personal space backfill", "err", err)
 	}
-	log.Printf("create-admin: created instance admin %q (id %d)", username, id)
+	slog.Info("create-admin: created instance admin", "username", username, "id", id)
 }
 
 // runSetPlan: `tela set-plan <user|org> <id> <plan_key>` — assign a plan tier.
 // Validates the plan's account_kind matches the target kind.
 func runSetPlan(d *sql.DB, args []string) {
 	if len(args) != 3 {
-		log.Fatalf("usage: tela set-plan <user|org> <id> <plan_key>")
+		fatal("usage: tela set-plan <user|org> <id> <plan_key>")
 	}
 	kind, idStr, planKey := args[0], args[1], args[2]
 	if kind != "user" && kind != "org" {
-		log.Fatalf("set-plan: kind must be 'user' or 'org'")
+		fatal("set-plan: kind must be 'user' or 'org'")
 	}
 	ctx := context.Background()
 	var planKind string
 	if err := d.QueryRowContext(ctx, `SELECT account_kind FROM plans WHERE key = $1`, planKey).Scan(&planKind); err != nil {
-		log.Fatalf("set-plan: unknown plan_key %q", planKey)
+		fatal("set-plan: unknown plan_key", "plan_key", planKey)
 	}
 	if planKind != kind {
-		log.Fatalf("set-plan: plan %q is for %q accounts, not %q", planKey, planKind, kind)
+		fatal("set-plan: plan is for a different account kind", "plan_key", planKey, "plan_kind", planKind, "target_kind", kind)
 	}
 	table := "users"
 	if kind == "org" {
@@ -69,12 +69,12 @@ func runSetPlan(d *sql.DB, args []string) {
 	res, err := d.ExecContext(ctx,
 		`UPDATE `+table+` SET plan_key = $1, updated_at = tela_now() WHERE id = $2`, planKey, idStr)
 	if err != nil {
-		log.Fatalf("set-plan: %v", err)
+		fatal("set-plan", "err", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		log.Fatalf("set-plan: no %s with id %s", kind, idStr)
+		fatal("set-plan: no matching row", "kind", kind, "id", idStr)
 	}
-	log.Printf("set-plan: %s %s → %s", kind, idStr, planKey)
+	slog.Info("set-plan", "kind", kind, "id", idStr, "plan_key", planKey)
 }
 
 // runListUsers: `tela list-users` — id, username, email, admin/active flags, plan.
@@ -84,7 +84,7 @@ func runListUsers(d *sql.DB) {
 		SELECT id, username, COALESCE(email, ''), is_instance_admin, is_active, plan_key
 		FROM users ORDER BY username`)
 	if err != nil {
-		log.Fatalf("list-users: %v", err)
+		fatal("list-users", "err", err)
 	}
 	defer rows.Close()
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
@@ -98,12 +98,12 @@ func runListUsers(d *sql.DB) {
 			plan          string
 		)
 		if err := rows.Scan(&id, &username, &email, &admin, &active, &plan); err != nil {
-			log.Fatalf("list-users: scan: %v", err)
+			fatal("list-users: scan", "err", err)
 		}
 		fmt.Fprintf(tw, "%d\t%s\t%s\t%t\t%t\t%s\n", id, username, email, admin == 1, active == 1, plan)
 	}
 	if err := rows.Err(); err != nil {
-		log.Fatalf("list-users: %v", err)
+		fatal("list-users", "err", err)
 	}
 	tw.Flush()
 }
