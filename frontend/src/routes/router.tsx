@@ -15,6 +15,7 @@ import { FilePlus, FileQuestion, Menu } from 'lucide-react'
 import { AppCommandHost } from '../components/app/AppCommandHost'
 import { NotificationBell } from '../components/app/NotificationBell'
 import { EmptyState } from '../components/ui/empty-state'
+import { OrgManageView } from '../components/app/OrgManageView'
 import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
@@ -247,7 +248,26 @@ const indexRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/settings',
+  // `?tab=` deep-links a section so the per-org page can send "← Organizations"
+  // back to the right tab. SettingsPage reads it for the initial selection.
+  validateSearch: (search: Record<string, unknown>): { tab?: string } =>
+    typeof search.tab === 'string' ? { tab: search.tab } : {},
   component: SettingsPage,
+})
+
+// Dedicated per-org management page. Its own route (not a Settings tab) so each
+// section — members, groups, SSO, activity — has room instead of stacking in a
+// dialog. Reached from the Organizations list. OrgManageView gates access
+// (instance admin, or an admin of this org) and 404s otherwise.
+const orgManageRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/settings/orgs/$orgId',
+  parseParams: (raw) => ({ orgId: Number(raw.orgId) }),
+  stringifyParams: (params) => ({ orgId: String(params.orgId) }),
+  component: function OrgManageRouteComponent() {
+    const { orgId } = useParams({ from: '/_app/settings/orgs/$orgId' })
+    return <OrgManageView orgId={orgId} />
+  },
 })
 
 // `/n` — quick-capture shortcut. Find-or-creates the caller's "Quick Notes"
@@ -600,6 +620,7 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     quickNotesRoute,
     settingsRoute,
+    orgManageRoute,
     sharedRoute,
     searchRoute,
     graphRoute,

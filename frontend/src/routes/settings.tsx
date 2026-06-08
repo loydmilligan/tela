@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearch } from '@tanstack/react-router'
 import { ImportSection } from '../components/app/ImportSection'
 import { MiraImportSection } from '../components/app/MiraImportSection'
 import { SettingsApiKeysTab } from '../components/app/SettingsApiKeysTab'
@@ -121,7 +122,10 @@ export function SettingsPage() {
     }
     return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB]
   }, [me.data?.is_instance_admin, isOrgAdmin])
-  const [activeId, setActiveId] = useState(tabs[0].id)
+  // `?tab=` (set by the per-org page's back link) picks the initial section;
+  // once a tab actually exists for it, the `active` lookup resolves it.
+  const { tab: initialTab } = useSearch({ from: '/_app/settings' })
+  const [activeId, setActiveId] = useState(initialTab ?? tabs[0].id)
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
 
   return (
