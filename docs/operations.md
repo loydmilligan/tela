@@ -39,19 +39,26 @@ curl -s -X PATCH localhost:8780/api/admin/settings \
 Secret values (HMAC keys, tokens) are never returned and can't be set this way —
 they're managed via the environment / first-boot persistence.
 
-### Recovering admin access
+### CLI subcommands
 
-If you've lost the admin password and SMTP isn't configured for reset, set a new
-known admin via env on a fresh boot only works when the users table is empty. For
-an existing instance, reset the password hash directly:
+For headless operation (no app UI needed), the backend binary has ops
+subcommands; run them in the container:
 
 ```bash
-$COMPOSE exec backend /tela --help   # (if a reset subcommand exists in your version)
-# otherwise, as a last resort, update the password_hash in Postgres via psql.
+$COMPOSE exec backend /tela create-admin <username> <email> <password>  # make an instance admin
+$COMPOSE exec backend /tela set-plan <user|org> <id> <plan_key>          # assign a plan tier
+$COMPOSE exec backend /tela list-users                                   # id/username/email/admin/active/plan
+$COMPOSE exec backend /tela reindex-all                                  # re-embed after a model change
 ```
 
-> Promoting CLI parity (a `create-admin` / `set-plan` subcommand set) is on the
-> hardening roadmap; until then, recovery is via SQL.
+### Recovering admin access
+
+`TELA_ADMIN_*` only bootstraps an admin when the users table is empty. For an
+existing instance where admin access is lost, mint a fresh admin directly:
+
+```bash
+$COMPOSE exec backend /tela create-admin recovery you@example.com 'a-strong-password'
+```
 
 ## Semantic search reindex
 

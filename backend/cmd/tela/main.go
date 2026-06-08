@@ -45,13 +45,27 @@ func main() {
 	}
 	log.Printf("db ready")
 
-	// One-off maintenance subcommand: re-embed every page in every space, then
-	// exit (no server). Used after changing the embedder model — the chunk hash
-	// folds in the model name, so a reindex re-embeds everything with the new
-	// model. Run in the container: `/tela reindex-all`.
-	if len(os.Args) > 1 && os.Args[1] == "reindex-all" {
-		runReindexAll(d)
-		return
+	// One-off CLI subcommands run after migrations, then exit (no server).
+	// Headless parity for the ops runbook (docs/operations.md).
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "reindex-all":
+			// Re-embed every page after an embedder model change (the chunk
+			// hash folds in the model name).
+			runReindexAll(d)
+			return
+		case "create-admin":
+			runCreateAdmin(d, os.Args[2:])
+			return
+		case "set-plan":
+			runSetPlan(d, os.Args[2:])
+			return
+		case "list-users":
+			runListUsers(d)
+			return
+		default:
+			log.Fatalf("unknown subcommand %q (known: reindex-all, create-admin, set-plan, list-users)", os.Args[1])
+		}
 	}
 
 	bs, err := auth.BootstrapFromEnv(context.Background(), d)
