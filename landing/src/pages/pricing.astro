@@ -1,0 +1,20 @@
+---
+import Base from '../layouts/Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import Pricing from '../components/Pricing.astro';
+import FinalCta from '../components/FinalCta.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+---
+
+<Base
+  title="Pricing — tela"
+  description="Simple plans for individuals and teams. Personal Free & Plus; organization Free, Team, and Enterprise. Self-host free and open. Every plan ships semantic search, the MCP connector, WebDAV folder sync, and real-time editing."
+  ogDescription="tela pricing — personal and organization tiers, or self-host it free. Every plan includes semantic search, the MCP connector for Claude & ChatGPT, WebDAV sync, and real-time editing."
+>
+  <SiteHeader />
+  <main id="main">
+    <Pricing />
+    <FinalCta />
+  </main>
+  <SiteFooter />
+</Base>

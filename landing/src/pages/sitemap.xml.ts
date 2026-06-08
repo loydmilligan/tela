@@ -10,6 +10,7 @@ const SITE = 'https://tela.cagdas.io';
 const HINTS: Record<string, { changefreq: string; priority: string }> = {
   '/': { changefreq: 'weekly', priority: '1.0' },
   '/mcp/': { changefreq: 'weekly', priority: '0.8' },
+  '/pricing/': { changefreq: 'weekly', priority: '0.9' },
   '/privacy/': { changefreq: 'yearly', priority: '0.3' },
   '/terms/': { changefreq: 'yearly', priority: '0.3' },
 };

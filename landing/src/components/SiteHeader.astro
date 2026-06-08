@@ -1,12 +1,14 @@
 ---
 // SiteHeader — glassy sticky masthead. Left-weighted wordmark + folded-paper mark,
 // quiet nav, a GitHub-style credibility chip, theme toggle, and the primary CTA.
+// Absolute (/#…) so the header works from any page, not just the homepage
+// (e.g. the standalone /pricing route). Pricing links to its dedicated page.
 const nav = [
-  { label: 'Agents', href: '#agents' },
-  { label: 'Search', href: '#search' },
-  { label: 'Editor', href: '#editor' },
-  { label: 'Compare', href: '#compare' },
-  { label: 'Pricing', href: '#pricing' },
+  { label: 'Agents', href: '/#agents' },
+  { label: 'Search', href: '/#search' },
+  { label: 'Editor', href: '/#editor' },
+  { label: 'Compare', href: '/#compare' },
+  { label: 'Pricing', href: '/pricing' },
 ];
 ---
 
