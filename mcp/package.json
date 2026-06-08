@@ -24,7 +24,7 @@
   "bugs": {
     "email": "tela@cagdas.io"
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "bin": {
     "tela-mcp": "dist/server.js"

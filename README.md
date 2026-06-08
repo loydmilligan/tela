@@ -92,4 +92,6 @@ tela was originally built by an autonomous agent system ("forge") and is now und
 
 ## License
 
-[MIT](LICENSE).
+Copyright © tela contributors. Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). You may self-host, modify, and redistribute tela under its terms — in particular, if you run a modified version as a network service you must offer your users the corresponding source. For a commercial license without AGPL obligations (e.g. to embed or offer tela as a closed service), contact the maintainer.
+
+**"tela", the tela name, and the tela logo are trademarks** and are **not** licensed under the AGPL — see [TRADEMARK.md](TRADEMARK.md). You may run and fork the code, but you may not use the tela branding for a redistributed or hosted version without permission.
