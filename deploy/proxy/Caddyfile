@@ -123,6 +123,12 @@
 	handle /u/* {
 		reverse_proxy frontend:80
 	}
+	# Public discovery directory — indexable (no noindex header), like /public
+	# and /u. Without this it falls to the app-SPA catch-all and gets noindex'd,
+	# which we don't want for a public, crawlable page.
+	handle /discover* {
+		reverse_proxy frontend:80
+	}
 
 	# Public sitemap (backend-generated from public spaces/pages/author-homes).
 	handle /sitemap-public.xml {
