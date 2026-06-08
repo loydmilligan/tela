@@ -17,6 +17,8 @@ const includes = [
 const personal = [
   {
     name: 'Free',
+    price: '$0',
+    period: 'free forever',
     blurb: 'Personal notes and trying tela.',
     specs: ['3 spaces', '100 pages / space', '100 MB storage'],
     cta: 'Get started',
@@ -25,6 +27,8 @@ const personal = [
   },
   {
     name: 'Plus',
+    price: '$8',
+    period: 'per month',
     blurb: 'For power users who live in their wiki.',
     specs: ['25 spaces', '1,000 pages / space', '5 GB storage'],
     cta: 'Get started',
@@ -36,6 +40,8 @@ const personal = [
 const org = [
   {
     name: 'Free',
+    price: '$0',
+    period: 'up to 5 members',
     blurb: 'A small team getting started.',
     specs: ['10 spaces', '500 pages / space', '1 GB storage', '5 members'],
     cta: 'Get started',
@@ -44,6 +50,8 @@ const org = [
   },
   {
     name: 'Team',
+    price: '$6',
+    period: 'per member / month',
     blurb: 'A growing team that runs on its docs.',
     specs: ['100 spaces', 'Unlimited pages', '50 GB storage', '50 members'],
     cta: 'Get started',
@@ -52,7 +60,9 @@ const org = [
   },
   {
     name: 'Enterprise',
-    blurb: 'SSO, audit, and scale. Talk to us.',
+    price: 'Custom',
+    period: "let's talk",
+    blurb: 'SSO, audit, and scale for a big team.',
     specs: ['Unlimited spaces', 'Unlimited pages', 'Unlimited storage', 'Unlimited members'],
     cta: 'Get in touch',
     href: 'https://tela.cagdas.io',
@@ -79,6 +89,7 @@ const org = [
             <h3 class="price-name">{p.name}</h3>
             {p.featured ? <span class="price-tag">Recommended</span> : null}
           </header>
+          <p class="price-amount">{p.price}<span class="price-period">{p.period}</span></p>
           <p class="price-blurb">{p.blurb}</p>
           <ul class="price-specs">
             {p.specs.map((s) => <li>{s}</li>)}
@@ -98,6 +109,7 @@ const org = [
             <h3 class="price-name">{p.name}</h3>
             {p.featured ? <span class="price-tag">Recommended</span> : null}
           </header>
+          <p class="price-amount">{p.price}<span class="price-period">{p.period}</span></p>
           <p class="price-blurb">{p.blurb}</p>
           <ul class="price-specs">
             {p.specs.map((s) => <li>{s}</li>)}
@@ -191,6 +203,26 @@ const org = [
     border-radius: var(--radius-sm);
     padding: 0.15rem 0.5rem;
     white-space: nowrap;
+  }
+
+  .price-amount {
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-family: var(--font-display);
+    font-size: var(--text-3xl);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    color: var(--fg);
+  }
+  .price-period {
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: 400;
+    letter-spacing: normal;
+    color: var(--fg-faint);
   }
 
   .price-blurb {
