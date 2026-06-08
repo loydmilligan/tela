@@ -55,6 +55,14 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "password must be at least 8 characters")
 		return
 	}
+	// Unified-handle guard: the username shares one public namespace with org
+	// slugs, so reject a reserved word or a collision with an existing org slug
+	// (the username's own uniqueness is caught by the INSERT below). Runs after
+	// the cheap field validation so a malformed request still 400s first.
+	if ae := checkHandleAvailable(r.Context(), username, orgSlugTaken, s.DB); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
