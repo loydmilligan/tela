@@ -97,3 +97,70 @@ func (s *Server) CloudEmbed(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"embeddings": [][]float32{vec}})
 }
+
+// chatProxyMessage / chatProxyRequest / chatProxyResponse mirror the
+// OpenAI-compatible /v1/chat/completions shape so the existing llm.OpenAIClient
+// works unchanged against this endpoint: a self-hoster just points TELA_LLM_URL
+// at /api/cloud/llm/v1 and sets TELA_LLM_TOKEN. We extract system/user from the
+// messages, run them through THIS instance's own llm.Complete, and return a
+// minimal OpenAI-shaped {choices:[{message:{role,content}}]} so the client's
+// decoder (and any other OpenAI client) reads it back natively.
+type chatProxyMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type chatProxyRequest struct {
+	Model    string             `json:"model"`
+	Messages []chatProxyMessage `json:"messages"`
+}
+
+// CloudChat is the managed LLM proxy: authenticate the PAT, gate on the
+// ask_docs entitlement, then run the prompt through THIS instance's own chat
+// client and return the OpenAI-shaped completion. The single client serves both
+// in-process /api/rag/ask and connected self-hosters — no second generation
+// path. Routed at POST /api/cloud/llm/v1/chat/completions.
+func (s *Server) CloudChat(w http.ResponseWriter, r *http.Request) {
+	acct, ok := s.cloudAccount(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
+		return
+	}
+	if !s.featureEnabled(r.Context(), acct, "ask_docs") {
+		writeError(w, http.StatusForbidden, "forbidden", "plan does not include managed AI")
+		return
+	}
+	if !s.llm.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "LLM not configured on this instance")
+		return
+	}
+	var req chatProxyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
+		return
+	}
+	var system, user string
+	for _, m := range req.Messages {
+		switch m.Role {
+		case "system":
+			system = m.Content
+		case "user":
+			user = m.Content // last user message wins
+		}
+	}
+	if strings.TrimSpace(user) == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "a user message is required")
+		return
+	}
+	answer, err := s.llm.Complete(r.Context(), system, user)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "completion_failed", "completion failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"model": req.Model,
+		"choices": []map[string]any{
+			{"message": map[string]string{"role": "assistant", "content": answer}},
+		},
+	})
+}

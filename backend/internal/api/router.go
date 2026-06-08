@@ -62,6 +62,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// /api/embed so the existing rag embedder is a drop-in client.
 	mux.HandleFunc("GET /api/cloud/entitlements", srv.CloudEntitlements)
 	mux.HandleFunc("POST /api/cloud/ollama/api/embed", srv.CloudEmbed)
+	// Managed LLM proxy: mirrors the OpenAI /v1/chat/completions shape so a
+	// self-hoster points TELA_LLM_URL at /api/cloud/llm/v1 + a PAT and the
+	// in-process llm.OpenAIClient is a drop-in. Gated on the ask_docs feature.
+	mux.HandleFunc("POST /api/cloud/llm/v1/chat/completions", srv.CloudChat)
 
 	// OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint.
 	// Public + static (see auth.IsPublicPath); 404s when OAuth is unconfigured.
@@ -231,6 +235,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/rag/chunk", srv.RAGReadChunk)
 	mux.HandleFunc("GET /api/rag/freshness", srv.RAGFreshness)
 	mux.HandleFunc("POST /api/rag/reindex", srv.RAGReindex)
+	mux.HandleFunc("POST /api/rag/ask", srv.RAGAsk)
 
 	mux.HandleFunc("GET /api/admin/users", srv.ListAdminUsers)
 	mux.HandleFunc("POST /api/admin/users", srv.CreateAdminUser)

@@ -1,9 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/rag"
@@ -152,5 +155,98 @@ func (s *Server) RAGReindex(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"indexed_pages":  pages,
 		"indexed_chunks": chunks,
+	})
+}
+
+// askRequest is the POST /api/rag/ask body.
+type askRequest struct {
+	Question string `json:"question"`
+	SpaceID  *int64 `json:"space_id"`
+	Limit    int    `json:"limit"`
+}
+
+// askMaxChunks caps how many retrieved chunks ground the answer (and bounds the
+// prompt size) regardless of what the caller asks for.
+const askMaxChunks = 8
+
+// RAGAsk handles POST /api/rag/ask {question, space_id?, limit?}
+// "Ask your docs": retrieve the top chunks via the EXISTING hybrid search
+// (scoped to the caller's space_access — same anti-leak path as RAGSearch),
+// build a grounded prompt from the chunk texts + their page references, call the
+// in-process LLM (s.llm.Complete — the SAME client a self-hoster reaches over
+// the managed cloud proxy), and return the answer plus the cited source pages.
+// 503 when the LLM is unconfigured, mirroring the rag handlers.
+func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.rag.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
+		return
+	}
+	if !s.llm.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "llm_disabled", "managed AI is not configured")
+		return
+	}
+
+	var req askRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
+		return
+	}
+	if strings.TrimSpace(req.Question) == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "question is required")
+		return
+	}
+
+	spaceID := req.SpaceID
+	// A space-scoped bearer key may only ever see its one space — force the
+	// narrow. Mirrors RAGSearch.
+	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
+		spaceID = k.SpaceID
+	}
+
+	limit := req.Limit
+	if limit <= 0 || limit > askMaxChunks {
+		limit = askMaxChunks
+	}
+	hits, err := s.rag.Search(r.Context(), u.ID, req.Question, spaceID, limit, "hybrid")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
+		return
+	}
+	if len(hits) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"answer":  "I couldn't find anything in your documents to answer that.",
+			"sources": []rag.Hit{},
+		})
+		return
+	}
+
+	system := "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
+		"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts."
+
+	var b strings.Builder
+	b.WriteString("Answer the question using only these document excerpts.\n\n")
+	for i, h := range hits {
+		fmt.Fprintf(&b, "[%d] %s", i+1, h.Title)
+		if h.HeadingPath != "" {
+			fmt.Fprintf(&b, " — %s", h.HeadingPath)
+		}
+		b.WriteString("\n")
+		b.WriteString(h.Snippet)
+		b.WriteString("\n\n")
+	}
+	fmt.Fprintf(&b, "Question: %s", req.Question)
+
+	answer, err := s.llm.Complete(r.Context(), system, b.String())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "completion_failed", "answer generation failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"answer":  answer,
+		"sources": hits,
 	})
 }
