@@ -197,6 +197,12 @@ func (s *Server) CloudChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "a user message is required")
 		return
 	}
+	// Monthly compute cap (atomic). Counts only genuine LLM calls — placed after
+	// validation so a malformed request doesn't burn quota.
+	if ae := s.checkAndRecordLLMCall(r.Context(), acct); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
 	answer, err := s.llm.Complete(r.Context(), system, user)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "completion_failed", "completion failed")

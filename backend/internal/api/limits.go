@@ -58,6 +58,9 @@ type plan struct {
 	// Features is the boolean entitlement map (e.g. managed_rag, publishing).
 	// Quotas say "how many"; features say "is X allowed". Never nil after scan.
 	Features map[string]bool `json:"features"`
+	// MaxLLMCallsPerMonth caps managed LLM calls (ask/chat) per calendar month;
+	// nil = unlimited. The compute meter, beside the resource quotas.
+	MaxLLMCallsPerMonth *int64 `json:"max_llm_calls_per_month"`
 }
 
 func nullToPtr(n sql.NullInt64) *int64 {
@@ -72,22 +75,23 @@ func nullToPtr(n sql.NullInt64) *int64 {
 // `name` column with orgs — every query selecting these must alias plans as p.
 // listed is INTEGER 0/1 (SQLite-era convention) — scanned into an int, not a
 // bool, because pgx is strict about the integer→bool mismatch.
-const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period, p.features`
+const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period, p.features, p.max_llm_calls_per_month`
 
 func scanPlan(row interface{ Scan(...any) error }) (plan, error) {
 	var (
-		p                                      plan
-		spaces, pages, storage, members, cents sql.NullInt64
-		listed                                 int
-		featuresRaw                            []byte
+		p                                                plan
+		spaces, pages, storage, members, cents, llmCalls sql.NullInt64
+		listed                                           int
+		featuresRaw                                      []byte
 	)
-	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod, &featuresRaw); err != nil {
+	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod, &featuresRaw, &llmCalls); err != nil {
 		return plan{}, err
 	}
 	p.MaxSpaces, p.MaxPagesPerSpace = nullToPtr(spaces), nullToPtr(pages)
 	p.MaxStorageBytes, p.MaxMembers = nullToPtr(storage), nullToPtr(members)
 	p.Listed = listed == 1
 	p.PriceCents = nullToPtr(cents)
+	p.MaxLLMCallsPerMonth = nullToPtr(llmCalls)
 	p.Features = map[string]bool{}
 	if len(featuresRaw) > 0 {
 		_ = json.Unmarshal(featuresRaw, &p.Features) // malformed JSON → empty map, never fatal
@@ -314,6 +318,38 @@ func (s *Server) checkSeatQuota(ctx context.Context, orgID int64) *apiErr {
 	}
 	if used+1 > *p.MaxMembers {
 		return quotaErr("%s plan seat limit reached (%d) — upgrade to add members", p.Name, *p.MaxMembers)
+	}
+	return nil
+}
+
+// checkAndRecordLLMCall gates AND records one managed LLM call (ask/chat)
+// against acct's monthly cap. NULL cap = unlimited (no metering). Unlike the
+// count-based soft caps above, this is a single ATOMIC conditional upsert: the
+// increment fires only while under the cap (the ON CONFLICT WHERE clause), so
+// check-and-record has no TOCTOU window. A no-row result = the cap was already
+// reached → 402.
+func (s *Server) checkAndRecordLLMCall(ctx context.Context, acct account) *apiErr {
+	p, err := planFor(ctx, s.DB, acct)
+	if err != nil {
+		return internalQuotaErr()
+	}
+	if p.MaxLLMCallsPerMonth == nil {
+		return nil // unlimited tier — not metered
+	}
+	var n int64
+	err = s.DB.QueryRowContext(ctx, `
+		INSERT INTO cloud_usage (account_kind, account_id, period, llm_calls)
+		VALUES ($1, $2, to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM'), 1)
+		ON CONFLICT (account_kind, account_id, period)
+		DO UPDATE SET llm_calls = cloud_usage.llm_calls + 1, updated_at = tela_now()
+		WHERE cloud_usage.llm_calls < $3
+		RETURNING llm_calls`,
+		acct.Kind, acct.ID, *p.MaxLLMCallsPerMonth).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return quotaErr("%s plan monthly AI limit reached (%d) — upgrade for more", p.Name, *p.MaxLLMCallsPerMonth)
+	}
+	if err != nil {
+		return internalQuotaErr()
 	}
 	return nil
 }

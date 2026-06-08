@@ -246,6 +246,12 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(&b, "Question: %s", req.Question)
 
+	// Monthly compute cap (atomic) — only counts a real LLM call (we're past the
+	// empty-retrieval short-circuit), against the asking user's account.
+	if ae := s.checkAndRecordLLMCall(r.Context(), account{Kind: accountUser, ID: u.ID}); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
 	answer, err := s.llm.Complete(r.Context(), system, b.String())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "completion_failed", "answer generation failed")
