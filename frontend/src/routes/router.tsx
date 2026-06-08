@@ -31,6 +31,7 @@ import { queryClient } from '../lib/queryClient'
 import {
   authKeys,
   fetchMe,
+  fetchSetupStatus,
   sanitizeNextPath,
   type AuthUser,
 } from '../lib/queries/auth'
@@ -40,6 +41,7 @@ import { writeLastPage } from '../lib/lastPage'
 import { useCreatePage, usePages } from '../lib/queries/pages'
 import { LoginPage } from './login'
 import { RegisterPage } from './register'
+import { SetupPage } from './setup'
 import { VerifyEmailPage } from './verify-email'
 import { ForgotPasswordPage } from './forgot-password'
 import { ResetPasswordPage } from './reset-password'
@@ -53,6 +55,17 @@ function ensureMe(): Promise<AuthUser | null> {
   return queryClient.ensureQueryData({
     queryKey: authKeys.me(),
     queryFn: fetchMe,
+    retry: false,
+    staleTime: Infinity,
+  })
+}
+
+// First-run setup status, cached for the session. Used by the /login and
+// /setup gates to route a brand-new (user-less) instance to the wizard.
+function ensureSetupStatus(): Promise<boolean> {
+  return queryClient.ensureQueryData({
+    queryKey: ['setup', 'status'],
+    queryFn: fetchSetupStatus,
     retry: false,
     staleTime: Infinity,
   })
@@ -181,12 +194,32 @@ const loginRoute = createRoute({
   }),
   beforeLoad: async ({ search }) => {
     const user = await ensureMe()
-    if (!user) return
+    if (!user) {
+      // A fresh instance with no admin yet → send the operator to the setup
+      // wizard instead of an unusable login form.
+      if (await ensureSetupStatus()) throw redirect({ to: '/setup' })
+      return
+    }
     const next = sanitizeNextPath(search.next) ?? '/'
     // Cast: `next` is a validated in-app path string, not a typed route.
     throw redirect({ to: next as never })
   },
   component: LoginPage,
+})
+
+// First-run setup wizard (/setup). Public, like /login. Gate order: an
+// already-signed-in visitor goes to the app; otherwise we only show the wizard
+// while the instance still needs setup — once an admin exists, bounce to /login
+// so this can't be used to probe / re-run setup.
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/setup',
+  beforeLoad: async () => {
+    const user = await ensureMe()
+    if (user) throw redirect({ to: '/' })
+    if (!(await ensureSetupStatus())) throw redirect({ to: '/login' })
+  },
+  component: SetupPage,
 })
 
 // Self-registration. Like /login, an already-authenticated visitor is bounced
@@ -660,6 +693,7 @@ const printRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  setupRoute,
   registerRoute,
   verifyEmailRoute,
   forgotPasswordRoute,

@@ -21,8 +21,12 @@ The backend logs its effective config (`config: …`) at boot — base URL, cook
 
 ## Admin & users
 
-The first admin is bootstrapped from `TELA_ADMIN_*` when the users table is
-empty. After that, instance-admins manage users and plans in the app under
+The first admin is created one of two ways on an empty users table: from
+`TELA_ADMIN_*` at boot when `TELA_ADMIN_PASSWORD` is set, or — when no admin env
+is configured — through the web **setup wizard** at `/setup` (a fresh instance
+redirects there automatically; the form creates a pre-verified instance admin
+and signs in). After that, instance-admins manage users and plans in the app
+under
 **Settings → Users** (create users, reset passwords, toggle active/admin, assign
 plan tiers) and configure the instance under **Settings** (admin tabs).
 
@@ -53,7 +57,7 @@ $COMPOSE exec backend /tela reindex-all                                  # re-em
 
 ### Recovering admin access
 
-`TELA_ADMIN_*` only bootstraps an admin when the users table is empty. For an
+The env / wizard bootstrap only fires when the users table is empty. For an
 existing instance where admin access is lost, mint a fresh admin directly:
 
 ```bash

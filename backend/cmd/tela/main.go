@@ -96,12 +96,7 @@ func main() {
 		fatal("bootstrap admin", "err", err)
 	}
 	if bs.Created {
-		if bs.GeneratedPassword != "" {
-			slog.Warn("bootstrap admin created — change the password in Settings",
-				"username", bs.Username, "generated_password", bs.GeneratedPassword)
-		} else {
-			slog.Info("bootstrap admin created from TELA_ADMIN_PASSWORD env", "username", bs.Username)
-		}
+		slog.Info("bootstrap admin created from TELA_ADMIN_PASSWORD env", "username", bs.Username)
 	}
 
 	// Assign TELA_ADMIN_EMAIL to a pre-email-auth bootstrap admin (no-op once

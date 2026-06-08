@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"testing"
 )
 
@@ -10,7 +9,7 @@ func TestDeleteUserSessions_RemovesAllForUser(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
-	if _, err := BootstrapAdmin(ctx, d, "alice", "alicepw123456", "", rand.Reader); err != nil {
+	if _, err := BootstrapAdmin(ctx, d, "alice", "alicepw123456", ""); err != nil {
 		t.Fatalf("bootstrap alice: %v", err)
 	}
 	var aliceID int64
@@ -61,7 +60,7 @@ func TestDeleteUserSessionsExcept_KeepsTheException(t *testing.T) {
 	ctx := context.Background()
 	d := newAuthTestDB(t)
 
-	if _, err := BootstrapAdmin(ctx, d, "alice", "alicepw123456", "", rand.Reader); err != nil {
+	if _, err := BootstrapAdmin(ctx, d, "alice", "alicepw123456", ""); err != nil {
 		t.Fatalf("bootstrap alice: %v", err)
 	}
 	var aliceID int64
