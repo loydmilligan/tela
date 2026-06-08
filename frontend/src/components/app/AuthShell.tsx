@@ -22,8 +22,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
         </a>
         <ThemeSwitcher />
       </header>
-      <main className="flex-1 flex items-center justify-center p-[var(--space-7)]">
-        {children}
+      <main className="relative flex-1 flex items-center justify-center p-[var(--space-7)]">
+        <div aria-hidden className="tela-auth-backdrop" />
+        <div className="relative w-full max-w-[25rem]">{children}</div>
       </main>
     </div>
   )

@@ -1,7 +1,12 @@
 import { useState } from 'react'
+import { Building2 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { useSSOProviders } from '../../lib/queries/auth'
+
+// Most-recognized first, so the list reads in a familiar order regardless of
+// the backend's alphabetical sort.
+const PROVIDER_ORDER = ['google', 'microsoft', 'github']
 
 // Federated sign-in options on the login screen. Each social button is a plain
 // anchor to a BACKEND start route (Button asChild) — a hard navigation so the
@@ -10,8 +15,12 @@ import { useSSOProviders } from '../../lib/queries/auth'
 // org connection resolved from its domain.
 export function SSOButtons({ next }: { next: string }) {
   const { data } = useSSOProviders()
-  const providers = data?.providers ?? []
   const orgSSO = data?.org_sso ?? false
+  const providers = [...(data?.providers ?? [])].sort(
+    (a, b) =>
+      (PROVIDER_ORDER.indexOf(a.name) + 1 || 99) -
+      (PROVIDER_ORDER.indexOf(b.name) + 1 || 99),
+  )
 
   if (providers.length === 0 && !orgSSO) return null
 
@@ -22,15 +31,21 @@ export function SSOButtons({ next }: { next: string }) {
     <div className="flex flex-col gap-[var(--space-3)]">
       <div className="flex items-center gap-[var(--space-3)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
         <span className="h-px flex-1 bg-[var(--border-subtle)]" />
-        or
+        Or continue with
         <span className="h-px flex-1 bg-[var(--border-subtle)]" />
       </div>
 
       {providers.map((p) => (
-        <Button key={p.name} asChild variant="secondary" size="lg">
+        <Button
+          key={p.name}
+          asChild
+          variant="secondary"
+          size="lg"
+          className="font-medium hover:shadow-[var(--shadow-sm)]"
+        >
           <a href={start(p.name)} className="no-underline">
             <ProviderIcon name={p.name} />
-            Continue with {p.label}
+            {p.label}
           </a>
         </Button>
       ))}
@@ -50,11 +65,13 @@ function OrgSSO({ next }: { next: string }) {
     return (
       <Button
         type="button"
-        variant="ghost"
+        variant="secondary"
         size="lg"
         onClick={() => setOpen(true)}
+        className="font-medium hover:shadow-[var(--shadow-sm)]"
       >
-        Sign in with SSO
+        <Building2 size={18} aria-hidden />
+        Single sign-on (SSO)
       </Button>
     )
   }
@@ -74,6 +91,7 @@ function OrgSSO({ next }: { next: string }) {
         autoFocus
         placeholder="you@company.com"
         autoComplete="email"
+        aria-label="Work email for single sign-on"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         onKeyDown={(e) => {
@@ -83,7 +101,13 @@ function OrgSSO({ next }: { next: string }) {
           }
         }}
       />
-      <Button type="button" variant="secondary" size="lg" onClick={go}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="lg"
+        onClick={go}
+        className="font-medium hover:shadow-[var(--shadow-sm)]"
+      >
         Continue with SSO
       </Button>
     </div>

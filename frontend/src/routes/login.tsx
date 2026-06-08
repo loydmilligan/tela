@@ -86,16 +86,16 @@ export function LoginPage() {
 
   return (
     <AuthShell>
-      <Card className="w-full max-w-[24rem]">
-        <CardHeader>
-          <CardTitle className="text-[length:var(--text-2xl)]">
+      <Card className="tela-auth-card w-full bg-[var(--surface-1)] shadow-[var(--shadow-lg)]">
+        <CardHeader className="gap-[var(--space-2)] px-[var(--space-7)] pt-[var(--space-7)] pb-[var(--space-2)]">
+          <CardTitle className="text-[length:var(--text-2xl)] font-semibold tracking-[-0.01em]">
             Sign in
           </CardTitle>
           <CardDescription>
-            Enter your tela account credentials.
+            Welcome back — sign in to your tela workspace.
           </CardDescription>
         </CardHeader>
-        <CardBody>
+        <CardBody className="gap-[var(--space-5)] px-[var(--space-7)] pb-[var(--space-7)] pt-[var(--space-2)]">
           <form
             onSubmit={handleSubmit}
             className="flex flex-col gap-[var(--space-4)]"
@@ -161,12 +161,18 @@ export function LoginPage() {
               </div>
             ) : null}
             {error ? (
-              <p
+              <div
                 role="alert"
-                className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]"
+                style={{
+                  borderColor:
+                    'color-mix(in oklch, var(--danger) 25%, transparent)',
+                  backgroundColor:
+                    'color-mix(in oklch, var(--danger) 8%, transparent)',
+                }}
+                className="m-0 rounded-[var(--radius-sm)] border px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--danger)]"
               >
                 {error}
-              </p>
+              </div>
             ) : null}
             <Button
               type="submit"
@@ -177,9 +183,7 @@ export function LoginPage() {
               {login.isPending ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
-          <div className="mt-[var(--space-5)]">
-            <SSOButtons next={nextPath} />
-          </div>
+          <SSOButtons next={nextPath} />
           <AuthFooterLink>
             New to tela?{' '}
             <Link

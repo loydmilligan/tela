@@ -51,6 +51,17 @@
     --duration-base: 200ms;
     --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
+    /* Elevation — soft, layered shadows derived from --text-primary via
+       color-mix (the same theme-adaptive pattern the dialog/popover use), so a
+       single definition reads correctly across light / dark / warm without
+       per-theme overrides. */
+    --shadow-sm: 0 1px 2px color-mix(in srgb, var(--text-primary) 8%, transparent),
+      0 1px 3px color-mix(in srgb, var(--text-primary) 5%, transparent);
+    --shadow-md: 0 4px 14px -3px color-mix(in srgb, var(--text-primary) 12%, transparent),
+      0 2px 6px -2px color-mix(in srgb, var(--text-primary) 7%, transparent);
+    --shadow-lg: 0 18px 40px -12px color-mix(in srgb, var(--text-primary) 22%, transparent),
+      0 6px 16px -6px color-mix(in srgb, var(--text-primary) 10%, transparent);
+
     --sidebar-width: 16rem;
     --sheet-width: 420px;
 
