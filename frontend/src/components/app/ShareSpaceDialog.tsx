@@ -41,6 +41,7 @@ import { Input } from '../ui/input'
 import { TextArea } from '../ui/textarea'
 import { Select } from '../ui/select'
 import { cn } from '../../lib/utils'
+import { spaceOwnership } from '../../lib/space-owner'
 
 const ROLE_LABEL: Record<SpaceMember['role'], string> = {
   owner: 'Owner',
@@ -80,6 +81,8 @@ export function ShareSpaceDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-[var(--space-4)]">
+          <OwnedByLine space={space} />
+
           {open ? <SpaceAccessSummary spaceId={space.id} /> : null}
 
           <div className="flex flex-col gap-[var(--space-2)] pt-[var(--space-3)] border-t border-[var(--border-subtle)]">
@@ -133,6 +136,42 @@ export function ShareSpaceDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// Ownership at a glance — the account this space belongs to (an org vs you),
+// which the rest of the dialog (members, grants, transfer) never states
+// outright. Org-owned shows a Building2; personal/you stays an unadorned line.
+function OwnedByLine({ space }: { space: Space }) {
+  const owner = spaceOwnership(space)
+  return (
+    <p className="m-0 flex items-center gap-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-muted)]">
+      {owner.kind === 'org' ? (
+        <Building2
+          width={14}
+          height={14}
+          aria-hidden
+          className="shrink-0 text-[var(--text-muted)]"
+        />
+      ) : null}
+      <span>
+        {owner.kind === 'org' ? (
+          <>
+            Owned by{' '}
+            <span className="font-medium text-[var(--text-primary)]">
+              {owner.org}
+            </span>
+          </>
+        ) : owner.kind === 'personal' ? (
+          'Personal space'
+        ) : (
+          <>
+            Owned by{' '}
+            <span className="font-medium text-[var(--text-primary)]">you</span>
+          </>
+        )}
+      </span>
+    </p>
   )
 }
 

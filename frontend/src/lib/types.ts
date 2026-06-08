@@ -10,6 +10,14 @@ export interface SpacePrincipal {
   name: string
 }
 
+// The org that *owns* a space (spaces.org_id) — distinct from the orgs it's
+// shared with. Absent for a personally-owned space. Mirrors backend's
+// spaceOwnerOrg. Present on the spaces list rows.
+export interface SpaceOwnerOrg {
+  id: number
+  name: string
+}
+
 export interface Space {
   id: number
   name: string
@@ -28,6 +36,9 @@ export interface Space {
   member_count?: number
   is_personal?: boolean
   principals?: SpacePrincipal[]
+  // Set when an org owns this space (after transfer / org-owned creation);
+  // absent ⇒ owned by you. Present on the spaces list rows.
+  owner_org?: SpaceOwnerOrg
 }
 
 // Resolved public-link exposure of a page (backend exposure.go). Read-only,
