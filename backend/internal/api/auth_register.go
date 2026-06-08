@@ -26,6 +26,13 @@ type registerRequest struct {
 // Duplicate email/username return 409 — for an open team wiki, a clear error
 // beats enumeration-resistance.
 func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
+	// Instance toggle: an operator can close self-registration at runtime via the
+	// admin settings (registration_open=false). Absent/"true" = open (the
+	// default for an open team wiki). Admins can still create users directly.
+	if v, ok := s.settings.Get("registration_open"); ok && v == "false" {
+		writeError(w, http.StatusForbidden, "registration_closed", "self-registration is disabled on this instance")
+		return
+	}
 	if !s.allowAuth(w, r, "register") {
 		return
 	}
