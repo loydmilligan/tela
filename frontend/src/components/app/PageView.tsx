@@ -253,8 +253,15 @@ function PageViewer({
         : null,
     [allPagesQuery.data, page.space_id],
   )
-  const resolveWikilink = useCallback(
-    (slug: string) => resolveIndex?.get(slug) ?? null,
+  // Only hand MarkdownView a resolver once the page index has loaded — until
+  // then it's `undefined`, so wikilinks render as neutral styled spans rather
+  // than flashing "broken" red before resolution (mirrors the editor's
+  // alive-ids-null behaviour).
+  const resolveWikilink = useMemo(
+    () =>
+      resolveIndex
+        ? (slug: string) => resolveIndex.get(slug) ?? null
+        : undefined,
     [resolveIndex],
   )
   const pageHref = useCallback(

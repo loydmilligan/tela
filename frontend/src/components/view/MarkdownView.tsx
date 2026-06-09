@@ -1,6 +1,7 @@
 import {
   createContext,
   createElement,
+  Fragment,
   useContext,
   useEffect,
   useMemo,
@@ -406,6 +407,23 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       return <TexMath key={key} value={String(node.value ?? '')} display />
     case 'inlineMath':
       return <TexMath key={key} value={String(node.value ?? '')} display={false} />
+    case 'footnoteReference': {
+      const id = String(node.identifier ?? '')
+      const label = String(node.label ?? id)
+      return (
+        <sup key={key} className="reader-footnote-ref" id={`fnref-${id}`}>
+          <a href={`#fn-${id}`}>{label}</a>
+        </sup>
+      )
+    }
+    case 'footnoteDefinition': {
+      const id = String(node.identifier ?? '')
+      return (
+        <div key={key} className="reader-footnote-def" id={`fn-${id}`}>
+          <sup>{String(node.label ?? id)}</sup> {renderChildren(node)}
+        </div>
+      )
+    }
     case 'containerDirective':
     case 'leafDirective':
     case 'textDirective': {
@@ -413,19 +431,23 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       if (name === 'tabs') return <TabsView key={key} nodes={node.children ?? []} />
       // Other directive blocks (quote/embed/file/kanban/stats/timeline/calendar)
       // don't have dedicated view renderers yet — render their children so no
-      // content is lost. Dedicated renderers land in a follow-up.
-      return node.children ? <div key={key}>{renderChildren(node)}</div> : null
+      // content is lost. A Fragment avoids wrapping (possibly block) content in
+      // an invalid element. Dedicated renderers land in a follow-up.
+      return node.children ? (
+        <Fragment key={key}>{renderChildren(node)}</Fragment>
+      ) : null
     }
     case 'html':
-      // Raw-HTML / collapsibles handling lands in a later phase. Drop for now
-      // rather than dangerously injecting arbitrary markup.
+      // Raw-HTML (incl. <details> collapsibles) handling lands in a later phase.
+      // Drop the tag node rather than dangerously injecting arbitrary markup;
+      // any body content between open/close tags renders as normal siblings.
       return null
     default:
-      // Unknown (e.g. directive blocks, footnotes, wikilinks) — degrade
-      // gracefully by rendering children so no content is lost. Each gets a
-      // real renderer in a later phase, gated by the manifest view-renderer
-      // requirement (docs/view-edit-split.md).
-      return node.children ? <span key={key}>{renderChildren(node)}</span> : null
+      // Unknown node — degrade gracefully by rendering children (no wrapper, so
+      // block content stays valid) so nothing is lost.
+      return node.children ? (
+        <Fragment key={key}>{renderChildren(node)}</Fragment>
+      ) : null
   }
 }
 
