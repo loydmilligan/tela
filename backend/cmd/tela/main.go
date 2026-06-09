@@ -74,8 +74,9 @@ func main() {
 		switch os.Args[1] {
 		case "reindex-all":
 			// Re-embed every page after an embedder model change (the chunk
-			// hash folds in the model name).
-			runReindexAll(d)
+			// hash folds in the model name). Add --force for a full re-embed
+			// when the model name is unchanged but the embedder setup moved.
+			runReindexAll(d, os.Args[2:])
 			return
 		case "create-admin":
 			runCreateAdmin(d, os.Args[2:])
@@ -179,9 +180,22 @@ func logStartupConfig() {
 }
 
 // runReindexAll re-embeds every page in every space against the currently
-// configured embedder, logging per-space progress, then returns. The embed
-// calls dominate wall-clock; it's synchronous and runs to completion.
-func runReindexAll(d *sql.DB) {
+// configured embedder, logging per-space progress (in the rag package), then
+// returns. Synchronous; the embed calls dominate wall-clock. Pass --force to
+// bypass the per-chunk vector cache and re-embed everything from scratch — the
+// clean replacement for a manual TRUNCATE when the model name is unchanged but
+// the embedder setup moved.
+func runReindexAll(d *sql.DB, args []string) {
+	force := false
+	for _, a := range args {
+		switch a {
+		case "--force", "-f":
+			force = true
+		default:
+			fatal("reindex-all: unknown flag (known: --force)", "flag", a)
+		}
+	}
+
 	cfg := rag.ConfigFromEnv()
 	if cfg.EmbedURL == "" {
 		fatal("reindex-all: TELA_RAG_EMBED_URL is not set — nothing to embed against")
@@ -190,42 +204,12 @@ func runReindexAll(d *sql.DB) {
 	if !svc.Enabled() {
 		fatal("reindex-all: embedder disabled")
 	}
-	ctx := context.Background()
-	slog.Info("reindex-all: starting", "model", cfg.EmbedModel, "url", cfg.EmbedURL)
 
-	type spaceRef struct {
-		id   int64
-		name string
-	}
-	rows, err := d.QueryContext(ctx, `SELECT id, name FROM spaces ORDER BY id`)
+	sum, err := svc.ReindexAll(context.Background(), force)
 	if err != nil {
-		fatal("reindex-all: list spaces", "err", err)
+		fatal("reindex-all", "err", err)
 	}
-	var spaces []spaceRef
-	for rows.Next() {
-		var s spaceRef
-		if err := rows.Scan(&s.id, &s.name); err != nil {
-			rows.Close()
-			fatal("reindex-all: scan space", "err", err)
-		}
-		spaces = append(spaces, s)
+	if sum.Failed > 0 {
+		slog.Warn("reindex-all: completed with failures", "failed_pages", sum.Failed)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		fatal("reindex-all: iterate spaces", "err", err)
-	}
-
-	var totalPages, totalChunks int
-	for i, s := range spaces {
-		pages, chunks, err := svc.ReindexSpace(ctx, s.id)
-		if err != nil {
-			fatal("reindex-all: space failed", "space_id", s.id, "name", s.name, "err", err)
-		}
-		totalPages += pages
-		totalChunks += chunks
-		slog.Info("reindex-all: space done",
-			"progress", i+1, "total", len(spaces), "space_id", s.id, "name", s.name, "pages", pages, "chunks", chunks)
-	}
-	slog.Info("reindex-all: DONE",
-		"spaces", len(spaces), "pages", totalPages, "chunks", totalChunks, "model", cfg.EmbedModel)
 }
