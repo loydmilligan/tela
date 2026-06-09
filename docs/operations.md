@@ -52,7 +52,8 @@ subcommands; run them in the container:
 $COMPOSE exec backend /tela create-admin <username> <email> <password>  # make an instance admin
 $COMPOSE exec backend /tela set-plan <user|org> <id> <plan_key>          # assign a plan tier
 $COMPOSE exec backend /tela list-users                                   # id/username/email/admin/active/plan
-$COMPOSE exec backend /tela reindex-all                                  # re-embed after a model change
+$COMPOSE exec backend /tela reindex-all [--force]                        # re-embed (—force = full, ignore cache)
+$COMPOSE exec backend /tela rag-eval --set golden.json                   # score retrieval (recall@k/MRR/nDCG)
 ```
 
 ### Recovering admin access
@@ -73,8 +74,21 @@ new model needs a full re-embed):
 $COMPOSE exec backend /tela reindex-all
 ```
 
-Runs synchronously to completion, logging per-space progress. Requires
-`TELA_RAG_EMBED_URL` to be set.
+Runs synchronously to completion, logging per-space progress (and a `failed`
+count — un-embeddable pages are skipped, not fatal). Requires `TELA_RAG_EMBED_URL`.
+
+Add `--force` to bypass the per-chunk vector cache and re-embed **everything** —
+the clean way to refresh when the model *name* is unchanged but the embedder
+setup moved (replaces a manual `TRUNCATE page_chunks`). Normally not needed: the
+index **self-heals** (failed reindexes retry with backoff; a background sweep
+re-queues stale/unindexed pages and logs an `rag: index health` line each cycle),
+so after an embedder outage the backlog clears on its own.
+
+To measure retrieval quality against a golden set (see [`rag.md`](rag.md)):
+
+```bash
+$COMPOSE exec backend /tela rag-eval --set golden.json --k 10 --mode hybrid
+```
 
 ## Backups
 
