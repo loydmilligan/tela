@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Compass, FileText, FrownIcon } from 'lucide-react'
+import { Compass, FrownIcon } from 'lucide-react'
 import {
   DISCOVER_PAGE_SIZE,
   usePublicDiscover,
@@ -7,12 +7,12 @@ import {
   type DiscoverSpace,
 } from '../../lib/queries/public'
 import { useHeadMeta } from '../../lib/useHeadMeta'
-import { avatarStyle, monogram } from '../../lib/blog'
-import { relativeTimeFromSqlite } from '../../lib/relativeTime'
+import { blogChip } from '../../lib/blog'
 import { Button } from '../ui/button'
 import { EmptyState } from '../ui/empty-state'
-import { PublicTopbar } from './blog/PublicTopbar'
-import { PublicMasthead, MetaDot } from './blog/PublicMasthead'
+import { PublicPageShell } from './blog/PublicPageShell'
+import { PublicMasthead } from './blog/PublicMasthead'
+import { SpaceCard } from './blog/SpaceCard'
 
 // The cross-tenant public-space directory at /discover — a login-free "network"
 // view of every public space on the instance. Same no-login chrome as the space
@@ -44,21 +44,15 @@ export function PublicDiscover({
   })
 
   return (
-    <div className="flex min-h-dvh flex-col bg-[var(--surface-1)] text-[var(--text-primary)]">
-      <PublicTopbar />
+    <PublicPageShell>
+      <PublicMasthead
+        title="Discover"
+        avatarSeed="discover"
+        standfirst="Public spaces published on tela — browse the network."
+        meta={<SortToggle sort={sort} onSort={onSort} disabled={query.isLoading} />}
+      />
 
-      <main className="flex-1">
-        <div className="mx-auto w-full max-w-[60rem] px-[var(--space-6)] py-[var(--space-8)]">
-          <PublicMasthead
-            title="Discover"
-            avatarSeed="discover"
-            standfirst="Public spaces published on tela — browse the network."
-            meta={
-              <SortToggle sort={sort} onSort={onSort} disabled={query.isLoading} />
-            }
-          />
-
-          <div className="mt-[var(--space-7)]">
+      <div className="mt-[var(--space-7)]">
             {query.isLoading ? (
               <p
                 role="status"
@@ -103,7 +97,7 @@ export function PublicDiscover({
                 <ul className="grid list-none grid-cols-1 gap-[var(--space-5)] p-0 sm:grid-cols-2 lg:grid-cols-3">
                   {spaces.map((s) => (
                     <li key={s.id}>
-                      <SpaceCard space={s} />
+                      <DiscoverSpaceCard space={s} />
                     </li>
                   ))}
                 </ul>
@@ -136,10 +130,8 @@ export function PublicDiscover({
                 )}
               </>
             )}
-          </div>
-        </div>
-      </main>
-    </div>
+      </div>
+    </PublicPageShell>
   )
 }
 
@@ -154,11 +146,6 @@ function SortToggle({
   onSort: (s: DiscoverSort) => void
   disabled?: boolean
 }) {
-  const chip =
-    'rounded-[var(--radius-sm)] border px-[var(--space-3)] py-[2px] text-[length:var(--text-xs)] transition-colors duration-[var(--duration-fast)] disabled:opacity-50'
-  const on = 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]'
-  const off =
-    'border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]'
   const opts: { value: DiscoverSort; label: string }[] = [
     { value: 'recent', label: 'Recent' },
     { value: 'popular', label: 'Popular' },
@@ -172,7 +159,7 @@ function SortToggle({
           disabled={disabled}
           aria-pressed={sort === o.value}
           onClick={() => onSort(o.value)}
-          className={`${chip} ${sort === o.value ? on : off}`}
+          className={`${blogChip(sort === o.value)} disabled:opacity-50`}
         >
           {o.label}
         </button>
@@ -181,75 +168,27 @@ function SortToggle({
   )
 }
 
-// One space in the directory grid. The whole card links into the space's public
-// reader; the owner handle is a separate nested link to /u/{handle}. A generated
-// monogram avatar gives every space a deterministic identity (no uploaded image).
-function SpaceCard({ space }: { space: DiscoverSpace }) {
-  const name = space.name || 'Untitled space'
+// One space in the directory grid → links into the space's public reader, with
+// an owner byline. Just wires DiscoverSpace into the shared SpaceCard.
+function DiscoverSpaceCard({ space }: { space: DiscoverSpace }) {
   return (
-    <div
-      className={[
-        'group relative flex h-full flex-col gap-[var(--space-3)] rounded-[var(--radius-lg)] border border-[var(--border-subtle)]',
-        'bg-[var(--surface-1)] p-[var(--space-5)] transition-all duration-[var(--duration-fast)]',
-        'hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]',
-        'focus-within:border-[var(--border-strong)]',
-      ].join(' ')}
-    >
-      <div className="flex items-center gap-[var(--space-3)]">
-        <span
-          aria-hidden
-          className="grid size-[2.5rem] shrink-0 place-items-center rounded-[var(--radius-md)] font-[family-name:var(--font-sans)] text-[length:var(--text-base)] font-semibold leading-none select-none"
-          style={avatarStyle(space.slug || name)}
-        >
-          {monogram(name)}
-        </span>
+    <SpaceCard
+      name={space.name}
+      seed={space.slug || space.name}
+      description={space.description}
+      pageCount={space.page_count}
+      updatedAt={space.updated_at}
+      owner={space.owner_handle}
+      renderTitleLink={({ className, children }) => (
         <Link
           to="/public/spaces/$spaceId"
           params={{ spaceId: space.id }}
           search={{ tag: undefined }}
-          className={[
-            'min-w-0 font-[family-name:var(--font-sans)] text-[length:var(--text-lg)] font-semibold leading-[var(--leading-tight)]',
-            'tracking-[-0.01em] text-[var(--text-primary)] no-underline transition-colors duration-[var(--duration-fast)]',
-            // Stretched link: the whole card is clickable, owner link sits above.
-            'after:absolute after:inset-0 hover:text-[var(--accent)]',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
-          ].join(' ')}
+          className={className}
         >
-          <span className="line-clamp-2">{name}</span>
+          {children}
         </Link>
-      </div>
-
-      {space.description ? (
-        <p className="m-0 line-clamp-3 text-[length:var(--text-sm)] leading-[var(--leading-normal)] text-[var(--text-muted)]">
-          {space.description}
-        </p>
-      ) : null}
-
-      <div className="mt-auto flex flex-wrap items-center gap-x-[var(--space-2)] gap-y-[var(--space-1)] pt-[var(--space-2)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
-        {space.owner_handle ? (
-          <>
-            <Link
-              to="/u/$username"
-              params={{ username: space.owner_handle }}
-              // relative z-index lifts this above the card's stretched ::after.
-              className="relative z-10 font-medium text-[var(--text-muted)] no-underline hover:text-[var(--accent)]"
-            >
-              @{space.owner_handle}
-            </Link>
-            <MetaDot />
-          </>
-        ) : null}
-        <span className="inline-flex items-center gap-[var(--space-1)]">
-          <FileText size="0.9em" aria-hidden />
-          {space.page_count} {space.page_count === 1 ? 'page' : 'pages'}
-        </span>
-        {space.updated_at ? (
-          <>
-            <MetaDot />
-            <span>Updated {relativeTimeFromSqlite(space.updated_at)}</span>
-          </>
-        ) : null}
-      </div>
-    </div>
+      )}
+    />
   )
 }

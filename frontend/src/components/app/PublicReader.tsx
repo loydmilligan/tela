@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { applyPdfThemeParam } from '../../lib/theme'
 import { buildWikilinkResolveIndex, pageSlug } from '../../lib/slug'
 import { bodyExcerpt } from '../../lib/search/body-excerpt'
+import { buildPageTree, sortByNewest, topLevelPosts, type TreeNode } from '../../lib/blog'
 import {
   usePublicSpaceTree,
   type PublicPageNode,
@@ -104,9 +105,7 @@ export function PublicReaderView({
   // Previous/next among the space's top-level posts (the "posts"), in published
   // order. Only shown when the current page is itself a top-level post.
   const postNav = useMemo(() => {
-    const posts = pages
-      .filter((p) => p.parent_id == null)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    const posts = sortByNewest(topLevelPosts(pages))
     const i = posts.findIndex((p) => p.id === pageId)
     if (i === -1) return null
     return { newer: posts[i - 1], older: posts[i + 1] } // newest-first order
@@ -221,29 +220,6 @@ function PostNavLink({
 // space's actual page hierarchy (nested children indented under their parent,
 // siblings in author position order) so it's clear what belongs to what. Width
 // is bounded in reader.css; long titles truncate rather than ballooning the rail.
-interface NavNode extends PublicPageNode {
-  children: NavNode[]
-}
-
-// Fold the flat page list into a tree. A child whose parent isn't in the public
-// set (private/unpublished) surfaces as a root rather than vanishing.
-function buildNavTree(pages: PublicPageNode[]): NavNode[] {
-  const byId = new Map<number, NavNode>()
-  for (const p of pages) byId.set(p.id, { ...p, children: [] })
-  const roots: NavNode[] = []
-  for (const node of byId.values()) {
-    const parent = node.parent_id != null ? byId.get(node.parent_id) : undefined
-    if (parent) parent.children.push(node)
-    else roots.push(node)
-  }
-  const sortRec = (nodes: NavNode[]) => {
-    nodes.sort((a, b) => a.position - b.position || a.id - b.id)
-    for (const n of nodes) sortRec(n.children)
-  }
-  sortRec(roots)
-  return roots
-}
-
 function PublicSpaceNav({
   spaceId,
   spaceName,
@@ -255,7 +231,7 @@ function PublicSpaceNav({
   pages: PublicPageNode[]
   activePageId: number
 }) {
-  const tree = useMemo(() => buildNavTree(pages), [pages])
+  const tree = useMemo(() => buildPageTree(pages), [pages])
   return (
     <nav aria-label={`${spaceName} pages`} className="reader-spacenav">
       <p className="reader-spacenav-title">{spaceName}</p>
@@ -275,7 +251,7 @@ function PublicSpaceNavList({
   sub = false,
 }: {
   spaceId: number
-  nodes: NavNode[]
+  nodes: TreeNode<PublicPageNode>[]
   activePageId: number
   sub?: boolean
 }) {

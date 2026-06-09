@@ -5,7 +5,8 @@ import {
   type PublicUserSpace,
 } from '../../lib/queries/public'
 import { useHeadMeta } from '../../lib/useHeadMeta'
-import { PublicTopbar } from './blog/PublicTopbar'
+import { sortByNewest } from '../../lib/blog'
+import { PublicPageShell } from './blog/PublicPageShell'
 import { PublicMasthead, MetaDot } from './blog/PublicMasthead'
 import { PostCard } from './blog/PostCard'
 
@@ -29,44 +30,35 @@ export function PublicUserHome({ data }: { data: PublicUserResponse }) {
   })
 
   return (
-    <div className="flex min-h-dvh flex-col bg-[var(--surface-1)] text-[var(--text-primary)]">
-      <PublicTopbar />
+    <PublicPageShell>
+      <PublicMasthead
+        title={user.username}
+        avatarSeed={user.username}
+        standfirst={user.bio || undefined}
+        meta={
+          <>
+            <span>
+              {totalPosts} {totalPosts === 1 ? 'post' : 'posts'}
+            </span>
+            <MetaDot />
+            <span>
+              {spaces.length} {spaces.length === 1 ? 'space' : 'spaces'}
+            </span>
+          </>
+        }
+      />
 
-      <main className="flex-1">
-        <div className="mx-auto w-full max-w-[60rem] px-[var(--space-6)] py-[var(--space-8)]">
-          <PublicMasthead
-            title={user.username}
-            avatarSeed={user.username}
-            standfirst={user.bio || undefined}
-            meta={
-              <>
-                <span>
-                  {totalPosts} {totalPosts === 1 ? 'post' : 'posts'}
-                </span>
-                <MetaDot />
-                <span>
-                  {spaces.length} {spaces.length === 1 ? 'space' : 'spaces'}
-                </span>
-              </>
-            }
-          />
-
-          <div className="mt-[var(--space-8)] flex flex-col gap-[var(--space-8)]">
-            {spaces.map((space) => (
-              <SpaceSection key={space.id} space={space} />
-            ))}
-          </div>
-        </div>
-      </main>
-    </div>
+      <div className="mt-[var(--space-8)] flex flex-col gap-[var(--space-8)]">
+        {spaces.map((space) => (
+          <SpaceSection key={space.id} space={space} />
+        ))}
+      </div>
+    </PublicPageShell>
   )
 }
 
 function SpaceSection({ space }: { space: PublicUserSpace }) {
-  const posts = useMemo(
-    () => [...space.pages].sort((a, b) => b.created_at.localeCompare(a.created_at)),
-    [space.pages],
-  )
+  const posts = useMemo(() => sortByNewest(space.pages), [space.pages])
 
   return (
     <section className="flex flex-col gap-[var(--space-4)]">

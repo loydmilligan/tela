@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { avatarStyle, monogram } from '../../../lib/blog'
+import { Monogram } from './Monogram'
 
 // The identity block atop a public blog surface — a generated monogram avatar
 // (deterministic tint, since there's no uploaded image), the name, an optional
@@ -18,13 +18,7 @@ export function PublicMasthead({
 }) {
   return (
     <header className="flex flex-col items-start gap-[var(--space-4)]">
-      <span
-        aria-hidden
-        className="grid size-[3.5rem] shrink-0 place-items-center rounded-[var(--radius-lg)] font-[family-name:var(--font-sans)] text-[length:var(--text-xl)] font-semibold leading-none select-none"
-        style={avatarStyle(avatarSeed)}
-      >
-        {monogram(title)}
-      </span>
+      <Monogram name={title} seed={avatarSeed} size="md" />
       <div className="flex flex-col gap-[var(--space-2)]">
         <h1 className="m-0 font-[family-name:var(--font-sans)] text-[length:var(--text-3xl)] font-semibold leading-[var(--leading-tight)] tracking-[-0.02em] text-[var(--text-primary)]">
           {title}
