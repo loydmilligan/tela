@@ -496,11 +496,20 @@ const spaceIndexRoute = createRoute({
 // M9.3 — soft-draft restore. `?draft=$revId` opens the page in draft mode,
 // seeded from that revision's body. Shared by the bare and slugged page routes
 // so `?draft=` survives canonicalisation between them.
-function validatePageSearch(search: Record<string, unknown>): { draft?: number } {
+function validatePageSearch(
+  search: Record<string, unknown>,
+): { draft?: number; edit?: boolean } {
+  const out: { draft?: number; edit?: boolean } = {}
   const raw = search.draft
-  if (raw == null) return {}
-  const n = typeof raw === 'number' ? raw : Number(raw)
-  return Number.isFinite(n) && n > 0 ? { draft: n } : {}
+  if (raw != null) {
+    const n = typeof raw === 'number' ? raw : Number(raw)
+    if (Number.isFinite(n) && n > 0) out.draft = n
+  }
+  // ?edit enters the editor in place (Confluence-style); absent → read view.
+  // Accept boolean true and the string forms the router may serialize/round-trip.
+  const e = search.edit
+  if (e === true || e === 1 || e === '1' || e === 'true') out.edit = true
+  return out
 }
 
 const pageRoute = createRoute({

@@ -9,3 +9,4 @@ backups/
 # Scratch screenshots from agent visual checks
 mdview-*.png
 .playwright-mcp/
+app-*.png

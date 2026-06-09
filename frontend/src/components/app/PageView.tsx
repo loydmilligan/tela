@@ -21,6 +21,7 @@ import {
   Link2,
   MessageSquare,
   MoreHorizontal,
+  Pencil,
   Plus,
   Share2,
   Trash2,
@@ -94,6 +95,7 @@ import {
 } from '../ui/dropdown-menu'
 import { cn } from '../../lib/utils'
 import { BacklinksSection } from './BacklinksSection'
+import { MarkdownView } from '../view/MarkdownView'
 import { useFileDownload } from './use-file-download'
 
 // Milkdown is the largest dependency in the app (~700 KB raw). Lazy-load it so
@@ -141,7 +143,7 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
   const navigate = useNavigate()
   // M9.3 — soft-draft mode is opted into via `?draft=$revId`. The param is
   // typed by the route's validateSearch in router.tsx.
-  const { draft: draftRevId } = useSearch({
+  const { draft: draftRevId, edit: editParam } = useSearch({
     from: '/_app/spaces/$spaceId/pages/$pageId/{-$slug}',
   })
   const { slug: currentSlug } = useParams({
@@ -179,16 +181,225 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
     return <PageNotFound spaceId={spaceId} />
   }
 
+  const onDeleted = () =>
+    void navigate({ to: '/spaces/$spaceId', params: { spaceId } })
+
+  // Confluence-style: read view is the default; the editor mounts only on an
+  // explicit Edit (?edit=1) or when restoring a draft. This is what keeps
+  // reading instant — no editor chunk, no Yjs/collab, no /yjs round-trip — and
+  // stops a reader from being one keystroke into editing. Entering edit mounts
+  // PageEditor (collab spins up); leaving unmounts it (collab tears down).
+  if (editParam || draftRevId != null) {
+    return (
+      <PageEditor
+        key={page.data.id}
+        page={page.data}
+        spaceId={spaceId}
+        draftRevId={draftRevId ?? null}
+        onDeleted={onDeleted}
+      />
+    )
+  }
   return (
-    <PageEditor
+    <PageViewer
       key={page.data.id}
       page={page.data}
       spaceId={spaceId}
-      draftRevId={draftRevId ?? null}
-      onDeleted={() =>
-        void navigate({ to: '/spaces/$spaceId', params: { spaceId } })
-      }
+      onDeleted={onDeleted}
     />
+  )
+}
+
+// PageViewer — the default read view (Confluence-style). Renders the page body
+// through the Milkdown-free MarkdownView (no editor chunk, no Yjs/collab, no
+// /yjs round-trip → instant, and a reader can't accidentally edit). The header
+// reuses the same chrome as the editor minus the edit-only bits, plus an Edit
+// button (role-gated) that flips ?edit=1 to mount PageEditor in place.
+function PageViewer({
+  page,
+  spaceId,
+  onDeleted,
+}: {
+  page: Page
+  spaceId: number
+  onDeleted: () => void
+}) {
+  const navigate = useNavigate()
+  const me = useMe()
+  const members = useSpaceMembers(spaceId)
+  const myMembership = useMemo(
+    () =>
+      me.data && members.data
+        ? (members.data.find((m) => m.user_id === me.data!.id) ?? null)
+        : null,
+    [me.data, members.data],
+  )
+  const roleResolved = me.data != null && members.data != null
+  const isViewer = roleResolved && myMembership?.role === 'viewer'
+  const canEdit = roleResolved && !isViewer
+
+  const [graphOpen, setGraphOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Wikilink resolution (slug → id), space-scoped, like the editor builds it.
+  const allPagesQuery = useAllPages()
+  const resolveIndex = useMemo(
+    () =>
+      allPagesQuery.data
+        ? buildWikilinkResolveIndex(
+            allPagesQuery.data.filter((p) => p.space_id === page.space_id),
+          )
+        : null,
+    [allPagesQuery.data, page.space_id],
+  )
+  const resolveWikilink = useCallback(
+    (slug: string) => resolveIndex?.get(slug) ?? null,
+    [resolveIndex],
+  )
+  const pageHref = useCallback(
+    (id: number) => `/spaces/${spaceId}/pages/${id}`,
+    [spaceId],
+  )
+
+  useEffect(() => {
+    pushRecentPage({
+      pageId: page.id,
+      spaceId,
+      title: page.title,
+      viewedAt: Date.now(),
+    })
+  }, [spaceId, page.id, page.title])
+
+  const enterEdit = useCallback(() => {
+    void navigate({
+      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+      params: { spaceId, pageId: page.id, slug: pageSlug(page.title) || undefined },
+      search: (prev) => ({ ...prev, edit: true }),
+    })
+  }, [navigate, spaceId, page.id, page.title])
+
+  // SPA-navigate internal wikilink clicks (MarkdownView emits plain <a href>);
+  // without this they'd full-reload. External / non-page links fall through.
+  const onContentClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.button !== 0) return
+      const a = (e.target as HTMLElement).closest(
+        'a.tela-wikilink[href]',
+      ) as HTMLAnchorElement | null
+      if (!a) return
+      const href = a.getAttribute('href') ?? ''
+      if (!href.startsWith('/spaces/')) return
+      e.preventDefault()
+      void navigate({ to: href })
+    },
+    [navigate],
+  )
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <header className="flex items-center justify-between gap-[var(--space-4)] px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
+        <Breadcrumb spaceId={spaceId} pageId={page.id} />
+        <div className="flex items-center gap-[var(--space-3)]">
+          {roleResolved ? <FavoriteStar pageId={page.id} /> : null}
+          {roleResolved ? <FollowButton pageId={page.id} /> : null}
+          <PageProperties props={page.props} />
+          {roleResolved ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label="Graph"
+              title="Graph — this page's connections"
+              onClick={() => setGraphOpen(true)}
+              className="h-[var(--space-8)] w-[var(--space-8)] p-0"
+            >
+              <Share2 width={16} height={16} />
+            </Button>
+          ) : null}
+          {roleResolved ? (
+            <VisibilityBadge
+              state={page.exposure?.state ?? 'private'}
+              inherited={page.exposure?.inherited ?? false}
+            />
+          ) : null}
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={enterEdit}
+              className="h-[var(--space-8)] px-[var(--space-3)]"
+            >
+              <Pencil width={16} height={16} />
+              <span>Edit</span>
+            </Button>
+          ) : null}
+          {roleResolved ? (
+            <PageActionsMenu
+              spaceId={spaceId}
+              pageId={page.id}
+              title={page.title}
+              isViewer={isViewer}
+              onDelete={() => setDeleteOpen(true)}
+            />
+          ) : null}
+        </div>
+      </header>
+
+      <div
+        ref={contentRef}
+        onClick={onContentClick}
+        className="flex-1 overflow-y-auto flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[48rem] w-full self-center min-h-0"
+      >
+        <WikilinkHoverPreview containerRef={contentRef} />
+        <h1
+          className={cn(
+            'm-0 px-[var(--space-2)] py-[var(--space-2)]',
+            'text-[length:var(--text-3xl)] leading-[var(--leading-tight)] font-medium',
+            'text-[var(--text-primary)]',
+          )}
+        >
+          {page.title || 'Untitled page'}
+        </h1>
+
+        <AttachmentStrip pageId={page.id} />
+
+        <MarkdownView
+          body={page.body}
+          pageId={page.id}
+          resolveWikilink={resolveWikilink}
+          pageHref={pageHref}
+          className={EDITOR_MIN_H}
+        />
+
+        <ChildPagesSection
+          spaceId={spaceId}
+          pageId={page.id}
+          bodyIsEmpty={page.body.trim().length === 0}
+        />
+
+        <BacklinksSection pageId={page.id} />
+
+        <LocalGraphCard pageId={page.id} />
+      </div>
+
+      <DeletePageConfirmDialog
+        page={page}
+        spaceId={spaceId}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={onDeleted}
+      />
+
+      {roleResolved ? (
+        <LocalGraphPanel
+          pageId={page.id}
+          open={graphOpen}
+          onOpenChange={setGraphOpen}
+        />
+      ) : null}
+    </div>
   )
 }
 
@@ -400,6 +611,16 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
       replace: true,
     })
   }, [navigate, spaceId, page.id])
+
+  // Exit edit mode (Confluence "Done") → drop ?edit and fall back to the read
+  // view. Keeps the canonical slug; no `replace` so Back returns to edit.
+  const exitEdit = useCallback(() => {
+    void navigate({
+      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+      params: { spaceId, pageId: page.id, slug: pageSlug(page.title) || undefined },
+      search: {},
+    })
+  }, [navigate, spaceId, page.id, page.title])
 
   // M8.3 — comments surface. The panel toggle, panel itself, and selection
   // bridge are all gated behind a non-viewer role; viewers don't see the
@@ -781,6 +1002,18 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
             </>
           ) : (
             <>
+              {/* Confluence "Done" — leave edit mode back to the read view. */}
+              {roleResolved && !isViewer ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={exitEdit}
+                  className="h-[var(--space-8)] px-[var(--space-3)]"
+                >
+                  Done
+                </Button>
+              ) : null}
               <PresenceAvatars awareness={provider?.awareness ?? null} />
               <SaveIndicator status={status} />
               {roleResolved ? <FavoriteStar pageId={page.id} /> : null}
