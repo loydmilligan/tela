@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { coverBackground, monogram } from '../../../lib/blog'
+import { coverBackground } from '../../../lib/blog'
 import { pageSlug } from '../../../lib/slug'
 import { postDateFromSqlite } from '../../../lib/relativeTime'
 import type { BlogCardMeta } from '../../../lib/queries/public'
@@ -126,22 +126,13 @@ function Cover({
       </div>
     )
   }
+  // A self-sufficient seeded gradient-mesh cover — deliberate abstract art, no
+  // overlaid initial (a giant cut-off letter read as a broken image).
   return (
     <div
       aria-hidden
       className={`relative shrink-0 overflow-hidden ${box}`}
       style={{ background: coverBackground(title) }}
-    >
-      {/* Large faded monogram bleeding off the corner. Fixed size (not cqh — the
-          featured cover's height comes from flex-stretch, where container units
-          collapse to 0). White-on-gradient: part of the generated art, theme-
-          independent like the grid lines above. */}
-      <span
-        className="pointer-events-none absolute right-[-0.06em] bottom-[-0.18em] text-[9.5rem] font-[family-name:var(--font-sans)] font-extrabold leading-none tracking-[-0.04em] select-none"
-        style={{ color: 'rgba(255,255,255,0.22)' }}
-      >
-        {monogram(title)}
-      </span>
-    </div>
+    />
   )
 }

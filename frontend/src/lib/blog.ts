@@ -89,17 +89,20 @@ export function blogChip(active: boolean): string {
   return `${CHIP_BASE} ${active ? CHIP_ON : CHIP_OFF}`
 }
 
-// The generated cover background for a post with no `cover` image: a title-
-// seeded diagonal gradient under a fine "engineer's-notebook" graph grid. Paired
-// with a large faded monogram in PostCard, this reads as a deliberate cover, not
-// a blank placeholder. Deterministic (same title → same cover) and theme-
-// independent (it's a fixed decorative surface, like the avatar tint).
+// The generated cover for a post with no `cover` image: a title-seeded gradient
+// mesh (two soft highlights over a diagonal base) under a faint "engineer's-
+// notebook" grid for texture. Self-sufficient — it reads as a deliberate
+// abstract cover on its own, so no monogram is overlaid (a huge cut-off initial
+// looked like a broken image). Deterministic (same title → same cover) and
+// theme-independent (a fixed decorative surface, like the avatar tint).
 export function coverBackground(seed: string): string {
   const hue = hueFromString(seed)
-  const hue2 = (hue + 38) % 360
+  const hue2 = (hue + 40) % 360
   return [
-    'linear-gradient(rgba(255,255,255,0.09) 1px, transparent 1px) 0 0 / 22px 22px',
-    'linear-gradient(90deg, rgba(255,255,255,0.09) 1px, transparent 1px) 0 0 / 22px 22px',
-    `linear-gradient(135deg, oklch(0.7 0.13 ${hue}), oklch(0.58 0.14 ${hue2}))`,
+    'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px) 0 0 / 24px 24px',
+    'linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px) 0 0 / 24px 24px',
+    `radial-gradient(120% 120% at 78% 18%, oklch(0.75 0.13 ${hue2}) 0%, transparent 55%)`,
+    `radial-gradient(110% 110% at 12% 88%, oklch(0.6 0.15 ${hue}) 0%, transparent 55%)`,
+    `linear-gradient(135deg, oklch(0.67 0.14 ${hue}), oklch(0.56 0.15 ${hue2}))`,
   ].join(', ')
 }
