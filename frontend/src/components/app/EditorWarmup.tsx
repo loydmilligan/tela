@@ -9,7 +9,31 @@ const MilkdownEditor = lazy(() =>
 // (e.g. app layout + public index both rendering) must not re-run it.
 let warmedThisSession = false
 
-const WARM_DOC = '# \n\ntela'
+// A representative body: the first real doc open is slow because each heavy
+// node-view compiles/JITs on first render — refractor + the code-block view, the
+// table view, callouts, lists. A trivial warmup body skips those paths and
+// leaves the first real open slow (measured). Exercise the common ones here so
+// the warmup actually pre-pays them.
+const WARM_DOC = `# Warmup
+
+Paragraph with **bold**, _italic_, \`code\`, and a [link](https://example.com).
+
+- one
+- two
+- [ ] task
+
+> [!NOTE]
+> A callout.
+
+\`\`\`js
+const x = 1
+function f(a) { return a + x }
+\`\`\`
+
+| A | B |
+| - | - |
+| 1 | 2 |
+`
 const noop = () => {}
 
 // Pre-pays the Milkdown editor's one-time *first-mount* cost — building 70+
