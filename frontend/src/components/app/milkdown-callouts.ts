@@ -126,15 +126,19 @@ interface CalloutSchemaNode {
   attrs: { type: CalloutType }
 }
 
-export const calloutsRemarkPlugin = $remark(
-  'telaCallouts',
-  () => () => (tree) => {
+// Raw unified/remark attacher — the SINGLE SOURCE of callout parsing, shared by
+// both the Milkdown editor (wrapped in $remark below) and the standalone view
+// renderer's parser (lib/markdown/remark-stack.ts). See docs/view-edit-split.md.
+export function calloutsRemark() {
+  return (tree: unknown) => {
     // Bridge official mdast `Root`/`RootContent` types to our loose
     // `MdastNode` walker. They're the same runtime objects; the cast just
     // gives our walker an index signature so it can mutate freely.
     transformCalloutsInMdast(tree as unknown as MdastNode)
-  },
-)
+  }
+}
+
+export const calloutsRemarkPlugin = $remark('telaCallouts', () => calloutsRemark)
 
 export const calloutSchema = $nodeSchema('callout', () => ({
   content: 'block+',

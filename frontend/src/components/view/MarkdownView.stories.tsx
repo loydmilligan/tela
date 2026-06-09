@@ -1,0 +1,99 @@
+import type { Meta, StoryObj } from '@storybook/react-vite'
+import { MarkdownView } from './MarkdownView'
+
+// Rendered inside a `.tela-reader` scope (+ a centered article column) so the
+// existing reading typography applies — this is how view mode will sit in the
+// app/reader. See docs/view-edit-split.md.
+function ReaderFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="tela-reader" data-reading-size="m" style={{ height: 'auto' }}>
+      <div style={{ maxWidth: '40rem', margin: '0 auto', padding: 'var(--space-8)' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+const meta: Meta<typeof MarkdownView> = {
+  title: 'View/MarkdownView',
+  component: MarkdownView,
+  decorators: [
+    (Story) => (
+      <ReaderFrame>
+        <Story />
+      </ReaderFrame>
+    ),
+  ],
+}
+export default meta
+
+type Story = StoryObj<typeof MarkdownView>
+
+const SAMPLE = `# Markdown view
+
+A read-only render straight from markdown — **no editor, no collab**. It reuses
+the editor's parse transforms and \`tela-*\` classes, with _emphasis_, ~~strike~~,
+\`inline code\`, and a [link](https://tela.cagdas.io).
+
+## Lists
+
+- a bullet
+- another, with \`code\`
+  - nested
+
+1. first
+2. second
+
+- [x] done task
+- [ ] open task
+
+## Callout
+
+> [!NOTE]
+> Callouts render with the same chrome + classes as the editor.
+
+> [!WARNING]
+> Including the per-type icon and label.
+
+## Quote & highlight
+
+> A plain blockquote.
+
+Some ==highlighted== text inline.
+
+## Code
+
+\`\`\`ts
+function greet(name: string): string {
+  return \`hello, \${name}\`
+}
+\`\`\`
+
+## Table
+
+| Block | Status |
+| :--- | :---: |
+| headings | done |
+| code | done |
+| callout | done |
+
+## Math
+
+Inline $E = mc^2$ and a block:
+
+$$
+\\int_0^1 x^2 \\, dx = \\tfrac{1}{3}
+$$
+
+---
+
+The end.
+`
+
+export const Sample: Story = {
+  args: { body: SAMPLE },
+}
+
+export const Empty: Story = {
+  args: { body: '' },
+}

@@ -23,7 +23,10 @@ interface MdastNodeLike {
 // letting us register the stringify handler for our custom `highlight` node.
 // Typed loosely + cast at the $remark boundary — the unified/mdast generic
 // types don't line up cleanly across the kit's re-exports.
-function highlightRemark(this: { data: () => Record<string, unknown> }) {
+// Exported as the SINGLE SOURCE of `==highlight==` parsing, shared by both the
+// Milkdown editor ($remark wrapper below) and the standalone view parser
+// (lib/markdown/remark-stack.ts). See docs/view-edit-split.md.
+export function highlightRemark(this: { data: () => Record<string, unknown> }) {
   const data = this.data()
     const toMarkdownExtensions = (data.toMarkdownExtensions ||
       (data.toMarkdownExtensions = [])) as Array<{
