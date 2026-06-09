@@ -29,12 +29,19 @@ export async function fetchHostContext(): Promise<HostContext> {
 // Host-derived white-labeling context for the login surface. Cacheable and
 // host-stable for the page's lifetime, so staleTime: Infinity (mirrors
 // useSSOProviders). Degrades to DEFAULT_HOST_CONTEXT while loading / on error.
+//
+// placeholderData (NOT initialData): initialData is persisted as real,
+// already-fresh cache data, so paired with staleTime: Infinity the query would
+// never fetch — the login screen would stay on the canonical default forever
+// and white-labeling (branding + login-method gating) would never apply on a
+// custom domain. placeholderData fills `.data` during the in-flight fetch
+// without short-circuiting it.
 export function useHostContext() {
   return useQuery({
     queryKey: ['host-context'],
     queryFn: fetchHostContext,
     staleTime: Infinity,
     retry: false,
-    initialData: DEFAULT_HOST_CONTEXT,
+    placeholderData: DEFAULT_HOST_CONTEXT,
   })
 }
