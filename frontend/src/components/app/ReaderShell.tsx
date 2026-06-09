@@ -1,6 +1,4 @@
 import {
-  Suspense,
-  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -9,7 +7,6 @@ import {
   type ReactNode,
 } from 'react'
 import { Type } from 'lucide-react'
-import type { EditorView } from '@milkdown/kit/prose/view'
 import {
   relativeTimeFromSqlite,
   postDateFromSqlite,
@@ -23,7 +20,6 @@ import {
   THEMES,
   type ThemeName,
 } from '../../lib/theme'
-import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import {
   DropdownMenu,
@@ -32,13 +28,7 @@ import {
 } from '../ui/dropdown-menu'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle'
 import { WikilinkHoverPreview } from './wikilink-hover-preview'
-
-// Lazy — the Milkdown grammar/Yjs blob is the app's largest dep and ships as
-// its own chunk; neither reader root (authed /read, public /share) should drag
-// it into the main entry.
-const MilkdownEditor = lazy(() =>
-  import('./milkdown-editor').then((m) => ({ default: m.MilkdownEditor })),
-)
+import { MarkdownView } from '../view/MarkdownView'
 
 // Inlined (not imported from milkdown-wikilink-decoration.ts) so Rollup doesn't
 // pull the wikilink-decoration module in as a shared dep of the reader chunk —
@@ -51,45 +41,27 @@ function parseWikilinkPageId(href: string): number | null {
   return Number(tail)
 }
 
-// Footnotes (gfm preset). Link each `[^n]` reference to its definition and back,
-// assign stable ids, and mark the definition block so the reader can give it a
-// "Footnotes" section header. Non-destructive: only sets ids/classes and appends
-// a back-link — the static reader never re-renders, so PM won't clobber it.
-function wireFootnotes(view: EditorView) {
+// Footnotes. MarkdownView already renders `.reader-footnote-def` (id `fn-<label>`)
+// and `.reader-footnote-ref` (id `fnref-<label>`, linking to its def). Here the
+// reader just marks the first definition as the "Footnotes" section start and
+// appends a back-link (↩) to each definition. Non-destructive — the static view
+// never re-renders.
+function wireFootnotes(root: HTMLElement) {
   const defs = Array.from(
-    view.dom.querySelectorAll('dl[data-type="footnote_definition"]'),
+    root.querySelectorAll('.reader-footnote-def'),
   ) as HTMLElement[]
-  defs.forEach((dl, i) => {
-    const label = dl.dataset.label || String(i + 1)
-    dl.id = `fn-${label}`
-    dl.classList.add('reader-footnote-def')
-    if (i === 0) dl.classList.add('reader-footnotes-start')
-    const dd = dl.querySelector('dd')
-    if (dd && !dd.querySelector(':scope > .reader-footnote-back')) {
+  defs.forEach((def, i) => {
+    if (i === 0) def.classList.add('reader-footnotes-start')
+    const label = def.id.replace(/^fn-/, '')
+    if (label && !def.querySelector(':scope > .reader-footnote-back')) {
       const back = document.createElement('a')
       back.className = 'reader-footnote-back'
       back.href = `#fnref-${label}`
       // U+FE0E forces text (not emoji) presentation of the return arrow.
       back.textContent = '↩︎'
       back.setAttribute('aria-label', 'Back to reference')
-      back.setAttribute('contenteditable', 'false')
-      dd.appendChild(back)
+      def.appendChild(back)
     }
-  })
-  const seen = new Set<string>()
-  const refs = Array.from(
-    view.dom.querySelectorAll('sup[data-type="footnote_reference"]'),
-  ) as HTMLElement[]
-  refs.forEach((sup) => {
-    const label = sup.dataset.label || ''
-    // Only the first reference to a label owns the back-link target id.
-    if (label && !seen.has(label)) {
-      sup.id = `fnref-${label}`
-      seen.add(label)
-    }
-    sup.classList.add('reader-footnote-ref')
-    sup.setAttribute('role', 'link')
-    sup.tabIndex = 0
   })
 }
 
@@ -215,8 +187,6 @@ export function ReaderShell({
   title,
   body,
   updatedAt,
-  wikilinkMode,
-  aliveWikilinkIds,
   wikilinkResolveIndex,
   onNavigateWikilink,
   topbarLeading,
@@ -243,6 +213,14 @@ export function ReaderShell({
   useEffect(() => subscribeToTheme(setThemeState), [])
 
   const minutes = useMemo(() => readingMinutes(body), [body])
+
+  // `[[Name]]` resolution for MarkdownView, scoped to the reading context
+  // (wikilinkResolveIndex is space-scoped in read mode, subtree-scoped in
+  // share). Out-of-scope/unknown → unresolved → rendered plain (not "broken").
+  const resolveWikilink = useCallback(
+    (slug: string) => wikilinkResolveIndex?.get(slug) ?? null,
+    [wikilinkResolveIndex],
+  )
 
   // Document title (+ full SEO/social meta on the public reader, when headMeta
   // is supplied) while in the reader.
@@ -280,11 +258,11 @@ export function ReaderShell({
   // Build the TOC from the rendered heading DOM once the editor view is ready.
   // Markdown→DOM heading order is stable, so reading straight off view.dom keeps
   // the TOC guaranteed in-sync with what's on screen.
-  const handleViewReady = useCallback((view: EditorView | null) => {
-    if (!view) return
+  const handleContentReady = useCallback((root: HTMLElement | null) => {
+    if (!root) return
     requestAnimationFrame(() => {
       const els = Array.from(
-        view.dom.querySelectorAll('h1, h2, h3'),
+        root.querySelectorAll('h1, h2, h3'),
       ) as HTMLElement[]
       const entries: TocEntry[] = []
       // Stable, human-readable slug ids (deduped) so a heading deep-link
@@ -318,7 +296,7 @@ export function ReaderShell({
       })
       headingsRef.current = els.filter((el) => el.id && el.textContent?.trim())
       setToc(entries)
-      wireFootnotes(view)
+      wireFootnotes(root)
       // Honour a deep-link hash now that ids exist (the browser couldn't on
       // load — the article hadn't rendered yet).
       const hash = decodeURIComponent(window.location.hash.slice(1))
@@ -613,21 +591,18 @@ export function ReaderShell({
                   </>
                 ) : null}
               </div>
-              <Suspense fallback={<ReaderBodyFallback />}>
-                <MilkdownEditor
-                  key={`reader-${pageId}`}
-                  defaultValue={body}
-                  onChange={noop}
-                  ariaLabel="Page body"
-                  aliveWikilinkIds={aliveWikilinkIds}
-                  wikilinkResolveIndex={wikilinkResolveIndex}
-                  collabPageId={null}
-                  readOnly
-                  wikilinkMode={wikilinkMode}
-                  pageId={pageId}
-                  onViewReady={handleViewReady}
-                />
-              </Suspense>
+              <MarkdownView
+                key={`reader-${pageId}`}
+                body={body}
+                pageId={pageId}
+                resolveWikilink={resolveWikilink}
+                // Reader wikilink hrefs use the `tela://page/N` scheme the
+                // shell's click + hover-preview already intercept (see below);
+                // the browser treats the scheme as dead, so nav is fully ours.
+                pageHref={(id) => `tela://page/${id}`}
+                wikilinkUnresolved="plain"
+                onReady={handleContentReady}
+              />
               {articleFooter}
             </article>
           </div>
@@ -637,22 +612,3 @@ export function ReaderShell({
   )
 }
 
-function ReaderBodyFallback() {
-  return (
-    <div
-      role="status"
-      aria-busy="true"
-      aria-label="Loading page"
-      className={cn(
-        'min-h-[calc(var(--space-8)*8)]',
-        'rounded-[var(--radius-sm)]',
-        'bg-[var(--surface-2)]',
-      )}
-    />
-  )
-}
-
-function noop() {
-  // Read-only — onChange is required by MilkdownEditor's typing but never
-  // meaningfully fires (the editable predicate is gated by readOnly).
-}

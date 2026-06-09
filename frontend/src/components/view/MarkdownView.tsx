@@ -35,6 +35,10 @@ interface ViewContextValue {
   // Build an href for a resolved page id (route differs per surface: app vs
   // public vs share).
   pageHref?: (pageId: number) => string
+  // How to render a wikilink whose target didn't resolve: 'broken' (red, the
+  // app default — the page is missing) or 'plain' (neutral, for read/share
+  // surfaces where out-of-scope links shouldn't shout "broken").
+  wikilinkUnresolved?: 'broken' | 'plain'
 }
 const ViewContext = createContext<ViewContextValue>({})
 
@@ -169,7 +173,7 @@ function ExcalidrawView({
 }
 
 function WikilinkView({ target, alias }: { target: string; alias: string | null }) {
-  const { resolveWikilink, pageHref } = useContext(ViewContext)
+  const { resolveWikilink, pageHref, wikilinkUnresolved } = useContext(ViewContext)
   const slug = wikilinkSlug(target)
   const label = alias || target
   if (resolveWikilink && pageHref) {
@@ -181,14 +185,19 @@ function WikilinkView({ target, alias }: { target: string; alias: string | null 
         </a>
       )
     }
-    // Resolver present but no match → broken (matches the editor's styling).
+    // Unresolved: 'plain' (read/share — don't shout broken at readers) or the
+    // app default 'broken' (red, the page is genuinely missing).
+    const cls =
+      wikilinkUnresolved === 'plain'
+        ? 'tela-wikilink'
+        : 'tela-wikilink tela-wikilink--broken'
     return (
-      <span className="tela-wikilink tela-wikilink--broken" data-wikilink-slug={slug}>
+      <span className={cls} data-wikilink-slug={slug}>
         {label}
       </span>
     )
   }
-  // No resolver (preview / out-of-scope) → neutral styled span, no navigation.
+  // No resolver (preview) → neutral styled span, no navigation.
   return (
     <span className="tela-wikilink" data-wikilink-slug={slug}>
       {label}
@@ -575,8 +584,10 @@ export function MarkdownView({
   pageId,
   resolveWikilink,
   pageHref,
+  wikilinkUnresolved,
   commentThreads,
   onCommentClick,
+  onReady,
   className,
 }: {
   body: string
@@ -586,19 +597,27 @@ export function MarkdownView({
   resolveWikilink?: (slug: string) => number | null
   /** Build an href for a resolved page id (surface-specific routing). */
   pageHref?: (pageId: number) => string
+  /** How unresolved wikilinks render: 'broken' (default) or 'plain'. */
+  wikilinkUnresolved?: 'broken' | 'plain'
   /** Comment threads to paint as inline highlights (read view). */
   commentThreads?: CommentThread[] | null
   /** Open a thread when its highlighted passage is clicked. */
   onCommentClick?: (threadId: number) => void
+  /** Fires with the rendered content element after each render — lets a host
+   *  (the reader) run DOM post-processing (TOC, footnotes, scroll-spy). */
+  onReady?: (el: HTMLElement) => void
   className?: string
 }) {
   const tree = useMemo(() => parsePageMarkdown(body), [body])
   const ctx = useMemo<ViewContextValue>(
-    () => ({ pageId, resolveWikilink, pageHref }),
-    [pageId, resolveWikilink, pageHref],
+    () => ({ pageId, resolveWikilink, pageHref, wikilinkUnresolved }),
+    [pageId, resolveWikilink, pageHref, wikilinkUnresolved],
   )
   const contentRef = useRef<HTMLDivElement>(null)
   useCommentHighlights(contentRef, commentThreads, onCommentClick)
+  useEffect(() => {
+    if (contentRef.current) onReady?.(contentRef.current)
+  }, [body, onReady])
   return (
     <ViewContext.Provider value={ctx}>
       <div className={cn('tela-milkdown', className)}>
