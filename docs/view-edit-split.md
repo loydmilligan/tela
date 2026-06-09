@@ -1,6 +1,27 @@
 # View / Edit split (Confluence-style) — design contract
 
-Status: **proposed** (design locked, implementation phased). Owner: see git blame.
+Status: **in progress** (design locked; core shipped). Owner: see git blame.
+
+### Implementation status
+
+- ✅ **Parse spine** — shared remark stack (`lib/markdown/remark-stack.ts`) +
+  Milkdown-free transforms (`lib/markdown/transforms/*`) the editor and view
+  both import. No second parser.
+- ✅ **`MarkdownView`** (`components/view/MarkdownView.tsx`) — renders headings,
+  lists/tasks, quote, code (refractor), tables, callouts, highlight, math
+  (KaTeX), mermaid + chart (shared `lib/diagrams/*` cores), excalidraw (server
+  PNG), wikilinks (resolver-aware), and tabs (interactive). Validated in
+  Storybook + the live app.
+- ✅ **View-first `PageView`** — read view by default; `PageEditor` (collab)
+  mounts only on `?edit=1` / draft. Edit ⇄ Done toggle. Verified in-app: view
+  loads no editor chunk, no `/yjs`, no websocket.
+- ✅ **Anti-drift gate** — `scripts/blocks-manifest.mjs` requires every block to
+  declare a view-render status (VIEW_RENDERED / VIEW_DEGRADES).
+- ⏳ **Pending** — comments in view (read+reply, phase 4); dedicated renderers
+  for the degrading directive blocks (pull-quote, embed, file, kanban,
+  stat-grid, timeline, calendar) + collapsible; swapping `/read`, `/public`,
+  `/share` to `MarkdownView`; the runtime render-parity test (the gate is
+  classification-only for now — FE has no test infra yet).
 
 ## Why
 
