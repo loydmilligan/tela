@@ -19,6 +19,11 @@ name: tela-registry
 services:
   registry:
     image: registry:2
+    environment:
+      # Allow manifest deletes so old :<commit> tags can be pruned (delete the
+      # tag's manifest, then `registry garbage-collect` reclaims unreferenced
+      # blobs). Off by default in registry:2.
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
     ports:
       - "127.0.0.1:${TELA_REGISTRY_PORT:-5000}:5000"
     volumes:
