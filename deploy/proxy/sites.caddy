@@ -18,6 +18,12 @@
 # proxy (see docker-compose.yml); Caddy then auto-provisions a Let's Encrypt
 # certificate. See docs/self-hosting.md.
 {$TELA_SITE_ADDRESS::80} {
+	# Compress responses on the wire (zstd preferred, gzip fallback). Covers both
+	# the frontend's static JS/CSS and the backend's JSON. Caddy skips anything
+	# the upstream already encoded, so it won't double-compress the frontend's
+	# own gzip. Big win on the ~1 MB Milkdown editor chunk a doc needs to paint.
+	encode zstd gzip
+
 	# HSTS — honored by browsers over HTTPS (the terminator's edge, or Caddy's
 	# own cert in direct-TLS mode). Applies to every response. No preload.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -235,6 +241,7 @@
 # public/SEO surface. Requires direct-TLS mode (TELA_SITE_ADDRESS set to the
 # canonical host, 80+443 published); behind Cloudflare on-demand never fires.
 https:// {
+	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	tls {
 		on_demand
