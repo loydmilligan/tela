@@ -23,41 +23,47 @@ DEV_DATABASE_URL := postgres://tela:tela@localhost:55433/tela?sslmode=disable
 # Maintenance DSN the test harness connects to in order to CREATE/DROP per-test DBs.
 TEST_DATABASE_URL := postgres://tela:tela@localhost:55433/postgres?sslmode=disable
 
-# ── Remote deploy (no registry) ─────────────────────────────────────────────
-# Two styles, both run FROM ANY machine; set the host(s) in your shell, on the
-# command line (`make deploy-remote REMOTE=…`), or in untracked deploy/deploy.env:
-#   build-on-remote → `make deploy` / `deploy-backend|frontend|landing`: SSH to
-#                     DEPLOY_HOST, git pull + build there (needs a capable box).
-#   build-local     → `make deploy-remote REMOTE=<host>`: build images HERE,
-#                     `docker save | ssh <host> docker load` (no registry, no
-#                     on-box build — good for small boxes / the split topology).
+# ── Deploy (split topology, build-local + on-box registry) ──────────────────
+# ONE command: `make deploy` (build here → push changed layers to the on-box
+# registry over an SSH tunnel → box pulls + recreates → health-gate). Partial
+# pushes: `deploy-backend` / `deploy-frontend` / `deploy-landing`. Offline
+# fallback (no registry, full-image `docker save`): `deploy-offline`. Full design
+# + the "move the registry elsewhere" notes are in docs/deploy.md.
+#
+# Runs FROM ANY machine; set the host + paths in your shell, on the command line
+# (`make deploy REMOTE=<host>`), or in untracked deploy/deploy.env.
 DEPLOY_HOST ?=
 DEPLOY_DIR  ?= ~/proj/tela
 PUBLIC_URL  ?= https://tela.cagdas.io
 
-# build-local deploy (deploy-remote): the ssh host, the repo path on it, and the
-# dir the external shared edge serves static from (landing + sites.caddy ride it).
-# EDGE_CONTAINER, if set, is reloaded after the sync so the edge re-reads sites.caddy.
+# REMOTE — ssh host. REMOTE_DIR — repo path on it. REMOTE_WEB — dir the external
+# shared edge serves static from (landing + sites.caddy ride it). EDGE_CONTAINER,
+# if set, is reloaded after the sync so the edge re-reads sites.caddy.
 REMOTE         ?= $(DEPLOY_HOST)
 REMOTE_DIR     ?= $(DEPLOY_DIR)
 REMOTE_WEB     ?= /srv/web
 EDGE_CONTAINER ?=
 
-# RUN_REMOTE wraps a shell command so it runs on DEPLOY_HOST — but if we're
-# ALREADY on it (running `make deploy` from the host's own shell), ssh-to-self is
-# wasteful and needs key auth to localhost, so we run it locally instead.
-# Usage in a recipe:  $(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && …'
-ifeq ($(shell hostname),$(DEPLOY_HOST))
-  RUN_REMOTE = sh -c
-else
-  RUN_REMOTE = ssh $(DEPLOY_HOST)
-endif
+# Image registry. TELA_REGISTRY is the host:port prefix images are tagged/pushed
+# under; default is the on-box loopback registry (docker-compose.registry.yml),
+# reached via an SSH tunnel (REG_TUNNEL=1). To move to a real registry (e.g.
+# GHCR), set TELA_REGISTRY=ghcr.io/zcag + REG_TUNNEL=0 in deploy/deploy.env — the
+# rest of the flow is unchanged. Images are tagged :<commit> (immutable, for
+# rollback) and :latest. Layer-deduped push = only changed layers cross the wire.
+TELA_REGISTRY      ?= 127.0.0.1:5000
+TELA_REGISTRY_PORT ?= 5000
+REG_TUNNEL         ?= 1
+REG_SOCK           := /tmp/tela-registry-tunnel.sock
+SPLIT              := docker compose -f deploy/docker-compose.split.yml
+# Image refs the box's compose resolves to (pinned to this checkout's commit).
+DEPLOY_IMAGE_ENV   = TELA_BACKEND_IMAGE=$(TELA_REGISTRY)/tela-backend:$(TELA_COMMIT) \
+                     TELA_FRONTEND_IMAGE=$(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT)
 
 .PHONY: up down logs build clean dev be-dev fe-dev storybook help test-mcp-integration \
         test dev-db dev-db-clean setup backup restore \
         landing-dev landing-build landing-gate landing-clean \
-        deploy deploy-backend deploy-frontend deploy-landing deploy-remote release-mcp reset-prod-db \
-        health-gate
+        deploy deploy-backend deploy-frontend deploy-landing deploy-offline registry-up _push \
+        release-mcp reset-prod-db health-gate
 
 # setup: first-run convenience. Copies deploy/.env.example → deploy/.env and
 # fills the three load-bearing secrets with `openssl rand -hex 32` so a
@@ -95,12 +101,14 @@ help:
 	@echo "  make landing-build  # build the static landing into landing/dist/"
 	@echo "  make landing-gate   # run the landing production gates (a11y, tokens, motion, lighthouse)"
 	@echo ""
-	@echo "Remote deploy (set DEPLOY_HOST / REMOTE in deploy/deploy.env; run from any machine):"
-	@echo "  make deploy           # pull + full 'make up' on DEPLOY_HOST, then verify /api/version commit"
-	@echo "  make deploy-backend   # pull + rebuild ONLY the backend service, then verify /api/version"
-	@echo "  make deploy-frontend  # pull + rebuild ONLY the frontend service"
-	@echo "  make deploy-landing   # pull + landing-build + recreate proxy so it re-reads landing/dist"
-	@echo "  make deploy-remote REMOTE=<host>  # build images locally + docker-load to a remote + up split stack (no registry)"
+	@echo ""
+	@echo "Deploy (set REMOTE in deploy/deploy.env; run from any machine):"
+	@echo "  make deploy           # THE deploy: build → push changed layers → recreate → verify"
+	@echo "  make deploy-backend   # build + push + recreate ONLY the backend, then verify /api/version"
+	@echo "  make deploy-frontend  # build + push + recreate ONLY the frontend"
+	@echo "  make deploy-landing   # build + sync landing + sites.caddy, reload the edge (no image)"
+	@echo "  make deploy-offline   # fallback: no registry, full-image 'docker save | ssh load'"
+	@echo "  make registry-up      # ensure the on-box image registry is running (deploy does this)"
 	@echo "  make reset-prod-db    # DESTROY + recreate the prod Postgres volume (requires FORCE=1)"
 	@echo "  make release-mcp      # publish tela-mcp to npm (BUMP=patch|minor|major, default patch)"
 
@@ -240,17 +248,17 @@ test-mcp-integration:
 	TELA_ADMIN_PASSWORD="$$TELA_ADMIN_PASSWORD" \
 	  npm --prefix mcp run test:integration
 
-# ── Remote deploy targets ───────────────────────────────────────────────────
-# The build-on-remote targets run from ANY machine: RUN_REMOTE ssh's into
-# DEPLOY_HOST (or runs locally if we're already on it). They `git pull --ff-only`
-# so deploy never silently diverges from a force-push — a non-fast-forward fails
-# loudly instead.
+# ── Deploy targets ──────────────────────────────────────────────────────────
+# Build-local: images are built on THIS machine and shipped to the box (registry
+# push, or `docker save` for deploy-offline). The box only pulls — it never
+# builds. registry-up `git pull --ff-only`s the box repo so its compose +
+# sites.caddy source is current; a non-fast-forward fails loudly.
 #
 # PRECONDITION: push your commit before deploying. The health gate compares the
-# locally-captured HEAD ($(TELA_COMMIT), evaluated on THIS machine before ssh)
-# against what /api/version reports after the host pulls + rebuilds. If you
-# forgot to push, the host pulls nothing, the running commit won't match, and the
-# gate fails — exactly the "commit ≠ deploy" trap we want to make impossible.
+# locally-captured HEAD ($(TELA_COMMIT), the tag the image is built+pushed under)
+# against what /api/version reports after the box recreates. If you forgot to
+# push, the box's pulled compose lags HEAD and the gate fails — exactly the
+# "commit ≠ deploy" trap we want to make impossible.
 
 # health-gate: poll PUBLIC_URL/api/version until the reported `commit` equals
 # EXPECT_COMMIT (default: this checkout's HEAD), or fail. This is the permanent
@@ -283,66 +291,102 @@ health-gate:
 	echo "  (Did you push? Or did 'make up' on $(DEPLOY_HOST) fail to rebuild the backend?)" >&2; \
 	exit 1
 
-# deploy: full stack. Pull on the deploy host, run the normal `make up`
-# (landing-build + build/recreate every service + force-recreate proxy), verify.
-deploy:
-	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && make up'
-	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
-
-# deploy-backend: rebuild + recreate ONLY the backend container (faster than a
-# full `up` when only Go changed). Must pass EXPORT_BUILD so the rebuilt image
-# carries the right version/commit ldflags — without it /api/version would
-# report dev/unknown and the health gate would (correctly) fail. The git
-# metadata is computed ON THE REMOTE (it's the deploying host's HEAD after pull),
-# so EXPORT_BUILD is expanded inside the remote command, not on the laptop.
-deploy-backend:
-	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && \
-	  TELA_VERSION="$$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-	  TELA_COMMIT="$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
-	  docker compose -f deploy/docker-compose.yml up -d --build backend'
-	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
-
-# deploy-frontend: rebuild + recreate ONLY the frontend (static nginx) container.
-# No version stamp (the frontend isn't ldflag-stamped) and no health gate
-# (/api/version reflects the backend, not the FE bundle).
-deploy-frontend:
-	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && \
-	  docker compose -f deploy/docker-compose.yml up -d --build frontend'
-
-# deploy-landing: the landing is baked into the proxy image
-# (deploy/proxy/Dockerfile), so "deploying" it = pull + rebuild the proxy image
-# on the deploy host. No host Node build step. --force-recreate is REQUIRED: the Caddyfile
-# is bind-mounted (not baked), and a Caddyfile-only change cache-hits the image —
-# without --force-recreate the proxy keeps running the old in-memory config and
-# the edit silently never applies. This is also the target for Caddyfile changes.
-deploy-landing:
-	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && \
-	  docker compose -f deploy/docker-compose.yml up -d --build --force-recreate proxy'
-
-# deploy-remote: build-local deploy of the SPLIT stack to a remote host (for the
-# split topology behind an external shared edge — see docs/self-hosting.md). The
-# remote does NOT build: this builds the two custom images locally (native), then
-# `docker save | ssh REMOTE docker load` (no registry — good for small boxes),
-# syncs the landing + sites.caddy to the dir the edge serves static from
-# (REMOTE_WEB), pulls the repo + `up`s the split compose, reloads the external
-# edge if EDGE_CONTAINER is set, then verifies /api/version. Postgres pulls a
-# public image; gotenberg is configured (in deploy/.env) as a remote renderer.
-#   make deploy-remote REMOTE=<ssh-host> [REMOTE_WEB=/srv/web] [EDGE_CONTAINER=edge-caddy]
-deploy-remote:
+# registry-up: ensure the on-box image registry is running. Pulls the repo first
+# so the registry compose file is present, then `up -d` (idempotent — a no-op if
+# already running). Every registry-based deploy target depends on this, so the
+# box repo is current (compose + sites.caddy source) before the app `up`.
+registry-up:
 	@test -n "$(REMOTE)" || { echo "set REMOTE=<ssh-host> (or in deploy/deploy.env)"; exit 1; }
-	@echo "[deploy-remote] building backend+frontend ($(TELA_COMMIT)) locally…"
-	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) -t tela-backend:latest backend
-	docker build -t tela-frontend:latest frontend
+	ssh $(REMOTE) 'cd $(REMOTE_DIR) && git pull --ff-only && \
+	  TELA_REGISTRY_PORT=$(TELA_REGISTRY_PORT) docker compose -f deploy/docker-compose.registry.yml up -d'
+
+# _push (internal): push $(PUSH_IMAGES) — each tagged :<commit> and :latest — to
+# the registry. For the on-box loopback registry (REG_TUNNEL=1) it opens a
+# transient SSH tunnel (control-master socket) so the laptop's :PORT reaches the
+# box registry, and closes it on exit via a shell trap (even if a push fails).
+# REG_TUNNEL=0 pushes straight to TELA_REGISTRY (e.g. GHCR) — no tunnel.
+_push:
+	@set -e; \
+	if [ "$(REG_TUNNEL)" = "1" ]; then \
+	  echo "[push] tunnel :$(TELA_REGISTRY_PORT) → $(REMOTE) registry…"; \
+	  ssh -fN -M -S $(REG_SOCK) -L $(TELA_REGISTRY_PORT):127.0.0.1:$(TELA_REGISTRY_PORT) $(REMOTE); \
+	  trap 'ssh -S $(REG_SOCK) -O exit $(REMOTE) 2>/dev/null || true' EXIT; \
+	fi; \
+	for img in $(PUSH_IMAGES); do \
+	  echo "[push] $(TELA_REGISTRY)/$$img (only changed layers cross the wire)"; \
+	  docker push $(TELA_REGISTRY)/$$img:$(TELA_COMMIT); \
+	  docker push $(TELA_REGISTRY)/$$img:latest; \
+	done
+
+# deploy: THE deploy. Build both images locally → push only changed layers to the
+# on-box registry → sync landing + sites.caddy → box pulls the just-pushed tag and
+# recreates the split stack → health-gate verifies /api/version reports this commit.
+# Push your commit first (the gate compares the box's running commit to local HEAD).
+deploy: registry-up
+	@echo "[deploy] building backend+frontend ($(TELA_COMMIT))…"
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
+	  -t $(TELA_REGISTRY)/tela-backend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-backend:latest backend
+	docker build -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
 	$(MAKE) landing-build
-	@echo "[deploy-remote] streaming images → $(REMOTE)…"
-	docker save tela-backend:latest tela-frontend:latest | ssh $(REMOTE) docker load
-	@echo "[deploy-remote] syncing landing + sites.caddy → $(REMOTE):$(REMOTE_WEB)…"
+	@$(MAKE) _push PUSH_IMAGES="tela-backend tela-frontend"
+	@echo "[deploy] syncing landing + sites.caddy → $(REMOTE):$(REMOTE_WEB)…"
 	ssh $(REMOTE) 'mkdir -p $(REMOTE_WEB)/tela-landing $(REMOTE_WEB)/tela'
 	rsync -a --delete landing/dist/ $(REMOTE):$(REMOTE_WEB)/tela-landing/
 	rsync -a deploy/proxy/sites.caddy $(REMOTE):$(REMOTE_WEB)/tela/sites.caddy
-	@echo "[deploy-remote] pull + up split stack…"
+	@echo "[deploy] recreating split stack @ $(TELA_COMMIT)…"
+	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d'
+	@if [ -n "$(EDGE_CONTAINER)" ]; then \
+	  ssh $(REMOTE) 'docker exec $(EDGE_CONTAINER) caddy reload --config /etc/caddy/Caddyfile' || true; fi
+	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
+
+# deploy-backend: build + push + recreate ONLY the backend (fast path when only Go
+# changed). VERSION/COMMIT ldflags stamp the image so /api/version is right and the
+# health gate passes.
+deploy-backend: registry-up
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
+	  -t $(TELA_REGISTRY)/tela-backend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-backend:latest backend
+	@$(MAKE) _push PUSH_IMAGES="tela-backend"
+	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d backend'
+	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
+
+# deploy-frontend: build + push + recreate ONLY the frontend. No health gate
+# (/api/version reflects the backend, not the FE bundle).
+deploy-frontend: registry-up
+	docker build -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
+	@$(MAKE) _push PUSH_IMAGES="tela-frontend"
+	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d frontend'
+
+# deploy-landing: the landing + sites.caddy are static files the EXTERNAL shared
+# edge serves/imports from REMOTE_WEB (not an image). Build, rsync, reload the edge.
+# This is also the target for a sites.caddy change.
+deploy-landing:
+	@test -n "$(REMOTE)" || { echo "set REMOTE=<ssh-host> (or in deploy/deploy.env)"; exit 1; }
+	$(MAKE) landing-build
+	ssh $(REMOTE) 'mkdir -p $(REMOTE_WEB)/tela-landing $(REMOTE_WEB)/tela'
+	rsync -a --delete landing/dist/ $(REMOTE):$(REMOTE_WEB)/tela-landing/
+	rsync -a deploy/proxy/sites.caddy $(REMOTE):$(REMOTE_WEB)/tela/sites.caddy
+	@if [ -n "$(EDGE_CONTAINER)" ]; then \
+	  ssh $(REMOTE) 'docker exec $(EDGE_CONTAINER) caddy reload --config /etc/caddy/Caddyfile' || true; fi
+
+# deploy-offline: FALLBACK — no registry. Build locally, stream FULL images with
+# `docker save | ssh docker load`, then recreate the split stack with the loaded
+# bare-name images (TELA_PULL_POLICY=never so compose uses them as-is). For first
+# boot before the registry exists, or if the registry is down. Slow on a thin
+# uplink (sends whole images, no layer dedup) — that's the point of `make deploy`.
+deploy-offline:
+	@test -n "$(REMOTE)" || { echo "set REMOTE=<ssh-host> (or in deploy/deploy.env)"; exit 1; }
+	@echo "[deploy-offline] building backend+frontend ($(TELA_COMMIT)) locally…"
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) -t tela-backend:latest backend
+	docker build -t tela-frontend:latest frontend
+	$(MAKE) landing-build
+	@echo "[deploy-offline] streaming full images → $(REMOTE)…"
+	docker save tela-backend:latest tela-frontend:latest | ssh $(REMOTE) docker load
+	ssh $(REMOTE) 'mkdir -p $(REMOTE_WEB)/tela-landing $(REMOTE_WEB)/tela'
+	rsync -a --delete landing/dist/ $(REMOTE):$(REMOTE_WEB)/tela-landing/
+	rsync -a deploy/proxy/sites.caddy $(REMOTE):$(REMOTE_WEB)/tela/sites.caddy
 	ssh $(REMOTE) 'cd $(REMOTE_DIR) && git pull --ff-only && \
-	  docker compose -f deploy/docker-compose.split.yml up -d'
+	  TELA_BACKEND_IMAGE=tela-backend:latest TELA_FRONTEND_IMAGE=tela-frontend:latest TELA_PULL_POLICY=never \
+	  $(SPLIT) up -d'
 	@if [ -n "$(EDGE_CONTAINER)" ]; then \
 	  ssh $(REMOTE) 'docker exec $(EDGE_CONTAINER) caddy reload --config /etc/caddy/Caddyfile' || true; fi
 	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
@@ -350,17 +394,18 @@ deploy-remote:
 # reset-prod-db: GUARDED, DESTRUCTIVE. Drops the prod Postgres volume and brings
 # it back empty so the backend re-runs migrations from scratch. Prod data is
 # disposable by design (pre-1.0); this is the sanctioned reset. Requires FORCE=1,
-# same as `clean`. Runs on the deploy host: stop the backend (releases
-# connections) + postgres, delete the named volume, then `up` so postgres
-# re-initializes and the backend re-migrates against a fresh DB.
+# same as `clean`. Runs on the split deploy host: stop the backend (releases
+# connections) + postgres, delete the named volume, then `up -d` so postgres
+# re-initializes and the backend re-migrates against a fresh DB. Recreates from
+# the registry images already on the box (compose defaults → :latest); does NOT
+# build or push. No commit gate — this isn't a code deploy.
 reset-prod-db:
 ifeq ($(FORCE),1)
-	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && \
-	  docker compose -f deploy/docker-compose.yml stop backend postgres && \
-	  docker compose -f deploy/docker-compose.yml rm -f postgres && \
+	ssh $(REMOTE) 'cd $(REMOTE_DIR) && \
+	  $(SPLIT) stop backend postgres && \
+	  $(SPLIT) rm -f postgres && \
 	  docker volume rm tela_tela-pgdata && \
-	  make up'
-	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
+	  $(SPLIT) up -d'
 else
 	@echo "reset-prod-db DESTROYS the production Postgres volume (tela_tela-pgdata) — ALL wiki data is lost."
 	@echo "Re-run with FORCE=1 to confirm:   make reset-prod-db FORCE=1"

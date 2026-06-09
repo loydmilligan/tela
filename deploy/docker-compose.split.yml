@@ -7,10 +7,15 @@
 # published below on loopback host ports. gotenberg is omitted too — point
 # TELA_GOTENBERG_URL at a renderer reachable on your network (it can be remote).
 #
-# Images are NOT built here — `make deploy-remote REMOTE=<host>` builds them on
-# the deploying machine and `docker load`s them in (no registry; good for small
-# boxes). `pull_policy: never` + no `build:` means an accidental `up` fails fast
-# instead of building on-box.
+# Images are NOT built here — they're built on the deploying machine and pulled
+# from the on-box registry (see docker-compose.registry.yml + docs/deploy.md).
+# The image refs + pull policy are parametrized so one file serves both deploy
+# paths:
+#   registry (`make deploy`, default) — TELA_*_IMAGE point at the loopback
+#     registry, pull_policy: always so `up` re-pulls the just-pushed tag.
+#   docker-save fallback (`make deploy-offline`) — overrides TELA_*_IMAGE to the
+#     bare `tela-*:latest` names it `docker load`s and sets TELA_PULL_POLICY=never.
+# No `build:` here, so an accidental bare `up` never builds on-box.
 #
 # Host-specific config (TELA_SITE_ADDRESS, gotenberg URL, PDF render origin, RAG
 # embed host, secrets) lives in deploy/.env — see deploy/.env.example. The
@@ -20,8 +25,8 @@ name: tela
 
 services:
   backend:
-    image: tela-backend:latest
-    pull_policy: never
+    image: ${TELA_BACKEND_IMAGE:-127.0.0.1:5000/tela-backend:latest}
+    pull_policy: ${TELA_PULL_POLICY:-always}
     environment:
       TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
       TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}
@@ -85,8 +90,8 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: tela-frontend:latest
-    pull_policy: never
+    image: ${TELA_FRONTEND_IMAGE:-127.0.0.1:5000/tela-frontend:latest}
+    pull_policy: ${TELA_PULL_POLICY:-always}
     ports:
       - "127.0.0.1:8782:80"
     restart: unless-stopped

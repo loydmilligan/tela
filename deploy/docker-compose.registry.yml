@@ -1,0 +1,29 @@
+# tela — on-box image registry (split-topology deploy).
+#
+# A tiny `registry:2` that lives on the deploy host so `make deploy` can push
+# only the CHANGED image layers over the (often slow) uplink instead of streaming
+# whole images with `docker save`. The build still happens on the deploying
+# machine; this just makes the transfer layer-deduplicated.
+#
+# Flow: laptop builds → `docker push` over an SSH tunnel to this registry →
+# the box pulls from its OWN localhost registry (instant) and recreates the
+# container. See docs/deploy.md.
+#
+# Bound to 127.0.0.1 ONLY: never exposed on the box's public interface. The push
+# reaches it through an authenticated SSH tunnel (`make deploy` opens/closes it),
+# the box pulls over loopback — so there's no auth/TLS to manage. Separate compose
+# project (`name: tela-registry`) so it's independent infra: bring it up once and
+# it stays running across app deploys.
+name: tela-registry
+
+services:
+  registry:
+    image: registry:2
+    ports:
+      - "127.0.0.1:${TELA_REGISTRY_PORT:-5000}:5000"
+    volumes:
+      - tela-registry-data:/var/lib/registry
+    restart: unless-stopped
+
+volumes:
+  tela-registry-data:

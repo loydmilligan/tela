@@ -39,7 +39,7 @@ Two deployment shapes share one codebase:
 
 Backend image is distroless. Ad-hoc DB poke: `docker compose exec postgres psql -U tela -d tela -c '…'`. `make up`/`make build` auto-stamp `TELA_VERSION` (`git describe --tags --always --dirty`) + `TELA_COMMIT` into the image, surfaced by `GET /api/version`.
 
-**Deploy.** Build-on-remote: `make deploy` (+ `deploy-backend|frontend|landing`) SSH to `DEPLOY_HOST`, `git pull` + build there. Build-local (split topology / small boxes): `make deploy-remote REMOTE=<host>` builds the images locally, `docker save | ssh <host> docker load` (no registry), syncs landing + `sites.caddy` to the dir the external edge serves static from, `up`s the split stack, then `/api/version` health-gate. Configure the host(s) in `deploy/.env`.
+**Deploy.** Build-local + on-box registry: `make deploy` builds both images on the deploying machine, pushes only changed layers to a loopback `registry:2` on the box (`docker-compose.registry.yml`) over a transient SSH tunnel, syncs landing + `sites.caddy` to the dir the external edge serves static from, recreates the split stack from the just-pushed `:<commit>` tag, then `/api/version` health-gate. The box never builds — it only pulls. Partials: `deploy-backend|frontend|landing`. `make deploy-offline` is the no-registry fallback (`docker save | ssh docker load`). Move the registry off-box via `TELA_REGISTRY` + `REG_TUNNEL=0`. Configure `REMOTE`/paths in `deploy/deploy.env`. Full design in [`deploy.md`](deploy.md).
 
 ## Backend layout (`backend/`)
 
