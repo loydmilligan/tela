@@ -1,5 +1,9 @@
 # RAG — semantic retrieval
 
+> The product features built ON this engine — related pages, link suggestions,
+> overlap detection, knowledge gaps, and the vision — live in
+> [`knowledge-intelligence.md`](knowledge-intelligence.md). This doc is the engine.
+
 How tela turns `pages.body` into searchable meaning, how that index stays
 healthy on its own, and how to measure and evolve it. The keystroke-path search
 UX (Orama + Postgres FTS) lives in [`search.md`](search.md); this doc is the
