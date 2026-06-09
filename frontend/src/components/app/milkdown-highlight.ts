@@ -1,7 +1,7 @@
 import { $command, $inputRule, $markSchema, $remark } from '@milkdown/kit/utils'
 import { markRule } from '@milkdown/kit/prose'
 import { toggleMark } from '@milkdown/kit/prose/commands'
-import { findAndReplace } from 'mdast-util-find-and-replace'
+import { highlightRemark } from '../../lib/markdown/transforms/highlight'
 
 // Highlight mark: `==text==` → <mark>. A widely-supported markdown extension
 // (Obsidian et al.), so it round-trips as plain text. `==` isn't CommonMark,
@@ -14,56 +14,6 @@ import { findAndReplace } from 'mdast-util-find-and-replace'
 //   - an input rule converts `==x==` as you type; a command + bubble-toolbar
 //     button toggle it on a selection.
 
-interface MdastNodeLike {
-  type: string
-  children?: unknown[]
-}
-
-// Regular function (not arrow) so unified binds `this` to the processor,
-// letting us register the stringify handler for our custom `highlight` node.
-// Typed loosely + cast at the $remark boundary — the unified/mdast generic
-// types don't line up cleanly across the kit's re-exports.
-// Exported as the SINGLE SOURCE of `==highlight==` parsing, shared by both the
-// Milkdown editor ($remark wrapper below) and the standalone view parser
-// (lib/markdown/remark-stack.ts). See docs/view-edit-split.md.
-export function highlightRemark(this: { data: () => Record<string, unknown> }) {
-  const data = this.data()
-    const toMarkdownExtensions = (data.toMarkdownExtensions ||
-      (data.toMarkdownExtensions = [])) as Array<{
-      handlers: Record<string, unknown>
-    }>
-    toMarkdownExtensions.push({
-      handlers: {
-        highlight: (
-          node: MdastNodeLike,
-          _parent: unknown,
-          state: { enter: (t: string) => () => void; containerPhrasing: (n: unknown, info: unknown) => string },
-          info: unknown,
-        ) => {
-          const exit = state.enter('highlight')
-          const value = state.containerPhrasing(node, {
-            ...(info as object),
-            before: '=',
-            after: '=',
-          })
-          exit()
-          return `==${value}==`
-        },
-      },
-    })
-  return (tree: unknown) => {
-    findAndReplace(tree as never, [
-      [
-        /==([^=\n]+)==/g,
-        (_full: string, inner: string) =>
-          ({
-            type: 'highlight',
-            children: [{ type: 'text', value: inner }],
-          }) as never,
-      ],
-    ])
-  }
-}
 
 export const highlightRemarkPlugin = $remark(
   'telaHighlight',

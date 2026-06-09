@@ -3,6 +3,20 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { Ctx } from '@milkdown/ctx'
+import {
+  CALLOUT_LABELS,
+  CALLOUT_TYPE_SET,
+  CALLOUT_TYPES,
+  type CalloutType,
+  type MdastNode,
+  calloutsRemark,
+} from '../../lib/markdown/transforms/callouts'
+
+// Callout parsing + data live in lib/markdown/transforms/callouts.ts (Milkdown-
+// free, shared with the view renderer). This file keeps the editor-only pieces:
+// the PM schema, the input rule, and the $remark wrapper. Re-export the shared
+// data symbols so existing importers of this module keep working.
+export { CALLOUT_LABELS, CALLOUT_TYPES, type CalloutType }
 
 // M13.0 — GitHub-style blockquote alert callouts. Five GitHub-standard types
 // (`> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]`) parse into a
@@ -33,89 +47,6 @@ import type { Ctx } from '@milkdown/ctx'
 //    with an empty callout of the matching type so the user can keep typing
 //    body content without waiting for a save+reload round-trip.
 
-export const CALLOUT_TYPES = [
-  'note',
-  'tip',
-  'important',
-  'warning',
-  'caution',
-] as const
-
-export type CalloutType = (typeof CALLOUT_TYPES)[number]
-
-const CALLOUT_TYPE_SET = new Set<string>(CALLOUT_TYPES)
-
-// Visible label rendered in the callout header. GitHub's published spec
-// uppercases the keyword in rendered output ("NOTE", "TIP", …).
-export const CALLOUT_LABELS: Record<CalloutType, string> = {
-  note: 'Note',
-  tip: 'Tip',
-  important: 'Important',
-  warning: 'Warning',
-  caution: 'Caution',
-}
-
-// First-line marker. Anchored to `^` and the line break (or end-of-string for
-// a marker-only blockquote like `> [!NOTE]`) so unrelated text that happens to
-// contain `[!NOTE]` mid-paragraph does NOT trip the transform. The `i` flag
-// keeps the user-facing UPPERCASE convention while tolerating lowercase
-// markdown (GitHub itself accepts `[!note]`).
-const ALERT_RE = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:\r?\n|$)/i
-
-interface MdastNode {
-  type: string
-  value?: string
-  children?: MdastNode[]
-  calloutType?: CalloutType
-  [k: string]: unknown
-}
-
-// Walk the mdast tree depth-first and rewrite qualifying blockquotes into
-// callout nodes in place. We don't pull in `unist-util-visit` because the walk
-// is trivial and the package adds ~3 KB raw to the bundle for one call site.
-function transformCalloutsInMdast(node: MdastNode): void {
-  if (node.type === 'blockquote' && Array.isArray(node.children)) {
-    const firstChild = node.children[0]
-    if (
-      firstChild?.type === 'paragraph' &&
-      Array.isArray(firstChild.children)
-    ) {
-      const firstText = firstChild.children[0]
-      if (firstText?.type === 'text' && typeof firstText.value === 'string') {
-        const match = firstText.value.match(ALERT_RE)
-        if (match) {
-          const calloutType = match[1].toLowerCase() as CalloutType
-          const stripped = firstText.value.slice(match[0].length)
-          if (stripped.length === 0) {
-            // Marker took up the entire first paragraph (common shape from
-            // a re-parse of our own serializer's output, which emits the
-            // marker as its own paragraph followed by a blank `>` line and
-            // then the body paragraph). If there's a sibling paragraph
-            // after it, drop the marker-only paragraph entirely and let
-            // the next paragraph become the body root. Otherwise (truly
-            // empty callout like `> [!NOTE]` standalone) drop the text
-            // node but keep the empty paragraph so the schema's
-            // `content: 'block+'` content matcher stays satisfied.
-            if ((node.children?.length ?? 0) > 1) {
-              node.children!.shift()
-            } else {
-              firstChild.children.shift()
-            }
-          } else {
-            firstText.value = stripped
-          }
-          node.type = 'callout'
-          node.calloutType = calloutType
-        }
-      }
-    }
-  }
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      transformCalloutsInMdast(child)
-    }
-  }
-}
 
 // Mirror the `Element` interface used by PM's NodeSpec.toDOM. We type the
 // argument loosely to dodge the cross-package Node-type mismatch between
@@ -124,18 +55,6 @@ function transformCalloutsInMdast(node: MdastNode): void {
 // as distinct under bundler module resolution).
 interface CalloutSchemaNode {
   attrs: { type: CalloutType }
-}
-
-// Raw unified/remark attacher — the SINGLE SOURCE of callout parsing, shared by
-// both the Milkdown editor (wrapped in $remark below) and the standalone view
-// renderer's parser (lib/markdown/remark-stack.ts). See docs/view-edit-split.md.
-export function calloutsRemark() {
-  return (tree: unknown) => {
-    // Bridge official mdast `Root`/`RootContent` types to our loose
-    // `MdastNode` walker. They're the same runtime objects; the cast just
-    // gives our walker an index signature so it can mutate freely.
-    transformCalloutsInMdast(tree as unknown as MdastNode)
-  }
 }
 
 export const calloutsRemarkPlugin = $remark('telaCallouts', () => calloutsRemark)

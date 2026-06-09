@@ -4,6 +4,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
+import { buildMermaidElement } from '../../lib/diagrams/mermaid'
 
 // Mermaid diagrams: a ` ```mermaid ` code block renders its diagram beneath the
 // (still-editable) source. Canonical markdown — GitHub renders the same fence
@@ -17,54 +18,6 @@ import type { Ctx } from '@milkdown/ctx'
 // so it's lazy-imported on first render — it lands in its own chunk.
 
 const mermaidKey = new PluginKey('tela-mermaid')
-const svgCache = new Map<string, string>()
-
-type MermaidApi = {
-  initialize: (config: Record<string, unknown>) => void
-  render: (id: string, code: string) => Promise<{ svg: string }>
-}
-let mermaidPromise: Promise<MermaidApi> | null = null
-
-async function getMermaid(): Promise<MermaidApi> {
-  if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then((m) => {
-      const api = m.default as unknown as MermaidApi
-      api.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' })
-      return api
-    })
-  }
-  return mermaidPromise
-}
-
-async function renderMermaid(code: string): Promise<string> {
-  const mermaid = await getMermaid()
-  const id = 'tela-mmd-' + Math.random().toString(36).slice(2)
-  const { svg } = await mermaid.render(id, code)
-  return svg
-}
-
-function buildWidget(code: string): HTMLElement {
-  const dom = document.createElement('div')
-  dom.className = 'tela-mermaid'
-  dom.setAttribute('contenteditable', 'false')
-  const cached = svgCache.get(code)
-  if (cached) {
-    dom.innerHTML = cached
-    return dom
-  }
-  dom.textContent = 'Rendering diagram…'
-  void renderMermaid(code)
-    .then((svg) => {
-      svgCache.set(code, svg)
-      dom.innerHTML = svg
-    })
-    .catch((err: unknown) => {
-      dom.classList.add('tela-mermaid-error')
-      dom.textContent =
-        err instanceof Error ? err.message : 'Could not render diagram'
-    })
-  return dom
-}
 
 function buildDecorations(doc: ProseNode): DecorationSet {
   const decos: Decoration[] = []
@@ -76,7 +29,7 @@ function buildDecorations(doc: ProseNode): DecorationSet {
       const code = node.textContent
       if (code.trim().length === 0) return
       decos.push(
-        Decoration.widget(pos + node.nodeSize, () => buildWidget(code), {
+        Decoration.widget(pos + node.nodeSize, () => buildMermaidElement(code), {
           side: 1,
           key: `mermaid:${code}`,
         }),

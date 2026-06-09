@@ -97,3 +97,30 @@ export const Sample: Story = {
 export const Empty: Story = {
   args: { body: '' },
 }
+
+const DIAGRAMS = `## Mermaid
+
+\`\`\`mermaid
+graph TD
+  A[Start] --> B{Choice}
+  B -->|yes| C[Ship it]
+  B -->|no| D[Iterate]
+\`\`\`
+
+## Chart
+
+\`\`\`chart
+type: bar
+title: Quarterly revenue
+x: [Q1, Q2, Q3, Q4]
+series:
+  - name: Revenue
+    data: [12, 19, 15, 27]
+\`\`\`
+`
+
+// mermaid renders to SVG, chart to an ECharts SVG — both via the same render
+// cores the editor uses (lib/diagrams/*), lazy-loaded.
+export const Diagrams: Story = {
+  args: { body: DIAGRAMS },
+}

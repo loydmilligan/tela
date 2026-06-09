@@ -3,6 +3,14 @@ import { Plugin } from '@milkdown/kit/prose/state'
 import type { Ctx } from '@milkdown/ctx'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
+import {
+  excalidrawRemark,
+  type MdastNode,
+} from '../../lib/markdown/transforms/excalidraw'
+
+// Excalidraw fence parsing lives in lib/markdown/transforms/excalidraw.ts
+// (Milkdown-free, shared with the view renderer, which renders the server PNG).
+// This file keeps the editor-only atom schema + edit-sheet wiring.
 
 // M13.3a — Excalidraw view-mode renderer.
 // M13.3b — Edit-Sheet click handler + slash-menu insert helper (this file
@@ -35,7 +43,6 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 //    construct the PNG URL. Wired identically to `wikilinkModeCtx` and
 //    `commentThreadsCtx` (passed via React prop → useEffect → ctx.set).
 
-const SCENE_HASH_RE = /^[a-f0-9]{8,64}$/
 
 export const pageIdCtx = $ctx<number, 'excalidrawPageId'>(0, 'excalidrawPageId')
 
@@ -67,68 +74,7 @@ export const excalidrawOpenCtx = $ctx<ExcalidrawOpenHandler | null, 'excalidrawO
   'excalidrawOpen',
 )
 
-interface MdastNode {
-  type: string
-  lang?: string | null
-  value?: string
-  children?: MdastNode[]
-  sceneHash?: string
-  altText?: string
-  sceneJSON?: string
-  [k: string]: unknown
-}
-
-interface ExcalidrawSceneJSON {
-  scene_hash?: unknown
-  alt_text?: unknown
-  [k: string]: unknown
-}
-
-// Walk the mdast tree and rewrite qualifying ```excalidraw fences into
-// `excalidraw` mdast nodes in place. Recurses into block children so
-// excalidraw fences inside blockquotes / details work too.
-function transformExcalidrawInMdast(node: MdastNode): void {
-  if (
-    node.type === 'code' &&
-    typeof node.lang === 'string' &&
-    node.lang === 'excalidraw' &&
-    typeof node.value === 'string'
-  ) {
-    const raw = node.value
-    let parsed: ExcalidrawSceneJSON | null
-    try {
-      parsed = JSON.parse(raw) as ExcalidrawSceneJSON
-    } catch {
-      parsed = null
-    }
-    if (parsed && typeof parsed === 'object') {
-      const sceneHash = typeof parsed.scene_hash === 'string' ? parsed.scene_hash : ''
-      const altText = typeof parsed.alt_text === 'string' ? parsed.alt_text : ''
-      if (SCENE_HASH_RE.test(sceneHash)) {
-        node.type = 'excalidraw'
-        node.sceneHash = sceneHash
-        node.altText = altText
-        node.sceneJSON = raw
-        delete node.lang
-        delete node.value
-        return
-      }
-    }
-    // Parse failure or invalid scene_hash: leave as plain code block.
-  }
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      transformExcalidrawInMdast(child)
-    }
-  }
-}
-
-export const excalidrawRemarkPlugin = $remark(
-  'telaExcalidraw',
-  () => () => (tree) => {
-    transformExcalidrawInMdast(tree as unknown as MdastNode)
-  },
-)
+export const excalidrawRemarkPlugin = $remark('telaExcalidraw', () => excalidrawRemark)
 
 // Mirror PM's NodeSpec.toDOM `Node` arg loosely to dodge the cross-package
 // Node-type mismatch between `@milkdown/prose/model` and `prosemirror-model`

@@ -1,10 +1,30 @@
-import { createElement, useMemo, type ReactNode } from 'react'
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from 'react'
 import katex from 'katex'
 import { refractor } from 'refractor/core'
 import { parsePageMarkdown } from '../../lib/markdown/remark-stack'
 import { configureRefractor } from '../../lib/milkdown/refractor-config'
-import { CALLOUT_LABELS, type CalloutType } from '../app/milkdown-callouts'
+import {
+  CALLOUT_LABELS,
+  type CalloutType,
+} from '../../lib/markdown/transforms/callouts'
+import { buildMermaidElement } from '../../lib/diagrams/mermaid'
+import { buildChartWidget } from '../../lib/diagrams/chart'
 import { cn } from '../../lib/utils'
+
+// Context for renderers that need page-scoped data (excalidraw PNG URL today;
+// wikilinks/comments later). Provided by MarkdownView.
+interface ViewContextValue {
+  pageId?: number
+}
+const ViewContext = createContext<ViewContextValue>({})
 
 // Read-only VIEW renderer (docs/view-edit-split.md): markdown → mdast (shared
 // parse stack) → React. No ProseMirror, no Yjs, no editor chunk. It reuses the
@@ -95,6 +115,47 @@ function TexMath({ value, display }: { value: string; display: boolean }) {
   )
 }
 
+// Mounts an editor render-core element (mermaid/chart) into the React tree.
+// Reuses the exact same builder the editor uses (lib/diagrams/*) — zero drift,
+// and the heavy lib (mermaid/echarts) stays lazy.
+function DiagramWidget({ kind, code }: { kind: 'mermaid' | 'chart'; code: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const host = ref.current
+    if (!host) return
+    const el = kind === 'mermaid' ? buildMermaidElement(code) : buildChartWidget(code)
+    host.appendChild(el)
+    return () => {
+      try {
+        host.removeChild(el)
+      } catch {
+        /* already detached */
+      }
+    }
+  }, [kind, code])
+  return <div ref={ref} />
+}
+
+function ExcalidrawView({
+  sceneHash,
+  altText,
+}: {
+  sceneHash: string
+  altText: string
+}) {
+  const { pageId } = useContext(ViewContext)
+  if (!sceneHash || !pageId) return null
+  return (
+    <div className="tela-excalidraw" data-scene-hash={sceneHash}>
+      <img
+        src={`/api/diagrams/${pageId}/${sceneHash}.png`}
+        alt={altText || 'Excalidraw diagram'}
+        loading="lazy"
+      />
+    </div>
+  )
+}
+
 function renderChildren(node: MdNode): ReactNode[] {
   return (node.children ?? []).map((child, i) => renderNode(child, i))
 }
@@ -168,12 +229,21 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       }
       return <li key={key}>{renderChildren(node)}</li>
     }
-    case 'code':
+    case 'code': {
+      const lang = node.lang == null ? null : String(node.lang)
+      const value = String(node.value ?? '')
+      // mermaid / chart render as diagrams (view shows only the result, not the
+      // source) via the shared editor render cores.
+      if (lang === 'mermaid') return <DiagramWidget key={key} kind="mermaid" code={value} />
+      if (lang === 'chart') return <DiagramWidget key={key} kind="chart" code={value} />
+      return <CodeBlock key={key} lang={lang} value={value} />
+    }
+    case 'excalidraw':
       return (
-        <CodeBlock
+        <ExcalidrawView
           key={key}
-          lang={node.lang == null ? null : String(node.lang)}
-          value={String(node.value ?? '')}
+          sceneHash={String(node.sceneHash ?? '')}
+          altText={String(node.altText ?? '')}
         />
       )
     case 'table': {
@@ -261,22 +331,28 @@ function calloutType(raw: unknown): CalloutType {
 
 export function MarkdownView({
   body,
+  pageId,
   className,
 }: {
   body: string
+  /** Page id — needed to build the excalidraw PNG URL (and later wikilinks). */
+  pageId?: number
   className?: string
 }) {
   const tree = useMemo(() => parsePageMarkdown(body), [body])
+  const ctx = useMemo<ViewContextValue>(() => ({ pageId }), [pageId])
   return (
-    <div className={cn('tela-milkdown', className)}>
-      {/* Temporary `.ProseMirror` CSS hook — see file header. `whiteSpace:
-          normal` overrides the editor's `pre-wrap` so markdown soft-wraps
-          collapse to spaces (correct for a static HTML view) instead of
-          rendering as hard line breaks. Drops out with the `.tela-prose`
-          extraction. */}
-      <div className="ProseMirror" data-tela-view="" style={{ whiteSpace: 'normal' }}>
-        {renderChildren(tree as unknown as MdNode)}
+    <ViewContext.Provider value={ctx}>
+      <div className={cn('tela-milkdown', className)}>
+        {/* Temporary `.ProseMirror` CSS hook — see file header. `whiteSpace:
+            normal` overrides the editor's `pre-wrap` so markdown soft-wraps
+            collapse to spaces (correct for a static HTML view) instead of
+            rendering as hard line breaks. Drops out with the `.tela-prose`
+            extraction. */}
+        <div className="ProseMirror" data-tela-view="" style={{ whiteSpace: 'normal' }}>
+          {renderChildren(tree as unknown as MdNode)}
+        </div>
       </div>
-    </div>
+    </ViewContext.Provider>
   )
 }

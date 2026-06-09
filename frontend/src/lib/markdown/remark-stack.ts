@@ -4,8 +4,9 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import remarkDirective from 'remark-directive'
 import type { Root } from 'mdast'
-import { calloutsRemark } from '../../components/app/milkdown-callouts'
-import { highlightRemark } from '../../components/app/milkdown-highlight'
+import { calloutsRemark } from './transforms/callouts'
+import { highlightRemark } from './transforms/highlight'
+import { excalidrawRemark } from './transforms/excalidraw'
 
 // Single parse source for the read-only VIEW renderer (docs/view-edit-split.md).
 //
@@ -27,7 +28,8 @@ function getProcessor() {
       .use(remarkMath)
       .use(remarkDirective)
       .use(calloutsRemark)
-      .use(highlightRemark as never) as unknown as Processor<Root, Root, Root, Root, string>
+      .use(highlightRemark as never)
+      .use(excalidrawRemark) as unknown as Processor<Root, Root, Root, Root, string>
   }
   return processor
 }
