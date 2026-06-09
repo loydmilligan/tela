@@ -33,3 +33,18 @@ func TestSlug_TruncatesAtWordBoundary(t *testing.T) {
 		t.Fatalf("slug ends with '-': %q", got)
 	}
 }
+
+func TestTranslit(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Çağdaş Salur", "cagdas salur"},
+		{"çağdaş.salur", "cagdas.salur"},
+		{"İıĞğŞşÖöÜüÇç", "iiggssoouucc"},
+		{"José", "jose"},
+		{"plain", "plain"},
+	}
+	for _, c := range cases {
+		if got := Translit(c.in); got != c.want {
+			t.Errorf("Translit(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/pagemd"
 )
 
 // ssoIdentity is the normalized identity a provider callback resolves to,
@@ -186,11 +187,11 @@ var usernameSanitize = regexp.MustCompile(`[^a-z0-9._-]+`)
 // email local-part) and appends -2, -3, … until it doesn't collide. Falls back
 // to "user" when there's nothing usable.
 func uniqueUsername(ctx context.Context, tx *sql.Tx, displayName, email string) (string, error) {
-	base := usernameSanitize.ReplaceAllString(strings.ToLower(strings.TrimSpace(displayName)), "-")
+	base := usernameSanitize.ReplaceAllString(pagemd.Translit(strings.TrimSpace(displayName)), "-")
 	base = strings.Trim(base, "-._")
 	if base == "" {
 		if at := strings.IndexByte(email, '@'); at > 0 {
-			base = usernameSanitize.ReplaceAllString(email[:at], "-")
+			base = usernameSanitize.ReplaceAllString(pagemd.Translit(email[:at]), "-")
 			base = strings.Trim(base, "-._")
 		}
 	}

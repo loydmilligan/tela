@@ -299,19 +299,28 @@ var slugTranslit = map[rune]string{
 
 var slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 
-// Slug derives a URL-safe, lowercase, hyphen-joined slug from a title.
-// Truncates at a word boundary to <= maxSlugLen, "" when nothing usable remains.
-// Mirrored in the frontend (src/lib/slug.ts) — keep the two in sync.
-func Slug(title string) string {
+// Translit lowercases a string and maps accented Latin / Turkish letters to
+// their ASCII equivalents (ç→c, ğ→g, ş→s, ı→i, ö→o, ü→u, é→e, …), leaving every
+// other character (spaces, punctuation, digits) untouched for the caller to
+// handle. Slug builds on this; username generation reuses it so Turkish names
+// transliterate ("Çağdaş" → "cagdas") instead of having the letters dropped.
+func Translit(s string) string {
 	var b strings.Builder
-	for _, r := range title {
+	for _, r := range s {
 		if sub, ok := slugTranslit[r]; ok {
 			b.WriteString(sub)
 		} else {
 			b.WriteRune(unicode.ToLower(r))
 		}
 	}
-	s := strings.Trim(slugNonAlnum.ReplaceAllString(b.String(), "-"), "-")
+	return b.String()
+}
+
+// Slug derives a URL-safe, lowercase, hyphen-joined slug from a title.
+// Truncates at a word boundary to <= maxSlugLen, "" when nothing usable remains.
+// Mirrored in the frontend (src/lib/slug.ts) — keep the two in sync.
+func Slug(title string) string {
+	s := strings.Trim(slugNonAlnum.ReplaceAllString(Translit(title), "-"), "-")
 	if len(s) > maxSlugLen {
 		s = s[:maxSlugLen]
 		if i := strings.LastIndexByte(s, '-'); i > 0 {
