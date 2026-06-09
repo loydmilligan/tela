@@ -96,6 +96,7 @@ import {
 import { cn } from '../../lib/utils'
 import { BacklinksSection } from './BacklinksSection'
 import { MarkdownView } from '../view/MarkdownView'
+import { prefetchMilkdownEditor } from '../../lib/prefetchEditor'
 import { useFileDownload } from './use-file-download'
 
 // Milkdown is the largest dependency in the app (~700 KB raw). Lazy-load it so
@@ -373,6 +374,10 @@ function PageViewer({
               variant="primary"
               size="sm"
               onClick={enterEdit}
+              // Warm the editor chunk on Edit intent so entering edit is instant
+              // — reads themselves never load it.
+              onMouseEnter={prefetchMilkdownEditor}
+              onFocus={prefetchMilkdownEditor}
               className="h-[var(--space-8)] px-[var(--space-3)]"
             >
               <Pencil width={16} height={16} />

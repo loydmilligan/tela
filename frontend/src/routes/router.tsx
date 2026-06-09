@@ -42,7 +42,6 @@ import { api } from '../lib/api'
 import { writeLastPage } from '../lib/lastPage'
 import { prefetchPage, useCreatePage, usePages } from '../lib/queries/pages'
 import { prefetchPublicSpacePage } from '../lib/queries/public'
-import { prefetchMilkdownEditor } from '../lib/prefetchEditor'
 import { LoginPage } from './login'
 import { RegisterPage } from './register'
 import { SetupPage } from './setup'
@@ -537,7 +536,6 @@ const pageRoute = createRoute({
     // Both are fire-and-forget — they never block navigation. Uses the
     // queryClient singleton directly (this router's context convention).
     prefetchPage(queryClient, params.pageId)
-    prefetchMilkdownEditor()
   },
   component: function PageRouteComponent() {
     const { spaceId, pageId } = useParams({
@@ -624,7 +622,6 @@ const readRoute = createRoute({
   },
   loader: ({ params }) => {
     prefetchPage(queryClient, params.pageId)
-    prefetchMilkdownEditor()
   },
   component: lazyRouteComponent(() => import('./read'), 'ReadRoute'),
 })
@@ -688,7 +685,6 @@ const publicReaderRoute = createRoute({
   }),
   loader: ({ params }) => {
     prefetchPublicSpacePage(queryClient, params.spaceId, params.pageId)
-    prefetchMilkdownEditor()
   },
   component: lazyRouteComponent(() => import('./public'), 'PublicReaderRoute'),
 })
