@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-// OllamaEmbedder calls an Ollama server's /api/embed endpoint. "Hosted Ollama"
-// in tela's case is tardis on the tailnet (http://tardis:11434), model
-// mxbai-embed-large (1024-d). Swapping to a hosted OpenAI-compatible provider
-// is a sibling type implementing Embedder, not a change here.
+// OllamaEmbedder calls an Ollama server's /api/embed endpoint — typically a
+// remote Ollama on your network (e.g. http://ollama-host:11434), 1024-d model.
+// Swapping to a hosted OpenAI-compatible provider is a sibling type implementing
+// Embedder, not a change here.
 type OllamaEmbedder struct {
 	base   string
 	model  string
@@ -24,7 +24,7 @@ type OllamaEmbedder struct {
 }
 
 // NewOllamaEmbedder builds an embedder for an Ollama-compatible /api/embed
-// endpoint. token is optional: empty for a direct Ollama (tardis), or a tela
+// endpoint. token is optional: empty for a direct Ollama, or a tela
 // PAT when base points at tela cloud's managed embed proxy (/api/cloud/ollama).
 // The managed endpoint speaks the same Ollama shape, so this one client serves
 // both BYO and cloud-backed — no separate cloud embedder type.

@@ -441,7 +441,7 @@ same `RequireBearerToken` seam via its `ResourceMetadataURL` option (PRM /
    `RequireBearerToken` + PRM handler.
 3. **Apps-SDK `_meta` key names** (`openai/outputTemplate`, `text/html+skybridge`,
    `window.openai`) — verify against live OpenAI docs before Phase 6.
-4. **Stateful sessions in prod** — fine on single-instance archer; revisit
+4. **Stateful sessions in prod** — fine on a single-instance prod box; revisit
    (EventStore / session store) only if tela scales horizontally.
 5. **ChatGPT write-connector gating** — full write connectors are Business/
    Enterprise/Edu only; Plus/Pro get read/fetch-only. Doesn't block us, but sets
@@ -531,7 +531,7 @@ self-hosters can stay PAT-only.
 - ✅ Tested: missing eid → 400, no-session → `/login` bounce, authed+email → mocked complete → redirect (body carries sub=tela id + email).
 - ✅ Creds in hand (staging): issuer `pleasing-puzzle-31-staging.authkit.app`, api key, client id — saved to `~/Sync/.secrets/workos.env`; issuer/jwks confirmed against the AS discovery doc.
 - ⬜ **WorkOS dashboard (Cagdas):** Connect → Configuration → **Login URI** = `https://tela.cagdas.io/oauth/workos/login`; add **Resource Indicator** `https://tela.cagdas.io/api/mcp`; enable **DCR + CIMD**; register redirect URIs (claude.ai/claude.com/chatgpt).
-- ⬜ Set the 4 env vars on archer `deploy/.env` + recreate → enable OAuth on prod.
+- ⬜ Set the 4 env vars in prod `deploy/.env` + recreate → enable OAuth on prod.
 - ⬜ End-to-end: click "Connect" in Claude.ai; decode a real token to confirm claim keys / signing alg.
 
 **WorkOS dashboard checklist (Cagdas):**

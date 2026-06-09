@@ -91,7 +91,7 @@ The frontend has **no** unit-test harness today (no jsdom / vitest config). CI (
 
 ## History
 
-tela was originally built by an autonomous agent system ("forge") and is now under conventional development. The old forge workspace (plan, run logs, task/idea history, research output under `docs/output/`) is archived at `archer:~/forgedata/tela/` — reference only, not part of this repo. This repo's code, `docs/`, and git history are the source of truth.
+tela was originally built by an autonomous agent system ("forge") and is now under conventional development. The old forge workspace (plan, run logs, task/idea history, research output under `docs/output/`) is archived out-of-tree — reference only, not part of this repo. This repo's code, `docs/`, and git history are the source of truth.
 
 ## License
 

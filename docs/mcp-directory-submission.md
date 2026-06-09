@@ -24,7 +24,7 @@ pair; full-bleed connector icon + server branding.
 - ✅ **Privacy + docs LIVE:** https://tela.cagdas.io/privacy/ and /mcp/ both 200 with real content.
 - ✅ **Branding asset:** `https://tela.cagdas.io/icon-512.png` (512²) + `/favicon.svg` already served — covers the logo upload.
 - ✅ **Submission payloads drafted:** `docs/mcp-submission-claude.md`, `docs/mcp-submission-chatgpt.md`.
-- ✅ **Demo account CREATED + populated:** `mcp-demo` / `mcp-demo@cagdas.io` (email-verified via archer DB, no MFA, not admin); space "Demo" (id 4) seeded with 5 pages. Reusable seed: `scripts/seed-demo.py`. Password held outside the repo (paste into the submission form).
+- ✅ **Demo account CREATED + populated:** `mcp-demo` / `mcp-demo@cagdas.io` (email-verified directly in the prod DB, no MFA, not admin); space "Demo" (id 4) seeded with 5 pages. Reusable seed: `scripts/seed-demo.py`. Password held outside the repo (paste into the submission form).
 - ✅ **Cloudflare allowlist APPLIED & live** — ruleset `0b545114` (skip WAF/rate-limit/bot for `160.79.104.0/21` on `tela.cagdas.io`); terraform in zcag/dotty, state drift-free.
 - 🟡 **CAGDAS (in progress):** OpenAI org identity verification at `platform.openai.com/settings/organization/general` (confirmed correct page; gear-icon/org-name top-right, not the consumer ChatGPT UI) — **Cagdas continuing later**. Then: `api.apps.write` (org owner), global/non-EU residency project, final form submits (Claude + ChatGPT).
 - ✅ **Widgets WORKING & verified in-host** (deployed `82d4ef6`): `get_page` renders the page-reader, `search` renders the result cards; both advertise widget `_meta` live. Only the ChatGPT submission *screenshots* of them remain.

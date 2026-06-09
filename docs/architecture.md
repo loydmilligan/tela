@@ -25,17 +25,21 @@ Three parts:
 
 ## Deploy topology
 
-Docker Compose; only Caddy publishes a host port (**8780**). `tela.cagdas.io` → Cloudflare → host:8780.
+Two deployment shapes share one codebase:
 
-- **postgres** — `postgres:17-alpine`, data on the `tela-pgdata` volume, `pg_isready` healthcheck. Internal only.
+**(a) Standalone self-host** (`deploy/docker-compose.yml`, `make up`) — all-in-one. Only Caddy publishes a host port (**8780**); the `proxy` service is the edge (its `Caddyfile` declares the global block and `import`s `proxy/sites.caddy`).
+
+- **postgres** — `pgvector/pgvector:pg17`, data on the `tela-pgdata` volume, `pg_isready` healthcheck. Internal only.
 - **backend** — Go binary, internal `:8080`; reads `TELA_DATABASE_URL` (auto-built in compose from `TELA_PG_*`), `depends_on: postgres (service_healthy)`. `db.Open` retries the connection so it tolerates the gap before Postgres is query-ready.
 - **gotenberg** — headless-Chromium HTML→PDF, internal only.
 - **frontend** — Vite static build served by nginx, internal `:80`.
 - **proxy** — Caddy. Routes `/api/*` + `/p/*` + `/share/*` (UA bot-gate) + `/ws/*` → backend; serves `landing/dist` at the apex; everything else → frontend.
 
+**(b) Split** (`deploy/docker-compose.split.yml`) — for a host that already runs a **shared reverse proxy** (one Caddy per box owns `:443`). There is **no tela `proxy` container**: the external edge terminates TLS and `import`s the *same* `proxy/sites.caddy` (upstreams + landing root are env placeholders → it points them at the published loopback host ports). backend/frontend publish on **127.0.0.1:8781/8782**; **gotenberg** is a renderer reachable on your network (can be remote). Org **custom domains** work in this direct-TLS mode (on-demand cert issuance) but not in mode (a) behind an external terminator that owns TLS.
+
 Backend image is distroless. Ad-hoc DB poke: `docker compose exec postgres psql -U tela -d tela -c '…'`. `make up`/`make build` auto-stamp `TELA_VERSION` (`git describe --tags --always --dirty`) + `TELA_COMMIT` into the image, surfaced by `GET /api/version`.
 
-**Deploy** is build-on-archer, runnable from any machine: `make deploy` (full), `make deploy-backend|deploy-frontend|deploy-landing` (one service), each followed by a `/api/version` health gate. `make reset-prod-db FORCE=1` wipes the Postgres volume (sanctioned — prod data is disposable).
+**Deploy.** Build-on-remote: `make deploy` (+ `deploy-backend|frontend|landing`) SSH to `DEPLOY_HOST`, `git pull` + build there. Build-local (split topology / small boxes): `make deploy-remote REMOTE=<host>` builds the images locally, `docker save | ssh <host> docker load` (no registry), syncs landing + `sites.caddy` to the dir the external edge serves static from, `up`s the split stack, then `/api/version` health-gate. Configure the host(s) in `deploy/.env`.
 
 ## Backend layout (`backend/`)
 

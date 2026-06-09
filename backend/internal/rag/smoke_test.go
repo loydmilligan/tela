@@ -11,9 +11,9 @@ import (
 // TestSmoke_LiveSemantic exercises the real Ollama embedder end-to-end: it
 // proves vectors capture MEANING, not just keywords, by retrieving a chunk with
 // a paraphrase query that shares almost no words with the source text. Skipped
-// unless TELA_RAG_EMBED_URL is set (e.g. http://tardis:11434).
+// unless TELA_RAG_EMBED_URL is set (e.g. http://ollama-host:11434).
 //
-//	TELA_RAG_EMBED_URL=http://tardis:11434 go test ./internal/rag -run Smoke -v
+//	TELA_RAG_EMBED_URL=http://ollama-host:11434 go test ./internal/rag -run Smoke -v
 func TestSmoke_LiveSemantic(t *testing.T) {
 	url := os.Getenv("TELA_RAG_EMBED_URL")
 	if url == "" {

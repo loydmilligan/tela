@@ -27,7 +27,7 @@ export default defineConfig({
   server: {
     // When running an isolated verify backend (TELA_PROXY_TARGET set), also
     // expose the dev server on the LAN/tailnet and accept any Host header so it
-    // can be reached as e.g. http://marko:5199. Normal `make dev` is unchanged.
+    // can be reached as e.g. http://<your-host>:5199. Normal `make dev` is unchanged.
     ...(process.env.TELA_PROXY_TARGET
       ? { host: true as const, allowedHosts: true as const }
       : {}),

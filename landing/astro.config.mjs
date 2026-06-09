@@ -44,8 +44,9 @@ export default defineConfig({
 
   vite: {
     plugins: [tailwindcss()],
-    // View dev/preview over the LAN by hostname (fleet boxes).
-    server: { allowedHosts: ['marko', 'bender', 'archer'] },
-    preview: { allowedHosts: ['marko', 'bender', 'archer'] },
+    // View dev/preview over the LAN by hostname: set ASTRO_ALLOWED_HOSTS to a
+    // comma-separated host list (empty default → localhost only).
+    server: { allowedHosts: (process.env.ASTRO_ALLOWED_HOSTS ?? '').split(',').map((s) => s.trim()).filter(Boolean) },
+    preview: { allowedHosts: (process.env.ASTRO_ALLOWED_HOSTS ?? '').split(',').map((s) => s.trim()).filter(Boolean) },
   },
 });

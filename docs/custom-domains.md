@@ -100,11 +100,18 @@ under **Settings → org → Custom domains** (`OrgManageView`). `GET
 for admin self-diagnosis (SSRF-guarded: never dials a hostname resolving to a
 private/loopback address).
 
-## TLS / serving (`deploy/proxy/Caddyfile`, `tls_check.go`)
+## TLS / serving (`deploy/proxy/{Caddyfile,sites.caddy}`, `tls_check.go`)
 
-Direct-TLS mode only (no Cloudflare — CF terminates TLS so on-demand never fires).
+Direct-TLS mode only: Caddy must terminate TLS itself for the org's host. Behind
+an external terminator that owns TLS (e.g. a CDN/proxy in front), on-demand never
+fires — so custom domains need either the standalone proxy or a **shared edge in
+direct-TLS mode** (DNS pointed straight at the box). The routing blocks live in
+`proxy/sites.caddy`, imported by both the standalone proxy and any shared edge;
+the global `on_demand_tls` ask is in each edge's global block.
 
-- Global `on_demand_tls { ask http://backend:8080/api/internal/tls-check }`. Caddy
+- Global `on_demand_tls { ask http://<backend>/api/internal/tls-check }` (the
+  backend upstream — `backend:8080` standalone, the published loopback port in
+  the split topology). Caddy
   asks before issuing a cert for an unknown SNI host; `TLSCheck` returns 200 iff
   the host is an active `org_hostname`. Without the gate anyone pointing DNS at the
   box could force unbounded issuance. The ask endpoint is on `IsPublicPath`

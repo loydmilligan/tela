@@ -14,7 +14,7 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- One row per (page, chunk). embedding is nullable so a chunk can exist before
--- it is embedded — embedding is an external network op (Ollama on tardis),
+-- it is embedded — embedding is an external network op (a remote Ollama),
 -- driven off the write path, not a SQL trigger. content_hash lets the embed
 -- pipeline skip unchanged chunks on re-index.
 CREATE TABLE page_chunks (

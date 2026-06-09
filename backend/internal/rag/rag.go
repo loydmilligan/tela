@@ -29,7 +29,7 @@ import (
 
 // Config is the env-driven configuration. EmbedURL empty => feature disabled.
 type Config struct {
-	EmbedURL   string // Ollama base, e.g. http://tardis:11435, or tela cloud's /api/cloud/ollama
+	EmbedURL   string // Ollama base, e.g. http://ollama-host:11435, or tela cloud's /api/cloud/ollama
 	EmbedModel string // default qwen3-embedding:0.6b (1024-d)
 	EmbedToken string // optional bearer (a tela PAT) when EmbedURL is the managed cloud endpoint
 	Dim        int    // expected embedding dimension (advisory; column is vector(1024))

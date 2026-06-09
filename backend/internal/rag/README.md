@@ -12,7 +12,7 @@ Unconfigured by default. With `TELA_RAG_EMBED_URL` unset the service is
 Set the env to enable:
 
 ```
-TELA_RAG_EMBED_URL=http://tardis:11434   # Ollama base
+TELA_RAG_EMBED_URL=http://ollama-host:11434   # Ollama base
 TELA_RAG_EMBED_MODEL=mxbai-embed-large   # default; 1024-d
 ```
 
@@ -47,7 +47,7 @@ TELA_RAG_EMBED_MODEL=mxbai-embed-large   # default; 1024-d
 The live semantic check needs Ollama:
 
 ```
-TELA_RAG_EMBED_URL=http://tardis:11434 go test ./internal/rag -run Smoke -v
+TELA_RAG_EMBED_URL=http://ollama-host:11434 go test ./internal/rag -run Smoke -v
 ```
 
 ## Schema

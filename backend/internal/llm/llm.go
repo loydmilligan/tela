@@ -18,7 +18,7 @@ import (
 
 // Config is the env-driven configuration. URL empty => feature disabled.
 type Config struct {
-	URL   string // OpenAI-compatible base, e.g. http://tardis:11434/v1, or tela cloud's /api/cloud/llm/v1
+	URL   string // OpenAI-compatible base, e.g. http://ollama-host:11434/v1, or tela cloud's /api/cloud/llm/v1
 	Model string // chat model, e.g. qwen2.5:7b
 	Token string // optional bearer (a tela PAT) when URL is the managed cloud endpoint
 }
