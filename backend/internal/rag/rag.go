@@ -64,9 +64,12 @@ type Service struct {
 	emb Embedder
 
 	// Auto-reindex queue (see autoreindex.go). pending maps page id → debounce
-	// deadline; nil until StartAutoReindex runs. Guarded by queueMu.
-	queueMu sync.Mutex
-	pending map[int64]time.Time
+	// deadline; nil until StartAutoReindex runs. attempts tracks consecutive
+	// failures per page to drive exponential retry backoff (cleared on success).
+	// Both guarded by queueMu.
+	queueMu  sync.Mutex
+	pending  map[int64]time.Time
+	attempts map[int64]int
 }
 
 // NewService builds the service from config. It never fails: with no EmbedURL

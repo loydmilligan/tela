@@ -34,6 +34,74 @@ const staleExpr = `length(btrim(p.body)) > 0 AND (pc.cnt IS NULL OR p.updated_at
 // chunkAggCTE aggregates page_chunks to (page_id, chunk count, last-indexed).
 const chunkAggCTE = `pc AS (SELECT page_id, count(*) AS cnt, max(updated_at) AS idx FROM page_chunks GROUP BY page_id)`
 
+// IndexHealth is a corpus-wide (NOT user-scoped) snapshot of index health, for
+// the background sweep's log line and ops/observability. ModelDriftChunks counts
+// chunks embedded by a model other than the one currently configured (excluding
+// legacy '' rows) — the signal for "a re-embed against the live model is pending".
+type IndexHealth struct {
+	ContentPages     int // pages with non-empty body
+	IndexedPages     int // pages with ≥1 chunk
+	StalePages       int // non-empty pages with a missing or out-of-date index
+	Chunks           int // total chunk rows
+	ModelDriftChunks int // chunks on a non-current, non-legacy model
+}
+
+// IndexHealth computes the corpus-wide index-health snapshot in two small
+// aggregate queries.
+func (s *Service) IndexHealth(ctx context.Context) (IndexHealth, error) {
+	var h IndexHealth
+	if err := s.db.QueryRowContext(ctx, `
+		WITH `+chunkAggCTE+`
+		SELECT
+		  count(p.id) FILTER (WHERE length(btrim(p.body)) > 0) AS content_pages,
+		  count(p.id) FILTER (WHERE pc.cnt IS NOT NULL)        AS indexed_pages,
+		  count(p.id) FILTER (WHERE `+staleExpr+`)             AS stale_pages
+		  FROM pages p
+		  LEFT JOIN pc ON pc.page_id = p.id
+		 WHERE p.deleted_at IS NULL`,
+	).Scan(&h.ContentPages, &h.IndexedPages, &h.StalePages); err != nil {
+		return h, err
+	}
+	model := ""
+	if s.emb != nil {
+		model = s.emb.Model()
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT count(*),
+		       count(*) FILTER (WHERE embed_model <> '' AND embed_model <> $1)
+		  FROM page_chunks`, model,
+	).Scan(&h.Chunks, &h.ModelDriftChunks); err != nil {
+		return h, err
+	}
+	return h, nil
+}
+
+// stalePageIDs returns up to limit page ids whose index is missing or out of
+// date (corpus-wide, most-recently-edited first) — the stale-sweep's work list.
+func (s *Service) stalePageIDs(ctx context.Context, limit int) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		WITH `+chunkAggCTE+`
+		SELECT p.id
+		  FROM pages p
+		  LEFT JOIN pc ON pc.page_id = p.id
+		 WHERE p.deleted_at IS NULL AND `+staleExpr+`
+		 ORDER BY p.updated_at DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // Freshness returns per-space index health for every space userID can access.
 func (s *Service) Freshness(ctx context.Context, userID int64) ([]SpaceFreshness, error) {
 	rows, err := s.db.QueryContext(ctx, `
