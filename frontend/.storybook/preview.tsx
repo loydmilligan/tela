@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { Decorator, Preview } from '@storybook/react-vite'
 import { TooltipProvider } from '../src/components/ui/tooltip'
+import 'katex/dist/katex.min.css'
 import '../src/styles/index.css'
 
 const withTheme: Decorator = (Story, context) => {

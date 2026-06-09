@@ -156,10 +156,12 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
     }
     case 'listItem': {
       const checked = node.checked
+      // Match the editor's task-item DOM: `li[data-item-type=task][data-checked]`
+      // — the checkbox is a CSS ::before in the gutter (editor.css), so we reuse
+      // it verbatim and the text flows inline.
       if (checked === true || checked === false) {
         return (
-          <li key={key} className="task-list-item" data-checked={String(checked)}>
-            <input type="checkbox" checked={checked} disabled readOnly />
+          <li key={key} data-item-type="task" data-checked={String(checked)}>
             {renderChildren(node)}
           </li>
         )
@@ -267,8 +269,12 @@ export function MarkdownView({
   const tree = useMemo(() => parsePageMarkdown(body), [body])
   return (
     <div className={cn('tela-milkdown', className)}>
-      {/* Temporary `.ProseMirror` CSS hook — see file header. */}
-      <div className="ProseMirror" data-tela-view="">
+      {/* Temporary `.ProseMirror` CSS hook — see file header. `whiteSpace:
+          normal` overrides the editor's `pre-wrap` so markdown soft-wraps
+          collapse to spaces (correct for a static HTML view) instead of
+          rendering as hard line breaks. Drops out with the `.tela-prose`
+          extraction. */}
+      <div className="ProseMirror" data-tela-view="" style={{ whiteSpace: 'normal' }}>
         {renderChildren(tree as unknown as MdNode)}
       </div>
     </div>
