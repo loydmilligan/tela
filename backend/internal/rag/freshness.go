@@ -37,7 +37,7 @@ const chunkAggCTE = `pc AS (SELECT page_id, count(*) AS cnt, max(updated_at) AS 
 // IndexHealth is a corpus-wide (NOT user-scoped) snapshot of index health, for
 // the background sweep's log line and ops/observability. ModelDriftChunks counts
 // chunks embedded by a model other than the one currently configured (excluding
-// legacy '' rows) — the signal for "a re-embed against the live model is pending".
+// legacy blank-model rows) — the signal for "a re-embed against the live model is pending".
 type IndexHealth struct {
 	ContentPages     int // pages with non-empty body
 	IndexedPages     int // pages with ≥1 chunk
