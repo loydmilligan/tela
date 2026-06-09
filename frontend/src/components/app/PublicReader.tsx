@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
+import { Menu } from 'lucide-react'
 import { applyPdfThemeParam } from '../../lib/theme'
 import { buildWikilinkResolveIndex, pageSlug } from '../../lib/slug'
 import { bodyExcerpt } from '../../lib/search/body-excerpt'
@@ -10,6 +11,14 @@ import {
   type PublicSpacePayload,
 } from '../../lib/queries/public'
 import { Button } from '../ui/button'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '../ui/sheet'
 import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
 
@@ -159,6 +168,16 @@ export function PublicReaderView({
       }
       topbarLeading={
         <span className="flex items-center gap-[var(--space-2)] min-w-0">
+          {/* Mobile-only: open the space's page tree (the fixed rail is hidden
+              below lg). */}
+          {showSidebar ? (
+            <PublicSpaceNavSheet
+              spaceId={space.id}
+              spaceName={space.name}
+              pages={pages}
+              activePageId={pageId}
+            />
+          ) : null}
           <a
             href="/"
             aria-label="tela home"
@@ -248,11 +267,14 @@ function PublicSpaceNavList({
   spaceId,
   nodes,
   activePageId,
+  onNavigate,
   sub = false,
 }: {
   spaceId: number
   nodes: TreeNode<PublicPageNode>[]
   activePageId: number
+  /** Fired on a link click — lets the mobile sheet close itself on navigation. */
+  onNavigate?: () => void
   sub?: boolean
 }) {
   return (
@@ -270,6 +292,7 @@ function PublicSpaceNavList({
             data-active={node.id === activePageId}
             aria-current={node.id === activePageId ? 'page' : undefined}
             title={node.title || 'Untitled'}
+            onClick={onNavigate}
           >
             {node.title || 'Untitled'}
           </Link>
@@ -278,11 +301,59 @@ function PublicSpaceNavList({
               spaceId={spaceId}
               nodes={node.children}
               activePageId={activePageId}
+              onNavigate={onNavigate}
               sub
             />
           ) : null}
         </li>
       ))}
     </ul>
+  )
+}
+
+// Mobile counterpart of the space rail — a left Sheet drawer triggered from the
+// reader topbar (the fixed rail is hidden below lg). Same hierarchy; closes on
+// navigation.
+function PublicSpaceNavSheet({
+  spaceId,
+  spaceName,
+  pages,
+  activePageId,
+}: {
+  spaceId: number
+  spaceName: string
+  pages: PublicPageNode[]
+  activePageId: number
+}) {
+  const [open, setOpen] = useState(false)
+  const tree = useMemo(() => buildPageTree(pages), [pages])
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Pages in this space"
+          className="lg:hidden h-[var(--space-8)] w-[var(--space-8)] p-0"
+        >
+          <Menu width={18} height={18} />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="w-[18rem] max-w-[85vw]">
+        <SheetHeader>
+          <SheetTitle>{spaceName}</SheetTitle>
+        </SheetHeader>
+        <SheetBody>
+          <nav aria-label={`${spaceName} pages`}>
+            <PublicSpaceNavList
+              spaceId={spaceId}
+              nodes={tree}
+              activePageId={activePageId}
+              onNavigate={() => setOpen(false)}
+            />
+          </nav>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
   )
 }

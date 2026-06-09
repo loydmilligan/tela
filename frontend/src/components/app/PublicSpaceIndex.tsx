@@ -1,11 +1,13 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useSearch } from '@tanstack/react-router'
+import { Search } from 'lucide-react'
 import {
   type PublicPageNode,
   type PublicSpacePayload,
 } from '../../lib/queries/public'
 import { useHeadMeta } from '../../lib/useHeadMeta'
 import { blogChip, sortByNewest, topLevelPosts } from '../../lib/blog'
+import { Input } from '../ui/input'
 import { PublicPageShell } from './blog/PublicPageShell'
 import { PublicMasthead, MetaDot } from './blog/PublicMasthead'
 import { PostCard } from './blog/PostCard'
@@ -36,10 +38,23 @@ export function PublicSpaceIndex({ space, pages }: PublicSpaceIndexProps) {
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [posts])
 
-  const shown = useMemo(
-    () => (activeTag ? posts.filter((p) => p.tags?.includes(activeTag)) : posts),
-    [posts, activeTag],
-  )
+  // Free-text post filter — client-side over the already-loaded posts (title,
+  // excerpt, tags). Local state, not the URL: it's a quick browse aid, while the
+  // tag filter stays shareable. Both narrow the same list.
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const shown = useMemo(() => {
+    let list = activeTag ? posts.filter((p) => p.tags?.includes(activeTag)) : posts
+    if (q) {
+      list = list.filter((p) =>
+        [p.title, p.excerpt, ...(p.tags ?? [])]
+          .join(' ')
+          .toLowerCase()
+          .includes(q),
+      )
+    }
+    return list
+  }, [posts, activeTag, q])
 
   const feedUrl = `/api/public/spaces/${space.id}/feed.xml`
 
@@ -52,9 +67,9 @@ export function PublicSpaceIndex({ space, pages }: PublicSpaceIndexProps) {
     feedHref: feedUrl,
   })
 
-  // Featured lead only on the unfiltered view; a filtered list is a flat grid.
+  // Featured lead only on the unfiltered view; any active filter → a flat grid.
   const [featured, ...rest] = shown
-  const showFeatured = !activeTag && featured
+  const showFeatured = !activeTag && !q && featured
 
   return (
     <PublicPageShell>
@@ -93,6 +108,25 @@ export function PublicSpaceIndex({ space, pages }: PublicSpaceIndexProps) {
         }
       />
 
+      {posts.length > 3 ? (
+        <div className="mt-[var(--space-6)] relative max-w-[22rem]">
+          <Search
+            width={15}
+            height={15}
+            aria-hidden
+            className="pointer-events-none absolute left-[var(--space-3)] top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+          />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${posts.length} posts…`}
+            aria-label="Search posts"
+            className="pl-[calc(var(--space-3)*2+15px)]"
+          />
+        </div>
+      ) : null}
+
       {allTags.length > 0 ? (
         <TagBar spaceId={space.id} tags={allTags} active={activeTag} />
       ) : null}
@@ -103,7 +137,9 @@ export function PublicSpaceIndex({ space, pages }: PublicSpaceIndexProps) {
         </p>
       ) : shown.length === 0 ? (
         <p className="mt-[var(--space-6)] text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          No posts tagged “{activeTag}”.
+          {q
+            ? `No posts match “${query.trim()}”.`
+            : `No posts tagged “${activeTag}”.`}
         </p>
       ) : (
         <div className="mt-[var(--space-6)] flex flex-col gap-[var(--space-5)]">
