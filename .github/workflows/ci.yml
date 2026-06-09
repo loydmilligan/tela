@@ -1,9 +1,11 @@
 name: ci
 
-# M16.C.2 — protects against silent shape-drift between the MCP server and
-# the backend REST API. Runs the full integration suite when a PR touches
-# any of: backend/, mcp/, deploy/. Other paths (frontend-only changes,
-# README edits) skip the heavy stack-boot and finish in seconds.
+# Two jobs, both gated on backend/mcp/deploy paths:
+#  - backend-test: the full Go suite against a throwaway pgvector Postgres
+#    (mirrors `make test`; blocks-gate has its own workflow).
+#  - mcp-integration (M16.C.2): protects against silent shape-drift between
+#    the MCP server and the backend REST API via the live stack-boot suite.
+# Frontend-only changes are covered by frontend.yml instead.
 
 on:
   pull_request:
@@ -23,6 +25,38 @@ on:
       - ".github/workflows/ci.yml"
 
 jobs:
+  backend-test:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: tela
+          POSTGRES_PASSWORD: tela
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tela -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Run tests
+        working-directory: backend
+        env:
+          TELA_TEST_DATABASE_URL: postgres://tela:tela@localhost:5432/postgres?sslmode=disable
+        run: go test ./...
+
   mcp-integration:
     name: MCP <-> backend integration
     runs-on: ubuntu-latest
