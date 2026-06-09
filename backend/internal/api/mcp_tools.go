@@ -93,6 +93,34 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Annotations: readOnly,
 	}, s.mcpReadChunk)
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "related_pages",
+		Title:       "Related pages",
+		Description: "Pages semantically related to a given page (\"see also\"), ranked by similarity. Discovery beyond explicit [[wikilinks]]/backlinks. Works without a live embedder (uses stored vectors).",
+		Annotations: readOnly,
+	}, s.mcpRelatedPages)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "suggest_links",
+		Title:       "Suggest links",
+		Description: "Given draft text (a page you're writing), return existing pages it should link to, by semantic similarity. Use while authoring to wire a new page into the knowledge base instead of leaving it an orphan. Requires a configured embedder.",
+		Annotations: readOnly,
+	}, s.mcpSuggestLinks)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "find_overlaps",
+		Title:       "Find overlapping pages",
+		Description: "Near-duplicate page PAIRS (semantically close enough to be merge/redirect candidates) for wiki hygiene. Optional space_id restricts to one space; threshold (0..1, default 0.55) sets how similar counts as overlap.",
+		Annotations: readOnly,
+	}, s.mcpFindOverlaps)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "knowledge_gaps",
+		Title:       "Knowledge gaps",
+		Description: "The most-asked \"ask your docs\" questions the corpus could NOT answer — a content roadmap. Instance-admin only (exposes users' questions). Optional since_days window.",
+		Annotations: readOnly,
+	}, s.mcpKnowledgeGaps)
+
 	// `search` (above) + `fetch` are the ChatGPT Deep Research / company-knowledge
 	// compatibility pair (read-only, fixed names/shapes). `search` already returns
 	// id/title/text/url per result; `fetch` returns a page's full text by that id.
@@ -463,6 +491,122 @@ func (s *Server) mcpReadChunk(ctx context.Context, req *mcp.CallToolRequest, in 
 		return mcpErr(&apiErr{500, "internal", "read chunk failed"}), readChunkOut{}, nil
 	}
 	return nil, readChunkOut{Chunk: *chunk}, nil
+}
+
+// ---- related_pages -------------------------------------------------------
+
+type relatedPagesIn struct {
+	PageID int64 `json:"page_id" jsonschema:"the page to find related pages for"`
+	Limit  int   `json:"limit,omitempty" jsonschema:"max related pages (default 10)"`
+}
+
+type relatedPagesOut struct {
+	Related []rag.RelatedPage `json:"related"`
+}
+
+func (s *Server) mcpRelatedPages(ctx context.Context, req *mcp.CallToolRequest, in relatedPagesIn) (*mcp.CallToolResult, relatedPagesOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), relatedPagesOut{}, nil
+	}
+	// Verify read access to the source page (also handles bearer scope).
+	if _, ae := s.getPageCore(ctx, u, k, in.PageID); ae != nil {
+		return mcpErr(ae), relatedPagesOut{}, nil
+	}
+	var spaceID *int64
+	if k != nil && k.SpaceID != nil {
+		spaceID = k.SpaceID
+	}
+	related, err := s.rag.RelatedPages(ctx, u.ID, in.PageID, spaceID, in.Limit)
+	if err != nil {
+		return mcpErr(&apiErr{500, "internal", "related lookup failed"}), relatedPagesOut{}, nil
+	}
+	return nil, relatedPagesOut{Related: related}, nil
+}
+
+// ---- suggest_links -------------------------------------------------------
+
+type suggestLinksIn struct {
+	Text    string `json:"text" jsonschema:"draft text to find link targets for"`
+	SpaceID *int64 `json:"space_id,omitempty" jsonschema:"optional space id to restrict suggestions to"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"max suggestions (default 10)"`
+}
+
+type suggestLinksOut struct {
+	Suggestions []rag.RelatedPage `json:"suggestions"`
+}
+
+func (s *Server) mcpSuggestLinks(ctx context.Context, req *mcp.CallToolRequest, in suggestLinksIn) (*mcp.CallToolResult, suggestLinksOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), suggestLinksOut{}, nil
+	}
+	if !s.rag.Enabled() {
+		return mcpErr(&apiErr{503, "rag_disabled", "semantic features are not configured"}), suggestLinksOut{}, nil
+	}
+	spaceID := in.SpaceID
+	if k != nil && k.SpaceID != nil {
+		spaceID = k.SpaceID
+	}
+	out, err := s.rag.SuggestLinks(ctx, u.ID, in.Text, spaceID, in.Limit)
+	if err != nil {
+		return mcpErr(&apiErr{500, "internal", "suggest-links failed"}), suggestLinksOut{}, nil
+	}
+	return nil, suggestLinksOut{Suggestions: out}, nil
+}
+
+// ---- find_overlaps -------------------------------------------------------
+
+type findOverlapsIn struct {
+	SpaceID   *int64  `json:"space_id,omitempty" jsonschema:"optional space id to restrict to overlaps within one space"`
+	Threshold float64 `json:"threshold,omitempty" jsonschema:"min cosine similarity 0..1 to count as overlap (default 0.55)"`
+	Limit     int     `json:"limit,omitempty" jsonschema:"max pairs (default 50)"`
+}
+
+type findOverlapsOut struct {
+	Overlaps []rag.OverlapPair `json:"overlaps"`
+}
+
+func (s *Server) mcpFindOverlaps(ctx context.Context, req *mcp.CallToolRequest, in findOverlapsIn) (*mcp.CallToolResult, findOverlapsOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), findOverlapsOut{}, nil
+	}
+	spaceID := in.SpaceID
+	if k != nil && k.SpaceID != nil {
+		spaceID = k.SpaceID
+	}
+	pairs, err := s.rag.FindOverlaps(ctx, u.ID, spaceID, in.Threshold, in.Limit)
+	if err != nil {
+		return mcpErr(&apiErr{500, "internal", "overlap lookup failed"}), findOverlapsOut{}, nil
+	}
+	return nil, findOverlapsOut{Overlaps: pairs}, nil
+}
+
+// ---- knowledge_gaps (admin) ----------------------------------------------
+
+type knowledgeGapsIn struct {
+	SinceDays int `json:"since_days,omitempty" jsonschema:"only count asks in the last N days (0 = all time)"`
+	Limit     int `json:"limit,omitempty" jsonschema:"max gaps (default 50)"`
+}
+
+type knowledgeGapsOut struct {
+	Gaps []rag.KnowledgeGap `json:"gaps"`
+}
+
+func (s *Server) mcpKnowledgeGaps(ctx context.Context, req *mcp.CallToolRequest, in knowledgeGapsIn) (*mcp.CallToolResult, knowledgeGapsOut, error) {
+	u, _ := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), knowledgeGapsOut{}, nil
+	}
+	if !u.IsInstanceAdmin {
+		return mcpErr(&apiErr{403, "forbidden", "knowledge_gaps is instance-admin only"}), knowledgeGapsOut{}, nil
+	}
+	gaps, err := s.rag.KnowledgeGaps(ctx, in.SinceDays, in.Limit)
+	if err != nil {
+		return mcpErr(&apiErr{500, "internal", "gaps query failed"}), knowledgeGapsOut{}, nil
+	}
+	return nil, knowledgeGapsOut{Gaps: gaps}, nil
 }
 
 // ---- fetch (ChatGPT Deep Research) ---------------------------------------
