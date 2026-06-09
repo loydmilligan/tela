@@ -301,6 +301,9 @@ func bearerSpace(r *http.Request) *int64 {
 // Semantically related pages ("see also") for a page, access-scoped. 404 when
 // the page is out of scope; works without a live embedder (uses stored vectors).
 func (s *Server) RAGRelated(w http.ResponseWriter, r *http.Request) {
+	if !s.requireFeature(w, featureKnowledge) {
+		return
+	}
 	u, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -336,6 +339,9 @@ type suggestLinksRequest struct {
 // Existing pages the draft text should link to (assisted authoring). Needs a
 // live embedder (the draft isn't indexed). 503 when the embedder is off.
 func (s *Server) RAGSuggestLinks(w http.ResponseWriter, r *http.Request) {
+	if !s.requireFeature(w, featureKnowledge) {
+		return
+	}
 	u, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -365,6 +371,9 @@ func (s *Server) RAGSuggestLinks(w http.ResponseWriter, r *http.Request) {
 // RAGOverlaps handles GET /api/rag/overlaps[?space_id=&threshold=&limit=]
 // Near-duplicate page pairs for wiki hygiene, access-scoped to the caller.
 func (s *Server) RAGOverlaps(w http.ResponseWriter, r *http.Request) {
+	if !s.requireFeature(w, featureKnowledge) {
+		return
+	}
 	u, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -396,6 +405,9 @@ func (s *Server) RAGOverlaps(w http.ResponseWriter, r *http.Request) {
 // Knowledge gaps: the most-asked questions the corpus couldn't answer. Admin-only
 // — it exposes users' questions.
 func (s *Server) RAGGaps(w http.ResponseWriter, r *http.Request) {
+	if !s.requireFeature(w, featureKnowledge) {
+		return
+	}
 	if _, ok := requireInstanceAdmin(w, r); !ok {
 		return
 	}

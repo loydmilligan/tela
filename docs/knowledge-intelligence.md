@@ -37,6 +37,17 @@ wedge:
 
 ## Capability catalogue
 
+### Rollout — feature-flagged, dark by default
+
+The whole knowledge-intelligence surface ships **off**. It's gated behind the
+`feature.knowledge` instance setting (precedence: env `TELA_FEATURE_KNOWLEDGE` →
+instance setting → OFF), so it never changes anything for existing users until an
+instance admin opts in — and they can turn it back off without a deploy. Disabled
+endpoints/tools return 404 (invisible). This is the pattern every experimental
+feature here rides on; graduate a feature by flipping its default. New views (a
+topic map, the health dashboard) are **additive** — they sit beside folders and
+the page tree, never replacing them.
+
 ### Built (on this branch)
 
 | Capability | What it does | Surfaces |
