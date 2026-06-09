@@ -104,11 +104,29 @@ func (s *Service) lexicalRank(ctx context.Context, userID int64, q string, space
 	return s.queryIDs(ctx, sql, qb.args...)
 }
 
+// queryEmbedder is the optional asymmetric-retrieval capability: an embedder
+// that distinguishes a search query from a passage. The Ollama embedder
+// implements it (instruction-prefixed queries); test fakes don't, and degrade to
+// symmetric Embed. Kept off the core Embedder interface so injecting a plain
+// fake stays a one-method job.
+type queryEmbedder interface {
+	EmbedQuery(ctx context.Context, query string) ([]float32, error)
+}
+
+// embedQuery embeds a search query, using the asymmetric instruction-prefixed
+// path when the active embedder supports it, else a plain symmetric Embed.
+func (s *Service) embedQuery(ctx context.Context, q string) ([]float32, error) {
+	if qe, ok := s.emb.(queryEmbedder); ok {
+		return qe.EmbedQuery(ctx, q)
+	}
+	return s.emb.Embed(ctx, q)
+}
+
 // vectorRank embeds the query and returns chunk ids ranked by cosine distance
 // (pgvector <=>, ascending = closest), scoped by space_access. No ANN index yet
 // — an exact scan over the (small) permitted candidate set (see 0002_rag.sql).
 func (s *Service) vectorRank(ctx context.Context, userID int64, q string, spaceID *int64, limit int) ([]int64, error) {
-	vec, err := s.emb.Embed(ctx, q)
+	vec, err := s.embedQuery(ctx, q)
 	if err != nil {
 		return nil, err
 	}

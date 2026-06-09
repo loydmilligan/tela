@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 )
 
 // ErrChunkNotFound is returned when a chunk id doesn't exist OR the caller can't
@@ -53,4 +54,47 @@ func (s *Service) ReadChunk(ctx context.Context, userID, chunkID int64, spaceID 
 		return nil, err
 	}
 	return &c, nil
+}
+
+// ChunkContents returns the FULL section text for a set of chunk ids, keyed by
+// chunk id, authorized through the live page row joined to space_access (the
+// same anti-leak path as ReadChunk/Search). Out-of-scope or missing ids are
+// silently omitted from the map — callers fall back to whatever they have. Used
+// by "ask your docs" to ground the LLM on whole chunks instead of the truncated
+// search snippet. One query, not N — safe to call with the top-k hit ids.
+func (s *Service) ChunkContents(ctx context.Context, userID int64, ids []int64, spaceID *int64) (map[int64]string, error) {
+	if len(ids) == 0 {
+		return map[int64]string{}, nil
+	}
+	qb := &queryBuilder{}
+	uid := qb.arg(userID)
+	ph := make([]string, len(ids))
+	for i, id := range ids {
+		ph[i] = qb.arg(id)
+	}
+	query := `
+		SELECT pc.id, pc.content
+		  FROM page_chunks pc
+		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
+		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+		    ON sm.space_id = p.space_id
+		 WHERE pc.id IN (` + strings.Join(ph, ",") + `)`
+	if spaceID != nil {
+		query += ` AND p.space_id = ` + qb.arg(*spaceID)
+	}
+	rows, err := s.db.QueryContext(ctx, query, qb.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var id int64
+		var content string
+		if err := rows.Scan(&id, &content); err != nil {
+			return nil, err
+		}
+		out[id] = content
+	}
+	return out, rows.Err()
 }

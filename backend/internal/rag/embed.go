@@ -17,11 +17,21 @@ import (
 // Swapping to a hosted OpenAI-compatible provider is a sibling type implementing
 // Embedder, not a change here.
 type OllamaEmbedder struct {
-	base   string
-	model  string
-	token  string // optional bearer; set when the embed URL is tela's managed endpoint
-	client *http.Client
+	base     string
+	model    string
+	token    string // optional bearer; set when the embed URL is tela's managed endpoint
+	instruct string // query-side instruction task (asymmetric retrieval); blank disables the prefix
+	client   *http.Client
 }
+
+// defaultQueryInstruct is the task description prepended to QUERY embeddings only
+// — documents (passages) are embedded raw. Qwen3-Embedding (and most modern
+// instruction-aware embedders) are trained for this asymmetric shape: an
+// instructed query against bare passages. Omitting the query instruction costs
+// ~1–5% retrieval quality on Qwen3. Wrapped as "Instruct: {task}\nQuery:{q}" per
+// the model card. Override per-deployment with TELA_RAG_QUERY_INSTRUCT; set it to
+// a single space to disable (e.g. for a non-instruction model like mxbai).
+const defaultQueryInstruct = "Given a question, retrieve passages from the knowledge base that answer it"
 
 // NewOllamaEmbedder builds an embedder for an Ollama-compatible /api/embed
 // endpoint. token is optional: empty for a direct Ollama, or a tela
@@ -30,14 +40,26 @@ type OllamaEmbedder struct {
 // both BYO and cloud-backed — no separate cloud embedder type.
 func NewOllamaEmbedder(base, model, token string) *OllamaEmbedder {
 	return &OllamaEmbedder{
-		base:   strings.TrimRight(base, "/"),
-		model:  model,
-		token:  token,
-		client: &http.Client{Timeout: 60 * time.Second},
+		base:     strings.TrimRight(base, "/"),
+		model:    model,
+		token:    strings.TrimSpace(token),
+		instruct: strings.TrimSpace(getenv("TELA_RAG_QUERY_INSTRUCT", defaultQueryInstruct)),
+		client:   &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
 func (e *OllamaEmbedder) Model() string { return e.model }
+
+// EmbedQuery embeds a SEARCH QUERY with the asymmetric instruction prefix, the
+// counterpart to Embed (which embeds passages raw). Search calls this for the
+// query side only; the corpus is never re-embedded with the prefix. With no
+// instruction configured it degrades to a plain Embed.
+func (e *OllamaEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+	if e.instruct == "" {
+		return e.Embed(ctx, query)
+	}
+	return e.Embed(ctx, "Instruct: "+e.instruct+"\nQuery:"+query)
+}
 
 // maxEmbedChars is the initial rune cap on embed input — a first-pass guard so
 // most chunks embed in one shot. It is intentionally loose because token density

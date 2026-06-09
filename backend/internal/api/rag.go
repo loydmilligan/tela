@@ -230,6 +230,19 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ground the LLM on the FULL chunk text, not the truncated search snippet —
+	// a one-query authorized fetch over the hit ids (same anti-leak scope). Falls
+	// back to the snippet for any id the fetch couldn't resolve.
+	ids := make([]int64, len(hits))
+	for i, h := range hits {
+		ids[i] = h.ChunkID
+	}
+	contents, err := s.rag.ChunkContents(r.Context(), u.ID, ids, spaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
+		return
+	}
+
 	system := "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
 		"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts."
 
@@ -241,7 +254,11 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(&b, " — %s", h.HeadingPath)
 		}
 		b.WriteString("\n")
-		b.WriteString(h.Snippet)
+		body := h.Snippet
+		if full, ok := contents[h.ChunkID]; ok && full != "" {
+			body = full
+		}
+		b.WriteString(body)
 		b.WriteString("\n\n")
 	}
 	fmt.Fprintf(&b, "Question: %s", req.Question)
