@@ -1,0 +1,95 @@
+# tela — SPLIT topology, for hosts that already run a shared reverse proxy.
+#
+# Unlike docker-compose.yml (all-in-one: backend+frontend+postgres+gotenberg+
+# proxy, the proxy being tela's own :443 edge), this stack has NO proxy service:
+# an EXTERNAL shared edge (one Caddy per box owns :443) imports tela's routing
+# (deploy/proxy/sites.caddy) and reverse-proxies to the backend/frontend
+# published below on loopback host ports. gotenberg is omitted too — point
+# TELA_GOTENBERG_URL at a renderer reachable on your network (it can be remote).
+#
+# Images are NOT built here — `make deploy-remote REMOTE=<host>` builds them on
+# the deploying machine and `docker load`s them in (no registry; good for small
+# boxes). `pull_policy: never` + no `build:` means an accidental `up` fails fast
+# instead of building on-box.
+#
+# Host-specific config (TELA_SITE_ADDRESS, gotenberg URL, PDF render origin, RAG
+# embed host, secrets) lives in deploy/.env — see deploy/.env.example. The
+# backend `environment:` list below mirrors docker-compose.yml; keep them in sync
+# when adding a passthrough (values themselves come from .env, not here).
+name: tela
+
+services:
+  backend:
+    image: tela-backend:latest
+    pull_policy: never
+    environment:
+      TELA_PUBLIC_BASE_URL: ${TELA_PUBLIC_BASE_URL}
+      TELA_SHARE_SECRET:    ${TELA_SHARE_SECRET}
+      TELA_API_KEY_SECRET:  ${TELA_API_KEY_SECRET}
+      TELA_CUSTOM_DOMAIN_TARGET: ${TELA_CUSTOM_DOMAIN_TARGET:-}
+      TELA_DATABASE_URL: postgres://${TELA_PG_USER:-tela}:${TELA_PG_PASSWORD}@postgres:5432/${TELA_PG_DB:-tela}?sslmode=disable
+      # gotenberg can be a remote renderer; the reader origin its Chromium loads
+      # is TELA_PDF_RENDER_BASE_URL (the public canonical host when there's no CDN
+      # to skip, or an internal origin otherwise). Both set in deploy/.env.
+      TELA_GOTENBERG_URL:        ${TELA_GOTENBERG_URL:-http://gotenberg:3000}
+      TELA_PDF_RENDER_BASE_URL:  ${TELA_PDF_RENDER_BASE_URL:-http://proxy}
+      TELA_ADMIN_USERNAME:  ${TELA_ADMIN_USERNAME:-}
+      TELA_ADMIN_PASSWORD:  ${TELA_ADMIN_PASSWORD:-}
+      TELA_ADMIN_EMAIL:     ${TELA_ADMIN_EMAIL:-}
+      TELA_SMTP_HOST:      ${TELA_SMTP_HOST:-}
+      TELA_SMTP_PORT:      ${TELA_SMTP_PORT:-}
+      TELA_SMTP_TLS:       ${TELA_SMTP_TLS:-}
+      TELA_SMTP_USERNAME:  ${TELA_SMTP_USERNAME:-}
+      TELA_SMTP_PASSWORD:  ${TELA_SMTP_PASSWORD:-}
+      TELA_SMTP_FROM:      ${TELA_SMTP_FROM:-}
+      # RAG embed host. If reached over a private overlay network and resolved by
+      # NAME, the name may not resolve inside this container — use the host's
+      # overlay IP in TELA_RAG_EMBED_URL. See CLAUDE.md / docs/search.md.
+      TELA_RAG_EMBED_URL:    ${TELA_RAG_EMBED_URL:-}
+      TELA_RAG_EMBED_MODEL:  ${TELA_RAG_EMBED_MODEL:-}
+      TELA_RAG_EMBED_DIM:    ${TELA_RAG_EMBED_DIM:-}
+      TELA_WORKOS_ISSUER:    ${TELA_WORKOS_ISSUER:-}
+      TELA_MCP_RESOURCE:     ${TELA_MCP_RESOURCE:-}
+      WORKOS_API_KEY:        ${WORKOS_API_KEY:-}
+      WORKOS_CLIENT_ID:      ${WORKOS_CLIENT_ID:-}
+      TELA_SSO_GOOGLE_CLIENT_ID:        ${TELA_SSO_GOOGLE_CLIENT_ID:-}
+      TELA_SSO_GOOGLE_CLIENT_SECRET:    ${TELA_SSO_GOOGLE_CLIENT_SECRET:-}
+      TELA_SSO_MICROSOFT_CLIENT_ID:     ${TELA_SSO_MICROSOFT_CLIENT_ID:-}
+      TELA_SSO_MICROSOFT_CLIENT_SECRET: ${TELA_SSO_MICROSOFT_CLIENT_SECRET:-}
+      TELA_SSO_GITHUB_CLIENT_ID:        ${TELA_SSO_GITHUB_CLIENT_ID:-}
+      TELA_SSO_GITHUB_CLIENT_SECRET:    ${TELA_SSO_GITHUB_CLIENT_SECRET:-}
+    # The external shared edge reaches the backend on loopback. Bound to
+    # 127.0.0.1 so the API is never exposed on the box's public interface — only
+    # the edge (which terminates TLS + applies the noindex/routing rules) is.
+    ports:
+      - "127.0.0.1:8781:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER:     ${TELA_PG_USER:-tela}
+      POSTGRES_PASSWORD: ${TELA_PG_PASSWORD}
+      POSTGRES_DB:       ${TELA_PG_DB:-tela}
+    volumes:
+      - tela-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TELA_PG_USER:-tela} -d ${TELA_PG_DB:-tela}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    image: tela-frontend:latest
+    pull_policy: never
+    ports:
+      - "127.0.0.1:8782:80"
+    restart: unless-stopped
+
+volumes:
+  tela-pgdata:

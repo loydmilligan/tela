@@ -1,0 +1,296 @@
+# tela site blocks — the canonical host + the org-custom-domain catch-all.
+#
+# Split out of Caddyfile so a SHARED edge (an external Caddy that fronts other
+# services on the same box and owns the global options block) can `import` these
+# blocks verbatim — config stays owned by this repo, never forked into the infra.
+# The standalone self-host proxy (deploy/docker-compose.yml) imports this from
+# its own Caddyfile, which supplies the matching global block.
+#
+# Upstreams + the landing root are env placeholders so the same file works both
+# in the all-in-one compose (container DNS: backend:8080 / frontend:80, landing
+# baked at /srv/landing — the defaults below) AND imported into a host-network
+# edge that reaches the published host ports and a host-mounted landing dist.
+# Leave the env unset → identical to the original hardcoded behavior.
+
+# Site address. Defaults to :80 — the right value behind an external TLS
+# terminator (Cloudflare, a load balancer). For DIRECT TLS with no terminator,
+# set TELA_SITE_ADDRESS=your.domain in deploy/.env and publish 80+443 on the
+# proxy (see docker-compose.yml); Caddy then auto-provisions a Let's Encrypt
+# certificate. See docs/self-hosting.md.
+{$TELA_SITE_ADDRESS::80} {
+	# HSTS — honored by browsers over HTTPS (the terminator's edge, or Caddy's
+	# own cert in direct-TLS mode). Applies to every response. No preload.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# The on-demand-TLS ask endpoint is for Caddy only (container-to-container).
+	# 404 it from the WAN so the public internet can't probe which hostnames are
+	# active. Caddy's own `ask` call hits the backend directly, not this block.
+	handle /api/internal/* {
+		respond 404
+	}
+
+	# ── Backend: API + websockets + public page permalinks ──────────────────
+	# /api + /p are noindex: API is JSON, /p permalinks are owner-private by
+	# default (a leaked numeric id shouldn't be indexed; unfurl bots ignore the
+	# header so social cards still work).
+	handle /api/* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /ws/* {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /p/* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# OAuth Protected Resource Metadata (RFC 9728) for the MCP endpoint — a new
+	# top-level path (not under /api), so it needs its own route to the backend.
+	# The backend serves the static discovery JSON (or 404s when OAuth is
+	# unconfigured) and sets the public Access-Control-Allow-Origin so Claude.ai /
+	# ChatGPT can fetch it cross-origin during the Connect flow. noindex.
+	handle /.well-known/oauth-protected-resource* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# WorkOS Standalone login bridge (MCP OAuth Connect flow). New top-level path
+	# → route to the backend, which authenticates via tela's session and completes
+	# the OAuth dance. The /login bounce it issues falls through to the SPA. noindex.
+	handle /oauth/* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# WebDAV file-sync surface (sync spec §9). Stock clients (rclone, Finder,
+	# Windows Explorer) authenticate with a PAT as the Basic-auth password; the
+	# backend self-authenticates and scope-gates per verb (it's on
+	# auth.IsPublicPath). reverse_proxy forwards the non-standard WebDAV methods
+	# (PROPFIND / PROPPATCH / MKCOL / MOVE / COPY / LOCK / UNLOCK) to the origin
+	# unchanged. Matches both the bare /dav (so the backend's 301 → /dav/ lands)
+	# and the subtree. noindex. NOTE: Cloudflare's WAF/managed rules in front of
+	# this origin must be configured to allow these verbs through to /dav/* —
+	# they are blocked by default on many WAF profiles.
+	@dav path /dav /dav/*
+	handle @dav {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# #3 ".pdf on a share URL" trick → server-rendered PDF. These MUST precede the
+	# /share/* OG/SPA handlers below so the pretty URL lands on the backend, which
+	# rewrites it to the public /api/share/{token}/pdf endpoint (descendant pages
+	# carry the page id as ?p=). The backend renders on demand + sends no-store, so
+	# Cloudflare never caches a stale .pdf after an edit.
+	@share_pdf_page path_regexp sharepdfpage ^/share/([^/]+)/p/([^/]+)\.pdf$
+	handle @share_pdf_page {
+		# Append the original query (e.g. ?theme=dark) after the injected ?p=.
+		rewrite * /api/share/{re.sharepdfpage.1}/pdf?p={re.sharepdfpage.2}&{query}
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@share_pdf path_regexp sharepdf ^/share/([^/]+)\.pdf$
+	handle @share_pdf {
+		rewrite * /api/share/{re.sharepdf.1}/pdf
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# M15.5 PublicShare OG bot-gate: bot UAs hitting /share/* go to the backend
+	# (writes an OG envelope); real browsers fall through to the frontend SPA
+	# (M15.1 share-mode UI). The named matcher must precede the catch-all
+	# /share/* handle — Caddy resolves handles by first match. Shares are
+	# noindex by default (token-scoped, privacy); the OG header still unfurls.
+	# Mirror of botUASubstrings in backend/internal/api/public_share.go — keep in sync.
+	@share_bots {
+		path /share/*
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|bot/|bot\s)"
+	}
+	handle @share_bots {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /share/* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+	}
+
+	# ── Public blog surfaces: indexable + social unfurls ────────────────────
+	# Public spaces (/public/*) and author homes (/u/*) are meant for the open
+	# web, so — unlike the rest of the app SPA — they are NOT noindex'd. Bot UAs
+	# get server-rendered OG/JSON-LD from the backend (api/public_og.go); humans
+	# get the SPA, which sets its own per-page <title>/description/canonical.
+	# The named matcher must precede the plain /public + /u handles (first match
+	# wins). Mirror of botUASubstrings in backend/internal/api/public_share.go.
+	@public_bots {
+		path /public/* /u/*
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|bot/|bot\s)"
+	}
+	handle @public_bots {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /public/* {
+		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+	}
+	handle /u/* {
+		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+	}
+	# Public discovery directory — indexable (no noindex header), like /public
+	# and /u. Without this it falls to the app-SPA catch-all and gets noindex'd,
+	# which we don't want for a public, crawlable page.
+	handle /discover* {
+		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+	}
+
+	# Public sitemap (backend-generated from public spaces/pages/author-homes).
+	handle /sitemap-public.xml {
+		rewrite * /api/public/sitemap.xml
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# ── Returning user: hard load of "/" → app, not the landing ─────────────
+	# A user who types the bare domain while signed in should land in the app,
+	# not the marketing page. Caddy can't VALIDATE the tela_session cookie
+	# (HMAC + HttpOnly — the backend owns that), but it doesn't need to: mere
+	# presence means "has a session, route to the app", and the SPA's "/" route
+	# resolves it for real — live session → redirect to the user's space, dead
+	# session → /api/spaces 401 → /login. Logged-out visitors carry no cookie
+	# (logout sets Max-Age=-1, so the browser drops it) → they fall through to
+	# the landing below, which therefore stays the default AND indexable (search
+	# crawlers never carry a session). Escape hatch: /?home=1 always shows the
+	# landing, even when signed in (the app links here from the user menu).
+	@root_app {
+		path /
+		header_regexp Cookie "(?:^|;\s*)tela_session=[^;]"
+		not query home=1
+	}
+	handle @root_app {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+	}
+
+	# ── Marketing landing (standalone Astro static) + app SPA ───────────────
+	# The landing build (landing/dist, mounted read-only at /srv/landing) owns
+	# the apex "/", its /_astro/* assets, AND the SEO/root files it ships
+	# (robots.txt, sitemap.xml, llms.txt, llms-full.txt, og-image.png,
+	# manifest.webmanifest, apple-touch-icon.png, icon-*.png, favicon.svg).
+	# Any path that exists as a file in /srv/landing is served from the landing
+	# and stays indexable; everything else (/login, /spaces/*, /settings, the
+	# app's Vite /assets/*, …) falls through to the app SPA and is noindex'd.
+	# A cookieless (logged-out) hard load of "/" lands here; a session-bearing
+	# one is captured by @root_app above and routed to the app instead.
+	handle {
+		root * {$TELA_LANDING_ROOT:/srv/landing}
+
+		@landing_file file {
+			try_files {path} {path}/index.html
+		}
+		handle @landing_file {
+			header /_astro/* Cache-Control "public, max-age=31536000, immutable"
+			# HTML shell must revalidate so a redeploy/edit is picked up at once
+			# (the fingerprinted /_astro assets above stay immutable).
+			@landing_html path / /mcp /mcp/ /pricing /pricing/ /privacy /privacy/ /terms /terms/
+			header @landing_html Cache-Control "no-cache"
+			file_server
+		}
+
+		# Known app routes (auth-gated shell, editor, settings, …): always noindex.
+		# Listed BEFORE the handle carve-out below so e.g. /login, /search are not
+		# mistaken for a {handle}. Mirror of the top-level routes in
+		# frontend/src/routes/router.tsx (and nginx.conf's allowlist). /share, /public,
+		# /u, /discover are noindex'd or indexable upstream and never reach here.
+		@app_routes path /login /register /verify-email /forgot-password /reset-password /settings /settings/* /spaces /spaces/* /search /read/* /print/* /graph /graph/* /n /n/* /ask /setup
+		handle @app_routes {
+			header X-Robots-Tag "noindex"
+			reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+		}
+
+		# GitHub-style handle pages: /{handle} (user/org public home) and
+		# /{handle}/{space-slug} (public space). These ARE the open-web surface, so
+		# — like /public and /u — they stay INDEXABLE (no noindex header). The SPA
+		# resolves the handle client-side; bot OG/JSON-LD for these is served via the
+		# /public/* + /u/* backend routes the client canonicalizes to. Handle-shaped
+		# = one or two slug segments (dots allowed, e.g. gulden.gullu). Anything that
+		# isn't a real landing file, a known app route, or handle-shaped falls to the
+		# noindex fallback below.
+		@handle path_regexp ^/[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9._-]+)?$
+		handle @handle {
+			reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+		}
+
+		# Everything else = the app SPA (auth-gated shell + share-mode UI): noindex.
+		handle {
+			header X-Robots-Tag "noindex"
+			reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+		}
+	}
+}
+
+# ── Org custom domains (tela.ngss.io & co.) ─────────────────────────────────
+# Every https host NOT matched by the canonical block above (more specific →
+# wins) lands here. on_demand provisions the cert (gated by the global ask).
+# This is the white-label APP surface only: it serves login + the app SPA +
+# /api + shares, and is BLANKET noindex — none of the canonical block's
+# indexable carve-outs (landing apex, /{handle}, /public, /u, /discover,
+# sitemap) exist here, so a custom-domain app page can never be mistaken for the
+# public/SEO surface. Requires direct-TLS mode (TELA_SITE_ADDRESS set to the
+# canonical host, 80+443 published); behind Cloudflare on-demand never fires.
+https:// {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	tls {
+		on_demand
+	}
+
+	# App-only surface → never indexed. Block-scoped, so it applies to every
+	# response regardless of which handle serves it.
+	header X-Robots-Tag "noindex"
+
+	# Internal ask endpoint is never WAN-reachable.
+	handle /api/internal/* {
+		respond 404
+	}
+
+	# Share ".pdf" trick + OG bot-gate, so shares created on this org's domain
+	# render + unfurl here too (mirror of the canonical block; keep the UA regex
+	# in sync with botUASubstrings in backend/internal/api/public_share.go).
+	@share_pdf_page path_regexp sharepdfpage ^/share/([^/]+)/p/([^/]+)\.pdf$
+	handle @share_pdf_page {
+		rewrite * /api/share/{re.sharepdfpage.1}/pdf?p={re.sharepdfpage.2}&{query}
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@share_pdf path_regexp sharepdf ^/share/([^/]+)\.pdf$
+	handle @share_pdf {
+		rewrite * /api/share/{re.sharepdf.1}/pdf
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@share_bots {
+		path /share/*
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|bot/|bot\s)"
+	}
+	handle @share_bots {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# App needs these; all under the block-scoped noindex above.
+	handle /api/* {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /ws/* {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /p/* {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@dav path /dav /dav/*
+	handle @dav {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /share/* {
+		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+	}
+
+	# Everything else = the app SPA (login lands here, branded for the org).
+	# Never the marketing landing.
+	handle {
+		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
+	}
+}

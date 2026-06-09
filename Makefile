@@ -1,3 +1,7 @@
+# Optional, untracked make-var overrides (deploy host/paths for the remote-deploy
+# targets). Keeps personal values out of git — see the Remote deploy section.
+-include deploy/deploy.env
+
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
 # Auto-stamp git metadata into the backend image so GET /api/version reports
@@ -19,20 +23,30 @@ DEV_DATABASE_URL := postgres://tela:tela@localhost:55433/tela?sslmode=disable
 # Maintenance DSN the test harness connects to in order to CREATE/DROP per-test DBs.
 TEST_DATABASE_URL := postgres://tela:tela@localhost:55433/postgres?sslmode=disable
 
-# ── Remote deploy (build-on-archer, no registry) ────────────────────────────
-# Prod lives on `archer` at ~/proj/tela; deploy = git pull + make on that host.
-# The deploy targets run FROM ANY machine and SSH into archer to do the work.
-DEPLOY_HOST := archer
-DEPLOY_DIR  := ~/proj/tela
-PUBLIC_URL  := https://tela.cagdas.io
+# ── Remote deploy (no registry) ─────────────────────────────────────────────
+# Two styles, both run FROM ANY machine; set the host(s) in your shell, on the
+# command line (`make deploy-remote REMOTE=…`), or in untracked deploy/deploy.env:
+#   build-on-remote → `make deploy` / `deploy-backend|frontend|landing`: SSH to
+#                     DEPLOY_HOST, git pull + build there (needs a capable box).
+#   build-local     → `make deploy-remote REMOTE=<host>`: build images HERE,
+#                     `docker save | ssh <host> docker load` (no registry, no
+#                     on-box build — good for small boxes / the split topology).
+DEPLOY_HOST ?=
+DEPLOY_DIR  ?= ~/proj/tela
+PUBLIC_URL  ?= https://tela.cagdas.io
 
-# RUN_REMOTE wraps a shell command so it runs on archer — but if we're ALREADY
-# on archer (running `make deploy` from a prod-host shell), ssh-to-self is
+# build-local deploy (deploy-remote): the ssh host, the repo path on it, and the
+# dir the external shared edge serves static from (landing + sites.caddy ride it).
+# EDGE_CONTAINER, if set, is reloaded after the sync so the edge re-reads sites.caddy.
+REMOTE         ?= $(DEPLOY_HOST)
+REMOTE_DIR     ?= $(DEPLOY_DIR)
+REMOTE_WEB     ?= /srv/web
+EDGE_CONTAINER ?=
+
+# RUN_REMOTE wraps a shell command so it runs on DEPLOY_HOST — but if we're
+# ALREADY on it (running `make deploy` from the host's own shell), ssh-to-self is
 # wasteful and needs key auth to localhost, so we run it locally instead.
 # Usage in a recipe:  $(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && …'
-# Implemented as a recursively-expanded var holding a shell `if`: the recipe
-# passes the command as a single quoted arg ($$1 via `sh -c … _`), so quoting
-# survives whether it runs locally or over ssh.
 ifeq ($(shell hostname),$(DEPLOY_HOST))
   RUN_REMOTE = sh -c
 else
@@ -42,7 +56,7 @@ endif
 .PHONY: up down logs build clean dev be-dev fe-dev storybook help test-mcp-integration \
         test dev-db dev-db-clean setup backup restore \
         landing-dev landing-build landing-gate landing-clean \
-        deploy deploy-backend deploy-frontend deploy-landing release-mcp reset-prod-db \
+        deploy deploy-backend deploy-frontend deploy-landing deploy-remote release-mcp reset-prod-db \
         health-gate
 
 # setup: first-run convenience. Copies deploy/.env.example → deploy/.env and
@@ -81,11 +95,12 @@ help:
 	@echo "  make landing-build  # build the static landing into landing/dist/"
 	@echo "  make landing-gate   # run the landing production gates (a11y, tokens, motion, lighthouse)"
 	@echo ""
-	@echo "Remote deploy (targets $(DEPLOY_HOST):$(DEPLOY_DIR); run from any machine):"
-	@echo "  make deploy           # pull + full 'make up' on archer, then verify /api/version commit"
+	@echo "Remote deploy (set DEPLOY_HOST / REMOTE in deploy/deploy.env; run from any machine):"
+	@echo "  make deploy           # pull + full 'make up' on DEPLOY_HOST, then verify /api/version commit"
 	@echo "  make deploy-backend   # pull + rebuild ONLY the backend service, then verify /api/version"
 	@echo "  make deploy-frontend  # pull + rebuild ONLY the frontend service"
 	@echo "  make deploy-landing   # pull + landing-build + recreate proxy so it re-reads landing/dist"
+	@echo "  make deploy-remote REMOTE=<host>  # build images locally + docker-load to a remote + up split stack (no registry)"
 	@echo "  make reset-prod-db    # DESTROY + recreate the prod Postgres volume (requires FORCE=1)"
 	@echo "  make release-mcp      # publish tela-mcp to npm (BUMP=patch|minor|major, default patch)"
 
@@ -226,15 +241,16 @@ test-mcp-integration:
 	  npm --prefix mcp run test:integration
 
 # ── Remote deploy targets ───────────────────────────────────────────────────
-# All of these run from ANY machine: RUN_REMOTE ssh's into archer (or runs
-# locally if we're already on archer). They `git pull --ff-only` so deploy never
-# silently diverges from a force-push — a non-fast-forward fails loudly instead.
+# The build-on-remote targets run from ANY machine: RUN_REMOTE ssh's into
+# DEPLOY_HOST (or runs locally if we're already on it). They `git pull --ff-only`
+# so deploy never silently diverges from a force-push — a non-fast-forward fails
+# loudly instead.
 #
 # PRECONDITION: push your commit before deploying. The health gate compares the
 # locally-captured HEAD ($(TELA_COMMIT), evaluated on THIS machine before ssh)
-# against what /api/version reports after archer pulls + rebuilds. If you forgot
-# to push, archer pulls nothing, the running commit won't match, and the gate
-# fails — which is exactly the "commit ≠ deploy" trap we want to make impossible.
+# against what /api/version reports after the host pulls + rebuilds. If you
+# forgot to push, the host pulls nothing, the running commit won't match, and the
+# gate fails — exactly the "commit ≠ deploy" trap we want to make impossible.
 
 # health-gate: poll PUBLIC_URL/api/version until the reported `commit` equals
 # EXPECT_COMMIT (default: this checkout's HEAD), or fail. This is the permanent
@@ -267,8 +283,8 @@ health-gate:
 	echo "  (Did you push? Or did 'make up' on $(DEPLOY_HOST) fail to rebuild the backend?)" >&2; \
 	exit 1
 
-# deploy: full stack. Pull on archer, run the normal `make up` (landing-build +
-# build/recreate every service + force-recreate proxy), then verify the commit.
+# deploy: full stack. Pull on the deploy host, run the normal `make up`
+# (landing-build + build/recreate every service + force-recreate proxy), verify.
 deploy:
 	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && make up'
 	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
@@ -277,7 +293,7 @@ deploy:
 # full `up` when only Go changed). Must pass EXPORT_BUILD so the rebuilt image
 # carries the right version/commit ldflags — without it /api/version would
 # report dev/unknown and the health gate would (correctly) fail. The git
-# metadata is computed ON ARCHER (it's the deploying host's HEAD after pull),
+# metadata is computed ON THE REMOTE (it's the deploying host's HEAD after pull),
 # so EXPORT_BUILD is expanded inside the remote command, not on the laptop.
 deploy-backend:
 	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && \
@@ -295,7 +311,7 @@ deploy-frontend:
 
 # deploy-landing: the landing is baked into the proxy image
 # (deploy/proxy/Dockerfile), so "deploying" it = pull + rebuild the proxy image
-# on archer. No host Node build step. --force-recreate is REQUIRED: the Caddyfile
+# on the deploy host. No host Node build step. --force-recreate is REQUIRED: the Caddyfile
 # is bind-mounted (not baked), and a Caddyfile-only change cache-hits the image —
 # without --force-recreate the proxy keeps running the old in-memory config and
 # the edit silently never applies. This is also the target for Caddyfile changes.
@@ -303,12 +319,40 @@ deploy-landing:
 	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && git pull --ff-only && \
 	  docker compose -f deploy/docker-compose.yml up -d --build --force-recreate proxy'
 
+# deploy-remote: build-local deploy of the SPLIT stack to a remote host (for the
+# split topology behind an external shared edge — see docs/self-hosting.md). The
+# remote does NOT build: this builds the two custom images locally (native), then
+# `docker save | ssh REMOTE docker load` (no registry — good for small boxes),
+# syncs the landing + sites.caddy to the dir the edge serves static from
+# (REMOTE_WEB), pulls the repo + `up`s the split compose, reloads the external
+# edge if EDGE_CONTAINER is set, then verifies /api/version. Postgres pulls a
+# public image; gotenberg is configured (in deploy/.env) as a remote renderer.
+#   make deploy-remote REMOTE=<ssh-host> [REMOTE_WEB=/srv/web] [EDGE_CONTAINER=edge-caddy]
+deploy-remote:
+	@test -n "$(REMOTE)" || { echo "set REMOTE=<ssh-host> (or in deploy/deploy.env)"; exit 1; }
+	@echo "[deploy-remote] building backend+frontend ($(TELA_COMMIT)) locally…"
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) -t tela-backend:latest backend
+	docker build -t tela-frontend:latest frontend
+	$(MAKE) landing-build
+	@echo "[deploy-remote] streaming images → $(REMOTE)…"
+	docker save tela-backend:latest tela-frontend:latest | ssh $(REMOTE) docker load
+	@echo "[deploy-remote] syncing landing + sites.caddy → $(REMOTE):$(REMOTE_WEB)…"
+	ssh $(REMOTE) 'mkdir -p $(REMOTE_WEB)/tela-landing $(REMOTE_WEB)/tela'
+	rsync -a --delete landing/dist/ $(REMOTE):$(REMOTE_WEB)/tela-landing/
+	rsync -a deploy/proxy/sites.caddy $(REMOTE):$(REMOTE_WEB)/tela/sites.caddy
+	@echo "[deploy-remote] pull + up split stack…"
+	ssh $(REMOTE) 'cd $(REMOTE_DIR) && git pull --ff-only && \
+	  docker compose -f deploy/docker-compose.split.yml up -d'
+	@if [ -n "$(EDGE_CONTAINER)" ]; then \
+	  ssh $(REMOTE) 'docker exec $(EDGE_CONTAINER) caddy reload --config /etc/caddy/Caddyfile' || true; fi
+	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
+
 # reset-prod-db: GUARDED, DESTRUCTIVE. Drops the prod Postgres volume and brings
 # it back empty so the backend re-runs migrations from scratch. Prod data is
 # disposable by design (pre-1.0); this is the sanctioned reset. Requires FORCE=1,
-# same as `clean`. Runs on archer: stop the backend (releases connections) +
-# postgres, delete the named volume, then `up` so postgres re-initializes and
-# the backend re-migrates against a fresh DB.
+# same as `clean`. Runs on the deploy host: stop the backend (releases
+# connections) + postgres, delete the named volume, then `up` so postgres
+# re-initializes and the backend re-migrates against a fresh DB.
 reset-prod-db:
 ifeq ($(FORCE),1)
 	$(RUN_REMOTE) 'cd $(DEPLOY_DIR) && \
@@ -323,7 +367,7 @@ else
 	@exit 1
 endif
 
-# ── MCP npm release (ships to npm, NOT to archer) ───────────────────────────
+# ── MCP npm release (ships to npm, NOT to the deploy host) ──────────────────
 # Publishes the tela-mcp package. BUMP selects the semver bump (default patch):
 #   make release-mcp BUMP=minor
 # Flow (from docs/architecture.md + mcp/README): npm version with the
