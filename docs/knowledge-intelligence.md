@@ -56,8 +56,17 @@ the page tree, never replacing them.
 | **Link suggestions** | existing pages a *draft* should link to (assisted authoring) | `POST /api/rag/suggest-links`, MCP `suggest_links` |
 | **Overlap detection** | near-duplicate page pairs to merge/redirect (hygiene) | `GET /api/rag/overlaps`, MCP `find_overlaps` |
 | **Knowledge gaps** | most-asked questions the corpus *couldn't* answer → content roadmap | `GET /api/rag/gaps` (admin), MCP `knowledge_gaps` |
-| **Ask your docs** | cited answers grounded on full chunks | `POST /api/rag/ask` |
+| **Ask your docs** | cited answers grounded on full chunks (+ follow-up questions) | `POST /api/rag/ask` |
+| **Ask-first authoring** | a grounded markdown *draft* for a new page from a topic | `POST /api/rag/draft` |
+| **Answer → page** ⭐ | answer a question AND save it as a cited page — closes ask→gap→write | `POST /api/rag/answer-to-page` |
+| **Page questions** | "what does this page answer?" — seeds for ask-first nav | `GET /api/pages/{id}/questions` |
 | **Reranking** | optional cross-encoder second stage for top-k precision | env `TELA_RAG_RERANK_URL` |
+
+The generative features (draft / answer-to-page / page-questions / follow-ups)
+share one seam — `askContext` (retrieve + cite) and `askComplete` (caps + LLM) —
+and ride the `feature.ask` flag (`/ask` itself is unflagged; only the new bits
+are gated). They're REST-first; agents compose the same outcomes from `search` +
+`create_page`, so there's no parallel LLM-cap path on MCP.
 | **Self-healing index + eval** | the index keeps itself fresh; `rag-eval` measures quality | see [`rag.md`](rag.md) |
 
 All read capabilities are **access-scoped through the live page row** (the

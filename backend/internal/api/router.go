@@ -267,11 +267,15 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/rag/freshness", srv.RAGFreshness)
 	mux.HandleFunc("POST /api/rag/reindex", srv.RAGReindex)
 	mux.HandleFunc("POST /api/rag/ask", srv.RAGAsk)
-	// Knowledge-intelligence surface (built on the same index).
+	// Knowledge-intelligence surface (built on the same index; flag: feature.knowledge).
 	mux.HandleFunc("GET /api/pages/{id}/related", srv.RAGRelated)
 	mux.HandleFunc("POST /api/rag/suggest-links", srv.RAGSuggestLinks)
 	mux.HandleFunc("GET /api/rag/overlaps", srv.RAGOverlaps)
 	mux.HandleFunc("GET /api/rag/gaps", srv.RAGGaps)
+	// Ask-first generative surface (flag: feature.ask).
+	mux.HandleFunc("POST /api/rag/draft", srv.RAGDraft)
+	mux.HandleFunc("POST /api/rag/answer-to-page", srv.RAGAnswerToPage)
+	mux.HandleFunc("GET /api/pages/{id}/questions", srv.RAGPageQuestions)
 
 	mux.HandleFunc("GET /api/admin/users", srv.ListAdminUsers)
 	mux.HandleFunc("POST /api/admin/users", srv.CreateAdminUser)

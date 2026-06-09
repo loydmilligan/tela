@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -189,12 +188,6 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "llm_disabled", "managed AI is not configured")
 		return
 	}
-	// Same per-account compute throttle as the cloud proxies — ask runs an LLM
-	// call, so an authenticated user can't hammer it unbounded.
-	if !s.cloudRateOK(w, "ask", account{Kind: accountUser, ID: u.ID}) {
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
 	var req askRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -209,27 +202,19 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 	spaceID := req.SpaceID
 	// A space-scoped bearer key may only ever see its one space — force the
 	// narrow. Mirrors RAGSearch.
-	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
-		spaceID = k.SpaceID
+	if b := bearerSpace(r); b != nil {
+		spaceID = b
 	}
 
-	limit := req.Limit
-	if limit <= 0 || limit > askMaxChunks {
-		limit = askMaxChunks
-	}
-	hits, err := s.rag.Search(r.Context(), u.ID, req.Question, spaceID, limit, "hybrid")
+	// Retrieve grounding via the shared seam (also used by draft/answer-to-page).
+	excerpts, hits, top, err := s.askContext(r.Context(), u.ID, req.Question, spaceID, req.Limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
 		return
 	}
-	// Log the ask with its retrieval confidence (best-effort) — feeds the
-	// knowledge-gaps view. Done for BOTH the empty and grounded paths so a
-	// question that retrieved nothing is captured as a gap.
-	var topScore float64
-	if len(hits) > 0 {
-		topScore = hits[0].Score
-	}
-	_ = s.rag.LogAsk(r.Context(), u.ID, spaceID, req.Question, len(hits), topScore)
+	// Log every ask with its retrieval confidence (best-effort) — feeds the
+	// knowledge-gaps view, including the zero-hit case (a clear gap).
+	_ = s.rag.LogAsk(r.Context(), u.ID, spaceID, req.Question, len(hits), top)
 	if len(hits) == 0 {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"answer":  "I couldn't find anything in your documents to answer that.",
@@ -238,54 +223,23 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ground the LLM on the FULL chunk text, not the truncated search snippet —
-	// a one-query authorized fetch over the hit ids (same anti-leak scope). Falls
-	// back to the snippet for any id the fetch couldn't resolve.
-	ids := make([]int64, len(hits))
-	for i, h := range hits {
-		ids[i] = h.ChunkID
-	}
-	contents, err := s.rag.ChunkContents(r.Context(), u.ID, ids, spaceID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
-		return
-	}
-
-	system := "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
+	const system = "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
 		"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts."
-
-	var b strings.Builder
-	b.WriteString("Answer the question using only these document excerpts.\n\n")
-	for i, h := range hits {
-		fmt.Fprintf(&b, "[%d] %s", i+1, h.Title)
-		if h.HeadingPath != "" {
-			fmt.Fprintf(&b, " — %s", h.HeadingPath)
-		}
-		b.WriteString("\n")
-		body := h.Snippet
-		if full, ok := contents[h.ChunkID]; ok && full != "" {
-			body = full
-		}
-		b.WriteString(body)
-		b.WriteString("\n\n")
-	}
-	fmt.Fprintf(&b, "Question: %s", req.Question)
-
-	// Monthly compute cap (atomic) — only counts a real LLM call (we're past the
-	// empty-retrieval short-circuit), against the asking user's account.
-	if ae := s.checkAndRecordLLMCall(r.Context(), account{Kind: accountUser, ID: u.ID}); ae != nil {
-		writeError(w, ae.Status, ae.Code, ae.Message)
+	answer, ok := s.askComplete(w, r, u, "ask", system,
+		"Answer the question using only these document excerpts.\n\n"+excerpts+"Question: "+req.Question)
+	if !ok {
 		return
 	}
-	answer, err := s.llm.Complete(r.Context(), system, b.String())
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "completion_failed", "answer generation failed")
-		return
+
+	resp := map[string]any{"answer": answer, "sources": hits}
+	// Experimental: suggest follow-up questions so an answer becomes a thread to
+	// pull on (ask-first navigation). Best-effort, flag-gated.
+	if s.featureFlag(featureAsk) {
+		if f := s.genFollowups(r.Context(), u, req.Question, answer); len(f) > 0 {
+			resp["followups"] = f
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"answer":  answer,
-		"sources": hits,
-	})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // bearerSpace returns the space a space-pinned bearer key is locked to (else
