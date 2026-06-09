@@ -309,20 +309,33 @@ registry-up:
 
 # _push (internal): push $(PUSH_IMAGES) — each tagged :<commit> and :latest — to
 # the registry. For the on-box loopback registry (REG_TUNNEL=1) it opens a
-# transient SSH tunnel (control-master socket) so the laptop's :PORT reaches the
-# box registry, and closes it on exit via a shell trap (even if a push fails).
-# REG_TUNNEL=0 pushes straight to TELA_REGISTRY (e.g. GHCR) — no tunnel.
+# transient SSH tunnel (control-master socket, with keepalives so it can't
+# idle-reset) so the laptop's :PORT reaches the box registry, and closes it on
+# exit via a shell trap (even if a push fails). REG_TUNNEL=0 pushes straight to
+# TELA_REGISTRY (e.g. GHCR) — no tunnel.
+#
+# Each push is retried: Docker uploads blobs in parallel and over a single SSH
+# tunnel that contention can starve a large blob into a reset. A retry skips the
+# layers that already landed, so each round has fewer (and bigger-windowed)
+# uploads in flight and converges — no daemon max-concurrent-uploads tweak needed.
 _push:
 	@set -e; \
 	if [ "$(REG_TUNNEL)" = "1" ]; then \
 	  echo "[push] tunnel :$(TELA_REGISTRY_PORT) → $(REMOTE) registry…"; \
-	  ssh -fN -M -S $(REG_SOCK) -L $(TELA_REGISTRY_PORT):127.0.0.1:$(TELA_REGISTRY_PORT) $(REMOTE); \
+	  ssh -fN -M -S $(REG_SOCK) -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
+	    -o ExitOnForwardFailure=yes \
+	    -L $(TELA_REGISTRY_PORT):127.0.0.1:$(TELA_REGISTRY_PORT) $(REMOTE); \
 	  trap 'ssh -S $(REG_SOCK) -O exit $(REMOTE) 2>/dev/null || true' EXIT; \
 	fi; \
 	for img in $(PUSH_IMAGES); do \
-	  echo "[push] $(TELA_REGISTRY)/$$img (only changed layers cross the wire)"; \
-	  docker push $(TELA_REGISTRY)/$$img:$(TELA_COMMIT); \
-	  docker push $(TELA_REGISTRY)/$$img:latest; \
+	  for tag in $(TELA_COMMIT) latest; do \
+	    ref=$(TELA_REGISTRY)/$$img:$$tag; n=1; \
+	    until docker push $$ref; do \
+	      if [ $$n -ge 6 ]; then echo "[push] $$ref failed after 6 attempts" >&2; exit 1; fi; \
+	      echo "[push] $$ref attempt $$n failed — retrying (already-pushed layers skip)…"; \
+	      n=$$((n+1)); sleep 3; \
+	    done; \
+	  done; \
 	done
 
 # deploy: THE deploy. Build both images locally → push only changed layers to the
