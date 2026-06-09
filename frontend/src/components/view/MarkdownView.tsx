@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from 'react'
 import katex from 'katex'
@@ -191,6 +192,61 @@ function WikilinkView({ target, alias }: { target: string; alias: string | null 
   )
 }
 
+function headingText(node: MdNode): string {
+  return (node.children ?? [])
+    .map((c) => (c.type === 'text' ? String(c.value ?? '') : ''))
+    .join('')
+    .trim()
+}
+
+// Group a `:::tabs` directive's children into tabs by `### Label` headings —
+// mirrors the editor schema's parse runner (milkdown-tabs.ts).
+function groupTabs(children: MdNode[]): { label: string; content: MdNode[] }[] {
+  const tabs: { label: string; content: MdNode[] }[] = []
+  let cur: { label: string; content: MdNode[] } | null = null
+  for (const child of children) {
+    if (child.type === 'heading' && Number(child.depth) === 3) {
+      cur = { label: headingText(child) || 'Tab', content: [] }
+      tabs.push(cur)
+    } else if (cur) {
+      cur.content.push(child)
+    }
+  }
+  if (tabs.length === 0) tabs.push({ label: 'Tab', content: children })
+  return tabs
+}
+
+function TabsView({ nodes }: { nodes: MdNode[] }) {
+  const tabs = useMemo(() => groupTabs(nodes), [nodes])
+  const [active, setActive] = useState(0)
+  // Panel visibility is CSS-driven off `.tela-tabs[data-active]` (editor.css),
+  // matching the editor exactly.
+  return (
+    <div className="tela-tabs" data-active={active}>
+      <div className="tela-tabs-strip">
+        {tabs.map((t, i) => (
+          <button
+            key={i}
+            type="button"
+            className="tela-tabs-tab"
+            data-active={i === active ? 'true' : 'false'}
+            onClick={() => setActive(i)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="tela-tabs-panels">
+        {tabs.map((t, i) => (
+          <div key={i} className="tela-tab" data-label={t.label}>
+            {t.content.map((n, j) => renderNode(n, j))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function renderChildren(node: MdNode): ReactNode[] {
   return (node.children ?? []).map((child, i) => renderNode(child, i))
 }
@@ -350,6 +406,16 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       return <TexMath key={key} value={String(node.value ?? '')} display />
     case 'inlineMath':
       return <TexMath key={key} value={String(node.value ?? '')} display={false} />
+    case 'containerDirective':
+    case 'leafDirective':
+    case 'textDirective': {
+      const name = String(node.name ?? '')
+      if (name === 'tabs') return <TabsView key={key} nodes={node.children ?? []} />
+      // Other directive blocks (quote/embed/file/kanban/stats/timeline/calendar)
+      // don't have dedicated view renderers yet — render their children so no
+      // content is lost. Dedicated renderers land in a follow-up.
+      return node.children ? <div key={key}>{renderChildren(node)}</div> : null
+    }
     case 'html':
       // Raw-HTML / collapsibles handling lands in a later phase. Drop for now
       // rather than dangerously injecting arbitrary markup.
