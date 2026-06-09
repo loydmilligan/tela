@@ -10,6 +10,13 @@ COMPOSE := docker compose -f deploy/docker-compose.yml
 # short SHA when no tags exist; the `|| echo` covers detached / non-git checkouts.
 TELA_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 TELA_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# Flatten to simply-expanded so the shell runs ONCE per `make` invocation, not on
+# every $(TELA_COMMIT) reference. Otherwise a commit landing mid-deploy moves HEAD
+# and the build / push / health-gate end up disagreeing on the tag. A command-line
+# override (TELA_COMMIT=…) still wins — it takes precedence over these assignments,
+# which is how deploy pins the child `_push`/`health-gate` makes to one commit.
+TELA_VERSION := $(TELA_VERSION)
+TELA_COMMIT  := $(TELA_COMMIT)
 EXPORT_BUILD := TELA_VERSION=$(TELA_VERSION) TELA_COMMIT=$(TELA_COMMIT)
 
 # ── Local dev / test Postgres ───────────────────────────────────────────────
@@ -328,7 +335,7 @@ deploy: registry-up
 	  -t $(TELA_REGISTRY)/tela-backend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-backend:latest backend
 	docker build -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
 	$(MAKE) landing-build
-	@$(MAKE) _push PUSH_IMAGES="tela-backend tela-frontend"
+	@$(MAKE) _push PUSH_IMAGES="tela-backend tela-frontend" TELA_COMMIT=$(TELA_COMMIT)
 	@echo "[deploy] syncing landing + sites.caddy → $(REMOTE):$(REMOTE_WEB)…"
 	ssh $(REMOTE) 'mkdir -p $(REMOTE_WEB)/tela-landing $(REMOTE_WEB)/tela'
 	rsync -a --delete landing/dist/ $(REMOTE):$(REMOTE_WEB)/tela-landing/
@@ -345,7 +352,7 @@ deploy: registry-up
 deploy-backend: registry-up
 	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
 	  -t $(TELA_REGISTRY)/tela-backend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-backend:latest backend
-	@$(MAKE) _push PUSH_IMAGES="tela-backend"
+	@$(MAKE) _push PUSH_IMAGES="tela-backend" TELA_COMMIT=$(TELA_COMMIT)
 	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d backend'
 	@$(MAKE) health-gate EXPECT_COMMIT=$(TELA_COMMIT)
 
@@ -353,7 +360,7 @@ deploy-backend: registry-up
 # (/api/version reflects the backend, not the FE bundle).
 deploy-frontend: registry-up
 	docker build -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
-	@$(MAKE) _push PUSH_IMAGES="tela-frontend"
+	@$(MAKE) _push PUSH_IMAGES="tela-frontend" TELA_COMMIT=$(TELA_COMMIT)
 	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d frontend'
 
 # deploy-landing: the landing + sites.caddy are static files the EXTERNAL shared
