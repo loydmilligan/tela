@@ -87,6 +87,23 @@ export function useOrgHostnameHealth(
   })
 }
 
+// POST /api/orgs/{id}/hostnames/{hostname}/admin-login — instance-admin only.
+// Mints a short-lived token and returns the absolute redeem URL on the org's
+// domain. Navigating to it logs the admin in there as themselves (a normal
+// host-bound session), bypassing the org's own SSO-only door. Returns the URL;
+// the caller does the navigation.
+export function useAdminDomainLogin(orgId: number) {
+  return useMutation({
+    mutationFn: async (hostname: string) => {
+      const { url } = await api<{ url: string }>(
+        `/api/orgs/${orgId}/hostnames/${encodeURIComponent(hostname)}/admin-login`,
+        { method: 'POST' },
+      )
+      return url
+    },
+  })
+}
+
 // DELETE /api/orgs/{id}/hostnames/{hostname} — detach a hostname.
 export function useDeleteOrgHostname(orgId: number) {
   const qc = useQueryClient()

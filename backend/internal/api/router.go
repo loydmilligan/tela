@@ -110,6 +110,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/request-password-reset", srv.RequestPasswordReset)
 	mux.HandleFunc("POST /api/auth/reset-password", srv.ResetPassword)
 
+	// Instance-admin self-login to an org custom domain (admin_domain_login.go).
+	// Public path (self-authenticates via a short-lived signed token); runs on the
+	// org host so hostOrgMiddleware binds the minted session. Mint side is the
+	// session-gated POST under /api/orgs/{id}/hostnames/… below.
+	mux.HandleFunc("GET /api/auth/admin-login/redeem", srv.AdminDomainLoginRedeem)
+
 	// Federated sign-in (sso.go): social providers (Google/Microsoft/GitHub) +
 	// per-org OIDC. Under /api/auth/, so already on auth.IsPublicPath — every
 	// handler self-authenticates (state cookie / IdP assertion). The 'org'
@@ -360,6 +366,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/orgs/{id}/hostnames", srv.AddOrgHostname)
 	mux.HandleFunc("POST /api/orgs/{id}/hostnames/{hostname}/verify", srv.VerifyOrgHostname)
 	mux.HandleFunc("GET /api/orgs/{id}/hostnames/{hostname}/health", srv.OrgHostnameHealth)
+	mux.HandleFunc("POST /api/orgs/{id}/hostnames/{hostname}/admin-login", srv.AdminDomainLoginMint)
 	mux.HandleFunc("DELETE /api/orgs/{id}/hostnames/{hostname}", srv.DeleteOrgHostname)
 	// Per-org login-method toggles + visual branding (org_login_settings.go /
 	// org_branding.go), org-admin.

@@ -6,6 +6,7 @@ import {
   Globe,
   History,
   KeyRound,
+  LogIn,
   Palette,
   Trash2,
   UserPlus,
@@ -34,6 +35,7 @@ import {
 import { useDeleteOrgSSO, useOrgSSO, usePutOrgSSO } from '../../lib/queries/org-sso'
 import {
   useAddOrgHostname,
+  useAdminDomainLogin,
   useDeleteOrgHostname,
   useOrgHostnameHealth,
   useOrgHostnames,
@@ -894,10 +896,25 @@ function OrgHostnameRow({
 }) {
   const verify = useVerifyOrgHostname(orgId)
   const del = useDeleteOrgHostname(orgId)
+  const adminLogin = useAdminDomainLogin(orgId)
+  const isInstanceAdmin = useMe().data?.is_instance_admin ?? false
   const [error, setError] = useState<string | null>(null)
   const [failedAttempts, setFailedAttempts] = useState(0)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const isActive = hostname.status === 'active'
+
+  // Instance-admin self-login: mint a one-time token and open the org's domain
+  // in a new tab already signed in (a normal host-bound session there) — the
+  // way an admin whose identity isn't in the org's IdP gets through its door.
+  async function handleOpenAsAdmin() {
+    setError(null)
+    try {
+      const url = await adminLogin.mutateAsync(hostname.hostname)
+      window.open(url, '_blank', 'noopener')
+    } catch {
+      setError('Could not open the domain. Try again.')
+    }
+  }
   // Auto-run the health probe once for Active rows; pending rows check on demand.
   const health = useOrgHostnameHealth(orgId, hostname.hostname, isActive)
 
@@ -972,6 +989,19 @@ function OrgHostnameRow({
               : failedAttempts > 0
                 ? 'Retry verify'
                 : 'Verify'}
+          </Button>
+        ) : null}
+        {isActive && isInstanceAdmin ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleOpenAsAdmin}
+            disabled={adminLogin.isPending}
+            title={`Sign in on ${hostname.hostname} as yourself`}
+          >
+            <LogIn width={14} height={14} />
+            {adminLogin.isPending ? 'Opening…' : 'Open'}
           </Button>
         ) : null}
         <Button

@@ -100,6 +100,36 @@ under **Settings → org → Custom domains** (`OrgManageView`). `GET
 for admin self-diagnosis (SSRF-guarded: never dials a hostname resolving to a
 private/loopback address).
 
+## Instance-admin self-login (`admin_domain_login.go`)
+
+An org can lock its door to its own SSO (e.g. Microsoft Entra, `enforced`). An
+**instance admin** whose identity isn't in that IdP then has no way through the
+front door — password/social are off and the org-SSO button won't authenticate a
+foreign account. The self-login button bridges that, *without* relaxing the org's
+login policy:
+
+- **Mint** — `POST /api/orgs/{id}/hostnames/{hostname}/admin-login` (instance-admin
+  only, on the canonical host). Verifies the hostname is `active` for that org and
+  returns an absolute redeem URL on the org domain. The button lives next to each
+  Active hostname in **Settings → org → Custom domains** (`OrgManageView`), shown
+  only to instance admins; it opens the URL in a new tab.
+- **Redeem** — `GET /api/auth/admin-login/redeem?t=…`. Public path (under
+  `/api/auth/`), self-authenticates via the token. Runs **on the custom host**, so
+  `hostOrgMiddleware` has stamped the `OrgContext` and `CreateSession` binds the new
+  session to that front door. It re-checks the user is still an active instance
+  admin, drops the normal session cookie, and 302s into the app. Any failure bounces
+  to `/login?sso_error=admin_login`.
+- **Token** — stateless HMAC over the share secret (same posture as the print token,
+  `pdf_export.go`): `uid.oid.exp.host`, **60s TTL**. Short-lived because, unlike the
+  read-only print token, it mints a full session — bounding replay if the redeem URL
+  leaks. Grants **no escalation**: the session is the admin's own identity, and the
+  space list stays identity-based, so they see only what they could already access
+  (their personal/shared spaces on the org-branded shell — not the org's private
+  content unless granted).
+
+The minted session is an ordinary persistent (30-day rolling) session on that host,
+so it's a one-time click, not a per-visit handshake.
+
 ## TLS / serving (`deploy/proxy/{Caddyfile,sites.caddy}`, `tls_check.go`)
 
 Direct-TLS mode only: Caddy must terminate TLS itself for the org's host. Behind
