@@ -222,6 +222,14 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
 		return
 	}
+	// Log the ask with its retrieval confidence (best-effort) — feeds the
+	// knowledge-gaps view. Done for BOTH the empty and grounded paths so a
+	// question that retrieved nothing is captured as a gap.
+	var topScore float64
+	if len(hits) > 0 {
+		topScore = hits[0].Score
+	}
+	_ = s.rag.LogAsk(r.Context(), u.ID, spaceID, req.Question, len(hits), topScore)
 	if len(hits) == 0 {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"answer":  "I couldn't find anything in your documents to answer that.",
@@ -278,4 +286,126 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		"answer":  answer,
 		"sources": hits,
 	})
+}
+
+// bearerSpace returns the space a space-pinned bearer key is locked to (else
+// nil), the shared narrow used by every read endpoint below.
+func bearerSpace(r *http.Request) *int64 {
+	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.SpaceID != nil {
+		return k.SpaceID
+	}
+	return nil
+}
+
+// RAGRelated handles GET /api/pages/{id}/related[?limit=]
+// Semantically related pages ("see also") for a page, access-scoped. 404 when
+// the page is out of scope; works without a live embedder (uses stored vectors).
+func (s *Server) RAGRelated(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	k, _ := auth.APIKeyFromContext(r.Context())
+	pid, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || pid <= 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "page id must be a positive integer")
+		return
+	}
+	// Verify read access to the source page (404s if out of scope).
+	if _, ae := s.getPageCore(r.Context(), u, k, pid); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	related, err := s.rag.RelatedPages(r.Context(), u.ID, pid, bearerSpace(r), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "related lookup failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"related": related})
+}
+
+// suggestLinksRequest is the POST /api/rag/suggest-links body.
+type suggestLinksRequest struct {
+	Text    string `json:"text"`
+	SpaceID *int64 `json:"space_id"`
+	Limit   int    `json:"limit"`
+}
+
+// RAGSuggestLinks handles POST /api/rag/suggest-links {text, space_id?, limit?}
+// Existing pages the draft text should link to (assisted authoring). Needs a
+// live embedder (the draft isn't indexed). 503 when the embedder is off.
+func (s *Server) RAGSuggestLinks(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.rag.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic features are not configured")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
+	var req suggestLinksRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
+		return
+	}
+	spaceID := req.SpaceID
+	if b := bearerSpace(r); b != nil {
+		spaceID = b
+	}
+	out, err := s.rag.SuggestLinks(r.Context(), u.ID, req.Text, spaceID, req.Limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "suggest-links failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"suggestions": out})
+}
+
+// RAGOverlaps handles GET /api/rag/overlaps[?space_id=&threshold=&limit=]
+// Near-duplicate page pairs for wiki hygiene, access-scoped to the caller.
+func (s *Server) RAGOverlaps(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	var spaceID *int64
+	if v := q.Get("space_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "space_id must be a positive integer")
+			return
+		}
+		spaceID = &id
+	}
+	if b := bearerSpace(r); b != nil {
+		spaceID = b
+	}
+	threshold, _ := strconv.ParseFloat(q.Get("threshold"), 64)
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	pairs, err := s.rag.FindOverlaps(r.Context(), u.ID, spaceID, threshold, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "overlap lookup failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"overlaps": pairs})
+}
+
+// RAGGaps handles GET /api/rag/gaps[?since_days=&limit=]
+// Knowledge gaps: the most-asked questions the corpus couldn't answer. Admin-only
+// — it exposes users' questions.
+func (s *Server) RAGGaps(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireInstanceAdmin(w, r); !ok {
+		return
+	}
+	q := r.URL.Query()
+	sinceDays, _ := strconv.Atoi(q.Get("since_days"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	gaps, err := s.rag.KnowledgeGaps(r.Context(), sinceDays, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "gaps query failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"gaps": gaps})
 }
