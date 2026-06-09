@@ -81,13 +81,12 @@ const VIEW_RENDERED = new Set([
   'equation', 'inline-math',
   'mermaid', 'chart', 'excalidraw',
   'wikilink', 'tabs',
+  'pull-quote', 'embed', 'file', 'timeline',
 ])
 // Rendered as children (content preserved, chrome not yet ported). Tracked so
-// the gap is explicit and reviewable, never silent.
-const VIEW_DEGRADES = new Set([
-  'pull-quote', 'collapsible', 'kanban', 'stat-grid', 'timeline', 'calendar',
-  'embed', 'file',
-])
+// the gap is explicit and reviewable, never silent. These are computed/rare
+// blocks (kanban drag board, stat tiles, calendar grid) + raw-HTML <details>.
+const VIEW_DEGRADES = new Set(['collapsible', 'kanban', 'stat-grid', 'calendar'])
 
 function loadSource() {
   const raw = JSON.parse(readFileSync(SRC, 'utf8'))

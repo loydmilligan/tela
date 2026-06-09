@@ -20,6 +20,7 @@ import {
 import { buildMermaidElement } from '../../lib/diagrams/mermaid'
 import { buildChartWidget } from '../../lib/diagrams/chart'
 import { wikilinkSlug } from '../../lib/markdown/transforms/wikilink'
+import { embedIframeSrc } from '../../lib/markdown/embed'
 import type { CommentThread } from '../../lib/comments/use-comments'
 import { useCommentHighlights } from '../../lib/comments/useCommentHighlights'
 import { cn } from '../../lib/utils'
@@ -250,6 +251,104 @@ function TabsView({ nodes }: { nodes: MdNode[] }) {
   )
 }
 
+// First non-empty text node in a directive body (the URL for embed/file).
+function directiveFirstText(node: MdNode): string {
+  let found = ''
+  const walk = (n: MdNode) => {
+    if (found) return
+    if (n.type === 'text' && typeof n.value === 'string' && n.value.trim()) {
+      found = n.value.trim()
+      return
+    }
+    n.children?.forEach(walk)
+  }
+  node.children?.forEach(walk)
+  return found
+}
+
+function directiveAttrs(node: MdNode): Record<string, string> {
+  const a = node.attributes
+  return a && typeof a === 'object' ? (a as Record<string, string>) : {}
+}
+
+function fileExtLabel(name: string): string {
+  const i = name.lastIndexOf('.')
+  const ext = i >= 0 ? name.slice(i + 1) : ''
+  return (ext || 'file').toUpperCase().slice(0, 4)
+}
+
+function prettySize(bytes: number): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`
+  const mb = kb / 1024
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+}
+
+// Directive-block view renderers — mirror each editor schema's toDOM so the
+// existing CSS applies. Pure display (no editing chrome).
+function PullQuoteView({ node }: { node: MdNode }) {
+  const cite = directiveAttrs(node).cite ?? ''
+  return (
+    <figure className="tela-pullquote" data-cite={cite}>
+      <blockquote className="tela-pullquote-body">{renderChildren(node)}</blockquote>
+      {cite ? <figcaption className="tela-pullquote-cite">{cite}</figcaption> : null}
+    </figure>
+  )
+}
+
+function EmbedView({ node }: { node: MdNode }) {
+  const url = directiveFirstText(node)
+  const src = embedIframeSrc(url)
+  if (src) {
+    return (
+      <div className="tela-embed" data-url={url}>
+        <iframe
+          src={src}
+          loading="lazy"
+          allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+        />
+      </div>
+    )
+  }
+  return (
+    <div className="tela-embed tela-embed-link" data-url={url}>
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer nofollow">
+          {url}
+        </a>
+      ) : (
+        <span className="tela-embed-empty">Empty embed</span>
+      )}
+    </div>
+  )
+}
+
+function FileView({ node }: { node: MdNode }) {
+  const url = directiveFirstText(node)
+  const attrs = directiveAttrs(node)
+  const name = attrs.name ?? ''
+  const size = Number(attrs.size ?? '0') || 0
+  return (
+    <a
+      className="tela-file"
+      href={url || '#'}
+      download={name || undefined}
+      data-url={url}
+      data-name={name}
+      data-size={String(size)}
+    >
+      <span className="tela-file-ext">{fileExtLabel(name || url)}</span>
+      <span className="tela-file-name">{name || url || 'file'}</span>
+      {size ? <span className="tela-file-size">{prettySize(size)}</span> : null}
+    </a>
+  )
+}
+
 function renderChildren(node: MdNode): ReactNode[] {
   return (node.children ?? []).map((child, i) => renderNode(child, i))
 }
@@ -431,10 +530,19 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
     case 'textDirective': {
       const name = String(node.name ?? '')
       if (name === 'tabs') return <TabsView key={key} nodes={node.children ?? []} />
-      // Other directive blocks (quote/embed/file/kanban/stats/timeline/calendar)
-      // don't have dedicated view renderers yet — render their children so no
-      // content is lost. A Fragment avoids wrapping (possibly block) content in
-      // an invalid element. Dedicated renderers land in a follow-up.
+      if (name === 'quote') return <PullQuoteView key={key} node={node} />
+      if (name === 'embed') return <EmbedView key={key} node={node} />
+      if (name === 'file') return <FileView key={key} node={node} />
+      if (name === 'timeline') {
+        return (
+          <div key={key} className="tela-timeline" data-timeline="">
+            {renderChildren(node)}
+          </div>
+        )
+      }
+      // Remaining computed blocks (kanban/stats/calendar) have no dedicated view
+      // renderer yet — render their children so no content is lost. A Fragment
+      // avoids wrapping (possibly block) content in an invalid element.
       return node.children ? (
         <Fragment key={key}>{renderChildren(node)}</Fragment>
       ) : null
