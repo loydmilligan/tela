@@ -10,20 +10,31 @@ import { PublicPageShell } from './blog/PublicPageShell'
 import { PublicMasthead, MetaDot } from './blog/PublicMasthead'
 import { PostCard } from './blog/PostCard'
 
-// The /u/{handle} home page — a front door for one author. A masthead with their
-// bio, then a section per public space: the space header links to its front
-// page, with its newest posts as cards beneath. No-login; only public content is
-// ever returned by the API.
+// The /u/{handle} home page — a front door for one author. A masthead with
+// their name + bio, a cross-space "Latest" strip (when they publish in more than
+// one space), then a section per public space with its newest posts. No-login;
+// only public content is ever returned by the API.
 export function PublicUserHome({ data }: { data: PublicUserResponse }) {
   const { user, spaces } = data
+  const displayName = user.display_name?.trim() || user.username
   const totalPosts = useMemo(
     () => spaces.reduce((n, s) => n + s.pages.length, 0),
     [spaces],
   )
 
+  // Newest posts across every space — only worth a dedicated strip when there's
+  // more than one space (a single space's section already leads with its newest).
+  const latest = useMemo(() => {
+    if (spaces.length < 2) return []
+    const flat = spaces.flatMap((s) =>
+      s.pages.map((p) => ({ ...p, spaceId: s.id })),
+    )
+    return sortByNewest(flat).slice(0, 4)
+  }, [spaces])
+
   useHeadMeta({
-    title: `${user.username} — tela`,
-    description: user.bio || `${user.username} on tela.`,
+    title: `${displayName} — tela`,
+    description: user.bio || `${displayName} on tela.`,
     canonicalPath: `/u/${user.username}`,
     image: `/api/public/users/${encodeURIComponent(user.username)}/og.png`,
     ogType: 'profile',
@@ -32,11 +43,13 @@ export function PublicUserHome({ data }: { data: PublicUserResponse }) {
   return (
     <PublicPageShell>
       <PublicMasthead
-        title={user.username}
+        title={displayName}
         avatarSeed={user.username}
         standfirst={user.bio || undefined}
         meta={
           <>
+            <span>@{user.username}</span>
+            <MetaDot />
             <span>
               {totalPosts} {totalPosts === 1 ? 'post' : 'posts'}
             </span>
@@ -47,6 +60,19 @@ export function PublicUserHome({ data }: { data: PublicUserResponse }) {
           </>
         }
       />
+
+      {latest.length > 0 ? (
+        <section className="mt-[var(--space-8)] flex flex-col gap-[var(--space-4)]">
+          <h2 className="m-0 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            Latest
+          </h2>
+          <div className="grid grid-cols-1 gap-[var(--space-5)] sm:grid-cols-2">
+            {latest.map((p) => (
+              <PostCard key={p.id} spaceId={p.spaceId} post={p} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-[var(--space-8)] flex flex-col gap-[var(--space-8)]">
         {spaces.map((space) => (

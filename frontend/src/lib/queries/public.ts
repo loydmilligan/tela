@@ -133,7 +133,7 @@ export interface PublicUserSpace {
 }
 
 export interface PublicUserResponse {
-  user: { username: string; bio?: string }
+  user: { username: string; display_name?: string; bio?: string }
   spaces: PublicUserSpace[]
 }
 

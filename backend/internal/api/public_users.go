@@ -39,13 +39,14 @@ func (s *Server) GetPublicUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		userID    int64
-		canonical string
-		bio       string
+		userID      int64
+		canonical   string
+		displayName string
+		bio         string
 	)
 	err := s.DB.QueryRowContext(r.Context(),
-		`SELECT id, username, bio FROM users WHERE LOWER(username) = LOWER($1)`, username).
-		Scan(&userID, &canonical, &bio)
+		`SELECT id, username, display_name, bio FROM users WHERE LOWER(username) = LOWER($1)`, username).
+		Scan(&userID, &canonical, &displayName, &bio)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "no such user")
 		return
@@ -122,7 +123,7 @@ func (s *Server) GetPublicUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user":   map[string]any{"username": canonical, "bio": bio},
+		"user":   map[string]any{"username": canonical, "display_name": displayName, "bio": bio},
 		"spaces": spaces,
 	})
 }
