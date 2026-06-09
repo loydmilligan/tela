@@ -528,16 +528,22 @@
       overflow-y: auto;
       padding-right: var(--space-3);
     }
-    /* With the space-nav rail on the left (public reader), keeping the TOC in the
-       left gutter too stacks two rails and shoves the article off-centre. Move
-       the in-page TOC to the RIGHT gutter and pin the article to the centre
-       track so it sits balanced in the content area. */
+    /* With the space-nav rail on the left (public reader), the symmetric
+       1fr|measure|1fr grid leaves a dead left gutter and floats the article
+       right. Instead lay out [article | fixed TOC] and centre the PAIR with
+       justify-content. Sizing the TOC column at (rail width − gap) cancels the
+       rail's left offset, so the article lands centred in the viewport. */
+    .tela-reader[data-has-sidebar] .reader-grid {
+      grid-template-columns: minmax(0, var(--reading-measure)) 15rem;
+      justify-content: center;
+    }
     .tela-reader[data-has-sidebar] .reader-article {
-      grid-column: 2;
+      grid-column: 1;
     }
     .tela-reader[data-has-sidebar] .reader-toc {
-      grid-column: 3;
-      justify-self: start;
+      grid-column: 2;
+      justify-self: stretch;
+      max-width: none;
       padding-right: 0;
       padding-left: var(--space-3);
     }
