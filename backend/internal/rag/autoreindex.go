@@ -114,8 +114,12 @@ func (s *Service) requeueAfterFailure(pageID int64) {
 	}
 	s.attempts[pageID]++
 	n := s.attempts[pageID]
-	backoff := reindexRetryBase << (n - 1)
-	if backoff > reindexRetryMax || backoff <= 0 { // also guards shift overflow
+	shift := n - 1
+	if shift > 16 { // cap before the shift so reindexRetryBase<<shift can't overflow int64
+		shift = 16
+	}
+	backoff := reindexRetryBase << uint(shift)
+	if backoff > reindexRetryMax || backoff <= 0 { // clamp to the ceiling (and belt-and-braces on overflow)
 		backoff = reindexRetryMax
 	}
 	s.pending[pageID] = time.Now().Add(backoff)
