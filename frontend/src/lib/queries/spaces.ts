@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import type { CreateSpaceInput, Space, UpdateSpaceInput } from '../types'
+import type { CreateSpaceInput, Space, SpaceRole, UpdateSpaceInput } from '../types'
 
 export const spaceKeys = {
   all: ['spaces'] as const,
@@ -29,6 +29,30 @@ export function useSpace(id: number | null | undefined) {
     },
     enabled: id != null,
   })
+}
+
+// The caller's effective role on a space, from the `my_role` field of
+// GET /api/spaces/{id} (backend space_access view: direct ∪ org ∪ group).
+// This is THE way to role-gate UI — never derive "my role" by finding the
+// caller in useSpaceMembers: a user reaching the space via an org/group grant
+// is absent from the direct members list, which would misread an effective
+// viewer as an editor (and an effective owner as not-owner).
+//
+// `resolved` is false until the role is known; treat unresolved as no-edit.
+export function useSpaceRole(spaceId: number | null | undefined): {
+  role: SpaceRole | null
+  resolved: boolean
+  isViewer: boolean
+  isOwner: boolean
+} {
+  const space = useSpace(spaceId)
+  const role = space.data?.my_role ?? null
+  return {
+    role,
+    resolved: role != null,
+    isViewer: role === 'viewer',
+    isOwner: role === 'owner',
+  }
 }
 
 export function useCreateSpace() {

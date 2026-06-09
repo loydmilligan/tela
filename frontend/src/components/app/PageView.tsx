@@ -36,11 +36,11 @@ import { captureAnchor, type CommentAnchor } from '../../lib/comments/anchor'
 import { scrollAndFlashPanelThread } from '../../lib/comments/coordination'
 import { useComments } from '../../lib/comments/use-comments'
 import { useMe } from '../../lib/queries/auth'
-import { useSpaceMembers } from '../../lib/queries/members'
 import { useRevision } from '../../lib/queries/page-revisions'
 import { AttachmentStrip } from './AttachmentStrip'
 import { CommentsPanel } from './CommentsPanel'
 import { PageProperties } from './PageProperties'
+import { SummaryHint, pageSummary } from './SummaryHint'
 import { LocalGraphCard } from './LocalGraphCard'
 import { LocalGraphPanel } from './LocalGraphPanel'
 import { PresenceAvatars } from './presence-avatars'
@@ -64,7 +64,7 @@ import {
   usePages,
   useUpdatePage,
 } from '../../lib/queries/pages'
-import { useSpace } from '../../lib/queries/spaces'
+import { useSpace, useSpaceRole } from '../../lib/queries/spaces'
 import type { Page, PageTreeNode } from '../../lib/types'
 import { Button } from '../ui/button'
 import { EmptyState } from '../ui/empty-state'
@@ -227,17 +227,7 @@ function PageViewer({
 }) {
   const navigate = useNavigate()
   const me = useMe()
-  const members = useSpaceMembers(spaceId)
-  const myMembership = useMemo(
-    () =>
-      me.data && members.data
-        ? (members.data.find((m) => m.user_id === me.data!.id) ?? null)
-        : null,
-    [me.data, members.data],
-  )
-  const roleResolved = me.data != null && members.data != null
-  const isViewer = roleResolved && myMembership?.role === 'viewer'
-  const isSpaceOwner = myMembership?.role === 'owner'
+  const { resolved: roleResolved, isViewer, isOwner: isSpaceOwner } = useSpaceRole(spaceId)
   const canEdit = roleResolved && !isViewer
 
   const [graphOpen, setGraphOpen] = useState(false)
@@ -317,6 +307,8 @@ function PageViewer({
     },
     [navigate],
   )
+
+  const summary = pageSummary(page.props)
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -405,15 +397,23 @@ function PageViewer({
       >
         <div className="flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[48rem] w-full mx-auto">
         <WikilinkHoverPreview containerRef={contentRef} />
-        <h1
-          className={cn(
-            'm-0 px-[var(--space-2)] py-[var(--space-2)]',
-            'text-[length:var(--text-3xl)] leading-[var(--leading-tight)] font-medium',
-            'text-[var(--text-primary)]',
-          )}
-        >
-          {page.title || 'Untitled page'}
-        </h1>
+        <div className="group relative">
+          {summary ? (
+            <SummaryHint
+              summary={summary}
+              className="absolute top-[var(--space-3)] left-[calc(-1*(var(--space-6)+var(--space-1)))] hidden sm:inline-flex"
+            />
+          ) : null}
+          <h1
+            className={cn(
+              'm-0 px-[var(--space-2)] py-[var(--space-2)]',
+              'text-[length:var(--text-3xl)] leading-[var(--leading-tight)] font-medium',
+              'text-[var(--text-primary)]',
+            )}
+          >
+            {page.title || 'Untitled page'}
+          </h1>
+        </div>
 
         <AttachmentStrip pageId={page.id} />
 
@@ -616,29 +616,20 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
 
   // M7.2 — viewer role gating. The backend rejects ws upgrade for viewers
   // (HTTP 403 + code `viewer_no_write`). We prefer Option A from the task
-  // brief: check role up-front via the already-needed space members query
-  // and skip opening a ws entirely for viewers — they render the page from
-  // pages.body as a non-editable Milkdown. Editors and owners get a live
-  // Yjs session via MilkdownEditor's `collabPageId` path.
+  // brief: check role up-front (my_role on the already-needed space query —
+  // the caller's EFFECTIVE role, so org/group-granted viewers gate the same
+  // as direct ones) and skip opening a ws entirely for viewers — they render
+  // the page from pages.body as a non-editable Milkdown. Editors and owners
+  // get a live Yjs session via MilkdownEditor's `collabPageId` path.
   const me = useMe()
-  const members = useSpaceMembers(spaceId)
-  const myMembership = useMemo(
-    () =>
-      me.data && members.data
-        ? members.data.find((m) => m.user_id === me.data!.id) ?? null
-        : null,
-    [me.data, members.data],
-  )
-  // Both queries must resolve before we mount the editor — otherwise the
+  // The role must resolve before we mount the editor — otherwise the
   // role-pending window would mount Milkdown in non-collab mode, then
   // re-mount it in collab mode once role resolves. The re-mount would
   // throw away local PM state and (worse) double-seed the Y.Doc fragment.
-  // `useMe` is typically cache-hot from the auth gate; `useSpaceMembers`
-  // has 30s staleTime so within-space navigation is also instant. The
-  // first page open per session has a brief loading-skeleton window.
-  const roleResolved = me.data != null && members.data != null
-  const isViewer = roleResolved && myMembership?.role === 'viewer'
-  const isSpaceOwner = myMembership?.role === 'owner'
+  // The space detail query has the global SWR staleTime so within-space
+  // navigation is instant; the first page open per session has a brief
+  // loading-skeleton window.
+  const { resolved: roleResolved, isViewer, isOwner: isSpaceOwner } = useSpaceRole(spaceId)
 
   // M9.3 — soft-draft mode. Owner-only (Q30): non-owners that paste a
   // ?draft=N URL silently drop back to normal mode. We can't compute

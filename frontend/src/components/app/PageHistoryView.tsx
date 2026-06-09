@@ -3,10 +3,8 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, History } from 'lucide-react'
 import { ApiError, api } from '../../lib/api'
-import { useMe } from '../../lib/queries/auth'
-import { useSpaceMembers } from '../../lib/queries/members'
 import { usePage } from '../../lib/queries/pages'
-import { useSpace } from '../../lib/queries/spaces'
+import { useSpace, useSpaceRole } from '../../lib/queries/spaces'
 import {
   revisionKeys,
   useRevision,
@@ -80,18 +78,7 @@ interface PageHistoryBodyProps {
 }
 
 function PageHistoryBody({ pageId, pageTitle, spaceId }: PageHistoryBodyProps) {
-  const me = useMe()
-  const members = useSpaceMembers(spaceId)
-  const myMembership = useMemo(
-    () =>
-      me.data && members.data
-        ? (members.data.find((m) => m.user_id === me.data!.id) ?? null)
-        : null,
-    [me.data, members.data],
-  )
-  const roleResolved = me.data != null && members.data != null
-  const isViewer = roleResolved && myMembership?.role === 'viewer'
-  const isOwner = myMembership?.role === 'owner'
+  const { resolved: roleResolved, isViewer, isOwner } = useSpaceRole(spaceId)
 
   if (!roleResolved) return <HistoryLoading />
   if (isViewer)

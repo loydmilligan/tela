@@ -39,7 +39,13 @@ export interface Space {
   // Set when an org owns this space (after transfer / org-owned creation);
   // absent ⇒ owned by you. Present on the spaces list rows.
   owner_org?: SpaceOwnerOrg
+  // The caller's effective role on the space (direct ∪ org ∪ group — the
+  // backend space_access view). Present on the single-space fetch only;
+  // absent on list rows / constructed Spaces.
+  my_role?: SpaceRole
 }
+
+export type SpaceRole = 'owner' | 'editor' | 'viewer'
 
 // Resolved public-link exposure of a page (backend exposure.go). Read-only,
 // derived from active share links — pages have no stored visibility. "private"
@@ -194,7 +200,7 @@ export interface SessionRow {
 export interface SpaceMember {
   user_id: number
   username: string
-  role: 'owner' | 'editor' | 'viewer'
+  role: SpaceRole
   created_at: string
   updated_at: string
 }
@@ -364,7 +370,7 @@ export interface HostnameHealth {
 // backend's accessSource. name is the org/group name; absent for direct.
 export interface AccessSource {
   kind: 'direct' | 'org' | 'group'
-  role: 'owner' | 'editor' | 'viewer'
+  role: SpaceRole
   name?: string
 }
 
@@ -374,7 +380,7 @@ export interface SpaceAccessEntry {
   user_id: number
   username: string
   email: string | null
-  effective_role: 'owner' | 'editor' | 'viewer'
+  effective_role: SpaceRole
   sources: AccessSource[]
 }
 

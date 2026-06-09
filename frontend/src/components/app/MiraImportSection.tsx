@@ -12,11 +12,9 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Check, FileJson, FileText, Globe, Link as LinkIcon } from 'lucide-react'
 import { ApiError } from '../../lib/api'
-import { useMe } from '../../lib/queries/auth'
 import { useImportMira } from '../../lib/queries/imports'
-import { useSpaceMembers } from '../../lib/queries/members'
 import { usePages } from '../../lib/queries/pages'
-import { useSpaces } from '../../lib/queries/spaces'
+import { useSpaceRole, useSpaces } from '../../lib/queries/spaces'
 import type { PageTreeNode } from '../../lib/types'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -52,7 +50,6 @@ function flattenPages(roots: PageTreeNode[]): FlatPage[] {
 const ROOT_PARENT_VALUE = '__root__'
 
 export function MiraImportSection() {
-  const me = useMe()
   const spaces = useSpaces()
   const importMira = useImportMira()
   const navigate = useNavigate()
@@ -70,12 +67,8 @@ export function MiraImportSection() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Editor-or-owner gate on the selected space — mirrors ImportSection.
-  const members = useSpaceMembers(spaceId)
-  const myRole = useMemo(() => {
-    if (me.data == null || members.data == null) return null
-    return members.data.find((m) => m.user_id === me.data!.id)?.role ?? null
-  }, [me.data, members.data])
-  const canImportToSelected = myRole === 'owner' || myRole === 'editor'
+  const { resolved: roleResolved, isViewer } = useSpaceRole(spaceId)
+  const canImportToSelected = roleResolved && !isViewer
 
   const tree = usePages({ spaceId, tree: true })
   const flatPages = useMemo<FlatPage[]>(() => {
@@ -247,7 +240,7 @@ export function MiraImportSection() {
               ))}
             </Select>
           )}
-          {spaceId != null && members.data != null && !canImportToSelected ? (
+          {spaceId != null && roleResolved && !canImportToSelected ? (
             <p
               role="alert"
               className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]"

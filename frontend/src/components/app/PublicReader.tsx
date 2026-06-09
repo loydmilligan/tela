@@ -21,6 +21,7 @@ import {
 } from '../ui/sheet'
 import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
+import { pageSummary } from './SummaryHint'
 
 interface PublicReaderViewProps {
   space: PublicSpacePayload
@@ -50,12 +51,11 @@ export function PublicReaderView({
 
   // SEO/social head for this public article: an author summary in frontmatter
   // wins, else the body lead. Canonical is the current (pretty) reader URL.
-  const metaDescription = useMemo(() => {
-    const fromProps = ['summary', 'excerpt', 'description']
-      .map((k) => pageProps?.[k])
-      .find((v): v is string => typeof v === 'string' && v.trim() !== '')
-    return (fromProps ?? bodyExcerpt(pageBody, '', 90)).trim()
-  }, [pageProps, pageBody])
+  const summary = pageSummary(pageProps)
+  const metaDescription = useMemo(
+    () => summary ?? bodyExcerpt(pageBody, '', 90).trim(),
+    [summary, pageBody],
+  )
   // Apply ?theme= once, pre-paint, for a themed PDF export; no-op for humans.
   useState(() => applyPdfThemeParam())
 
@@ -140,6 +140,7 @@ export function PublicReaderView({
     <ReaderShell
       pageId={pageId}
       title={pageTitle}
+      summary={summary}
       body={pageBody}
       updatedAt={updatedAt}
       wikilinkMode="share"

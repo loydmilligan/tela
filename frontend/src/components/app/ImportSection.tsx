@@ -2,14 +2,12 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Check, FileText, FolderUp, Globe } from 'lucide-react'
 import { ApiError } from '../../lib/api'
-import { useMe } from '../../lib/queries/auth'
 import {
   useImportPages,
   type ImportResult as ImportResultPayload,
 } from '../../lib/queries/imports'
-import { useSpaceMembers } from '../../lib/queries/members'
 import { usePages } from '../../lib/queries/pages'
-import { useSpaces } from '../../lib/queries/spaces'
+import { useSpaceRole, useSpaces } from '../../lib/queries/spaces'
 import type { PageTreeNode } from '../../lib/types'
 import { Button } from '../ui/button'
 import { Checkbox } from '../ui/checkbox'
@@ -50,7 +48,6 @@ function flattenPages(roots: PageTreeNode[]): FlatPage[] {
 const ROOT_PARENT_VALUE = '__root__'
 
 export function ImportSection() {
-  const me = useMe()
   const spaces = useSpaces()
   const importPages = useImportPages()
   const navigate = useNavigate()
@@ -69,19 +66,11 @@ export function ImportSection() {
   const folderInputRef = useRef<HTMLInputElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Membership of the selected space drives the editor/owner gate. We hit
-  // /api/spaces/{id}/members per-space on demand rather than fetching every
-  // space's membership upfront (would O(N) on /settings open). Mirrors
+  // Effective role on the selected space drives the editor/owner gate —
+  // my_role on the space detail, fetched per-space on demand. Mirrors
   // PageView's role-resolution pattern.
-  const members = useSpaceMembers(spaceId)
-  const myRole = useMemo(() => {
-    if (me.data == null || members.data == null) return null
-    return (
-      members.data.find((m) => m.user_id === me.data!.id)?.role ?? null
-    )
-  }, [me.data, members.data])
-  const canImportToSelected =
-    myRole === 'owner' || myRole === 'editor'
+  const { resolved: roleResolved, isViewer } = useSpaceRole(spaceId)
+  const canImportToSelected = roleResolved && !isViewer
 
   // Page tree for the parent picker. Disabled until a space is chosen.
   const tree = usePages({ spaceId, tree: true })
@@ -261,7 +250,7 @@ export function ImportSection() {
               ))}
             </Select>
           )}
-          {spaceId != null && members.data != null && !canImportToSelected ? (
+          {spaceId != null && roleResolved && !canImportToSelected ? (
             <p
               role="alert"
               className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]"

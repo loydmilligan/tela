@@ -9,7 +9,7 @@ import {
   useSpaceMembers,
   useUpdateSpaceMember,
 } from '../../lib/queries/members'
-import { useTransferSpace, useUpdateSpace } from '../../lib/queries/spaces'
+import { useSpaceRole, useTransferSpace, useUpdateSpace } from '../../lib/queries/spaces'
 import { useOrgs } from '../../lib/queries/orgs'
 import { useMyGroups } from '../../lib/queries/groups'
 import {
@@ -62,12 +62,7 @@ export function ShareSpaceDialog({
 }: ShareSpaceDialogProps) {
   const me = useMe()
   const members = useSpaceMembers(open ? space.id : null)
-
-  const myMembership =
-    me.data != null
-      ? (members.data?.find((m) => m.user_id === me.data!.id) ?? null)
-      : null
-  const iAmOwner = myMembership?.role === 'owner'
+  const { isOwner: iAmOwner } = useSpaceRole(open ? space.id : null)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

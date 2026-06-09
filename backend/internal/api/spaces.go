@@ -292,6 +292,7 @@ func (s *Server) createSpaceCore(ctx context.Context, u *auth.User, rawName, raw
 	if err := tx.Commit(); err != nil {
 		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
+	sp.MyRole = roleOwner // creator is always seeded as the direct owner above
 	return sp, nil
 }
 
@@ -314,9 +315,13 @@ func (s *Server) GetSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 // getSpaceCore is the transport-agnostic core behind GET /api/spaces/{id} and
-// the MCP get_space tool: membership-gated fetch of one space by id.
+// the MCP get_space tool: membership-gated fetch of one space by id. The
+// caller's effective role (direct ∪ org ∪ group, already resolved by the
+// membership gate) is surfaced as my_role so clients can role-gate UI without
+// re-deriving it from the direct members list.
 func (s *Server) getSpaceCore(ctx context.Context, u *auth.User, k *auth.APIKey, id int64) (models.Space, *apiErr) {
-	if _, ae := s.membershipCore(ctx, u, k, id); ae != nil {
+	role, ae := s.membershipCore(ctx, u, k, id)
+	if ae != nil {
 		return models.Space{}, ae
 	}
 	sp, err := selectSpaceByID(ctx, s.DB, id)
@@ -326,6 +331,7 @@ func (s *Server) getSpaceCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	if err != nil {
 		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "fetch space failed"}
 	}
+	sp.MyRole = role
 	return sp, nil
 }
 
@@ -460,6 +466,7 @@ func (s *Server) updateSpaceCore(ctx context.Context, u *auth.User, k *auth.APIK
 	if err != nil {
 		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "fetch updated space failed"}
 	}
+	sp.MyRole = role
 	return sp, nil
 }
 

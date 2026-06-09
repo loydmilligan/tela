@@ -101,5 +101,6 @@ func (s *Server) transferSpaceCore(ctx context.Context, u *auth.User, k *auth.AP
 	if err != nil {
 		return models.Space{}, &apiErr{http.StatusInternalServerError, "internal", "fetch space failed"}
 	}
+	sp.MyRole = role // transfer is owner-gated; the caller stays the direct owner
 	return sp, nil
 }

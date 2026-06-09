@@ -29,6 +29,11 @@ type Space struct {
 	Description string `json:"description"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
+	// MyRole is the requesting user's effective role on the space
+	// (owner|editor|viewer, direct ∪ org ∪ group — the space_access view).
+	// Populated only on the single-space fetch (GET /api/spaces/{id} and the
+	// MCP get_space tool); omitted elsewhere.
+	MyRole string `json:"my_role,omitempty"`
 }
 
 type Page struct {

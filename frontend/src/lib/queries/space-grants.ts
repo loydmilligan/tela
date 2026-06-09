@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
+import { spaceKeys } from './spaces'
 import type { SpaceAccessEntry, SpaceGrant } from '../types'
 
 export const spaceGrantKeys = {
@@ -71,6 +72,8 @@ export function useAddSpaceGrant() {
     onSuccess: (_grant, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: spaceGrantKeys.list(spaceId) })
       void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
+      // my_role on the space detail may have changed (org/group grants count).
+      void qc.invalidateQueries({ queryKey: spaceKeys.detail(spaceId) })
     },
   })
 }
@@ -94,6 +97,8 @@ export function useUpdateSpaceGrant() {
     onSuccess: (_grant, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: spaceGrantKeys.list(spaceId) })
       void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
+      // my_role on the space detail may have changed (org/group grants count).
+      void qc.invalidateQueries({ queryKey: spaceKeys.detail(spaceId) })
     },
   })
 }
@@ -114,6 +119,8 @@ export function useRemoveSpaceGrant() {
     onSuccess: (_void, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: spaceGrantKeys.list(spaceId) })
       void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
+      // my_role on the space detail may have changed (org/group grants count).
+      void qc.invalidateQueries({ queryKey: spaceKeys.detail(spaceId) })
     },
   })
 }

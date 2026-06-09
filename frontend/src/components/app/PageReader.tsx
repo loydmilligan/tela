@@ -7,6 +7,7 @@ import { buildWikilinkResolveIndex } from '../../lib/slug'
 import { Button } from '../ui/button'
 import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
+import { pageSummary } from './SummaryHint'
 import { AttachmentStrip } from './AttachmentStrip'
 
 interface PageReaderProps {
@@ -32,6 +33,7 @@ export function PageReader({ spaceId, pageId }: PageReaderProps) {
       spaceId={spaceId}
       pageId={page.data.id}
       title={page.data.title}
+      summary={pageSummary(page.data.props)}
       body={page.data.body}
       updatedAt={page.data.updated_at}
     />
@@ -42,6 +44,7 @@ interface ReadModeViewProps {
   spaceId: number
   pageId: number
   title: string
+  summary: string | null
   body: string
   updatedAt: string
 }
@@ -49,7 +52,7 @@ interface ReadModeViewProps {
 // Authenticated reading mode. Wikilinks resolve against the full page set and
 // keep the reader open by hopping to /read/{space}/{page}; Esc / the close
 // button return to the editor.
-function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewProps) {
+function ReadModeView({ spaceId, pageId, title, summary, body, updatedAt }: ReadModeViewProps) {
   const navigate = useNavigate()
   const editorRoute = {
     to: '/spaces/$spaceId/pages/$pageId/{-$slug}' as const,
@@ -100,6 +103,7 @@ function ReadModeView({ spaceId, pageId, title, body, updatedAt }: ReadModeViewP
     <ReaderShell
       pageId={pageId}
       title={title}
+      summary={summary}
       body={body}
       updatedAt={updatedAt}
       wikilinkMode="edit"

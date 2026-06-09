@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle'
+import { SummaryHint } from './SummaryHint'
 import { WikilinkHoverPreview } from './wikilink-hover-preview'
 import { MarkdownView } from '../view/MarkdownView'
 
@@ -112,6 +113,8 @@ export interface ReaderShellProps {
   /** Page being read — drives the editor key + reading-time/meta. */
   pageId: number
   title: string
+  /** Frontmatter standfirst — when set, a hover hint by the title shows it. */
+  summary?: string | null
   body: string
   updatedAt: string
   /** Decoration mode for the read-only editor. */
@@ -185,6 +188,7 @@ declare global {
 export function ReaderShell({
   pageId,
   title,
+  summary,
   body,
   updatedAt,
   wikilinkResolveIndex,
@@ -568,7 +572,15 @@ export function ReaderShell({
               {coverImage ? (
                 <img className="reader-cover" src={coverImage} alt="" />
               ) : null}
-              <h1 className="reader-title">{title || 'Untitled'}</h1>
+              <div className="group relative">
+                {summary ? (
+                  <SummaryHint
+                    summary={summary}
+                    className="absolute top-[var(--space-2)] left-[calc(-1*(var(--space-6)+var(--space-1)))] hidden sm:inline-flex"
+                  />
+                ) : null}
+                <h1 className="reader-title">{title || 'Untitled'}</h1>
+              </div>
               {attachmentStrip}
               <div className="reader-meta">
                 {byline ? (

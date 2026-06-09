@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+
+	"github.com/zcag/tela/backend/internal/auth"
 )
 
 func seedOrg(t *testing.T, d *sql.DB, name, slug string) int64 {
@@ -381,6 +383,49 @@ func TestGroupGrant_ConfersSpaceAccess(t *testing.T) {
 	// In the org but not the group → no access from the group grant.
 	if _, err := spaceRole(ctx, d, stranger, space); err != sql.ErrNoRows {
 		t.Fatalf("org-only user role err = %v; want ErrNoRows", err)
+	}
+}
+
+// GET /api/spaces/{id} surfaces the caller's effective role as my_role —
+// including for users who reach the space only via a group grant (absent from
+// the direct members list), so clients can role-gate UI without re-deriving it.
+func TestGetSpace_MyRole_GroupGrantedMember(t *testing.T) {
+	d := newAPITestDB(t)
+	owner := seedUser(t, d, "owner", "ownerpw12", false)
+	member := seedUser(t, d, "member", "memberpw1", false)
+
+	space := seedSpace(t, d, "Docs", "docs", owner)
+	org := seedOrg(t, d, "Acme", "acme")
+	seedOrgMember(t, d, org, member, orgRoleMember)
+	group := seedGroup(t, d, org, "Eng")
+	seedGroupMember(t, d, group, member)
+	if _, err := d.Exec(
+		`INSERT INTO space_grants (space_id, principal_kind, principal_id, role) VALUES ($1, 'group', $2, 'viewer')`,
+		space, group); err != nil {
+		t.Fatalf("insert group grant: %v", err)
+	}
+
+	srv := New(d)
+	getSpace := func(u *auth.User) map[string]json.RawMessage {
+		req := userRequest(http.MethodGet, "/api/spaces/"+strconv.FormatInt(space, 10), "", u)
+		rec := routedRecorder("GET /api/spaces/{id}", srv.GetSpace, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("get space status = %d; want 200 (%s)", rec.Code, rec.Body)
+		}
+		var body struct {
+			Space map[string]json.RawMessage `json:"space"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode space: %v", err)
+		}
+		return body.Space
+	}
+
+	if got := string(getSpace(authUser(member, "member", false))["my_role"]); got != `"viewer"` {
+		t.Fatalf("group-granted member my_role = %s; want \"viewer\"", got)
+	}
+	if got := string(getSpace(authUser(owner, "owner", false))["my_role"]); got != `"owner"` {
+		t.Fatalf("direct owner my_role = %s; want \"owner\"", got)
 	}
 }
 

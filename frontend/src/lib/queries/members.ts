@@ -45,6 +45,8 @@ export function useAddSpaceMember() {
     onSuccess: (_member, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: memberKeys.list(spaceId) })
       void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
+      // my_role on the space detail may have changed (e.g. own role edited).
+      void qc.invalidateQueries({ queryKey: spaceKeys.detail(spaceId) })
     },
   })
 }
@@ -68,6 +70,8 @@ export function useUpdateSpaceMember() {
     onSuccess: (_member, { spaceId }) => {
       void qc.invalidateQueries({ queryKey: memberKeys.list(spaceId) })
       void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
+      // my_role on the space detail may have changed (e.g. own role edited).
+      void qc.invalidateQueries({ queryKey: spaceKeys.detail(spaceId) })
     },
   })
 }
@@ -92,6 +96,8 @@ export function useRemoveSpaceMember() {
     onSuccess: (_void, { spaceId, isSelf }) => {
       void qc.invalidateQueries({ queryKey: memberKeys.list(spaceId) })
       void qc.invalidateQueries({ queryKey: spaceAccessKeys.list(spaceId) })
+      // my_role on the space detail may have changed (e.g. own role edited).
+      void qc.invalidateQueries({ queryKey: spaceKeys.detail(spaceId) })
       if (isSelf) {
         void qc.invalidateQueries({ queryKey: spaceKeys.list() })
       }
