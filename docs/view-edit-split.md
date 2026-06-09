@@ -23,17 +23,18 @@ Status: **in progress** (design locked; core shipped). Owner: see git blame.
   `lib/markdown/embed.ts`), file, timeline render at full fidelity. Tabs too.
 - ✅ **Anti-drift gate** — `scripts/blocks-manifest.mjs` requires every block to
   declare a view-render status (VIEW_RENDERED / VIEW_DEGRADES).
-- ⏳ **Pending follow-ups**
-  - Computed/rare blocks still graceful-degrade (content preserved): **kanban**
-    (drag board), **stat-grid** (tiles), **calendar** (month grid), and
-    **collapsible** (`<details>` raw-HTML grouping). Gate-tracked in
-    VIEW_DEGRADES.
-  - **Swap `/read`, `/public`, `/share` to `MarkdownView`** + remove the editor's
-    `readOnly`/share branches. Non-trivial: `ReaderShell` builds its TOC,
-    heading anchors, footnote post-processing and scroll-spy off the editor's
-    `view.dom`, and share-mode needs out-of-scope wikilinks rendered as plain
-    text — all must be ported to `MarkdownView`'s DOM. Deferred to protect the
-    SEO/public surface (a half-port would break the reader TOC).
+- ✅ **Read surfaces** — `/read`, `/public`, `/share` (all via `ReaderShell`)
+  render through `MarkdownView` too: no editor chunk, no Yjs on the public/SEO
+  surface. TOC / heading anchors / footnotes / scroll-spy / PDF-ready run off
+  MarkdownView's DOM via an `onReady` callback; reader wikilinks keep the
+  `tela://page/N` scheme so the shell's click + hover-preview are unchanged;
+  out-of-scope links render plain (`wikilinkUnresolved="plain"`).
+- ⏳ **Remaining follow-ups (minor)**
+  - Computed/rare blocks still graceful-degrade (content preserved): **kanban**,
+    **stat-grid**, **calendar**, and **collapsible** (`<details>` raw-HTML).
+    Gate-tracked in VIEW_DEGRADES — none used by the docs.
+  - The editor's `readOnly` path stays (still reachable for a viewer hitting
+    `?edit`); the now-unused share `wikilinkMode` is left in place (harmless).
   - New-comment-from-selection in view (a non-PM selection→anchor capture).
   - Runtime render-parity test (gate is classification-only; FE has no test
     infra yet).
