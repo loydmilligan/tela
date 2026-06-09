@@ -95,6 +95,6 @@ func (rl *authRateLimiter) allow(purpose, key string) (bool, time.Duration) {
 		return false, retry
 	}
 	pruned = append(pruned, now)
-	rl.buckets[key] = pruned
+	rl.buckets[bk] = pruned
 	return true, 0
 }
