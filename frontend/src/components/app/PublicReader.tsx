@@ -193,9 +193,6 @@ export function PublicReaderView({
   )
 }
 
-// PublicSpaceNav — a slim left rail listing the public space's pages, ordered by
-// position. Flat (no nesting) for v1; a curated space front page is a separate
-// roadmap item.
 // One end of the previous/next post navigation under an article.
 function PostNavLink({
   spaceId,
@@ -220,6 +217,33 @@ function PostNavLink({
   )
 }
 
+// PublicSpaceNav — the structural left rail in the public reader. Reflects the
+// space's actual page hierarchy (nested children indented under their parent,
+// siblings in author position order) so it's clear what belongs to what. Width
+// is bounded in reader.css; long titles truncate rather than ballooning the rail.
+interface NavNode extends PublicPageNode {
+  children: NavNode[]
+}
+
+// Fold the flat page list into a tree. A child whose parent isn't in the public
+// set (private/unpublished) surfaces as a root rather than vanishing.
+function buildNavTree(pages: PublicPageNode[]): NavNode[] {
+  const byId = new Map<number, NavNode>()
+  for (const p of pages) byId.set(p.id, { ...p, children: [] })
+  const roots: NavNode[] = []
+  for (const node of byId.values()) {
+    const parent = node.parent_id != null ? byId.get(node.parent_id) : undefined
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  }
+  const sortRec = (nodes: NavNode[]) => {
+    nodes.sort((a, b) => a.position - b.position || a.id - b.id)
+    for (const n of nodes) sortRec(n.children)
+  }
+  sortRec(roots)
+  return roots
+}
+
 function PublicSpaceNav({
   spaceId,
   spaceName,
@@ -231,29 +255,58 @@ function PublicSpaceNav({
   pages: PublicPageNode[]
   activePageId: number
 }) {
-  const ordered = useMemo(
-    () => [...pages].sort((a, b) => a.position - b.position || a.id - b.id),
-    [pages],
-  )
+  const tree = useMemo(() => buildNavTree(pages), [pages])
   return (
-    <nav
-      aria-label={`${spaceName} pages`}
-      className="flex flex-col gap-[var(--space-1)] p-[var(--space-4)]"
-    >
-      <p className="m-0 mb-[var(--space-2)] text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-        {spaceName}
-      </p>
-      {ordered.map((p) => (
-        <Link
-          key={p.id}
-          to="/public/spaces/$spaceId/pages/$pageId/{-$slug}"
-          params={{ spaceId, pageId: p.id, slug: pageSlug(p.title) || undefined }}
-          className="block truncate rounded-[var(--radius-xs)] px-[var(--space-2)] py-[var(--space-1)] text-[length:var(--text-sm)] no-underline data-[active=true]:text-[var(--text-primary)] data-[active=true]:font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-          data-active={p.id === activePageId}
-        >
-          {p.title || 'Untitled'}
-        </Link>
-      ))}
+    <nav aria-label={`${spaceName} pages`} className="reader-spacenav">
+      <p className="reader-spacenav-title">{spaceName}</p>
+      <PublicSpaceNavList
+        spaceId={spaceId}
+        nodes={tree}
+        activePageId={activePageId}
+      />
     </nav>
+  )
+}
+
+function PublicSpaceNavList({
+  spaceId,
+  nodes,
+  activePageId,
+  sub = false,
+}: {
+  spaceId: number
+  nodes: NavNode[]
+  activePageId: number
+  sub?: boolean
+}) {
+  return (
+    <ul className={sub ? 'reader-spacenav-sublist' : 'reader-spacenav-list'}>
+      {nodes.map((node) => (
+        <li key={node.id}>
+          <Link
+            to="/public/spaces/$spaceId/pages/$pageId/{-$slug}"
+            params={{
+              spaceId,
+              pageId: node.id,
+              slug: pageSlug(node.title) || undefined,
+            }}
+            className="reader-spacenav-link"
+            data-active={node.id === activePageId}
+            aria-current={node.id === activePageId ? 'page' : undefined}
+            title={node.title || 'Untitled'}
+          >
+            {node.title || 'Untitled'}
+          </Link>
+          {node.children.length > 0 ? (
+            <PublicSpaceNavList
+              spaceId={spaceId}
+              nodes={node.children}
+              activePageId={activePageId}
+              sub
+            />
+          ) : null}
+        </li>
+      ))}
+    </ul>
   )
 }
