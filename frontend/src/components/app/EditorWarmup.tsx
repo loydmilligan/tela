@@ -19,13 +19,19 @@ const noop = () => {}
 // of stalling on the cold mount. Every later open was already fast; this closes
 // the one remaining slow case.
 //
-// The throwaway instance is off-screen and fully inert — it mounts in the same
+// The instance is off-screen and fully inert — it mounts in the same
 // `wikilinkMode="share"` the public reader uses, which is the only mode that
 // fires NO network: it skips the slash / wikilink / emoji-autocomplete / block
 // plugins that would otherwise hit /api/pages/all (a 401 logged-out → global
 // auth redirect to /login). No collab (collabPageId unset → no Y.Doc/websocket)
 // and pageId 0 + no spaceId gate off the remaining hooks (image upload, mira
-// paste). It unmounts itself once the cost is paid. Skipped on Save-Data / 2G.
+// paste). Skipped on Save-Data / 2G.
+//
+// It must be given a REAL size and stay mounted: a zero-size container never
+// lays out, so ProseMirror's view never initialises and the mount cost is never
+// actually paid (measured: a 0×0 warmup left the first real open just as slow).
+// One inert hidden editor for the session is cheap; we keep it so the warm state
+// persists rather than racing an unmount.
 export function EditorWarmup() {
   const [mount, setMount] = useState(false)
 
@@ -39,32 +45,31 @@ export function EditorWarmup() {
     if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? '')) return
     warmedThisSession = true
 
+    // rIC pays it during idle; the setTimeout is a hard fallback for browsers
+    // (or busy pages) where idle never fires within a reasonable window.
     const ric =
       window.requestIdleCallback ??
-      ((cb: () => void) => window.setTimeout(cb, 200))
+      ((cb: () => void) => window.setTimeout(cb, 300))
     const handle = ric(() => setMount(true))
+    const fallback = window.setTimeout(() => setMount(true), 1500)
     return () => {
       ;(window.cancelIdleCallback ?? window.clearTimeout)(handle as number)
+      window.clearTimeout(fallback)
     }
   }, [])
-
-  // Tear the throwaway view down once it's mounted+rendered (cost is paid).
-  useEffect(() => {
-    if (!mount) return
-    const t = window.setTimeout(() => setMount(false), 3000)
-    return () => window.clearTimeout(t)
-  }, [mount])
 
   if (!mount) return null
   return (
     <div
       aria-hidden
+      // Off-screen but real-sized + visible-to-layout, so the ProseMirror view
+      // actually initialises (the whole point). pointer/tab inert.
       style={{
         position: 'fixed',
-        left: -9999,
-        top: -9999,
-        width: 0,
-        height: 0,
+        left: '-10000px',
+        top: 0,
+        width: '780px',
+        height: '600px',
         overflow: 'hidden',
         opacity: 0,
         pointerEvents: 'none',
