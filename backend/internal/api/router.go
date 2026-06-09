@@ -232,8 +232,6 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /u/{username}", srv.HandlePublicUserOG)
 	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}", srv.GetPublicSpacePage)
 	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}/md", srv.ExportPublicSpacePageMarkdown)
-	// Public user home page (/u/{handle}) data: a user's public spaces + posts.
-	mux.HandleFunc("GET /api/public/users/{username}", srv.GetPublicUser)
 	// Unified GitHub-style handle URLs: ONE namespace where {handle} resolves to a
 	// user OR org public home, and {handle}/{slug} to that account's public space.
 	// User precedence on a handle collision; public-visibility data only. See

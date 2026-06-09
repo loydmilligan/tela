@@ -48,7 +48,7 @@ func (s *Server) GetPublicByHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kind, ownerID, name, ok := s.resolveHandle(r, handle)
+	kind, ownerID, name, bio, ok := s.resolveHandle(r, handle)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not_found", "no such handle")
 		return
@@ -66,11 +66,20 @@ func (s *Server) GetPublicByHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Newest posts across the handle's public spaces — the home's "Latest" strip.
+	posts, err := s.recentPostsForHandle(r, kind, ownerID, 6)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load handle posts failed")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"kind":   kind,
 		"handle": handle,
 		"name":   name,
+		"bio":    bio,
 		"spaces": spaces,
+		"posts":  posts,
 	})
 }
 
@@ -86,7 +95,7 @@ func (s *Server) GetPublicByHandleSpace(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "not_found", "no such public space")
 		return
 	}
-	kind, ownerID, _, ok := s.resolveHandle(r, handle)
+	kind, ownerID, _, _, ok := s.resolveHandle(r, handle)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not_found", "no such public space")
 		return
@@ -117,26 +126,28 @@ func (s *Server) GetPublicByHandleSpace(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// resolveHandle maps a handle to (kind, ownerID, displayName). User namespace
-// wins on a collision. ok=false when the handle matches no user and no org.
-func (s *Server) resolveHandle(r *http.Request, handle string) (kind string, ownerID int64, name string, ok bool) {
+// resolveHandle maps a handle to (kind, ownerID, displayName, bio). User
+// namespace wins on a collision. bio is the user's bio (orgs have none → "").
+// ok=false when the handle matches no user and no org.
+func (s *Server) resolveHandle(r *http.Request, handle string) (kind string, ownerID int64, name, bio string, ok bool) {
 	var (
 		uid         int64
 		username    string
 		displayName string
+		userBio     string
 	)
 	err := s.DB.QueryRowContext(r.Context(),
-		`SELECT id, username, display_name FROM users WHERE LOWER(username) = LOWER($1)`, handle).
-		Scan(&uid, &username, &displayName)
+		`SELECT id, username, display_name, bio FROM users WHERE LOWER(username) = LOWER($1)`, handle).
+		Scan(&uid, &username, &displayName, &userBio)
 	if err == nil {
 		n := displayName
 		if n == "" {
 			n = username
 		}
-		return handleKindUser, uid, n, true
+		return handleKindUser, uid, n, userBio, true
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return "", 0, "", false
+		return "", 0, "", "", false
 	}
 
 	var (
@@ -147,9 +158,62 @@ func (s *Server) resolveHandle(r *http.Request, handle string) (kind string, own
 		`SELECT id, name FROM orgs WHERE LOWER(slug) = LOWER($1)`, handle).
 		Scan(&oid, &orgName)
 	if err == nil {
-		return handleKindOrg, oid, orgName, true
+		return handleKindOrg, oid, orgName, "", true
 	}
-	return "", 0, "", false
+	return "", 0, "", "", false
+}
+
+// handlePostDTO is one post on a handle home's "Latest" strip — a top-level
+// public page, with the space it lives in (for the link + label) and the shared
+// blog-card metadata (excerpt, reading time, cover, tags).
+type handlePostDTO struct {
+	SpaceID   int64  `json:"space_id"`
+	SpaceName string `json:"space_name"`
+	ID        int64  `json:"id"`
+	Title     string `json:"title"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	blogCardMeta
+}
+
+// recentPostsForHandle returns the newest top-level posts across the handle's
+// PUBLIC spaces (same ownership scope as publicSpacesForHandle). Public-only —
+// the visibility gate keeps private spaces out.
+func (s *Server) recentPostsForHandle(r *http.Request, kind string, ownerID int64, limit int) ([]handlePostDTO, error) {
+	var where string
+	switch kind {
+	case handleKindOrg:
+		where = `s.org_id = $1`
+	default:
+		where = `(s.personal_user_id = $1
+		          OR EXISTS (SELECT 1 FROM space_members m
+		                      WHERE m.space_id = s.id AND m.user_id = $1 AND m.role = 'owner'))`
+	}
+	rows, err := s.DB.QueryContext(r.Context(), `
+		SELECT s.id, s.name, p.id, p.title, p.body, p.props, p.created_at, p.updated_at
+		  FROM pages p JOIN spaces s ON s.id = p.space_id
+		 WHERE s.visibility = 'public' AND p.parent_id IS NULL AND p.deleted_at IS NULL AND `+where+`
+		 ORDER BY p.created_at DESC, p.id DESC
+		 LIMIT $2`, ownerID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []handlePostDTO{}
+	for rows.Next() {
+		var (
+			d        handlePostDTO
+			body     string
+			propsRaw []byte
+		)
+		if err := rows.Scan(&d.SpaceID, &d.SpaceName, &d.ID, &d.Title, &body, &propsRaw, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		d.blogCardMeta = blogMetaFor(body, decodeProps(propsRaw))
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // publicSpacesForHandle returns the owner account's PUBLIC spaces with the

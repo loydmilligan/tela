@@ -13,7 +13,6 @@ export const publicKeys = {
   tree: (spaceId: number) => [...publicKeys.all, 'tree', spaceId] as const,
   page: (spaceId: number, pageId: number) =>
     [...publicKeys.all, 'page', spaceId, pageId] as const,
-  user: (username: string) => [...publicKeys.all, 'user', username] as const,
   discover: (sort: DiscoverSort, offset: number) =>
     [...publicKeys.all, 'discover', sort, offset] as const,
 }
@@ -116,41 +115,11 @@ export function usePublicSpacePage(spaceId: number, pageId: number, enabled = tr
   })
 }
 
-// /u/{handle} home page: a user's public spaces + their top-level posts.
-export interface PublicUserPost extends BlogCardMeta {
-  id: number
-  title: string
-  created_at: string
-  updated_at: string
-}
-
-export interface PublicUserSpace {
-  id: number
-  name: string
-  slug: string
-  description: string
-  pages: PublicUserPost[]
-}
-
-export interface PublicUserResponse {
-  user: { username: string; display_name?: string; bio?: string }
-  spaces: PublicUserSpace[]
-}
-
-export function usePublicUser(username: string) {
-  return useQuery<PublicUserResponse, PublicError>({
-    queryKey: publicKeys.user(username),
-    queryFn: () =>
-      publicFetch(`/api/public/users/${encodeURIComponent(username)}`),
-    retry: false,
-    staleTime: 60_000,
-  })
-}
-
 // GitHub-style handle home: /{handle}. One endpoint resolves either a user or
-// an org handle to its public presence (name + public spaces). 404 when the
-// handle has no public spaces — rendered as a neutral not-found, never a bounce
-// to /login (raw publicFetch, like every other /api/public/ read).
+// an org handle to its public presence (name, bio, public spaces, and the
+// newest posts across them). 404 when the handle has no public spaces —
+// rendered as a neutral not-found, never a bounce to /login (raw publicFetch,
+// like every other /api/public/ read).
 export interface ByHandleSpace {
   id: number
   name: string
@@ -160,11 +129,23 @@ export interface ByHandleSpace {
   updated_at: string
 }
 
+// One post on the handle home's "Latest" strip — carries its space for the link.
+export interface ByHandlePost extends BlogCardMeta {
+  space_id: number
+  space_name: string
+  id: number
+  title: string
+  created_at: string
+  updated_at: string
+}
+
 export interface ByHandleResponse {
   kind: 'user' | 'org'
   handle: string
   name: string
+  bio?: string
   spaces: ByHandleSpace[]
+  posts?: ByHandlePost[]
 }
 
 export const handleKeys = {

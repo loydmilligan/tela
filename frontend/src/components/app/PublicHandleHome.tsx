@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   type ByHandleResponse,
@@ -7,18 +8,21 @@ import { useHeadMeta } from '../../lib/useHeadMeta'
 import { PublicPageShell } from './blog/PublicPageShell'
 import { PublicMasthead, MetaDot } from './blog/PublicMasthead'
 import { SpaceCard } from './blog/SpaceCard'
+import { PostCard } from './blog/PostCard'
 
 // The GitHub-style handle home at /{handle} — works identically for a user or
-// an org. A masthead (name + @handle) over a grid of the handle's public
-// spaces; each card links into that space at /{handle}/{space-slug}. Same
-// no-login chrome as /discover, /u/{handle} and the space front page, so the
-// whole public surface reads as one site.
+// an org. A masthead (name + bio + @handle), a "Latest" strip of the newest
+// posts across the account's spaces, then its public spaces as cards (each
+// links into that space at /{handle}/{space-slug}). Same no-login chrome as
+// /discover and the space front page, so the whole public surface reads as one
+// site.
 export function PublicHandleHome({ data }: { data: ByHandleResponse }) {
-  const { handle, name, spaces, kind } = data
+  const { handle, name, bio, spaces, kind } = data
+  const posts = data.posts ?? []
 
   useHeadMeta({
     title: `${name} — tela`,
-    description: `${name} (@${handle}) on tela.`,
+    description: bio || `${name} (@${handle}) on tela.`,
     canonicalPath: `/${handle}`,
     ogType: kind === 'org' ? 'website' : 'profile',
   })
@@ -28,6 +32,7 @@ export function PublicHandleHome({ data }: { data: ByHandleResponse }) {
       <PublicMasthead
         title={name}
         avatarSeed={handle}
+        standfirst={bio || undefined}
         meta={
           <>
             <span>@{handle}</span>
@@ -39,7 +44,19 @@ export function PublicHandleHome({ data }: { data: ByHandleResponse }) {
         }
       />
 
-      <div className="mt-[var(--space-7)]">
+      {posts.length > 0 ? (
+        <SectionHeading className="mt-[var(--space-8)]">Latest</SectionHeading>
+      ) : null}
+      {posts.length > 0 ? (
+        <div className="mt-[var(--space-4)] grid grid-cols-1 gap-[var(--space-5)] sm:grid-cols-2">
+          {posts.map((p) => (
+            <PostCard key={`${p.space_id}-${p.id}`} spaceId={p.space_id} post={p} />
+          ))}
+        </div>
+      ) : null}
+
+      <SectionHeading className="mt-[var(--space-8)]">Spaces</SectionHeading>
+      <div className="mt-[var(--space-4)]">
         {spaces.length === 0 ? (
           <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
             Nothing published yet.
@@ -55,6 +72,23 @@ export function PublicHandleHome({ data }: { data: ByHandleResponse }) {
         )}
       </div>
     </PublicPageShell>
+  )
+}
+
+// A small uppercase section label, matching the public surfaces' meta type.
+function SectionHeading({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <h2
+      className={`m-0 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] ${className ?? ''}`}
+    >
+      {children}
+    </h2>
   )
 }
 
