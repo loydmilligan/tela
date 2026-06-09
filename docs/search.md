@@ -1,5 +1,9 @@
 # Search (design notes — partially built)
 
+> The embedding/RAG half — chunking, hybrid retrieval, the self-healing index,
+> the `rag-eval` harness, and the forward design — now lives in [`rag.md`](rag.md).
+> This file covers the keystroke-path search UX (Orama + Postgres FTS).
+
 Status: **Tier-2 server search is now ranked.** `GET /api/search` and
 `GET /api/search/bodies` run Postgres FTS over `pages.search_tsv` (migration
 `0004_pages_fts.sql`): title weighted above body, Excalidraw stripped in-SQL,
