@@ -19,9 +19,12 @@ const noop = () => {}
 // of stalling on the cold mount. Every later open was already fast; this closes
 // the one remaining slow case.
 //
-// The throwaway instance is read-only, off-screen, and inert: no collab
-// (collabPageId unset → no Y.Doc / websocket) and pageId 0 + no spaceId, which
-// gates off every network-touching hook (image upload, wikilink resolve, mira
+// The throwaway instance is off-screen and fully inert — it mounts in the same
+// `wikilinkMode="share"` the public reader uses, which is the only mode that
+// fires NO network: it skips the slash / wikilink / emoji-autocomplete / block
+// plugins that would otherwise hit /api/pages/all (a 401 logged-out → global
+// auth redirect to /login). No collab (collabPageId unset → no Y.Doc/websocket)
+// and pageId 0 + no spaceId gate off the remaining hooks (image upload, mira
 // paste). It unmounts itself once the cost is paid. Skipped on Save-Data / 2G.
 export function EditorWarmup() {
   const [mount, setMount] = useState(false)
@@ -68,7 +71,12 @@ export function EditorWarmup() {
       }}
     >
       <Suspense fallback={null}>
-        <MilkdownEditor defaultValue={WARM_DOC} onChange={noop} readOnly />
+        <MilkdownEditor
+          defaultValue={WARM_DOC}
+          onChange={noop}
+          readOnly
+          wikilinkMode="share"
+        />
       </Suspense>
     </div>
   )
