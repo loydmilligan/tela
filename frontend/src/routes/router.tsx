@@ -43,7 +43,6 @@ import { writeLastPage } from '../lib/lastPage'
 import { prefetchPage, useCreatePage, usePages } from '../lib/queries/pages'
 import { prefetchPublicSpacePage } from '../lib/queries/public'
 import { prefetchMilkdownEditor } from '../lib/prefetchEditor'
-import { EditorWarmup } from '../components/app/EditorWarmup'
 import { LoginPage } from './login'
 import { RegisterPage } from './register'
 import { SetupPage } from './setup'
@@ -139,7 +138,6 @@ const appLayoutRoute = createRoute({
     }, [sidebarOpen])
     return (
       <div className="h-dvh flex bg-[var(--surface-1)] text-[var(--text-primary)] overflow-hidden">
-        <EditorWarmup />
         <Sidebar open={sidebarOpen} />
         {sidebarOpen ? (
           <button
