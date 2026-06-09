@@ -5,3 +5,7 @@ deploy/deploy.env
 
 # Local database backups (make backup)
 backups/
+
+# Scratch screenshots from agent visual checks
+mdview-*.png
+.playwright-mcp/
