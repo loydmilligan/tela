@@ -528,6 +528,19 @@
       overflow-y: auto;
       padding-right: var(--space-3);
     }
+    /* With the space-nav rail on the left (public reader), keeping the TOC in the
+       left gutter too stacks two rails and shoves the article off-centre. Move
+       the in-page TOC to the RIGHT gutter and pin the article to the centre
+       track so it sits balanced in the content area. */
+    .tela-reader[data-has-sidebar] .reader-article {
+      grid-column: 2;
+    }
+    .tela-reader[data-has-sidebar] .reader-toc {
+      grid-column: 3;
+      justify-self: start;
+      padding-right: 0;
+      padding-left: var(--space-3);
+    }
   }
   .reader-toc-label {
     margin: 0 0 var(--space-3);

@@ -464,7 +464,14 @@ export function ReaderShell({
   }, [onNavigateWikilink, jumpTo])
 
   return (
-    <div className="tela-reader" data-reading-size={size} data-reading-font={font}>
+    <div
+      className="tela-reader"
+      data-reading-size={size}
+      data-reading-font={font}
+      // Present only with a left rail (public reader): re-centers the article and
+      // moves the TOC to the right gutter so two rails don't stack on the left.
+      data-has-sidebar={sidebar ? 'true' : undefined}
+    >
       <div ref={progressRef} className="reader-progress" aria-hidden />
 
       <header ref={topbarRef} className="reader-topbar" data-scrolled="false">
