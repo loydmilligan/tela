@@ -1,51 +1,26 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy } from 'react'
+import { CollapsibleSection } from '../ui/collapsible-section'
 
 const LocalGraph = lazy(() => import('./LocalGraph'))
 
 // Placement A — the "Connections" card in the below-editor zone (next to Child
-// pages / Backlinks). It's below the fold and entirely optional, so it must not
-// cost anything on page load: the graph engine (PageGraph + d3-force) is a lazy
-// import, and we only mount it once the card scrolls near the viewport via an
-// IntersectionObserver. A reader who never scrolls down never fetches the graph.
-
+// pages / Backlinks). Collapsed by default so it's not visual noise on every
+// page; the graph engine (PageGraph + d3-force) is a lazy import that only
+// mounts once the section is first expanded (mountOnOpen), so a reader who
+// never opens it never fetches the graph. The choice persists across pages.
 export function LocalGraphCard({ pageId }: { pageId: number }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(false)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el || visible) return
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setVisible(true)
-          io.disconnect()
-        }
-      },
-      { rootMargin: '200px' },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [visible])
-
   return (
-    <section
-      ref={ref}
-      className="flex flex-col gap-[var(--space-2)] pt-[var(--space-4)] border-t border-[var(--border-subtle)]"
+    <CollapsibleSection
+      title="Connections"
+      persistKey="tela:page-connections-open"
+      mountOnOpen
     >
-      <h2 className="m-0 text-[length:var(--text-sm)] font-medium text-[var(--text-muted)]">
-        Connections
-      </h2>
       <div className="h-[calc(var(--space-8)*5)] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface-1)]">
-        {visible ? (
-          <Suspense fallback={<Skeleton />}>
-            <LocalGraph pageId={pageId} depth={1} />
-          </Suspense>
-        ) : (
-          <Skeleton />
-        )}
+        <Suspense fallback={<Skeleton />}>
+          <LocalGraph pageId={pageId} depth={1} />
+        </Suspense>
       </div>
-    </section>
+    </CollapsibleSection>
   )
 }
 

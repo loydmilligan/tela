@@ -4,6 +4,7 @@ import { FileText } from 'lucide-react'
 import { useBacklinks } from '../../lib/queries/pages'
 import { HighlightedSnippet } from '../../lib/highlightSnippet'
 import { disambiguateBreadcrumbs } from '../../lib/disambiguateBreadcrumbs'
+import { CollapsibleSection } from '../ui/collapsible-section'
 import { cn } from '../../lib/utils'
 
 interface BacklinksSectionProps {
@@ -23,16 +24,7 @@ export function BacklinksSection({ pageId }: BacklinksSectionProps) {
     rows.length === 1 ? '1 page links here' : `${rows.length} pages link here`
 
   return (
-    <section
-      aria-labelledby={`backlinks-${pageId}`}
-      className="flex flex-col gap-[var(--space-2)] pt-[var(--space-4)] border-t border-[var(--border-subtle)]"
-    >
-      <h2
-        id={`backlinks-${pageId}`}
-        className="m-0 text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
-      >
-        {headerCopy}
-      </h2>
+    <CollapsibleSection title={headerCopy} persistKey="tela:page-backlinks-open">
       <ul className="m-0 p-0 list-none flex flex-col gap-[1px]">
         {rows.map((row) => (
           <li key={row.item.page_id} className="m-0 p-0 list-none">
@@ -92,6 +84,6 @@ export function BacklinksSection({ pageId }: BacklinksSectionProps) {
           </li>
         ))}
       </ul>
-    </section>
+    </CollapsibleSection>
   )
 }
