@@ -11,6 +11,7 @@ import { Input } from '../ui/input'
 import { PublicPageShell } from './blog/PublicPageShell'
 import { PublicMasthead, MetaDot } from './blog/PublicMasthead'
 import { PostCard } from './blog/PostCard'
+import { EditorWarmup } from './EditorWarmup'
 
 interface PublicSpaceIndexProps {
   space: PublicSpacePayload
@@ -73,6 +74,8 @@ export function PublicSpaceIndex({ space, pages }: PublicSpaceIndexProps) {
 
   return (
     <PublicPageShell>
+      {/* Warm the editor mount during idle so the first doc click paints fast. */}
+      <EditorWarmup />
       <PublicMasthead
         title={space.name}
         avatarSeed={space.slug || space.name}
