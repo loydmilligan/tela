@@ -2,6 +2,13 @@
 # targets). Keeps personal values out of git — see the Remote deploy section.
 -include deploy/deploy.env
 
+# Use BuildKit for every docker build below (the legacy builder is serial and
+# can't use the `RUN --mount=type=cache` mounts the Dockerfiles rely on for the
+# Go module/build cache + npm cache). `export` so it reaches every recipe shell,
+# including compose builds. Docker's daemon has BuildKit built in — no buildx
+# plugin needed.
+export DOCKER_BUILDKIT := 1
+
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
 # Auto-stamp git metadata into the backend image so GET /api/version reports

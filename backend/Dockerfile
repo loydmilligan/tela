@@ -10,10 +10,15 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
-RUN BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) && \
+# Cache mounts persist the module + Go build caches across builds (independent of
+# the image layer cache), so a go.sum change re-downloads only new modules and an
+# incremental build recompiles only changed packages — not the whole graph.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath \
       -ldflags="-s -w \
         -X github.com/zcag/tela/backend/internal/api.Version=${VERSION} \

@@ -103,6 +103,25 @@ images, then recreates the split stack with the loaded bare-name images
 exists) or if the registry is ever unhealthy. Slow on a thin uplink — that's the
 problem `make deploy` solves.
 
+## Build speed
+
+Builds use **BuildKit** (the Makefile exports `DOCKER_BUILDKIT=1`; the
+Dockerfiles declare `# syntax=docker/dockerfile:1`). Two things keep them fast:
+
+- **Layer ordering** — deps are copied + installed before source, so a code-only
+  change reuses the `go mod download` / `npm ci` layers.
+- **Cache mounts** — `RUN --mount=type=cache` persists the Go module + **Go build**
+  cache and the npm cache *across* builds, independent of the image layer cache.
+  So a `go.sum`/`package-lock` bump re-fetches only new deps, and an incremental
+  backend build recompiles only changed packages (~4s vs ~30s cold).
+
+**Prerequisite: Docker with buildx.** Cache mounts need BuildKit, which modern
+Docker drives through the buildx plugin. If `docker buildx version` fails, install
+it — `pacman -S docker-buildx` (Arch), your distro's `docker-buildx-plugin`, or
+drop the release binary into `~/.docker/cli-plugins/docker-buildx` (no sudo).
+Without it the build errors instead of silently falling back to the slow legacy
+builder.
+
 ## Config
 
 `REMOTE`, `REMOTE_DIR`, `REMOTE_WEB`, `EDGE_CONTAINER`, and any registry
