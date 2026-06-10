@@ -20,9 +20,12 @@ import (
 const flagPrefix = "feature."
 
 // featureFlag reports whether an experimental feature is enabled for this
-// instance. Defaults OFF — an unset flag is disabled.
+// instance. Defaults OFF — an unset flag is disabled. An EMPTY env value counts
+// as unset (compose passthroughs set vars to "" when absent from .env; that
+// must not shadow the runtime instance_settings toggle) — pin a flag off from
+// the environment with an explicit "0"/"false".
 func (s *Server) featureFlag(name string) bool {
-	if v, ok := os.LookupEnv("TELA_FEATURE_" + strings.ToUpper(name)); ok {
+	if v := strings.TrimSpace(os.Getenv("TELA_FEATURE_" + strings.ToUpper(name))); v != "" {
 		return truthy(v)
 	}
 	if v, ok := s.settings.Get(flagPrefix + name); ok {

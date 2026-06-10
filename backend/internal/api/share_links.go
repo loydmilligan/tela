@@ -364,11 +364,6 @@ func scanShareLink(r rowScanner) (shareLink, error) {
 	return s, nil
 }
 
-func selectShareLinkByID(ctx context.Context, q *sql.DB, id int64) (shareLink, error) {
-	row := q.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE id = $1`, id)
-	return scanShareLink(row)
-}
-
 func selectShareLinkByIDTx(ctx context.Context, tx *sql.Tx, id int64) (shareLink, error) {
 	row := tx.QueryRowContext(ctx, shareLinkSelectColumns+` WHERE id = $1`, id)
 	return scanShareLink(row)
@@ -581,7 +576,7 @@ func (s *Server) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		if ierr == nil {
 			break
 		}
-		if !strings.Contains(ierr.Error(), "UNIQUE") {
+		if !isUniqueConstraintErr(ierr) {
 			writeError(w, http.StatusInternalServerError, "internal", "insert share failed")
 			return
 		}
