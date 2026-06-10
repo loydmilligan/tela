@@ -43,9 +43,20 @@ export function transformExcalidrawInMdast(node: MdastNode): void {
     if (parsed && typeof parsed === 'object') {
       const sceneHash = typeof parsed.scene_hash === 'string' ? parsed.scene_hash : ''
       const altText = typeof parsed.alt_text === 'string' ? parsed.alt_text : ''
-      if (SCENE_HASH_RE.test(sceneHash)) {
+      const validHash = SCENE_HASH_RE.test(sceneHash)
+      // Recognize an excalidraw fence by EITHER a content-addressed scene_hash
+      // (a drawn + saved diagram, served as a PNG sidecar) OR the excalidraw
+      // scene shape itself (`elements` array + `appState` object). The shape
+      // check is what catches an empty, never-drawn diagram (`scene_hash: ""`,
+      // inserted via the slash menu but never saved): it must still render as
+      // the empty-diagram placeholder, NOT dump its raw JSON into the page.
+      const isScene =
+        Array.isArray(parsed.elements) &&
+        typeof parsed.appState === 'object' &&
+        parsed.appState !== null
+      if (validHash || isScene) {
         node.type = 'excalidraw'
-        node.sceneHash = sceneHash
+        node.sceneHash = validHash ? sceneHash : ''
         node.altText = altText
         node.sceneJSON = raw
         delete node.lang
@@ -53,7 +64,8 @@ export function transformExcalidrawInMdast(node: MdastNode): void {
         return
       }
     }
-    // Parse failure or invalid scene_hash: leave as plain code block.
+    // Parse failure, or a ```excalidraw fence that isn't a scene: leave it as a
+    // plain code block.
   }
   if (Array.isArray(node.children)) {
     for (const child of node.children) {

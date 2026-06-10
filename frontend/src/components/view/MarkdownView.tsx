@@ -166,7 +166,15 @@ function ExcalidrawView({
   altText: string
 }) {
   const { pageId } = useContext(ViewContext)
-  if (!sceneHash || !pageId) return null
+  // Empty / never-drawn diagram (slash-inserted but never saved → scene_hash
+  // is ""). Mirror the editor's atom: a muted placeholder, never the raw JSON.
+  if (!sceneHash || !pageId) {
+    return (
+      <div className="tela-excalidraw tela-excalidraw--empty" data-scene-hash="">
+        <span className="tela-excalidraw-empty-label">[Empty diagram]</span>
+      </div>
+    )
+  }
   return (
     <div className="tela-excalidraw" data-scene-hash={sceneHash}>
       <img
