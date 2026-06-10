@@ -220,7 +220,8 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	const system = "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
-		"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts."
+		"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts. " +
+		"If the excerpts disagree — one excerpt's value, status, or claim conflicting with another's — surface the discrepancy explicitly rather than assuming they agree or silently picking one."
 	answer, ok := s.askComplete(w, r, u, "ask", system,
 		"Answer the question using only these document excerpts.\n\n"+excerpts+"Question: "+req.Question)
 	if !ok {
