@@ -39,6 +39,7 @@ const INFRA = new Set([
   'milkdown-modifier-click', // cmd/ctrl-click navigation
   'milkdown-slash', // the slash menu itself
   'milkdown-templates', // composed snippets, not a block type
+  'milkdown-excalidraw-presence', // live "editing" badge decoration for the `excalidraw` block (no node)
   'milkdown-typography', // smart-quote/dash/ellipsis input rules (no node)
   'milkdown-url-unfurl', // link unfurl decoration
   'milkdown-wikilink', // wikilink autocomplete/resolve plumbing

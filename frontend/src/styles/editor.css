@@ -672,6 +672,29 @@
   .tela-excalidraw-empty-label {
     display: block;
   }
+  /* Live presence — another collaborator currently has this diagram's edit
+     sheet open. A node decoration (milkdown-excalidraw-presence.ts) sets the
+     class + data-editing-label from page awareness; editor surface only (the
+     read-mode view renderer is collab-free). */
+  .tela-excalidraw--being-edited {
+    outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent);
+    outline-offset: 2px;
+  }
+  .tela-excalidraw--being-edited::after {
+    content: attr(data-editing-label);
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
+    z-index: 1;
+    padding: var(--space-1) var(--space-2);
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+  }
 
   /* Inline code */
   .tela-milkdown .ProseMirror :not(pre) > code {

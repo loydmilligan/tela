@@ -127,6 +127,12 @@ import {
   type ExcalidrawOpenRequest,
 } from './milkdown-excalidraw'
 import {
+  EXCALIDRAW_PRESENCE_META,
+  excalidrawPresenceCtx,
+  excalidrawPresencePlugin,
+} from './milkdown-excalidraw-presence'
+import { useDiagramEditors } from '../../lib/collab/use-awareness'
+import {
   modifierClickEnabledCtx,
   modifierClickPlugin,
   wikilinkNavigateCtx,
@@ -455,6 +461,12 @@ function MilkdownEditorInner({
   const isLeaderRef = useRef(isLeader)
   isLeaderRef.current = isLeader
 
+  // Live presence: which diagrams OTHER editors currently have open (from
+  // awareness). Pushed into the presence decoration plugin by the effect below.
+  const diagramEditors = useDiagramEditors(
+    collabRef.current?.provider.awareness ?? null,
+  )
+
   // SPIKE — live multiplayer Excalidraw. While a diagram is open in collab
   // mode, spin up a DiagramSession on the shared provider's ephemeral (tag
   // 0x07) channel so peers editing the SAME diagram see each other's strokes.
@@ -482,9 +494,17 @@ function MilkdownEditorInner({
     const key = excalidrawSheet.diagramId || excalidrawSheet.sceneHash || 'new'
     const sess = new DiagramSession(provider, key, self)
     setDiagramSession(sess)
+    // Presence: advertise (page-wide, via awareness) that we're editing THIS
+    // diagram, so other editors viewing the page get an "editing" badge on its
+    // block. Keyed by the stable diagramId (skip legacy '' ids — they'd collide
+    // across diagrams). setLocalStateField merges, leaving `user` intact.
+    if (excalidrawSheet.diagramId) {
+      provider.awareness.setLocalStateField('editingDiagramId', excalidrawSheet.diagramId)
+    }
     return () => {
       sess.destroy()
       setDiagramSession(null)
+      provider.awareness.setLocalStateField('editingDiagramId', null)
     }
   }, [excalidrawSheet])
 
@@ -870,6 +890,8 @@ function MilkdownEditorInner({
       .use(excalidrawRemarkPlugin)
       .use(excalidrawSchema)
       .use(excalidrawClickPlugin)
+      .use(excalidrawPresenceCtx)
+      .use(excalidrawPresencePlugin)
       // M13.5 (#116) — ctrl/cmd-click to follow wikilinks + external links
       // and to toggle force-open collapsibles. Mounted unconditionally; the
       // handler short-circuits on the modifierClickEnabled flag (off in
@@ -929,6 +951,18 @@ function MilkdownEditorInner({
       view.dispatch(view.state.tr.setMeta(WIKILINK_ALIVE_IDS_META, true))
     })
   }, [loading, get, aliveWikilinkIds])
+
+  // Push the live diagram-presence snapshot into the ctx slice + repaint the
+  // excalidraw "editing" badges — same deferred-snapshot mechanism as alive-ids.
+  useEffect(() => {
+    if (loading) return
+    const editor = get()
+    editor?.action((ctx) => {
+      ctx.set(excalidrawPresenceCtx.key, diagramEditors)
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(EXCALIDRAW_PRESENCE_META, true))
+    })
+  }, [loading, get, diagramEditors])
 
   // Push the `[[Name]]` resolution index (slug→id) and repaint the bracket
   // wikilink decorations — same deferred-snapshot mechanism as the alive-ids

@@ -859,12 +859,13 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
     // matches the brief; deterministic across reloads so a peer's avatar /
     // cursor colour doesn't drift.
     const seedLocal = () => {
-      provider.awareness.setLocalState({
-        user: {
-          id: myId,
-          username: myUsername,
-          colorIdx: myId % 8,
-        },
+      // setLocalStateField (not setLocalState) so we MERGE the user field rather
+      // than replacing the whole state — otherwise a reconnect would clobber
+      // other awareness fields (e.g. the editor's editingDiagramId presence).
+      provider.awareness.setLocalStateField('user', {
+        id: myId,
+        username: myUsername,
+        colorIdx: myId % 8,
       })
     }
     if (provider.getStatus() === 'connected') seedLocal()

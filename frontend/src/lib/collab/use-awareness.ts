@@ -55,6 +55,62 @@ export function useActivePeers(awareness: Awareness | null): AwarenessPeer[] {
   return useMemo(() => dedupeByUserId(raw), [raw])
 }
 
+// useDiagramEditors returns, per diagram id, the usernames of OTHER clients
+// currently editing it (from each peer's `editingDiagramId` awareness field —
+// set by the editor while its Excalidraw sheet is open). Drives the in-page
+// "editing" badge. Excludes this client (we don't badge a diagram we have open
+// ourselves). Stable snapshot via the same content-hash cache as useAwareness.
+export function useDiagramEditors(
+  awareness: Awareness | null,
+): Map<string, string[]> {
+  return useSyncExternalStore(
+    (notify) => {
+      if (!awareness) return () => {}
+      awareness.on('change', notify)
+      return () => {
+        awareness.off('change', notify)
+      }
+    },
+    () => snapshotDiagramEditors(awareness),
+    () => EMPTY_EDITORS,
+  )
+}
+
+const EMPTY_EDITORS = new Map<string, string[]>()
+const editorsCache = new WeakMap<
+  Awareness,
+  { hash: string; value: Map<string, string[]> }
+>()
+
+// Exported for unit tests. Pure over awareness.getStates() + awareness.clientID.
+export function snapshotDiagramEditors(
+  awareness: Awareness | null,
+): Map<string, string[]> {
+  if (!awareness) return EMPTY_EDITORS
+  const selfId = awareness.clientID
+  const byDiagram = new Map<string, string[]>()
+  for (const [clientID, state] of awareness.getStates().entries()) {
+    if (clientID === selfId) continue
+    const s = state as AwarenessLocalState | undefined
+    const diagramId = s?.editingDiagramId
+    if (typeof diagramId !== 'string' || diagramId === '') continue
+    const name =
+      typeof s?.user?.username === 'string' ? s.user.username : 'Someone'
+    const list = byDiagram.get(diagramId)
+    if (list) list.push(name)
+    else byDiagram.set(diagramId, [name])
+  }
+  // Content hash for reference stability (useSyncExternalStore contract).
+  const hash = [...byDiagram.entries()]
+    .map(([id, names]) => `${id}:${[...names].sort().join(',')}`)
+    .sort()
+    .join('|')
+  const cached = editorsCache.get(awareness)
+  if (cached && cached.hash === hash) return cached.value
+  editorsCache.set(awareness, { hash, value: byDiagram })
+  return byDiagram
+}
+
 const EMPTY_PEERS: AwarenessPeer[] = []
 // Cache snapshots per awareness instance so identical state keeps reference
 // equality between calls (useSyncExternalStore requires this). The key is
