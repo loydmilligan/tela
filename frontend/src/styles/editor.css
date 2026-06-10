@@ -10,6 +10,15 @@
        (min-height ~320px) and overflow-paint on top of the Child-pages /
        Backlinks sections beneath it (sections rendered on top of each other). */
     flex-shrink: 0;
+    /* …and grow to fill any leftover column height, so the contenteditable's
+       click-area (the .ProseMirror flex:1 chain below) extends past the last
+       line down to the footer sections. Without this the editable box stops at
+       the text, so clicking the whitespace under a short doc lands nowhere and
+       you have to hunt for the last line. ProseMirror's own hit-testing then
+       places the caret at the end — no click-interception JS to keep in sync
+       with the block set. shrink:0 stays, so the editor still can't shrink and
+       overlap the sections. */
+    flex-grow: 1;
   }
   .tela-milkdown [data-milkdown-root] {
     flex: 1;
@@ -25,6 +34,8 @@
     font-variant-ligatures: none;
     -webkit-font-variant-ligatures: none;
     padding: var(--space-2);
+    /* The whole filled box reads as editable, not just the text lines. */
+    cursor: text;
     font-family: var(--font-sans);
     font-size: var(--text-base);
     line-height: var(--leading-normal);
