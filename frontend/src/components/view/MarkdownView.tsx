@@ -19,6 +19,11 @@ import {
 } from '../../lib/markdown/transforms/callouts'
 import { buildMermaidElement } from '../../lib/diagrams/mermaid'
 import { buildChartWidget } from '../../lib/diagrams/chart'
+import {
+  buildCalendarGrid,
+  CALENDAR_EVENT_RE,
+} from '../../lib/blocks/calendar-grid'
+import { accentForValue, statLineClass } from '../../lib/blocks/stat-trend'
 import { wikilinkSlug } from '../../lib/markdown/transforms/wikilink'
 import { embedIframeSrc } from '../../lib/markdown/embed'
 import type { CommentThread } from '../../lib/comments/use-comments'
@@ -53,10 +58,11 @@ const ViewContext = createContext<ViewContextValue>({})
 // `.ProseMirror` hook. Until then, render this inside a `.tela-reader` scope to
 // get the reading typography (see the Storybook story).
 //
-// This slice covers the core + callout/highlight/math/code blocks. Directive
-// blocks (pull-quote, embed, tabs, kanban, …), wikilinks, collapsibles and
-// comments land in subsequent phases; unknown nodes degrade gracefully by
-// rendering their children so content is never dropped.
+// Covers the full authorable palette (see scripts/blocks-manifest.mjs
+// VIEW_RENDERED): core markdown, callout/highlight/math/code, diagrams, every
+// directive block (pull-quote, embed, file, tabs, timeline, kanban, stats,
+// calendar), wikilinks, and <details> collapsibles. Unknown nodes degrade
+// gracefully by rendering their children so content is never dropped.
 
 interface MdNode {
   type: string
@@ -205,26 +211,54 @@ function WikilinkView({ target, alias }: { target: string; alias: string | null 
   )
 }
 
-function headingText(node: MdNode): string {
-  return (node.children ?? [])
-    .map((c) => (c.type === 'text' ? String(c.value ?? '') : ''))
-    .join('')
-    .trim()
+// Recursive plain-text extraction — mirrors the editor blocks' headingText
+// walkers (milkdown-tabs/kanban/stat-grid.ts) and PM's `textContent`.
+function mdText(node: MdNode): string {
+  const parts: string[] = []
+  const walk = (n: MdNode) => {
+    if (typeof n.value === 'string' && n.type !== 'html') parts.push(n.value)
+    n.children?.forEach(walk)
+  }
+  walk(node)
+  return parts.join('').trim()
+}
+
+interface HeadingSection {
+  label: string
+  content: MdNode[]
+}
+
+// Split a directive's children into `### Label` sections — the shared grouping
+// the tabs/kanban/stats editor parse runners all use. `preface` is whatever
+// precedes the first heading (tabs/kanban skip it, stats keeps it as an
+// unlabeled tile — per-block choice, mirroring each runner).
+function groupByHeading(children: MdNode[]): {
+  preface: MdNode[]
+  sections: HeadingSection[]
+} {
+  const preface: MdNode[] = []
+  const sections: HeadingSection[] = []
+  let cur: HeadingSection | null = null
+  for (const child of children) {
+    if (child.type === 'heading' && Number(child.depth) === 3) {
+      cur = { label: mdText(child), content: [] }
+      sections.push(cur)
+    } else if (cur) {
+      cur.content.push(child)
+    } else {
+      preface.push(child)
+    }
+  }
+  return { preface, sections }
 }
 
 // Group a `:::tabs` directive's children into tabs by `### Label` headings —
 // mirrors the editor schema's parse runner (milkdown-tabs.ts).
-function groupTabs(children: MdNode[]): { label: string; content: MdNode[] }[] {
-  const tabs: { label: string; content: MdNode[] }[] = []
-  let cur: { label: string; content: MdNode[] } | null = null
-  for (const child of children) {
-    if (child.type === 'heading' && Number(child.depth) === 3) {
-      cur = { label: headingText(child) || 'Tab', content: [] }
-      tabs.push(cur)
-    } else if (cur) {
-      cur.content.push(child)
-    }
-  }
+function groupTabs(children: MdNode[]): HeadingSection[] {
+  const tabs = groupByHeading(children).sections.map((s) => ({
+    label: s.label || 'Tab',
+    content: s.content,
+  }))
   if (tabs.length === 0) tabs.push({ label: 'Tab', content: children })
   return tabs
 }
@@ -355,6 +389,126 @@ function FileView({ node }: { node: MdNode }) {
       <span className="tela-file-name">{name || url || 'file'}</span>
       {size ? <span className="tela-file-size">{prettySize(size)}</span> : null}
     </a>
+  )
+}
+
+// Kanban (:::kanban) — static board: `### Column` headings become columns, the
+// list under each heading the cards. Same DOM + classes as the editor's
+// nodeViews (milkdown-kanban.ts), minus the drag/retitle chrome (read-only).
+function KanbanView({ node }: { node: MdNode }) {
+  const { sections } = groupByHeading(node.children ?? [])
+  const cols = sections.length
+    ? sections.map((s) => ({ title: s.label || 'Column', content: s.content }))
+    : [{ title: 'Column', content: node.children ?? [] }]
+  return (
+    <div className="tela-kanban" data-kanban="">
+      {cols.map((col, i) => (
+        <div key={i} className="tela-kanban-col" data-title={col.title}>
+          <div className="tela-kanban-col-header">
+            <div className="tela-kanban-col-title">{col.title}</div>
+          </div>
+          <div className="tela-kanban-col-body">
+            {col.content.map((n, j) => renderNode(n, j))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Stat grid (:::stats) — KPI tiles. `### Label` headings become tiles; body
+// paragraphs are classified value / trend / description with the shared
+// helpers (lib/blocks/stat-trend.ts), so colours and the accent rail match the
+// editor's decorations exactly.
+function StatTile({ label, content }: { label: string; content: MdNode[] }) {
+  let paraIdx = 0
+  return (
+    <div
+      className="tela-stat"
+      data-stat-tile=""
+      data-label={label}
+      data-accent={accentForValue(content.map(mdText).join('\n'))}
+    >
+      <div className="tela-stat-head">
+        <span className="tela-stat-label">{label}</span>
+      </div>
+      <div className="tela-stat-value">
+        {content.map((n, i) => {
+          if (n.type !== 'paragraph') return renderNode(n, i)
+          const cls =
+            paraIdx++ === 0 ? 'tela-stat-figure' : statLineClass(mdText(n))
+          return (
+            <p key={i} className={cls}>
+              {renderChildren(n)}
+            </p>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function StatGridView({ node }: { node: MdNode }) {
+  // Content before the first heading becomes an unlabeled tile — mirrors the
+  // editor's parse runner (milkdown-stat-grid.ts).
+  const { preface, sections } = groupByHeading(node.children ?? [])
+  const tiles = [
+    ...(preface.length ? [{ label: '', content: preface }] : []),
+    ...sections,
+  ]
+  return (
+    <div className="tela-stats" data-stat-grid="">
+      {tiles.map((t, i) => (
+        <StatTile key={i} label={t.label} content={t.content} />
+      ))}
+    </div>
+  )
+}
+
+// Pull `{date -> [titles]}` from the calendar's event list — the mdast twin of
+// the editor's PM-based collectEvents (milkdown-calendar.ts): one event per
+// top-level list item whose text starts with an ISO date; non-conforming items
+// are ignored (same as read-only editor mode, where the source list is hidden).
+function collectCalendarEvents(node: MdNode): Map<string, string[]> {
+  const byDay = new Map<string, string[]>()
+  const walk = (n: MdNode) => {
+    if (n.type === 'listItem') {
+      const line = mdText(n).split('\n')[0]
+      const m = CALENDAR_EVENT_RE.exec(line)
+      if (m) {
+        const list = byDay.get(m[1]) ?? []
+        list.push(m[2].trim())
+        byDay.set(m[1], list)
+      }
+      return // don't descend into nested lists
+    }
+    n.children?.forEach(walk)
+  }
+  node.children?.forEach(walk)
+  return byDay
+}
+
+// Calendar (:::calendar{month}) — mounts the exact grid builder the editor's
+// nodeView uses (lib/blocks/calendar-grid.ts), DiagramWidget-style. View shows
+// only the grid, matching the editor's read-only mode (source list hidden).
+function CalendarView({ node }: { node: MdNode }) {
+  const month = directiveAttrs(node).month ?? ''
+  const events = useMemo(() => collectCalendarEvents(node), [node])
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const host = ref.current
+    if (!host) return
+    const grid = buildCalendarGrid(month, events)
+    host.appendChild(grid)
+    return () => grid.remove()
+  }, [month, events])
+  return (
+    <div
+      ref={ref}
+      className="tela-calendar"
+      data-month={month}
+      data-editable="false"
+    />
   )
 }
 
@@ -549,17 +703,31 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
           </div>
         )
       }
-      // Remaining computed blocks (kanban/stats/calendar) have no dedicated view
-      // renderer yet — render their children so no content is lost. A Fragment
-      // avoids wrapping (possibly block) content in an invalid element.
+      if (name === 'kanban') return <KanbanView key={key} node={node} />
+      if (name === 'stats') return <StatGridView key={key} node={node} />
+      if (name === 'calendar') return <CalendarView key={key} node={node} />
+      // Unknown directive — render its children so no content is lost. A
+      // Fragment avoids wrapping (possibly block) content in an invalid element.
       return node.children ? (
         <Fragment key={key}>{renderChildren(node)}</Fragment>
       ) : null
     }
+    case 'details':
+      // Collapsible — grouped by the shared collapsiblesRemark transform.
+      // Native <details> gives the toggle for free; the saved `open` attr is
+      // honored (matching the editor's read-only nodeView), default closed.
+      return (
+        <details key={key} className="tela-details" open={Boolean(node.open)}>
+          <summary className="tela-details-summary">
+            {String(node.summary ?? '')}
+          </summary>
+          {renderChildren(node)}
+        </details>
+      )
     case 'html':
-      // Raw-HTML (incl. <details> collapsibles) handling lands in a later phase.
-      // Drop the tag node rather than dangerously injecting arbitrary markup;
-      // any body content between open/close tags renders as normal siblings.
+      // Remaining raw HTML (anything but the <details> form above) is dropped
+      // rather than dangerously injected; any body content between open/close
+      // tags renders as normal siblings.
       return null
     default:
       // Unknown node — degrade gracefully by rendering children (no wrapper, so

@@ -29,10 +29,13 @@ Status: **in progress** (design locked; core shipped). Owner: see git blame.
   MarkdownView's DOM via an `onReady` callback; reader wikilinks keep the
   `tela://page/N` scheme so the shell's click + hover-preview are unchanged;
   out-of-scope links render plain (`wikilinkUnresolved="plain"`).
+- ✅ **Full palette** — kanban (static board), stat-grid (tiles via shared
+  `lib/blocks/stat-trend.ts`), calendar (shared `lib/blocks/calendar-grid.ts`
+  builder, same `lib/diagrams` idea), and collapsible (`<details>` via the
+  shared `collapsiblesRemark` transform; native element, `open` honored,
+  nesting supported). VIEW_DEGRADES is now empty — the gate requires a
+  dedicated renderer for every block.
 - ⏳ **Remaining follow-ups (minor)**
-  - Computed/rare blocks still graceful-degrade (content preserved): **kanban**,
-    **stat-grid**, **calendar**, and **collapsible** (`<details>` raw-HTML).
-    Gate-tracked in VIEW_DEGRADES — none used by the docs.
   - The editor's `readOnly` path stays (still reachable for a viewer hitting
     `?edit`); the now-unused share `wikilinkMode` is left in place (harmless).
   - New-comment-from-selection in view (a non-PM selection→anchor capture).

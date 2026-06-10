@@ -4,6 +4,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
+import { accentForValue, statLineClass } from '../../lib/blocks/stat-trend'
 
 // M19 — stat grid: a `:::stats` container directive whose `### Label` sections
 // become KPI tiles (label + a big value, with an optional trend). tela renders
@@ -36,15 +37,6 @@ function headingText(node: MdastNode): string {
   }
   node.children?.forEach(walk)
   return parts.join('').trim()
-}
-
-// Trend accent inferred from the rendered value text. `↑`/`▲`/`+` ⇒ positive,
-// `↓`/`▼`/`−`/`-` ⇒ negative, otherwise default (no tint). Keeps the markdown
-// clean — the author writes a natural value line, the accent follows the glyph.
-function accentForValue(text: string): 'positive' | 'negative' | 'default' {
-  if (/[↑▲]|(?:^|\s)\+\d/.test(text)) return 'positive'
-  if (/[↓▼−]|(?:^|\s)-\d/.test(text)) return 'negative'
-  return 'default'
 }
 
 export const statTileSchema = $nodeSchema('stat_tile', () => ({
@@ -162,16 +154,8 @@ function buildStatDecorations(doc: ProseNode): DecorationSet {
         decos.push(
           Decoration.node(childPos, childPos + child.nodeSize, { class: cls }),
         )
-      if (idx === 0) {
-        add('tela-stat-figure')
-      } else {
-        const t = child.textContent.trim()
-        if (/^[↑▲]|^\+\d/.test(t)) add('tela-stat-trend tela-stat-trend-up')
-        else if (/^[↓▼]|^-\d/.test(t))
-          add('tela-stat-trend tela-stat-trend-down')
-        else if (t.startsWith('→')) add('tela-stat-trend tela-stat-trend-flat')
-        else add('tela-stat-desc')
-      }
+      if (idx === 0) add('tela-stat-figure')
+      else add(statLineClass(child.textContent))
       idx++
     })
     return false

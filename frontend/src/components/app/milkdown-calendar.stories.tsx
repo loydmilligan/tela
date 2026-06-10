@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useRef } from 'react'
-import { buildGrid } from './milkdown-calendar'
+import { buildCalendarGrid } from '../../lib/blocks/calendar-grid'
 
-// Renders the REAL month grid via the block's own `buildGrid`, so the story
+// Renders the REAL month grid via the block's own `buildCalendarGrid`, so the story
 // exercises the actual grid math (weekday alignment, out-of-month cells, event
 // placement) and not a replica. Wrapped in `.tela-milkdown .ProseMirror` so the
 // editor.css calendar rules apply, theme-driven across light/dark/warm.
@@ -18,7 +18,7 @@ function Calendar({
   useEffect(() => {
     const host = ref.current
     if (!host) return
-    const grid = buildGrid(month, new Map(events))
+    const grid = buildCalendarGrid(month, new Map(events))
     host.replaceChildren(grid)
   }, [month, events])
   return (

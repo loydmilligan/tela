@@ -5,6 +5,7 @@ import remarkMath from 'remark-math'
 import remarkDirective from 'remark-directive'
 import type { Root } from 'mdast'
 import { calloutsRemark } from './transforms/callouts'
+import { collapsiblesRemark } from './transforms/collapsibles'
 import { highlightRemark } from './transforms/highlight'
 import { excalidrawRemark } from './transforms/excalidraw'
 import { wikilinkRemark } from './transforms/wikilink'
@@ -29,6 +30,7 @@ function getProcessor() {
       .use(remarkMath)
       .use(remarkDirective)
       .use(calloutsRemark)
+      .use(collapsiblesRemark)
       .use(highlightRemark as never)
       .use(wikilinkRemark as never)
       .use(excalidrawRemark) as unknown as Processor<Root, Root, Root, Root, string>

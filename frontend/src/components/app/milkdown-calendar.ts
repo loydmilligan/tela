@@ -3,6 +3,11 @@ import { Plugin } from '@milkdown/kit/prose/state'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import {
+  buildCalendarGrid,
+  CALENDAR_EVENT_RE,
+  pad2,
+} from '../../lib/blocks/calendar-grid'
 
 // M19 — calendar: a `:::calendar{month=YYYY-MM}` container directive over a
 // bullet list of `YYYY-MM-DD Title` events. tela renders a month grid with the
@@ -17,6 +22,9 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 // source list is hidden (CSS) so readers see only the grid; in edit mode the
 // list shows below the grid so events can be added/changed. Single month per
 // block, all-day events — matches the markdown-first, no-server-clock contract.
+//
+// The grid builder itself lives in lib/blocks/calendar-grid.ts (Milkdown-free)
+// so the read-only view renderer (MarkdownView) renders the identical grid.
 
 interface MdastNode {
   type: string
@@ -24,26 +32,6 @@ interface MdastNode {
   attributes?: Record<string, string | null | undefined>
   children?: MdastNode[]
 }
-
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-const pad2 = (n: number) => String(n).padStart(2, '0')
-
-const EVENT_RE = /^(\d{4}-\d{2}-\d{2})\s+(.+)$/
 
 // Pull `{date -> [titles]}` from the calendar's event list. Each top-level
 // list item whose text starts with an ISO date contributes one event on that
@@ -54,7 +42,7 @@ function collectEvents(node: ProseNode): Map<string, string[]> {
   node.descendants((n) => {
     if (n.type.name !== 'list_item') return true
     const line = n.textContent.trim().split('\n')[0]
-    const m = EVENT_RE.exec(line)
+    const m = CALENDAR_EVENT_RE.exec(line)
     if (m) {
       const list = byDay.get(m[1]) ?? []
       list.push(m[2].trim())
@@ -63,82 +51,6 @@ function collectEvents(node: ProseNode): Map<string, string[]> {
     return false // don't descend into nested lists
   })
   return byDay
-}
-
-export function buildGrid(
-  month: string,
-  events: Map<string, string[]>,
-): HTMLElement {
-  const grid = document.createElement('div')
-  grid.className = 'tela-calendar-grid'
-  grid.setAttribute('contenteditable', 'false')
-
-  const m = /^(\d{4})-(\d{2})$/.exec(month.trim())
-  if (!m || +m[2] < 1 || +m[2] > 12) {
-    grid.classList.add('tela-calendar-invalid')
-    grid.textContent = 'Set a month — :::calendar{month=YYYY-MM}'
-    return grid
-  }
-  const year = +m[1]
-  const mon = +m[2] - 1
-
-  const caption = document.createElement('div')
-  caption.className = 'tela-calendar-caption'
-  caption.textContent = `${MONTHS[mon]} ${year}`
-  grid.appendChild(caption)
-
-  const table = document.createElement('table')
-  table.className = 'tela-calendar-table'
-
-  const thead = document.createElement('thead')
-  const headRow = document.createElement('tr')
-  for (const w of WEEKDAYS) {
-    const th = document.createElement('th')
-    th.textContent = w
-    headRow.appendChild(th)
-  }
-  thead.appendChild(headRow)
-  table.appendChild(thead)
-
-  const tbody = document.createElement('tbody')
-  const firstDow = new Date(Date.UTC(year, mon, 1)).getUTCDay()
-  const daysInMonth = new Date(Date.UTC(year, mon + 1, 0)).getUTCDate()
-  const todayIso = new Date().toISOString().slice(0, 10)
-
-  let day = 1 - firstDow
-  while (day <= daysInMonth) {
-    const tr = document.createElement('tr')
-    for (let i = 0; i < 7; i++) {
-      const td = document.createElement('td')
-      td.className = 'tela-calendar-cell'
-      if (day >= 1 && day <= daysInMonth) {
-        const iso = `${year}-${pad2(mon + 1)}-${pad2(day)}`
-        if (iso === todayIso) td.dataset.today = 'true'
-        const num = document.createElement('div')
-        num.className = 'tela-calendar-daynum'
-        num.textContent = String(day)
-        td.appendChild(num)
-        const dayEvents = events.get(iso)
-        if (dayEvents) {
-          for (const title of dayEvents) {
-            const chip = document.createElement('div')
-            chip.className = 'tela-calendar-event'
-            chip.textContent = title
-            chip.title = title
-            td.appendChild(chip)
-          }
-        }
-      } else {
-        td.dataset.out = 'true'
-      }
-      tr.appendChild(td)
-      day++
-    }
-    tbody.appendChild(tr)
-  }
-  table.appendChild(tbody)
-  grid.appendChild(table)
-  return grid
 }
 
 export const calendarSchema = $nodeSchema('calendar', () => ({
@@ -210,7 +122,7 @@ export const calendarNodeView = $prose(() => {
           dom.className = 'tela-calendar'
           dom.dataset.editable = view.editable ? 'true' : 'false'
 
-          let grid = buildGrid(
+          let grid = buildCalendarGrid(
             (node.attrs.month as string) || '',
             collectEvents(node),
           )
@@ -234,7 +146,7 @@ export const calendarNodeView = $prose(() => {
               const key = `${updated.attrs.month}|${JSON.stringify([...events])}`
               if (key !== lastKey) {
                 lastKey = key
-                const next = buildGrid(
+                const next = buildCalendarGrid(
                   (updated.attrs.month as string) || '',
                   events,
                 )

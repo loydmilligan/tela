@@ -124,3 +124,90 @@ series:
 export const Diagrams: Story = {
   args: { body: DIAGRAMS },
 }
+
+const COLLAPSIBLES = `Before the fold.
+
+<details><summary>Closed by default</summary>
+
+Hidden **body** content with a list:
+
+- one
+- two
+
+</details>
+
+<details open><summary>Starts expanded</summary>
+
+Honors the saved \`open\` attribute.
+
+<details><summary>Nested</summary>
+
+Inner body.
+
+</details>
+
+</details>
+
+After the fold.
+`
+
+// Native <details> via the shared collapsiblesRemark transform — closed by
+// default, `open` attr honored, nesting supported.
+export const Collapsibles: Story = {
+  args: { body: COLLAPSIBLES },
+}
+
+const BOARDS = `## Kanban
+
+:::kanban
+### To do
+- [ ] Write the brief
+- [ ] Collect feedback
+
+### In progress
+- [ ] Ship the view renderers
+
+### Done
+- [x] Editor blocks
+:::
+
+## Stat grid
+
+:::stats
+### Revenue
+**$4.2M**
+
+↑ 18% QoQ
+
+vs last quarter
+
+### Avg. response
+**142** ms
+
+↓ 12%
+
+p95 latency
+
+### Coverage
+**100%**
+
+→ flat
+
+view = edit
+:::
+
+## Calendar
+
+:::calendar{month=2026-05}
+- 2026-05-04 Spec freeze
+- 2026-05-18 Dogfood week
+- 2026-05-28 GA launch
+:::
+`
+
+// Kanban (static columns + cards), stat tiles (value/trend/desc classified by
+// the shared lib/blocks/stat-trend helpers), and the calendar month grid
+// (mounted from the shared lib/blocks/calendar-grid builder).
+export const BoardsAndData: Story = {
+  args: { body: BOARDS },
+}

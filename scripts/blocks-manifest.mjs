@@ -82,11 +82,13 @@ const VIEW_RENDERED = new Set([
   'mermaid', 'chart', 'excalidraw',
   'wikilink', 'tabs',
   'pull-quote', 'embed', 'file', 'timeline',
+  'kanban', 'stat-grid', 'calendar', 'collapsible',
 ])
 // Rendered as children (content preserved, chrome not yet ported). Tracked so
-// the gap is explicit and reviewable, never silent. These are computed/rare
-// blocks (kanban drag board, stat tiles, calendar grid) + raw-HTML <details>.
-const VIEW_DEGRADES = new Set(['collapsible', 'kanban', 'stat-grid', 'calendar'])
+// the gap is explicit and reviewable, never silent. Currently empty — the full
+// palette has dedicated view renderers; a NEW block goes here only as a
+// conscious, temporary exception.
+const VIEW_DEGRADES = new Set([])
 
 function loadSource() {
   const raw = JSON.parse(readFileSync(SRC, 'utf8'))
