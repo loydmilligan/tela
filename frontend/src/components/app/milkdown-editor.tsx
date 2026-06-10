@@ -17,6 +17,7 @@ import {
   parserCtx,
   prosePluginsCtx,
   rootCtx,
+  serializerCtx,
 } from '@milkdown/kit/core'
 import { commonmark, imageAttr } from '@milkdown/kit/preset/commonmark'
 import { gfm } from '@milkdown/kit/preset/gfm'
@@ -1066,8 +1067,24 @@ function MilkdownEditorInner({
             initialJSON={excalidrawSheet.sceneJSON}
             initialAltText={excalidrawSheet.altText}
             onSave={(next) => {
+              // Apply the drawing to the doc (setNodeMarkup on the atom).
               excalidrawSheet.onSave(next)
               setExcalidrawSheet(null)
+              // Then force-persist `pages.body` immediately. That setNodeMarkup
+              // fires markdownUpdated, but in collab mode its save is gated to
+              // the elected leader — so a drawer who isn't the leader would end
+              // up with the diagram in the live Yjs doc yet never written to the
+              // body, and view mode (which renders the body) shows nothing.
+              // Saving a diagram is a rare, explicit action, so an unconditional
+              // save here is safe (no write-amplification — it's not per-keystroke
+              // or per-open) and guarantees the drawing reaches the saved markdown
+              // regardless of leadership. The PATCH is debounced downstream, so
+              // this coalesces with the leader's save when we ARE the leader.
+              const editor = get()
+              editor?.action((ctx) => {
+                const view = ctx.get(editorViewCtx)
+                callbacks.current.onChange(ctx.get(serializerCtx)(view.state.doc))
+              })
             }}
           />
         </Suspense>
