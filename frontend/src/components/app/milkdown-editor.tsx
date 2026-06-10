@@ -750,7 +750,12 @@ function MilkdownEditorInner({
       // column, reader-side sort/filter). Enhances the stock table; no new
       // node. See milkdown-table.ts.
       .use(tableEnhancePlugin)
-      .use(history)
+      // Undo/redo: in collab mode y-prosemirror's yUndoPlugin owns history
+      // (it's Yjs-aware). prosemirror-history MUST NOT run alongside it — it
+      // records and re-applies the remote ySync transactions, fighting the CRDT
+      // and corrupting sync. So history is gated to the non-collab (draft) path,
+      // which has no yUndo. (collabPageId != null ⇔ collab active, see line ~388.)
+      .use(collabPageId != null ? [] : history)
       .use(clipboard)
       .use(listener)
       .use(prism)
