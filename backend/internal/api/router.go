@@ -307,6 +307,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/pages/{id}/favorite", srv.DeleteFavorite)
 	mux.HandleFunc("GET /api/recent-changes", srv.ListRecentChanges)
 
+	// Per-user pinned spaces (sidebar "Pinned" group). Like favorites, re-gated
+	// through space_access on read; pinning requires viewer+ access.
+	mux.HandleFunc("GET /api/users/me/pinned-spaces", srv.ListPinnedSpaces)
+	mux.HandleFunc("PUT /api/spaces/{id}/pin", srv.AddPinnedSpace)
+	mux.HandleFunc("DELETE /api/spaces/{id}/pin", srv.DeletePinnedSpace)
+
 	// Notifications inbox (caller-scoped). Emitted best-effort from event sources
 	// (today: page-body @-mentions); see docs/notifications.md.
 	mux.HandleFunc("GET /api/notifications", srv.ListNotifications)
