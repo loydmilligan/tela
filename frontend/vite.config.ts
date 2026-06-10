@@ -74,6 +74,14 @@ export default defineConfig({
           }]
         }
       }
+    }, {
+      // Plain node-environment unit tests (pure logic — no DOM, no Storybook).
+      // Run with `npm run test:unit`.
+      test: {
+        name: 'unit',
+        environment: 'node',
+        include: ['src/**/*.test.{ts,tsx}'],
+      }
     }]
   }
 });

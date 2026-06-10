@@ -61,10 +61,14 @@ export interface ExcalidrawOpenRequest {
   sceneHash: string
   altText: string
   sceneJSON: string
+  // Stable live-collab room key. '' for legacy diagrams (caller falls back to
+  // sceneHash and the edit sheet stamps a fresh id on save).
+  diagramId: string
   onSave: (next: {
     sceneHash: string
     altText: string
     sceneJSON: string
+    diagramId: string
   }) => void
 }
 export type ExcalidrawOpenHandler = (req: ExcalidrawOpenRequest) => void
@@ -80,13 +84,52 @@ export const excalidrawRemarkPlugin = $remark('telaExcalidraw', () => excalidraw
 // Node-type mismatch between `@milkdown/prose/model` and `prosemirror-model`
 // (same runtime class, distinct TS types under bundler resolution).
 interface ExcalidrawSchemaNode {
-  attrs: { sceneHash: string; altText: string; sceneJSON: string }
+  attrs: { sceneHash: string; altText: string; sceneJSON: string; diagramId: string }
 }
 
 // Minimal valid scene JSON used as the `sceneJSON` for an atom inserted via
 // slash menu before the Edit Sheet has been used (M13.3b). Keeps round-trip
 // consistent: an "empty" diagram still parses + re-serializes cleanly.
 const EMPTY_SCENE_JSON = '{"elements":[],"appState":{},"scene_hash":""}'
+
+// Stable id stamped on a diagram at creation — the live-collab room key. Survives
+// every save/checkpoint (scene_hash does not), so peers and late joiners share a
+// session for the diagram's whole life.
+export function newDiagramId(): string {
+  return crypto.randomUUID()
+}
+
+// Locate the excalidraw atom to write a save into. Prefers the stable diagramId
+// (robust to the atom drifting position when collaborators edit the prose around
+// it during a long live session); falls back to the captured position for
+// legacy diagrams that have no id yet. Returns -1 if the atom is gone.
+function findExcalidrawPos(
+  doc: { descendants: (f: (node: PMNodeLike, pos: number) => boolean) => void; nodeAt: (pos: number) => PMNodeLike | null },
+  excalidrawType: unknown,
+  diagramId: string,
+  fallbackPos: number,
+): number {
+  if (diagramId) {
+    let found = -1
+    doc.descendants((node, pos) => {
+      if (found !== -1) return false
+      if (node.type === excalidrawType && node.attrs.diagramId === diagramId) {
+        found = pos
+        return false
+      }
+      return true
+    })
+    if (found !== -1) return found
+  }
+  const at = doc.nodeAt(fallbackPos)
+  if (at && at.type === excalidrawType) return fallbackPos
+  return -1
+}
+
+interface PMNodeLike {
+  type: unknown
+  attrs: { diagramId?: string; [k: string]: unknown }
+}
 
 export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
   group: 'block',
@@ -100,6 +143,9 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
     sceneHash: { default: '' },
     altText: { default: '' },
     sceneJSON: { default: '' },
+    // Stable live-collab room key (see transforms/excalidraw.ts). Derived from
+    // the fence's diagram_id; '' for legacy diagrams.
+    diagramId: { default: '' },
   },
   parseDOM: [
     {
@@ -110,12 +156,13 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
           sceneHash: el.getAttribute('data-scene-hash') ?? '',
           altText: el.getAttribute('data-alt-text') ?? '',
           sceneJSON: el.getAttribute('data-scene-json') ?? '',
+          diagramId: el.getAttribute('data-diagram-id') ?? '',
         }
       },
     },
   ],
   toDOM: (node) => {
-    const { sceneHash, altText, sceneJSON } = (node as unknown as ExcalidrawSchemaNode).attrs
+    const { sceneHash, altText, sceneJSON, diagramId } = (node as unknown as ExcalidrawSchemaNode).attrs
     const pageId = ctx.get(pageIdCtx.key)
     // M13.3b — the hover-edit affordance. CSS controls visibility (hidden
     // unless wrapper is hovered AND the editor is editable, gated by the
@@ -142,6 +189,7 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
           'data-scene-hash': '',
           'data-alt-text': altText,
           'data-scene-json': sceneJSON,
+          'data-diagram-id': diagramId,
         },
         ['span', { class: 'tela-excalidraw-empty-label' }, '[Empty diagram — click to draw]'],
         editBtn,
@@ -154,6 +202,7 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
         'data-scene-hash': sceneHash,
         'data-alt-text': altText,
         'data-scene-json': sceneJSON,
+        'data-diagram-id': diagramId,
       },
       [
         'img',
@@ -173,6 +222,7 @@ export const excalidrawSchema = $nodeSchema('excalidraw', (ctx) => ({
       state.addNode(type, {
         sceneHash: typeof n.sceneHash === 'string' ? n.sceneHash : '',
         altText: typeof n.altText === 'string' ? n.altText : '',
+        diagramId: typeof n.diagramId === 'string' ? n.diagramId : '',
         sceneJSON:
           typeof n.sceneJSON === 'string' && n.sceneJSON.length > 0
             ? n.sceneJSON
@@ -227,16 +277,28 @@ export const excalidrawClickPlugin = $prose((ctx) => {
           const sceneHash = typeof node.attrs.sceneHash === 'string' ? node.attrs.sceneHash : ''
           const altText = typeof node.attrs.altText === 'string' ? node.attrs.altText : ''
           const sceneJSON = typeof node.attrs.sceneJSON === 'string' ? node.attrs.sceneJSON : ''
+          const diagramId = typeof node.attrs.diagramId === 'string' ? node.attrs.diagramId : ''
 
           openCb({
             sceneHash,
             altText,
             sceneJSON,
+            diagramId,
             onSave: (next) => {
-              const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+              // Re-locate the atom at save time — a long live session may have
+              // seen collaborators shift the prose, moving the atom off `pos`.
+              const writePos = findExcalidrawPos(
+                view.state.doc as never,
+                node.type,
+                diagramId,
+                pos,
+              )
+              if (writePos === -1) return
+              const tr = view.state.tr.setNodeMarkup(writePos, undefined, {
                 sceneHash: next.sceneHash,
                 altText: next.altText,
                 sceneJSON: next.sceneJSON,
+                diagramId: next.diagramId,
               })
               view.dispatch(tr)
             },
@@ -262,16 +324,29 @@ export function insertExcalidraw(ctx: Ctx): void {
   if (!excalidrawType) return
   const openCb = ctx.get(excalidrawOpenCtx.key)
 
-  const atom = excalidrawType.create({ sceneHash: '', altText: '', sceneJSON: '' })
+  // Stamp a stable diagram id at creation so the live-collab room key exists
+  // from the first stroke and survives every save/checkpoint (sceneHash does
+  // not). Bake it into BOTH the attr and the empty fence JSON so it round-trips
+  // through markdown even before the first real save.
+  const diagramId = newDiagramId()
+  const emptyJSON = JSON.stringify({
+    elements: [],
+    appState: {},
+    scene_hash: '',
+    diagram_id: diagramId,
+  })
+  const atom = excalidrawType.create({
+    sceneHash: '',
+    altText: '',
+    sceneJSON: emptyJSON,
+    diagramId,
+  })
   const tr = state.tr.replaceSelectionWith(atom)
-  // Find the inserted atom: it's the LAST excalidraw node in the post-tr
-  // doc whose sceneHash is empty (the user can't realistically have other
-  // empty atoms in the doc — they're inserted only via this helper and
-  // immediately get a hash on first save). Even if they did, the worst case
-  // is opening the Sheet on a different empty atom — harmless.
+  // Find the inserted atom by its unique diagramId — robust against any other
+  // empty atoms already in the doc.
   let insertedPos = -1
   tr.doc.descendants((node, pos) => {
-    if (node.type === excalidrawType && node.attrs.sceneHash === '') {
+    if (node.type === excalidrawType && node.attrs.diagramId === diagramId) {
       insertedPos = pos
     }
     return true
@@ -290,15 +365,24 @@ export function insertExcalidraw(ctx: Ctx): void {
     openCb({
       sceneHash: '',
       altText: '',
-      sceneJSON: '',
+      sceneJSON: emptyJSON,
+      diagramId,
       onSave: (next) => {
         const v = ctx.get(editorViewCtx)
-        const node = v.state.doc.nodeAt(insertedPos)
-        if (!node || node.type !== excalidrawType) return
-        const tr2 = v.state.tr.setNodeMarkup(insertedPos, undefined, {
+        // Locate by stable id (robust to the atom drifting during a live
+        // session); fall back to the insertion position.
+        const writePos = findExcalidrawPos(
+          v.state.doc as never,
+          excalidrawType,
+          diagramId,
+          insertedPos,
+        )
+        if (writePos === -1) return
+        const tr2 = v.state.tr.setNodeMarkup(writePos, undefined, {
           sceneHash: next.sceneHash,
           altText: next.altText,
           sceneJSON: next.sceneJSON,
+          diagramId: next.diagramId,
         })
         v.dispatch(tr2)
       },

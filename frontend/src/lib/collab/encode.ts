@@ -10,6 +10,12 @@ export const TAG_AWARENESS = 0x05
 // MCP write) and the Yjs overlay dropped; this Y.Doc is now stale and must be
 // reloaded from pages.body.
 export const TAG_RESET = 0x06
+// 0x07 diagram: peer↔server ephemeral live-Excalidraw relay. Pure fan-out,
+// never persisted (mirrors awareness). Carries mid-draw element deltas +
+// pointers between peers editing the same diagram; the scene stays canonical
+// in pages.body. The payload rides the page ws but NOT the Y.Doc — see
+// TelaProvider.sendEphemeral / onEphemeral.
+export const TAG_EPHEMERAL = 0x07
 
 // Prefix `payload` with `tag` into a fresh ArrayBuffer suitable for ws.send.
 export function encodeFrame(tag: number, payload: Uint8Array): ArrayBuffer {

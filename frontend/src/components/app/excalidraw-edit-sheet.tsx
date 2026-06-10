@@ -11,6 +11,11 @@ import {
   SheetTitle,
 } from '../ui/sheet'
 import { api, ApiError } from '../../lib/api'
+import type {
+  DiagramCollaborator,
+  DiagramSession,
+  SceneElement,
+} from '../../lib/collab/diagram-session'
 
 // M13.3b — Excalidraw Edit Sheet.
 //
@@ -42,6 +47,7 @@ interface DiagramPayload {
   sceneHash: string
   altText: string
   sceneJSON: string
+  diagramId: string
 }
 
 export interface ExcalidrawEditSheetProps {
@@ -50,7 +56,14 @@ export interface ExcalidrawEditSheetProps {
   pageId: number
   initialJSON: string
   initialAltText: string
+  // Stable diagram id from the atom; '' for legacy diagrams (we stamp a fresh
+  // one on save so future sessions key on it).
+  initialDiagramId: string
   onSave: (next: DiagramPayload) => void | Promise<void>
+  // SPIKE — live multiplayer. When present (collab mode), the canvas streams
+  // its scene/pointer over the ephemeral channel and applies remote peers'
+  // edits. Null in single-user/share/view mode → today's solo behaviour.
+  session?: DiagramSession | null
 }
 
 // Editor map ours → Excalidraw. `dark` → dark; `light` + `warm` → light.
@@ -96,6 +109,14 @@ const ExcalidrawCanvas = lazy(async () => {
 interface ExcalidrawModule {
   Excalidraw: React.ComponentType<ExcalidrawComponentProps>
   exportToBlob: (opts: ExportOpts) => Promise<Blob>
+  // Per-element last-writer-wins merge (by version). Used to fold a remote
+  // peer's scene delta into our local scene — Excalidraw's own convergence,
+  // so the spike writes no merge logic.
+  reconcileElements: (
+    local: readonly unknown[],
+    remote: readonly unknown[],
+    localAppState: Record<string, unknown>,
+  ) => readonly unknown[]
 }
 
 interface ExportOpts {
@@ -114,6 +135,10 @@ interface ExcalidrawImperativeAPI {
   getSceneElements: () => readonly unknown[]
   getAppState: () => Record<string, unknown>
   getFiles: () => Record<string, unknown>
+  updateScene: (scene: {
+    elements?: readonly unknown[]
+    collaborators?: Map<string, unknown>
+  }) => void
 }
 
 interface ExcalidrawComponentProps {
@@ -123,7 +148,11 @@ interface ExcalidrawComponentProps {
     appState: Record<string, unknown>,
     files: Record<string, unknown>,
   ) => void
+  onPointerUpdate?: (payload: {
+    pointer: { x: number; y: number }
+  }) => void
   excalidrawAPI?: (api: ExcalidrawImperativeAPI) => void
+  isCollaborating?: boolean
   theme?: 'light' | 'dark'
 }
 
@@ -131,6 +160,7 @@ interface CanvasProps {
   initialData: { elements: readonly unknown[]; appState: Record<string, unknown> } | null
   theme: 'light' | 'dark'
   apiRef: React.MutableRefObject<ExcalidrawImperativeAPI | null>
+  session?: DiagramSession | null
   onSnapshot: (snap: {
     elements: readonly unknown[]
     appState: Record<string, unknown>
@@ -142,24 +172,87 @@ interface CanvasProps {
 // import (avoids two parallel imports racing each other on first open).
 let cachedModule: ExcalidrawModule | null = null
 
+// Map a colorIdx (0..7) to a concrete cursor color — Excalidraw's collaborator
+// API needs a hex, not a CSS token. SPIKE palette; Phase 1 derives these from
+// the --collab-cursor-{1..8} tokens.
+// Persist the converged scene after this long without an edit, in a live
+// session — durability without a manual Save; a crash loses at most this much.
+const CHECKPOINT_IDLE_MS = 2500
+
+const CURSOR_HEX = [
+  '#e8590c', '#1971c2', '#2f9e44', '#9c36b5',
+  '#c2255c', '#0c8599', '#e67700', '#5f3dc4',
+] as const
+
 function buildCanvas(mod: unknown) {
   const m = mod as ExcalidrawModule
   cachedModule = m
-  return function Canvas({ initialData, theme, apiRef, onSnapshot }: CanvasProps) {
+  return function Canvas({
+    initialData,
+    theme,
+    apiRef,
+    session,
+    onSnapshot,
+  }: CanvasProps) {
     const ExcalidrawComp = m.Excalidraw
+
+    // Subscribe to remote peers: fold their scene deltas into ours via
+    // reconcileElements, and render their cursors via updateScene's
+    // collaborators map. Transport-only — DiagramSession knows no Excalidraw.
+    useEffect(() => {
+      if (!session) return
+      const unsubScene = session.onRemoteScene((remote) => {
+        const api = apiRef.current
+        if (!api) return
+        const local = api.getSceneElements()
+        const merged = m.reconcileElements(local, remote, api.getAppState())
+        api.updateScene({ elements: merged })
+      })
+      const unsubCollab = session.onCollaborators((collab) => {
+        const api = apiRef.current
+        if (!api) return
+        api.updateScene({ collaborators: toExcalidrawCollaborators(collab) })
+      })
+      return () => {
+        unsubScene()
+        unsubCollab()
+      }
+    }, [session, apiRef])
+
     return (
       <ExcalidrawComp
         initialData={initialData}
         theme={theme}
+        isCollaborating={!!session}
         excalidrawAPI={(api) => {
           apiRef.current = api
         }}
         onChange={(elements, appState, files) => {
           onSnapshot({ elements, appState, files })
+          session?.pushScene(elements as SceneElement[])
+        }}
+        onPointerUpdate={({ pointer }) => {
+          session?.pushPointer(pointer.x, pointer.y)
         }}
       />
     )
   }
+}
+
+// Adapt DiagramSession's collaborator map into the shape Excalidraw's
+// updateScene({ collaborators }) expects (keyed by socketId-ish string).
+function toExcalidrawCollaborators(
+  collab: Map<string, DiagramCollaborator>,
+): Map<string, unknown> {
+  const out = new Map<string, unknown>()
+  for (const [k, c] of collab) {
+    out.set(k, {
+      pointer: c.pointer,
+      username: c.username,
+      color: { background: CURSOR_HEX[c.colorIdx % 8], stroke: '#ffffff' },
+    })
+  }
+  return out
 }
 
 // Strip transient runtime fields off appState so the JSON round-trips cleanly
@@ -227,6 +320,24 @@ interface UploadResponse {
   url: string
 }
 
+// The commit-dedupe key = scene content hash + alt text. Re-committing an
+// unchanged diagram (e.g. a checkpoint right after open, or a close with no
+// edits) is skipped against this. Alt text is folded in because it's persisted
+// but isn't part of scene_hash.
+function commitKey(sceneHash: string, altText: string): string {
+  return `${sceneHash} ${altText}`
+}
+
+function parseInitialSceneHash(raw: string): string {
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw) as { scene_hash?: unknown }
+    return typeof parsed.scene_hash === 'string' ? parsed.scene_hash : ''
+  } catch {
+    return ''
+  }
+}
+
 function parseInitialData(
   raw: string,
 ): { elements: readonly unknown[]; appState: Record<string, unknown> } | null {
@@ -254,7 +365,9 @@ export function ExcalidrawEditSheet({
   pageId,
   initialJSON,
   initialAltText,
+  initialDiagramId,
   onSave,
+  session,
 }: ExcalidrawEditSheetProps) {
   const [altText, setAltText] = useState(initialAltText)
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
@@ -269,6 +382,14 @@ export function ExcalidrawEditSheet({
     appState: Record<string, unknown>
     files: Record<string, unknown>
   } | null>(null)
+  // Dedupe key of the last persisted scene+altText, so checkpoints/closes don't
+  // re-upload an unchanged diagram. Seeded from the opened diagram on each open.
+  const lastCommittedKeyRef = useRef('')
+  // Guards against two commits exporting/uploading at once (a silent checkpoint
+  // racing an explicit Save).
+  const committingRef = useRef(false)
+  // Idle-debounce timer for live-collab checkpoints.
+  const checkpointTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialData = parseInitialData(initialJSON)
   const theme = useExcalidrawTheme()
 
@@ -277,14 +398,25 @@ export function ExcalidrawEditSheet({
   // pattern, which is the canonical way to recycle a controlled-Sheet's
   // internal state on each open without keying the whole component.
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      if (checkpointTimerRef.current != null) {
+        clearTimeout(checkpointTimerRef.current)
+        checkpointTimerRef.current = null
+      }
+      return
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAltText(initialAltText)
     setStatus('idle')
     setErrorMessage(null)
     latestSnapshotRef.current = null
     apiRef.current = null
-  }, [open, initialAltText])
+    committingRef.current = false
+    lastCommittedKeyRef.current = commitKey(
+      parseInitialSceneHash(initialJSON),
+      initialAltText,
+    )
+  }, [open, initialAltText, initialJSON])
 
   // Pointer-offset fix — defer mounting Excalidraw until the Sheet's slide-in
   // settles. The Sheet enters via a `transform: translateX` animation (see
@@ -323,9 +455,30 @@ export function ExcalidrawEditSheet({
     }
   }, [open])
 
-  async function handleSave() {
-    setStatus('saving')
-    setErrorMessage(null)
+  // The SINGLE commit path — used by the explicit Save, by close-in-session,
+  // and by idle checkpoints. Exports the PNG, uploads it, and persists the
+  // scene into the atom via onSave (the editor force-writes pages.body so the
+  // drawing reaches the saved markdown regardless of collab leadership). Dedupes
+  // against the last committed scene so redundant checkpoints/closes are cheap.
+  //   - close:  close the sheet after a successful (or no-op) commit.
+  //   - silent: a background checkpoint — no status UI, swallow errors (the
+  //             next checkpoint or the close-commit retries).
+  async function commitScene(opts: {
+    close: boolean
+    silent?: boolean
+  }): Promise<void> {
+    if (committingRef.current) {
+      // A commit is already exporting (likely a silent checkpoint of the same
+      // scene). Don't double-export; just honor a close request — the in-flight
+      // commit persists the scene.
+      if (opts.close) onOpenChange(false)
+      return
+    }
+    committingRef.current = true
+    if (!opts.silent) {
+      setStatus('saving')
+      setErrorMessage(null)
+    }
     try {
       // Prefer the imperative API for the freshest snapshot; fall back to the
       // last onChange payload otherwise.
@@ -344,6 +497,12 @@ export function ExcalidrawEditSheet({
       const canonical = JSON.stringify({ elements, appState })
       const sceneHash = await computeSceneHash(canonical)
 
+      // Nothing changed since the last persist → skip the upload + write.
+      if (commitKey(sceneHash, altText) === lastCommittedKeyRef.current) {
+        if (opts.close) onOpenChange(false)
+        return
+      }
+
       const mod = cachedModule
       if (!mod) {
         // Should never happen — the Save button is only rendered after the
@@ -361,26 +520,75 @@ export function ExcalidrawEditSheet({
 
       await uploadDiagram(pageId, { scene_hash: sceneHash, png_base64 })
 
-      // Compose markdown sceneJSON: full scene + hash + alt-text so external
-      // consumers (other tela instances, plain markdown viewers) can locate
-      // the PNG without a separate sidecar.
+      // Stamp a stable diagram id if the atom lacks one (legacy diagram) so
+      // future live-collab sessions key on it. crypto.randomUUID() inline (not
+      // imported from the editor module) keeps this lazy chunk decoupled.
+      const diagramId = initialDiagramId || crypto.randomUUID()
+
+      // Compose markdown sceneJSON: full scene + hash + alt-text + stable id so
+      // external consumers (other tela instances, plain markdown viewers) can
+      // locate the PNG without a separate sidecar and the id round-trips.
       const sceneJSON = JSON.stringify({
         elements,
         appState,
         scene_hash: sceneHash,
         alt_text: altText,
+        diagram_id: diagramId,
       })
 
-      await onSave({ sceneHash, altText, sceneJSON })
-      onOpenChange(false)
+      await onSave({ sceneHash, altText, sceneJSON, diagramId })
+      lastCommittedKeyRef.current = commitKey(sceneHash, altText)
+      if (opts.close) onOpenChange(false)
     } catch (err) {
-      setStatus('error')
-      setErrorMessage(diagramErrorMessage(err))
+      if (!opts.silent) {
+        setStatus('error')
+        setErrorMessage(diagramErrorMessage(err))
+      }
+    } finally {
+      committingRef.current = false
     }
   }
 
+  // Always call the latest commitScene from the (stale-closure-prone) checkpoint
+  // timer. Updated in an effect (ref writes during render are disallowed).
+  const commitRef = useRef(commitScene)
+  useEffect(() => {
+    commitRef.current = commitScene
+  })
+
+  // Idle checkpoint: while a live-collab session is open, persist the converged
+  // scene after a short pause in edits so mid-session work is durable without a
+  // manual Save (and a crash loses at most the last few seconds). Only the
+  // checkpoint leader writes, so N open peers don't all upload the same PNG.
+  // Re-armed on every onChange (local OR remote, since updateScene re-fires it).
+  function scheduleCheckpoint(): void {
+    if (!session) return
+    if (checkpointTimerRef.current != null) clearTimeout(checkpointTimerRef.current)
+    checkpointTimerRef.current = setTimeout(() => {
+      checkpointTimerRef.current = null
+      if (!session.isCheckpointLeader()) return
+      void commitRef.current({ close: false, silent: true })
+    }, CHECKPOINT_IDLE_MS)
+  }
+
+  // Close intent (Cancel button, Esc, overlay click). In a live-collab session
+  // there is no "discard" — your edits are already shared — so closing commits
+  // a final time. Solo mode keeps the classic discard-on-cancel behaviour.
+  function handleClose(): void {
+    if (session) {
+      void commitScene({ close: true })
+    } else {
+      onOpenChange(false)
+    }
+  }
+
+  function handleOpenChange(next: boolean): void {
+    if (next) return // controlled; never auto-opens
+    handleClose()
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="right"
         className="!w-screen sm:!max-w-none flex flex-col"
@@ -389,8 +597,9 @@ export function ExcalidrawEditSheet({
         <SheetHeader>
           <SheetTitle>Edit diagram</SheetTitle>
           <SheetDescription>
-            Draw your diagram, optionally add alt text, then Save to embed it
-            in the page.
+            {session
+              ? 'Changes sync live and save automatically.'
+              : 'Draw your diagram, optionally add alt text, then Save to embed it in the page.'}
           </SheetDescription>
         </SheetHeader>
 
@@ -404,8 +613,10 @@ export function ExcalidrawEditSheet({
                   initialData={initialData}
                   theme={theme}
                   apiRef={apiRef}
+                  session={session}
                   onSnapshot={(snap) => {
                     latestSnapshotRef.current = snap
+                    scheduleCheckpoint()
                   }}
                 />
               </Suspense>
@@ -435,18 +646,18 @@ export function ExcalidrawEditSheet({
             <Button
               type="button"
               variant="ghost"
-              onClick={() => onOpenChange(false)}
+              onClick={handleClose}
               disabled={status === 'saving'}
             >
-              Cancel
+              {session ? 'Close' : 'Cancel'}
             </Button>
             <Button
               type="button"
               variant="primary"
-              onClick={() => void handleSave()}
+              onClick={() => void commitScene({ close: true })}
               disabled={status === 'saving'}
             >
-              {status === 'saving' ? 'Saving…' : 'Save'}
+              {status === 'saving' ? 'Saving…' : session ? 'Save & close' : 'Save'}
             </Button>
           </div>
         </SheetFooter>

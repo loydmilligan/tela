@@ -7,6 +7,7 @@ import {
 } from 'y-protocols/awareness'
 import {
   TAG_AWARENESS,
+  TAG_EPHEMERAL,
   TAG_RESET,
   TAG_SNAPSHOT_REQ,
   TAG_SNAPSHOT_RESP,
@@ -39,6 +40,7 @@ export type TelaProviderStatus = 'connecting' | 'connected' | 'disconnected'
 
 type StatusListener = (status: TelaProviderStatus) => void
 type SyncListener = (info: { hadServerState: boolean }) => void
+type EphemeralListener = (payload: Uint8Array) => void
 
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 30_000
@@ -56,6 +58,11 @@ export class TelaProvider {
   // seeding from the canonical markdown body.
   private syncListeners = new Set<SyncListener>()
   private firstSyncFired = false
+  // Ephemeral (tag 0x07) channel listeners — the live-Excalidraw relay. These
+  // frames ride the page ws but are deliberately kept OFF the Y.Doc: nothing
+  // here is persisted or CRDT-merged. Consumers (DiagramSession) own their own
+  // convergence (reconcileElements) and writeback.
+  private ephemeralListeners = new Set<EphemeralListener>()
   private reconnectAttempts = 0
   private reconnectTimer: number | null = null
   private destroyed = false
@@ -115,6 +122,7 @@ export class TelaProvider {
       ._observers
     if (obs && typeof obs.clear === 'function') obs.clear()
     this.sendAwarenessRemoval()
+    this.ephemeralListeners.clear()
     this.doc.off('update', this.onDocUpdate)
     this.awareness.destroy()
     if (this.ws) {
@@ -188,6 +196,28 @@ export class TelaProvider {
     this.syncListeners.add(fn)
     return () => {
       this.syncListeners.delete(fn)
+    }
+  }
+
+  // Broadcast a raw payload on the ephemeral diagram channel (tag 0x07). The
+  // server fans it out to every other peer in the page room and never persists
+  // it. No-op if the ws isn't open — the channel is best-effort by design (a
+  // dropped mid-draw delta is corrected by the next frame / final reconcile).
+  sendEphemeral(payload: Uint8Array): void {
+    const ws = this.ws
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    try {
+      ws.send(encodeFrame(TAG_EPHEMERAL, payload))
+    } catch {
+      // Connection likely dying; onclose handles reconnect.
+    }
+  }
+
+  // Subscribe to inbound ephemeral frames. Returns an unsubscribe fn.
+  onEphemeral(fn: EphemeralListener): () => void {
+    this.ephemeralListeners.add(fn)
+    return () => {
+      this.ephemeralListeners.delete(fn)
     }
   }
 
@@ -343,6 +373,12 @@ export class TelaProvider {
         // Apply with origin=this so our awareness 'update' listener filters
         // the change and doesn't bounce it back to the server.
         applyAwarenessUpdate(this.awareness, payload, this)
+        return
+      case TAG_EPHEMERAL:
+        // Live-Excalidraw relay: hand the opaque payload to subscribers. Copy
+        // out of the ws receive buffer (payload is a subarray view) so async
+        // consumers can't read torn bytes. Never touches the Y.Doc.
+        for (const fn of this.ephemeralListeners) fn(payload.slice())
         return
       default:
         // Unknown / future tag — ignore.

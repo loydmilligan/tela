@@ -49,6 +49,7 @@ import { cn } from '../../lib/utils'
 import { configureRefractor } from '../../lib/milkdown/refractor-config'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { TelaProvider, type TelaProviderStatus } from '../../lib/collab/tela-provider'
+import { DiagramSession } from '../../lib/collab/diagram-session'
 import { decodeSyncInit } from '../../lib/collab/encode'
 import { cursorBuilder, selectionBuilder } from '../../lib/collab/cursor-builder'
 import { useLeaderElection } from '../../lib/collab/use-leader-election'
@@ -327,6 +328,12 @@ function MilkdownEditorInner({
   // invoked in those modes.
   const [excalidrawSheet, setExcalidrawSheet] =
     useState<ExcalidrawOpenRequest | null>(null)
+  // SPIKE — live multiplayer Excalidraw session for the open diagram. State is
+  // declared here with the other sheet state; the effect that builds it lives
+  // below the collab provider setup (it reads collabRef).
+  const [diagramSession, setDiagramSession] = useState<DiagramSession | null>(
+    null,
+  )
 
   // M18.B.2 — mira paste-hook popover state. `null` = no active paste; the
   // PM plugin sets a request via the `miraPasteRequestCtx` callback when a
@@ -447,6 +454,39 @@ function MilkdownEditorInner({
   )
   const isLeaderRef = useRef(isLeader)
   isLeaderRef.current = isLeader
+
+  // SPIKE — live multiplayer Excalidraw. While a diagram is open in collab
+  // mode, spin up a DiagramSession on the shared provider's ephemeral (tag
+  // 0x07) channel so peers editing the SAME diagram see each other's strokes.
+  // Keyed by sceneHash (peers opening the same saved diagram share a room);
+  // an unsaved diagram falls back to a 'new' room. Torn down on close. Null
+  // when there's no collab provider (solo/share/view) → the sheet behaves
+  // exactly as before.
+  useEffect(() => {
+    const collab = collabRef.current
+    if (!excalidrawSheet || !collab) return
+    const provider = collab.provider
+    const localUser = provider.awareness.getLocalState()?.user as
+      | { id: number; username: string; colorIdx: number }
+      | undefined
+    const self = {
+      id: localUser?.id ?? provider.awareness.clientID,
+      username: localUser?.username ?? 'You',
+      colorIdx: localUser?.colorIdx ?? 0,
+      // Per-connection id → distinct cursor per tab.
+      clientId: provider.awareness.clientID,
+    }
+    // Prefer the stable diagram id (survives saves/checkpoints); fall back to
+    // sceneHash for legacy diagrams (deterministic across peers until one
+    // saves and stamps an id), then 'new' for a never-saved legacy atom.
+    const key = excalidrawSheet.diagramId || excalidrawSheet.sceneHash || 'new'
+    const sess = new DiagramSession(provider, key, self)
+    setDiagramSession(sess)
+    return () => {
+      sess.destroy()
+      setDiagramSession(null)
+    }
+  }, [excalidrawSheet])
 
   // Editable predicate. PM evaluates this on every updateState. We use a
   // ref-backed read so the predicate's identity is stable but its result
@@ -1155,20 +1195,25 @@ function MilkdownEditorInner({
             pageId={pageId}
             initialJSON={excalidrawSheet.sceneJSON}
             initialAltText={excalidrawSheet.altText}
+            initialDiagramId={excalidrawSheet.diagramId}
+            session={diagramSession}
             onSave={(next) => {
-              // Apply the drawing to the doc (setNodeMarkup on the atom).
+              // Persist ONLY (the Sheet owns closing via onOpenChange) — this
+              // callback is the single commit path, hit by an explicit Save AND
+              // by idle/exit checkpoints.
+              //
+              // 1. Apply the drawing to the doc (setNodeMarkup on the atom).
               excalidrawSheet.onSave(next)
-              setExcalidrawSheet(null)
-              // Then force-persist `pages.body` immediately. That setNodeMarkup
-              // fires markdownUpdated, but in collab mode its save is gated to
-              // the elected leader — so a drawer who isn't the leader would end
-              // up with the diagram in the live Yjs doc yet never written to the
-              // body, and view mode (which renders the body) shows nothing.
-              // Saving a diagram is a rare, explicit action, so an unconditional
-              // save here is safe (no write-amplification — it's not per-keystroke
-              // or per-open) and guarantees the drawing reaches the saved markdown
-              // regardless of leadership. The PATCH is debounced downstream, so
-              // this coalesces with the leader's save when we ARE the leader.
+              // 2. Force-persist `pages.body` immediately. setNodeMarkup fires
+              // markdownUpdated, but in collab mode its save is gated to the
+              // elected (prose) leader — and the diagram drawer / checkpoint
+              // writer may not be that leader, so the diagram would reach the
+              // live Yjs doc yet never the body, and view mode (which renders
+              // the body) would show nothing. An unconditional save here
+              // guarantees the drawing reaches the saved markdown regardless of
+              // leadership; the PATCH is debounced downstream so it coalesces
+              // with the leader's own save in the common case. Checkpoints are
+              // leader-gated + dedup'd in the Sheet, so this isn't per-keystroke.
               const editor = get()
               editor?.action((ctx) => {
                 const view = ctx.get(editorViewCtx)

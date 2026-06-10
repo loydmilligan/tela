@@ -12,12 +12,18 @@ export interface MdastNode {
   sceneHash?: string
   altText?: string
   sceneJSON?: string
+  diagramId?: string
   [k: string]: unknown
 }
 
 interface ExcalidrawSceneJSON {
   scene_hash?: unknown
   alt_text?: unknown
+  // Stable, save-invariant id (unlike scene_hash, which changes on every
+  // edit). Used as the live-collab room key so peers and late joiners share a
+  // session across saves/checkpoints. Absent on legacy diagrams → '' → callers
+  // fall back to scene_hash and stamp a fresh id on next save.
+  diagram_id?: unknown
   [k: string]: unknown
 }
 
@@ -43,6 +49,7 @@ export function transformExcalidrawInMdast(node: MdastNode): void {
     if (parsed && typeof parsed === 'object') {
       const sceneHash = typeof parsed.scene_hash === 'string' ? parsed.scene_hash : ''
       const altText = typeof parsed.alt_text === 'string' ? parsed.alt_text : ''
+      const diagramId = typeof parsed.diagram_id === 'string' ? parsed.diagram_id : ''
       const validHash = SCENE_HASH_RE.test(sceneHash)
       // Recognize an excalidraw fence by EITHER a content-addressed scene_hash
       // (a drawn + saved diagram, served as a PNG sidecar) OR the excalidraw
@@ -58,6 +65,7 @@ export function transformExcalidrawInMdast(node: MdastNode): void {
         node.type = 'excalidraw'
         node.sceneHash = validHash ? sceneHash : ''
         node.altText = altText
+        node.diagramId = diagramId
         node.sceneJSON = raw
         delete node.lang
         delete node.value
