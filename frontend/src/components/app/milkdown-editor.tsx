@@ -26,9 +26,6 @@ import { gfm } from '@milkdown/kit/preset/gfm'
 // can click above/below a diagram and start typing. Styling lives in editor.css
 // (.ProseMirror-gapcursor); the plugin ships none.
 import { cursor } from '@milkdown/kit/plugin/cursor'
-// Always-present trailing empty paragraph, so there's a caret target after a
-// trailing block atom (Excalidraw/table/image) — pairs with gapcursor.
-import { trailing } from '@milkdown/kit/plugin/trailing'
 import { block } from '@milkdown/kit/plugin/block'
 import { history } from '@milkdown/kit/plugin/history'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
@@ -690,10 +687,13 @@ function MilkdownEditorInner({
       // (e.g. clicking above/below an Excalidraw diagram to type). Self-gates on
       // editability, so it never shows in read/share mode.
       .use(cursor)
-      // Always keep a trailing empty paragraph, so there's a caret target after
-      // a trailing block atom (e.g. an Excalidraw diagram as the last block).
-      // Pairs with gapcursor: gapcursor for the gaps, trailing for the end.
-      .use(trailing)
+      // NOTE: do NOT add @milkdown/plugin-trailing here. Its auto-appended
+      // trailing paragraph is inserted via appendTransaction OUTSIDE the Yjs
+      // document, so y-prosemirror's ySync observer hits an unmapped node and
+      // crashes ("Cannot read properties of null (reading 'nodeSize')" in
+      // _typeChanged) — but only on docs that END in a block atom (e.g. an
+      // Excalidraw diagram), where trailing actually fires. gapcursor already
+      // covers placing a caret around/after a trailing atom.
       // Tab / Shift-Tab nest & un-nest list items (markdown-safe; falls through
       // to focus-out when not in a list). See milkdown-list-indent.ts.
       .use(listIndentKeymap)
