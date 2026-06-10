@@ -10,6 +10,7 @@ import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
 import { SettingsInstanceTab } from '../components/app/SettingsInstanceTab'
 import { SettingsSearchIndexTab } from '../components/app/SettingsSearchIndexTab'
+import { SettingsSummariesTab } from '../components/app/SettingsSummariesTab'
 import { SettingsSyncTab } from '../components/app/SettingsSyncTab'
 import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
 import { Button } from '../components/ui/button'
@@ -93,6 +94,13 @@ const SEARCH_INDEX_TAB: SettingsTab = {
   render: () => <SettingsSearchIndexTab />,
 }
 
+// Auto-summary freshness — available to all users (scoped to their own spaces).
+const SUMMARIES_TAB: SettingsTab = {
+  id: 'summaries',
+  label: 'Summaries',
+  render: () => <SettingsSummariesTab />,
+}
+
 // "Connect your vault" — user self-service WebDAV sync, available to everyone
 // (the backend gates token scope on the user's own space membership).
 const SYNC_TAB: SettingsTab = {
@@ -123,12 +131,12 @@ export function SettingsPage() {
     (orgs.data?.some((o) => o.my_role === 'admin') ?? false)
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, INSTANCE_TAB, AUDIT_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, INSTANCE_TAB, AUDIT_TAB]
     }
     if (isOrgAdmin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB, ORG_ADMIN_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB, ORG_ADMIN_TAB]
     }
-    return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SYNC_TAB]
+    return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
   }, [me.data?.is_instance_admin, isOrgAdmin])
   // `?tab=` (set by the per-org page's back link) picks the initial section;
   // once a tab actually exists for it, the `active` lookup resolves it.
