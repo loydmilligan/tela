@@ -26,6 +26,9 @@ import { gfm } from '@milkdown/kit/preset/gfm'
 // can click above/below a diagram and start typing. Styling lives in editor.css
 // (.ProseMirror-gapcursor); the plugin ships none.
 import { cursor } from '@milkdown/kit/plugin/cursor'
+// Always-present trailing empty paragraph, so there's a caret target after a
+// trailing block atom (Excalidraw/table/image) — pairs with gapcursor.
+import { trailing } from '@milkdown/kit/plugin/trailing'
 import { block } from '@milkdown/kit/plugin/block'
 import { history } from '@milkdown/kit/plugin/history'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
@@ -72,6 +75,8 @@ import {
 } from './milkdown-highlight'
 import { mermaidPlugin } from './milkdown-mermaid'
 import { chartPlugin } from './milkdown-chart'
+import { typographyInputRules } from './milkdown-typography'
+import { listIndentKeymap } from './milkdown-list-indent'
 import { directiveRemarkPlugin } from './milkdown-directives'
 import { tabSchema, tabsNodeView, tabsSchema } from './milkdown-tabs'
 import {
@@ -685,6 +690,16 @@ function MilkdownEditorInner({
       // (e.g. clicking above/below an Excalidraw diagram to type). Self-gates on
       // editability, so it never shows in read/share mode.
       .use(cursor)
+      // Always keep a trailing empty paragraph, so there's a caret target after
+      // a trailing block atom (e.g. an Excalidraw diagram as the last block).
+      // Pairs with gapcursor: gapcursor for the gaps, trailing for the end.
+      .use(trailing)
+      // Tab / Shift-Tab nest & un-nest list items (markdown-safe; falls through
+      // to focus-out when not in a list). See milkdown-list-indent.ts.
+      .use(listIndentKeymap)
+      // Smart typography: straight quotes → curly, `--` → em-dash, `...` →
+      // ellipsis, as you type. Skips code. See milkdown-typography.ts.
+      .use(typographyInputRules)
       // GFM task lists: schema + input rule (`[ ] `) ship in the preset above;
       // this adds the click-to-toggle on the CSS checkbox. See
       // milkdown-task-list.ts.
