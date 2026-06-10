@@ -205,7 +205,7 @@
     },
     {
       "id": "excalidraw",
-      "label": "Excalidraw",
+      "label": "Drawing",
       "hint": "Hand-drawn diagram",
       "category": "Media & diagrams",
       "slash": true,
