@@ -13,15 +13,7 @@ import (
 	"github.com/zcag/tela/backend/internal/rag"
 )
 
-// enableAsk turns on the ask-first feature flag for a test server.
-func enableAsk(t *testing.T, srv *Server) {
-	t.Helper()
-	if err := srv.settings.Set(context.Background(), "feature.ask", "true", nil); err != nil {
-		t.Fatalf("enable feature.ask: %v", err)
-	}
-}
-
-func TestRAGDraft_GroundedAndGated(t *testing.T) {
+func TestRAGDraft_Grounded(t *testing.T) {
 	ts, d, srv := newRagServer(t)
 	srv.llm = llm.NewServiceWithCompleter(&fakeCompleter{answer: "# Deploying\n\nRun make deploy."})
 	alice := seedUser(t, d, "alice", "alicepw12", false)
@@ -33,19 +25,8 @@ func TestRAGDraft_GroundedAndGated(t *testing.T) {
 	c := loginClient(t, ts, "alice", "alicepw12")
 	bodyReq := `{"topic":"how we deploy","space_id":` + strconv.FormatInt(sp, 10) + `}`
 
-	// Flag off → 404 (invisible).
+	// Grounded draft + sources.
 	resp, err := c.Post(ts.URL+"/api/rag/draft", "application/json", strings.NewReader(bodyReq))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("draft with flag off = %d, want 404", resp.StatusCode)
-	}
-
-	// Flag on → 200 with a grounded draft + sources.
-	enableAsk(t, srv)
-	resp, err = c.Post(ts.URL+"/api/rag/draft", "application/json", strings.NewReader(bodyReq))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +53,6 @@ func TestRAGDraft_GroundedAndGated(t *testing.T) {
 func TestRAGAnswerToPage_CreatesCitedPage(t *testing.T) {
 	ts, d, srv := newRagServer(t)
 	srv.llm = llm.NewServiceWithCompleter(&fakeCompleter{answer: "You ship with make deploy."})
-	enableAsk(t, srv)
 	alice := seedUser(t, d, "alice", "alicepw12", false)
 	sp := seedSpace(t, d, "Alpha", "alpha", alice)
 	src := mustPage(t, d, sp, "Deploy Guide", "## Shipping\nrun make deploy to push the release to production")
@@ -116,10 +96,9 @@ func TestRAGAnswerToPage_CreatesCitedPage(t *testing.T) {
 	}
 }
 
-func TestRAGAsk_FollowupsWhenFlagOn(t *testing.T) {
+func TestRAGAsk_Followups(t *testing.T) {
 	ts, d, srv := newRagServer(t)
 	srv.llm = llm.NewServiceWithCompleter(&fakeCompleter{answer: "Use make deploy to ship."})
-	enableAsk(t, srv)
 	alice := seedUser(t, d, "alice", "alicepw12", false)
 	sp := seedSpace(t, d, "Alpha", "alpha", alice)
 	mustPage(t, d, sp, "Deploy Guide", "## Shipping\nrun make deploy to push the release to production")
@@ -145,6 +124,6 @@ func TestRAGAsk_FollowupsWhenFlagOn(t *testing.T) {
 		t.Fatal("no answer")
 	}
 	if len(out.Followups) == 0 {
-		t.Error("expected follow-up questions with feature.ask on")
+		t.Error("expected follow-up questions")
 	}
 }

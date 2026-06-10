@@ -37,16 +37,15 @@ wedge:
 
 ## Capability catalogue
 
-### Rollout — feature-flagged, dark by default
+### Rollout
 
-The whole knowledge-intelligence surface ships **off**. It's gated behind the
-`feature.knowledge` instance setting (precedence: env `TELA_FEATURE_KNOWLEDGE` →
-instance setting → OFF), so it never changes anything for existing users until an
-instance admin opts in — and they can turn it back off without a deploy. Disabled
-endpoints/tools return 404 (invisible). This is the pattern every experimental
-feature here rides on; graduate a feature by flipping its default. New views (a
-topic map, the health dashboard) are **additive** — they sit beside folders and
-the page tree, never replacing them.
+The knowledge-intelligence surface is always on (subject only to its runtime
+dependencies — the embedder for retrieval, the LLM for generation, which 503
+when unconfigured). It was originally shipped dark behind a `feature.knowledge` /
+`feature.ask` instance flag; that experimental-flag layer has been removed in
+favour of doing per-user feature gating properly later. New views (a topic map,
+the health dashboard) are **additive** — they sit beside folders and the page
+tree, never replacing them.
 
 ### Built (on this branch)
 
@@ -63,9 +62,8 @@ the page tree, never replacing them.
 | **Reranking** | optional cross-encoder second stage for top-k precision | env `TELA_RAG_RERANK_URL` |
 
 The generative features (draft / answer-to-page / page-questions / follow-ups)
-share one seam — `askContext` (retrieve + cite) and `askComplete` (caps + LLM) —
-and ride the `feature.ask` flag (`/ask` itself is unflagged; only the new bits
-are gated). They're REST-first; agents compose the same outcomes from `search` +
+share one seam — `askContext` (retrieve + cite) and `askComplete` (caps + LLM).
+They're REST-first; agents compose the same outcomes from `search` +
 `create_page`, so there's no parallel LLM-cap path on MCP.
 | **Self-healing index + eval** | the index keeps itself fresh; `rag-eval` measures quality | see [`rag.md`](rag.md) |
 

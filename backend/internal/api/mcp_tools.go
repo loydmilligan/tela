@@ -509,9 +509,6 @@ func (s *Server) mcpRelatedPages(ctx context.Context, req *mcp.CallToolRequest, 
 	if u == nil {
 		return mcpUnauthErr(), relatedPagesOut{}, nil
 	}
-	if !s.featureFlag(featureKnowledge) {
-		return mcpErr(&apiErr{404, "feature_disabled", "feature not enabled"}), relatedPagesOut{}, nil
-	}
 	// Verify read access to the source page (also handles bearer scope).
 	if _, ae := s.getPageCore(ctx, u, k, in.PageID); ae != nil {
 		return mcpErr(ae), relatedPagesOut{}, nil
@@ -544,9 +541,6 @@ func (s *Server) mcpSuggestLinks(ctx context.Context, req *mcp.CallToolRequest, 
 	if u == nil {
 		return mcpUnauthErr(), suggestLinksOut{}, nil
 	}
-	if !s.featureFlag(featureKnowledge) {
-		return mcpErr(&apiErr{404, "feature_disabled", "feature not enabled"}), suggestLinksOut{}, nil
-	}
 	if !s.rag.Enabled() {
 		return mcpErr(&apiErr{503, "rag_disabled", "semantic features are not configured"}), suggestLinksOut{}, nil
 	}
@@ -578,9 +572,6 @@ func (s *Server) mcpFindOverlaps(ctx context.Context, req *mcp.CallToolRequest, 
 	if u == nil {
 		return mcpUnauthErr(), findOverlapsOut{}, nil
 	}
-	if !s.featureFlag(featureKnowledge) {
-		return mcpErr(&apiErr{404, "feature_disabled", "feature not enabled"}), findOverlapsOut{}, nil
-	}
 	spaceID := in.SpaceID
 	if k != nil && k.SpaceID != nil {
 		spaceID = k.SpaceID
@@ -607,9 +598,6 @@ func (s *Server) mcpKnowledgeGaps(ctx context.Context, req *mcp.CallToolRequest,
 	u, _ := mcpIdentity(req)
 	if u == nil {
 		return mcpUnauthErr(), knowledgeGapsOut{}, nil
-	}
-	if !s.featureFlag(featureKnowledge) {
-		return mcpErr(&apiErr{404, "feature_disabled", "feature not enabled"}), knowledgeGapsOut{}, nil
 	}
 	if !u.IsInstanceAdmin {
 		return mcpErr(&apiErr{403, "forbidden", "knowledge_gaps is instance-admin only"}), knowledgeGapsOut{}, nil

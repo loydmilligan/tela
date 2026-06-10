@@ -20,11 +20,6 @@ import (
 //   askComplete — apply the per-account compute caps and run the LLM
 //
 // RAGAsk is refactored onto these too (so the seam is exercised, not bypassed).
-// The NEW endpoints (draft, answer-to-page, page questions, follow-ups) are gated
-// behind feature.ask — dark by default, like the rest of the experimental surface.
-
-// featureAsk gates the experimental ask-first generative features.
-const featureAsk = "ask"
 
 // askContext retrieves the top chunks for query and renders the numbered, cited
 // excerpt block that grounds every generative feature, plus the hits (for source
@@ -168,9 +163,6 @@ type draftRequest struct {
 // Returns a grounded markdown DRAFT for a new page about `topic`, built from the
 // most relevant existing pages (cited). Not saved — the caller edits then saves.
 func (s *Server) RAGDraft(w http.ResponseWriter, r *http.Request) {
-	if !s.requireFeature(w, featureAsk) {
-		return
-	}
 	u, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -218,9 +210,6 @@ type answerToPageRequest struct {
 // turning ephemeral Q&A into durable knowledge — closing the ask → gap → write
 // loop. Requires editor access to the target space (createPageCore enforces it).
 func (s *Server) RAGAnswerToPage(w http.ResponseWriter, r *http.Request) {
-	if !s.requireFeature(w, featureAsk) {
-		return
-	}
 	u, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -272,9 +261,6 @@ func (s *Server) RAGAnswerToPage(w http.ResponseWriter, r *http.Request) {
 // Suggested questions the given page answers — for a "people often ask…" affordance
 // and as seeds for ask-first navigation. Read access to the page required.
 func (s *Server) RAGPageQuestions(w http.ResponseWriter, r *http.Request) {
-	if !s.requireFeature(w, featureAsk) {
-		return
-	}
 	u, ok := requireUser(w, r)
 	if !ok {
 		return

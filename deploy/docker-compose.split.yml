@@ -65,10 +65,6 @@ services:
       TELA_LLM_URL:    ${TELA_LLM_URL:-}
       TELA_LLM_MODEL:  ${TELA_LLM_MODEL:-}
       TELA_LLM_TOKEN:  ${TELA_LLM_TOKEN:-}
-      # Experimental feature flags. Empty = unset (defers to the runtime
-      # instance-settings toggle); pin from env with 1/0.
-      TELA_FEATURE_KNOWLEDGE: ${TELA_FEATURE_KNOWLEDGE:-}
-      TELA_FEATURE_ASK:       ${TELA_FEATURE_ASK:-}
       TELA_WORKOS_ISSUER:    ${TELA_WORKOS_ISSUER:-}
       TELA_MCP_RESOURCE:     ${TELA_MCP_RESOURCE:-}
       WORKOS_API_KEY:        ${WORKOS_API_KEY:-}

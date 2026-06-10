@@ -58,10 +58,6 @@ services:
       TELA_LLM_URL:    ${TELA_LLM_URL:-}
       TELA_LLM_MODEL:  ${TELA_LLM_MODEL:-}
       TELA_LLM_TOKEN:  ${TELA_LLM_TOKEN:-}
-      # Experimental feature flags. Empty = unset (defers to the runtime
-      # instance-settings toggle); pin from env with 1/0.
-      TELA_FEATURE_KNOWLEDGE: ${TELA_FEATURE_KNOWLEDGE:-}
-      TELA_FEATURE_ASK:       ${TELA_FEATURE_ASK:-}
       # MCP OAuth (Phase 5). Unset → /api/mcp stays PAT-only and OAuth is dark
       # (Protected Resource Metadata 404s). Set TELA_WORKOS_ISSUER to enable the
       # Claude.ai/ChatGPT Connect flow via WorkOS AuthKit. See .env.example.
