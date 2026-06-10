@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	_ "embed"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -175,4 +177,60 @@ func mcpErr(ae *apiErr) *mcp.CallToolResult {
 // mcpUnauthErr is returned when a tool runs without a resolved identity.
 func mcpUnauthErr() *mcp.CallToolResult {
 	return mcpErr(&apiErr{http.StatusUnauthorized, "unauthorized", "missing authenticated identity"})
+}
+
+// mcpIdempotent makes a create-type write tool safe to retry. With key=="" it
+// just runs fn (the default — no bookkeeping). Otherwise it claims (userID, key)
+// in idempotency_keys: the first caller wins the INSERT, runs fn, and memoizes
+// the structured result; a replay with the same key returns that stored result
+// without re-running fn (so a retry after a dropped connection never creates a
+// duplicate). Only SUCCESS is memoized — a tool-error or Go error releases the
+// claim so a genuine retry can proceed. A racing duplicate that finds the row
+// still in-flight (result NULL) gets a transient idempotency_in_progress error;
+// a key reused for a different tool is rejected. Storage failures fall back to
+// running fn (best-effort: idempotency degrades, it never blocks the write).
+func mcpIdempotent[T any](ctx context.Context, db *sql.DB, userID int64, key, tool string, fn func() (*mcp.CallToolResult, T, error)) (*mcp.CallToolResult, T, error) {
+	var zero T
+	if key == "" {
+		return fn()
+	}
+	res, err := db.ExecContext(ctx,
+		`INSERT INTO idempotency_keys (user_id, idem_key, tool) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		userID, key, tool)
+	if err != nil {
+		return fn() // best-effort
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// A row already exists for this (user, key): replay or in-flight.
+		var storedTool string
+		var result sql.NullString
+		if err := db.QueryRowContext(ctx,
+			`SELECT tool, result FROM idempotency_keys WHERE user_id = $1 AND idem_key = $2`,
+			userID, key).Scan(&storedTool, &result); err != nil {
+			return fn() // row vanished or scan failed — best-effort
+		}
+		if storedTool != tool {
+			return mcpErr(&apiErr{http.StatusConflict, "idempotency_key_reused",
+				"idempotency key already used for a different tool"}), zero, nil
+		}
+		if !result.Valid {
+			return mcpErr(&apiErr{http.StatusConflict, "idempotency_in_progress",
+				"a request with this idempotency key is still in progress; retry shortly"}), zero, nil
+		}
+		var out T
+		if err := json.Unmarshal([]byte(result.String), &out); err != nil {
+			return fn() // corrupt memo — best-effort
+		}
+		return nil, out, nil
+	}
+	// We claimed the key — execute, then memoize on success / release on failure.
+	callRes, out, err := fn()
+	if err != nil || (callRes != nil && callRes.IsError) {
+		_, _ = db.ExecContext(ctx, `DELETE FROM idempotency_keys WHERE user_id = $1 AND idem_key = $2`, userID, key)
+		return callRes, out, err
+	}
+	if b, mErr := json.Marshal(out); mErr == nil {
+		_, _ = db.ExecContext(ctx, `UPDATE idempotency_keys SET result = $3 WHERE user_id = $1 AND idem_key = $2`, userID, key, string(b))
+	}
+	return callRes, out, nil
 }

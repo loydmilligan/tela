@@ -181,6 +181,16 @@ func seedReadKey(t *testing.T, d *sql.DB, uid int64, scope string) string {
 
 func mcpCallJSON(t *testing.T, ctx context.Context, sess *mcp.ClientSession, name string, args map[string]any, out any) {
 	t.Helper()
+	raw, _ := mcpCallRawJSON(t, ctx, sess, name, args)
+	if err := json.Unmarshal(raw, out); err != nil {
+		t.Fatalf("decode %s output %s: %v", name, raw, err)
+	}
+}
+
+// mcpCallRawJSON calls a tool, fails on a tool/transport error, and returns the
+// raw JSON of its structured content (for asserting the exact wire shape).
+func mcpCallRawJSON(t *testing.T, ctx context.Context, sess *mcp.ClientSession, name string, args map[string]any) ([]byte, *mcp.CallToolResult) {
+	t.Helper()
 	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		t.Fatalf("call %s: %v", name, err)
@@ -189,9 +199,7 @@ func mcpCallJSON(t *testing.T, ctx context.Context, sess *mcp.ClientSession, nam
 		t.Fatalf("%s returned tool error: %v", name, res.Content)
 	}
 	raw, _ := json.Marshal(res.StructuredContent)
-	if err := json.Unmarshal(raw, out); err != nil {
-		t.Fatalf("decode %s output %s: %v", name, raw, err)
-	}
+	return raw, res
 }
 
 // TestMCP_ReadTools exercises the Phase-1 read surface end-to-end over the MCP
@@ -334,13 +342,20 @@ func TestMCP_WriteTools(t *testing.T) {
 	}
 	spaceID := sp.Space.ID
 
-	// create_page in it.
-	var pg getPageOut
+	// create_page in it. The result carries id/title/url but deliberately NOT
+	// the body the caller just sent (createPageOut omits it — no payload echo).
+	var pg createPageOut
 	mcpCallJSON(t, ctx, sess, "create_page", map[string]any{
 		"space_id": spaceID, "title": "Runbook", "body": "step one",
 	}, &pg)
 	if pg.Page.Title != "Runbook" || pg.Page.URL == "" {
 		t.Fatalf("create_page: %+v", pg.Page)
+	}
+	// The raw structured content must not contain a body field at all.
+	if raw, _ := mcpCallRawJSON(t, ctx, sess, "create_page", map[string]any{
+		"space_id": spaceID, "title": "Echo check", "body": "secret body text",
+	}); strings.Contains(string(raw), "secret body text") || strings.Contains(string(raw), `"body"`) {
+		t.Fatalf("create_page echoed the body: %s", raw)
 	}
 	pageID := pg.Page.ID
 
@@ -422,6 +437,64 @@ func TestMCP_WriteTools(t *testing.T) {
 	mcpCallJSON(t, ctx, sess, "delete_space", map[string]any{"id": spaceID}, &dels)
 	if !dels.OK {
 		t.Fatalf("delete_space: %+v", dels)
+	}
+}
+
+// TestMCP_IdempotentCreate asserts a create_page replayed with the same
+// idempotency_key returns the ORIGINAL page instead of creating a duplicate —
+// the safe-retry guarantee for dropped connections. Also checks that a key
+// reused on a different tool is rejected, and that omitting the key leaves the
+// old (always-create) behavior intact.
+func TestMCP_IdempotentCreate(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	space := seedSpace(t, d, "Docs", "docs", alice)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeWrite))
+
+	args := map[string]any{"space_id": space, "title": "Once", "body": "b", "idempotency_key": "k-abc"}
+
+	var first createPageOut
+	mcpCallJSON(t, ctx, sess, "create_page", args, &first)
+	if first.Page.ID == 0 {
+		t.Fatalf("first create: %+v", first.Page)
+	}
+
+	// Replay with the same key → SAME page id, no second row.
+	var replay createPageOut
+	mcpCallJSON(t, ctx, sess, "create_page", args, &replay)
+	if replay.Page.ID != first.Page.ID {
+		t.Fatalf("replay made a new page: first=%d replay=%d", first.Page.ID, replay.Page.ID)
+	}
+
+	var count int
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM pages WHERE space_id=$1 AND title='Once'`, space).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 page, got %d", count)
+	}
+
+	// A different key creates a distinct page.
+	var other createPageOut
+	mcpCallJSON(t, ctx, sess, "create_page", map[string]any{
+		"space_id": space, "title": "Twice", "body": "b", "idempotency_key": "k-xyz",
+	}, &other)
+	if other.Page.ID == first.Page.ID {
+		t.Fatalf("different key reused the same page")
+	}
+
+	// Reusing a key on a different tool is rejected.
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "create_space", Arguments: map[string]any{
+		"name": "Nope", "idempotency_key": "k-abc",
+	}})
+	if err != nil {
+		t.Fatalf("call create_space: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected a reused key on a different tool to be rejected")
 	}
 }
 

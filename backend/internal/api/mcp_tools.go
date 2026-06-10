@@ -341,6 +341,40 @@ type getPageOut struct {
 	Page mcpPage `json:"page"`
 }
 
+// createdPage is the create_page result: the new page's identity + metadata,
+// deliberately WITHOUT the body. The caller just sent that body, so echoing it
+// only doubles the payload; the id/url/parent_id is what a caller actually needs
+// to keep building. Fetch the stored (normalized) body via get_page if required.
+type createdPage struct {
+	ID        int64          `json:"id"`
+	SpaceID   int64          `json:"space_id"`
+	ParentID  *int64         `json:"parent_id"`
+	Title     string         `json:"title"`
+	Position  int64          `json:"position"`
+	Props     map[string]any `json:"props,omitempty"`
+	CreatedAt string         `json:"created_at"`
+	UpdatedAt string         `json:"updated_at"`
+	URL       string         `json:"url"`
+}
+
+type createPageOut struct {
+	Page createdPage `json:"page"`
+}
+
+func newCreatedPage(p models.Page) createdPage {
+	return createdPage{
+		ID:        p.ID,
+		SpaceID:   p.SpaceID,
+		ParentID:  p.ParentID,
+		Title:     p.Title,
+		Position:  p.Position,
+		Props:     p.Props,
+		CreatedAt: p.CreatedAt,
+		UpdatedAt: p.UpdatedAt,
+		URL:       mcpPageURL(p),
+	}
+}
+
 func (s *Server) mcpGetPage(ctx context.Context, req *mcp.CallToolRequest, in getPageIn) (*mcp.CallToolResult, getPageOut, error) {
 	u, k := mcpIdentity(req)
 	if u == nil {
@@ -649,33 +683,35 @@ func (s *Server) mcpFetch(ctx context.Context, req *mcp.CallToolRequest, in fetc
 // ---- create_page ---------------------------------------------------------
 
 type createPageIn struct {
-	SpaceID  int64          `json:"space_id" jsonschema:"id of the space to create the page in"`
-	ParentID *int64         `json:"parent_id,omitempty" jsonschema:"optional parent page id"`
-	Title    string         `json:"title" jsonschema:"page title"`
-	Body     string         `json:"body" jsonschema:"markdown body"`
-	Props    map[string]any `json:"props,omitempty" jsonschema:"optional page properties (frontmatter); free-form keys, reserved keys like id/title/slug/created are ignored"`
+	SpaceID        int64          `json:"space_id" jsonschema:"id of the space to create the page in"`
+	ParentID       *int64         `json:"parent_id,omitempty" jsonschema:"optional parent page id"`
+	Title          string         `json:"title" jsonschema:"page title"`
+	Body           string         `json:"body" jsonschema:"markdown body"`
+	Props          map[string]any `json:"props,omitempty" jsonschema:"optional page properties (frontmatter); free-form keys, reserved keys like id/title/slug/created are ignored"`
+	IdempotencyKey string         `json:"idempotency_key,omitempty" jsonschema:"optional client-generated key; a retry with the same key returns the original result instead of creating a duplicate page (safe retries after a dropped connection)"`
 }
 
-func (s *Server) mcpCreatePage(ctx context.Context, req *mcp.CallToolRequest, in createPageIn) (*mcp.CallToolResult, getPageOut, error) {
+func (s *Server) mcpCreatePage(ctx context.Context, req *mcp.CallToolRequest, in createPageIn) (*mcp.CallToolResult, createPageOut, error) {
 	u, k := mcpIdentity(req)
 	if u == nil {
-		return mcpUnauthErr(), getPageOut{}, nil
+		return mcpUnauthErr(), createPageOut{}, nil
 	}
 	if ae := mcpRequireWrite(k); ae != nil {
-		return mcpErr(ae), getPageOut{}, nil
+		return mcpErr(ae), createPageOut{}, nil
 	}
-	p, ae := s.createPageCore(withAgentWrite(ctx), u, k, pageCreateRequest{
-		SpaceID:  in.SpaceID,
-		ParentID: in.ParentID,
-		Title:    in.Title,
-		Body:     in.Body,
-		Props:    in.Props,
+	return mcpIdempotent(ctx, s.DB, u.ID, in.IdempotencyKey, "create_page", func() (*mcp.CallToolResult, createPageOut, error) {
+		p, ae := s.createPageCore(withAgentWrite(ctx), u, k, pageCreateRequest{
+			SpaceID:  in.SpaceID,
+			ParentID: in.ParentID,
+			Title:    in.Title,
+			Body:     in.Body,
+			Props:    in.Props,
+		})
+		if ae != nil {
+			return mcpErr(ae), createPageOut{}, nil
+		}
+		return nil, createPageOut{Page: newCreatedPage(p)}, nil
 	})
-	if ae != nil {
-		return mcpErr(ae), getPageOut{}, nil
-	}
-	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
-	return nil, out, nil
 }
 
 // ---- update_page ---------------------------------------------------------
@@ -784,9 +820,10 @@ type addCommentAnchor struct {
 }
 
 type addCommentIn struct {
-	PageID int64            `json:"page_id" jsonschema:"page to comment on"`
-	Anchor addCommentAnchor `json:"anchor" jsonschema:"text-quote anchor locating the comment in the body"`
-	Body   string           `json:"body" jsonschema:"comment text (1-10000 chars)"`
+	PageID         int64            `json:"page_id" jsonschema:"page to comment on"`
+	Anchor         addCommentAnchor `json:"anchor" jsonschema:"text-quote anchor locating the comment in the body"`
+	Body           string           `json:"body" jsonschema:"comment text (1-10000 chars)"`
+	IdempotencyKey string           `json:"idempotency_key,omitempty" jsonschema:"optional client-generated key; a retry with the same key returns the original result instead of posting a duplicate comment (safe retries after a dropped connection)"`
 }
 
 type addCommentOut struct {
@@ -801,24 +838,27 @@ func (s *Server) mcpAddComment(ctx context.Context, req *mcp.CallToolRequest, in
 	if ae := mcpRequireWrite(k); ae != nil {
 		return mcpErr(ae), addCommentOut{}, nil
 	}
-	c, ae := s.createCommentCore(ctx, u, k, in.PageID, commentCreateRequest{
-		Body:         in.Body,
-		AnchorPrefix: &in.Anchor.Prefix,
-		AnchorExact:  &in.Anchor.Exact,
-		AnchorSuffix: &in.Anchor.Suffix,
+	return mcpIdempotent(ctx, s.DB, u.ID, in.IdempotencyKey, "add_comment", func() (*mcp.CallToolResult, addCommentOut, error) {
+		c, ae := s.createCommentCore(ctx, u, k, in.PageID, commentCreateRequest{
+			Body:         in.Body,
+			AnchorPrefix: &in.Anchor.Prefix,
+			AnchorExact:  &in.Anchor.Exact,
+			AnchorSuffix: &in.Anchor.Suffix,
+		})
+		if ae != nil {
+			return mcpErr(ae), addCommentOut{}, nil
+		}
+		return nil, addCommentOut{Comment: c}, nil
 	})
-	if ae != nil {
-		return mcpErr(ae), addCommentOut{}, nil
-	}
-	return nil, addCommentOut{Comment: c}, nil
 }
 
 // ---- create_space / update_space / delete_space --------------------------
 
 type createSpaceIn struct {
-	Name  string `json:"name" jsonschema:"space name (1-200 chars)"`
-	Slug  string `json:"slug,omitempty" jsonschema:"optional url slug; derived from name when omitted"`
-	OrgID *int64 `json:"org_id,omitempty" jsonschema:"optional org id to own the space (caller must be a member); omit for a personal space"`
+	Name           string `json:"name" jsonschema:"space name (1-200 chars)"`
+	Slug           string `json:"slug,omitempty" jsonschema:"optional url slug; derived from name when omitted"`
+	OrgID          *int64 `json:"org_id,omitempty" jsonschema:"optional org id to own the space (caller must be a member); omit for a personal space"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional client-generated key; a retry with the same key returns the original result instead of creating a duplicate space (safe retries after a dropped connection)"`
 }
 
 type spaceOut struct {
@@ -833,11 +873,13 @@ func (s *Server) mcpCreateSpace(ctx context.Context, req *mcp.CallToolRequest, i
 	if ae := mcpRequireWrite(k); ae != nil {
 		return mcpErr(ae), spaceOut{}, nil
 	}
-	sp, ae := s.createSpaceCore(ctx, u, in.Name, in.Slug, in.OrgID)
-	if ae != nil {
-		return mcpErr(ae), spaceOut{}, nil
-	}
-	return nil, spaceOut{Space: sp}, nil
+	return mcpIdempotent(ctx, s.DB, u.ID, in.IdempotencyKey, "create_space", func() (*mcp.CallToolResult, spaceOut, error) {
+		sp, ae := s.createSpaceCore(ctx, u, in.Name, in.Slug, in.OrgID)
+		if ae != nil {
+			return mcpErr(ae), spaceOut{}, nil
+		}
+		return nil, spaceOut{Space: sp}, nil
+	})
 }
 
 type updateSpaceIn struct {
@@ -882,10 +924,11 @@ func (s *Server) mcpDeleteSpace(ctx context.Context, req *mcp.CallToolRequest, i
 // ---- import_mira ---------------------------------------------------------
 
 type importMiraIn struct {
-	SpaceID   int64  `json:"space_id" jsonschema:"id of the space to import into"`
-	ParentID  *int64 `json:"parent_id,omitempty" jsonschema:"optional parent page id"`
-	SourceURL string `json:"source_url,omitempty" jsonschema:"https mira page URL (allowlisted host, fetched server-side); mutually exclusive with payload"`
-	Payload   any    `json:"payload,omitempty" jsonschema:"inline mira block JSON; mutually exclusive with source_url"`
+	SpaceID        int64  `json:"space_id" jsonschema:"id of the space to import into"`
+	ParentID       *int64 `json:"parent_id,omitempty" jsonschema:"optional parent page id"`
+	SourceURL      string `json:"source_url,omitempty" jsonschema:"https mira page URL (allowlisted host, fetched server-side); mutually exclusive with payload"`
+	Payload        any    `json:"payload,omitempty" jsonschema:"inline mira block JSON; mutually exclusive with source_url"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional client-generated key; a retry with the same key returns the original result instead of importing a duplicate page (safe retries after a dropped connection)"`
 }
 
 func (s *Server) mcpImportMira(ctx context.Context, req *mcp.CallToolRequest, in importMiraIn) (*mcp.CallToolResult, getPageOut, error) {
@@ -896,22 +939,24 @@ func (s *Server) mcpImportMira(ctx context.Context, req *mcp.CallToolRequest, in
 	if ae := mcpRequireWrite(k); ae != nil {
 		return mcpErr(ae), getPageOut{}, nil
 	}
-	var payload []byte
-	if in.Payload != nil {
-		payload, _ = json.Marshal(in.Payload)
-	}
-	page, unlock, ae := s.importMiraCore(ctx, u, k, in.SpaceID, in.ParentID, in.SourceURL, payload)
-	if unlock != "" {
-		// Password-protected source — surface the unlock link as a tool error so
-		// the agent can prompt the user to unlock it.
-		b, _ := json.Marshal(map[string]any{"error": ae.Message, "code": ae.Code, "status": ae.Status, "unlock": unlock})
-		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, getPageOut{}, nil
-	}
-	if ae != nil {
-		return mcpErr(ae), getPageOut{}, nil
-	}
-	out := getPageOut{Page: mcpPage{Page: page, URL: mcpPageURL(page)}}
-	return nil, out, nil
+	return mcpIdempotent(ctx, s.DB, u.ID, in.IdempotencyKey, "import_mira", func() (*mcp.CallToolResult, getPageOut, error) {
+		var payload []byte
+		if in.Payload != nil {
+			payload, _ = json.Marshal(in.Payload)
+		}
+		page, unlock, ae := s.importMiraCore(ctx, u, k, in.SpaceID, in.ParentID, in.SourceURL, payload)
+		if unlock != "" {
+			// Password-protected source — surface the unlock link as a tool error so
+			// the agent can prompt the user to unlock it.
+			b, _ := json.Marshal(map[string]any{"error": ae.Message, "code": ae.Code, "status": ae.Status, "unlock": unlock})
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, getPageOut{}, nil
+		}
+		if ae != nil {
+			return mcpErr(ae), getPageOut{}, nil
+		}
+		out := getPageOut{Page: mcpPage{Page: page, URL: mcpPageURL(page)}}
+		return nil, out, nil
+	})
 }
 
 // ---- submit_feedback (any scope, no mcpRequireWrite) ---------------------
