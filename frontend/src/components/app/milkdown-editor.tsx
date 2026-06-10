@@ -21,6 +21,11 @@ import {
 } from '@milkdown/kit/core'
 import { commonmark, imageAttr } from '@milkdown/kit/preset/commonmark'
 import { gfm } from '@milkdown/kit/preset/gfm'
+// gapcursor + dropcursor. Gapcursor lets the caret sit in the gaps around block
+// atoms (Excalidraw, images, tables, code) where a text caret can't go — so you
+// can click above/below a diagram and start typing. Styling lives in editor.css
+// (.ProseMirror-gapcursor); the plugin ships none.
+import { cursor } from '@milkdown/kit/plugin/cursor'
 import { block } from '@milkdown/kit/plugin/block'
 import { history } from '@milkdown/kit/plugin/history'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
@@ -676,6 +681,10 @@ function MilkdownEditorInner({
       })
       .use(commonmark)
       .use(gfm)
+      // Gapcursor/dropcursor — caret placement in the gaps around block atoms
+      // (e.g. clicking above/below an Excalidraw diagram to type). Self-gates on
+      // editability, so it never shows in read/share mode.
+      .use(cursor)
       // GFM task lists: schema + input rule (`[ ] `) ship in the preset above;
       // this adds the click-to-toggle on the CSS checkbox. See
       // milkdown-task-list.ts.
