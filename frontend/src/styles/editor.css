@@ -1593,6 +1593,18 @@
     max-width: 100%;
     height: auto;
   }
+  /* Mermaid draws labels as HTML <p>/<span> inside <foreignObject> and colours
+     them via its own id-scoped style (inherited black, on its light node fills).
+     Our prose `p { color: var(--text-primary) }` is a direct element match that
+     overrides that inheritance, so on the dark theme label text went near-white
+     on light fills — invisible. Redirect just the <p> back to its <span>
+     parent, which mermaid already colours; let the diagram own its labels.
+     (Match via the label <span>, not <foreignObject> — that SVG-namespaced
+     type selector matches unreliably; the span path also out-specifies the
+     prose `p` rule so order can't break it.) */
+  .tela-milkdown .tela-mermaid span p {
+    color: inherit;
+  }
   .tela-milkdown .tela-mermaid-error {
     justify-content: flex-start;
     color: var(--danger);
