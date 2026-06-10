@@ -948,6 +948,57 @@ function MilkdownEditorInner({
     }
   }, [loading, get, defaultValue])
 
+  // Persist sync-arrived content. The leader's body-save (markdownUpdated) only
+  // fires for LOCAL edits — content that arrives via Yjs sync (a non-leader
+  // peer's keystrokes, or a diagram a peer drew) updates the live doc but never
+  // triggers a save, so pages.body silently lags the collab doc and view mode
+  // (which renders the body, not the live doc) goes stale. The leader is the
+  // single canonical writer, so have it also save when remote content lands.
+  //
+  // Bounded by design — no write-amplification, no loop:
+  //   - origin === provider keeps this to content from the server/peers; our own
+  //     local edits use a different Yjs origin and already persist via
+  //     markdownUpdated (so no double-save).
+  //   - the first-sync guard skips the load-time snapshot (instant-paint REST +
+  //     WS sync-init both apply with origin=provider BEFORE first sync), so
+  //     opening a page never triggers a save.
+  //   - only the elected leader runs it, so N peers don't each save.
+  //   - the onChange PATCH is debounced downstream, and a body PATCH never feeds
+  //     back into the Yjs doc, so saves can't cascade.
+  // It does NOT heal a page that's already diverged (that snapshot arrives
+  // pre-first-sync and is skipped) — those recover on the next edit. This only
+  // stops NEW divergence.
+  useEffect(() => {
+    if (loading) return
+    const collab = collabRef.current
+    if (!collab) return
+    let firstSyncDone = false
+    const unsubFirst = collab.provider.onFirstSync(() => {
+      firstSyncDone = true
+    })
+    const onUpdate = (_update: Uint8Array, origin: unknown) => {
+      if (origin !== collab.provider) return
+      if (!firstSyncDone) return
+      if (!isLeaderRef.current) return
+      const editor = get()
+      if (!editor) return
+      try {
+        editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx)
+          callbacks.current.onChange(ctx.get(serializerCtx)(view.state.doc))
+        })
+      } catch {
+        // Editor mid-teardown — drop; the next remote update or a local edit
+        // re-saves.
+      }
+    }
+    collab.doc.on('update', onUpdate)
+    return () => {
+      unsubFirst()
+      collab.doc.off('update', onUpdate)
+    }
+  }, [loading, get])
+
   // Instant paint: fetch the server's persisted Yjs state over REST and apply
   // it as soon as the editor mounts, so content shows without waiting for the
   // WS sync-init round-trip (the actual cause of the open-page blank on prod).
