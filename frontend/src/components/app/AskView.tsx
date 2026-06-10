@@ -70,11 +70,24 @@ export function AskRoute() {
     })
   }
 
-  function submit() {
-    const q = question.trim()
-    if (q.length === 0 || ask.isPending) return
-    ask.mutate({ question: q, spaceId: scopeSpace })
+  function runQuestion(q: string) {
+    const trimmed = q.trim()
+    if (trimmed.length === 0 || ask.isPending) return
+    setQuestion(trimmed)
+    ask.mutate({ question: trimmed, spaceId: scopeSpace })
   }
+
+  function submit() {
+    runQuestion(question)
+  }
+
+  // Starter prompts for the empty state — clicking runs the question. Generic on
+  // purpose so they work on any instance regardless of content.
+  const SUGGESTIONS = [
+    'What changed recently?',
+    'How do I get started?',
+    'Summarize what’s in my spaces',
+  ]
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Enter submits; Shift+Enter inserts a newline (multi-line questions).
@@ -100,31 +113,30 @@ export function AskRoute() {
         </h1>
       </header>
 
-      <Card>
-        <CardBody className="gap-[var(--space-3)]">
+      {/* One composer surface: the textarea blends into the card (its own border
+          removed) and the whole card lights up on focus, so it reads as a single
+          input rather than a box-in-a-box. */}
+      <Card className="transition-[border-color,box-shadow] duration-[var(--duration-fast)] focus-within:border-[var(--accent)] focus-within:ring-1 focus-within:ring-[var(--accent)]">
+        <CardBody className="gap-[var(--space-2)]">
           <TextArea
+            font="sans"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask a question about your pages…"
             aria-label="Question"
-            rows={3}
+            rows={2}
             autoFocus
             disabled={ask.isPending}
+            className="border-0 bg-transparent resize-none px-[var(--space-1)] py-[var(--space-1)] min-h-[calc(var(--space-8)*2)] focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-transparent"
           />
-          <div className="flex flex-wrap items-center gap-[var(--space-3)]">
-            <label
-              htmlFor="ask-scope"
-              className="text-[length:var(--text-sm)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
-            >
-              Search in
-            </label>
+          <div className="flex items-center gap-[var(--space-2)] border-t border-[var(--border-subtle)] pt-[var(--space-2)]">
             <Select
               id="ask-scope"
               value={scopeSpace != null ? String(scopeSpace) : ''}
               onChange={(e) => setScope(e.target.value)}
-              className="max-w-[16rem]"
-              aria-label="Limit to a space"
+              className="max-w-[14rem] text-[length:var(--text-sm)]"
+              aria-label="Limit answers to a space"
             >
               <option value="">All spaces</option>
               {spaces.map((s) => (
@@ -133,10 +145,12 @@ export function AskRoute() {
                 </option>
               ))}
             </Select>
+            <span className="ml-auto whitespace-nowrap text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)] hidden sm:inline">
+              Enter to ask
+            </span>
             <Button
               variant="primary"
               size="sm"
-              className="ml-auto"
               onClick={submit}
               disabled={question.trim().length === 0 || ask.isPending}
             >
@@ -216,10 +230,30 @@ export function AskRoute() {
             ) : null}
           </div>
         ) : (
-          <p className="m-0 px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--text-sm)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
-            Ask a question and get an answer grounded in your pages, with links
-            to the sources it used.
-          </p>
+          <div className="flex flex-col gap-[var(--space-3)] px-[var(--space-1)]">
+            <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+              Get an answer grounded in your pages, with links to the sources it
+              used. Try one of these:
+            </p>
+            <div className="flex flex-wrap gap-[var(--space-2)]">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => runQuestion(s)}
+                  className="inline-flex items-center gap-[var(--space-2)] rounded-full border border-[var(--border-subtle)] bg-[var(--surface-1)] px-[var(--space-3)] py-[var(--space-1)] text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-sans)] cursor-pointer transition-[background-color,border-color] duration-[var(--duration-fast)] hover:bg-[var(--surface-2)] hover:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                >
+                  <Sparkles
+                    width={13}
+                    height={13}
+                    aria-hidden
+                    className="text-[var(--accent)]"
+                  />
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
       </section>
     </div>

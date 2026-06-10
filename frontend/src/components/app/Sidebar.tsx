@@ -48,27 +48,16 @@ export function Sidebar({ open = false }: { open?: boolean }) {
             className="text-[length:var(--text-base)] font-medium leading-none tracking-[-0.01em]"
           />
         </Link>
-        {/* Ask is the landmark feature — give it the prominent (filled) treatment. */}
-        <Button
-          asChild
-          variant="primary"
-          size="sm"
-          className="w-full justify-start"
-        >
-          <Link to="/ask" aria-label="Ask your docs" title="Ask your docs">
-            <Sparkles width={14} height={14} />
-            <span className="flex-1 text-left">Ask</span>
-          </Link>
-        </Button>
+        {/* Search reads as a field — the one input affordance up top. */}
         <Button
           variant="secondary"
           size="sm"
-          className="w-full justify-start"
+          className="w-full justify-start mb-[var(--space-1)]"
           onClick={() => emitOpenPalette('pages')}
           aria-label={`Search (${searchShortcut})`}
           title={`Search (${searchShortcut})`}
         >
-          <Search width={14} height={14} />
+          <Search width={14} height={14} className="text-[var(--text-muted)]" />
           <span className="flex-1 text-left text-[var(--text-muted)]">Search…</span>
           <kbd
             aria-hidden
@@ -76,6 +65,20 @@ export function Sidebar({ open = false }: { open?: boolean }) {
           >
             {searchShortcut}
           </kbd>
+        </Button>
+        {/* Below the search field: one uniform row language. Ask is the landmark
+            feature — it stands out via a soft accent tint, not a loud fill, so the
+            rail stays calm and cohesive. */}
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start font-medium text-[var(--accent)] bg-[var(--sidebar-item-active)] hover:text-[var(--accent)] hover:bg-[color-mix(in_oklch,var(--accent)_20%,transparent)]"
+        >
+          <Link to="/ask" aria-label="Ask your docs" title="Ask your docs">
+            <Sparkles width={14} height={14} />
+            <span className="flex-1 text-left">Ask</span>
+          </Link>
         </Button>
         <Button
           variant="ghost"
@@ -94,30 +97,30 @@ export function Sidebar({ open = false }: { open?: boolean }) {
             {newPageShortcut}
           </kbd>
         </Button>
-        {/* Low-frequency destinations collapse into one compact icon row. */}
-        <div className="flex items-center gap-[var(--space-1)] pt-[var(--space-1)]">
-          <Button asChild variant="ghost" size="sm" className="flex-1">
-            <Link to="/" aria-label="Home" title="Home">
-              <Home width={14} height={14} />
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" size="sm" className="flex-1">
-            <Link to="/graph" aria-label="Graph view" title="Graph view">
-              <Share2 width={14} height={14} />
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" size="sm" className="flex-1">
-            <a
-              href={DOCS.home}
-              target="_blank"
-              rel="noopener"
-              aria-label="Documentation"
-              title="Documentation"
-            >
-              <BookOpen width={14} height={14} />
-            </a>
-          </Button>
-        </div>
+        <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+          <Link to="/" aria-label="Home" title="Home">
+            <Home width={14} height={14} />
+            <span className="flex-1 text-left">Home</span>
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+          <Link to="/graph" aria-label="Graph view" title="Graph view">
+            <Share2 width={14} height={14} />
+            <span className="flex-1 text-left">Graph</span>
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+          <a
+            href={DOCS.home}
+            target="_blank"
+            rel="noopener"
+            aria-label="Documentation"
+            title="Documentation"
+          >
+            <BookOpen width={14} height={14} />
+            <span className="flex-1 text-left">Docs</span>
+          </a>
+        </Button>
       </div>
       <FavoritesSidebarSection activePageId={activePageId} />
       <SpacesList activeSpaceId={activeSpaceId} />
