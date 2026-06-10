@@ -36,7 +36,7 @@ import {
   usePluginViewFactory,
 } from '@prosemirror-adapter/react'
 import { prism, prismConfig } from '@milkdown/plugin-prism'
-import { Plugin, TextSelection } from '@milkdown/kit/prose/state'
+import { Plugin, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import * as Y from 'yjs'
 import {
@@ -857,7 +857,16 @@ function MilkdownEditorInner({
       // selection to the start means focus scrolls to the top — preserving
       // "open pages scrolled to the top" while still putting the cursor in the
       // body for immediate typing.
-      view.dispatch(view.state.tr.setSelection(TextSelection.atStart(view.state.doc)))
+      //
+      // Use the generic Selection.atStart, NOT TextSelection.atStart: when the
+      // first node is a block atom (e.g. a page that opens with an Excalidraw
+      // diagram), TextSelection.atStart can't find an inline position and yields
+      // an invalid doc-level selection ("TextSelection endpoint not pointing
+      // into a node with inline content") — which y-prosemirror's selection sync
+      // then crashes on (nodeSize of null in _typeChanged), leaving the editor
+      // read-only/empty. Selection.atStart resolves to a valid selection for any
+      // first node.
+      view.dispatch(view.state.tr.setSelection(Selection.atStart(view.state.doc)))
       view.focus()
     })
   }, [loading, autoFocus, get])
