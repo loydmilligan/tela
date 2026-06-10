@@ -60,7 +60,12 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    padding: var(--space-3) var(--space-5);
+    /* Pull the bar's top edge 3px above the viewport (clipped) and pad it back,
+       so the position/height are unchanged but Chromium's unfiltered top-row
+       backdrop-filter artifact — a 1-2px sharp sliver of the content scrolling
+       behind the frosted bar — sits off-screen instead of along the top edge. */
+    margin-top: -3px;
+    padding: calc(var(--space-3) + 3px) var(--space-5) var(--space-3);
     border-bottom: 1px solid transparent;
     background: color-mix(in srgb, var(--surface-1) 82%, transparent);
     backdrop-filter: blur(8px);
