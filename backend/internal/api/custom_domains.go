@@ -95,6 +95,19 @@ func (s *Server) shareOriginForPage(ctx context.Context, pageID int64) string {
 	return "https://" + host
 }
 
+// ogOriginForPage picks the origin for a crawler OG card on a page: the request's
+// OWN custom-domain host when the bot fetched the card there (the domain actually
+// in the shared URL), else the page's owning-org custom domain, else canonical.
+// Request host first so an in-app page deep link copied from a white-label domain
+// unfurls as THAT domain even when the space carries no org_id (a member can view
+// any space they belong to on the org host, regardless of the space's own org).
+func (s *Server) ogOriginForPage(r *http.Request, pageID int64) string {
+	if oc, ok := auth.OrgContextFromContext(r.Context()); ok {
+		return requestScheme(r) + "://" + oc.Host
+	}
+	return s.shareOriginForPage(r.Context(), pageID)
+}
+
 // spaceOrgPrimaryHost returns the active custom hostname of the org that owns
 // spaceID, if any. A space with no org (personal/legacy) or an org with no
 // active hostname yields ("", false). When an org has several active hostnames

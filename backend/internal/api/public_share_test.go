@@ -183,6 +183,51 @@ func TestPublicShare_BrandsCustomDomain(t *testing.T) {
 	}
 }
 
+// TestPublicShare_BrandsRequestHost pins the request-host branding path: a page in
+// a space with NO org link, fetched by a crawler ON a custom domain (the rewritten
+// in-app deep-link case — a member views any space they belong to on the org host
+// regardless of the space's own org_id), unfurls with og:url + og:image on the
+// REQUEST host. Without this, such a card falls back to canonical even though the
+// shared URL was on the custom domain.
+func TestPublicShare_BrandsRequestHost(t *testing.T) {
+	ts, d := newWiredServer(t)
+	owner := seedUser(t, d, "owner", "ownerpw12", true)
+	org := seedOrg(t, d, "Acme", "acme")
+	// Space deliberately NOT linked to the org (org_id stays NULL).
+	space := seedSpace(t, d, "Personal", "personal", owner)
+	if _, err := d.Exec(
+		`INSERT INTO org_hostnames (hostname, org_id, status, verify_token) VALUES ($1,$2,'active',$3)`,
+		"wiki.acme.example", org, "tok"); err != nil {
+		t.Fatalf("insert hostname: %v", err)
+	}
+	var pageID int64
+	if err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                       VALUES ($1, NULL, 'Welcome', 'body', 0) RETURNING id`, space).Scan(&pageID); err != nil {
+		t.Fatalf("seed page: %v", err)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+fmt.Sprintf("/p/%d", pageID), nil)
+	req.Header.Set("User-Agent", "Slackbot-LinkExpanding 1.0")
+	req.Host = "wiki.acme.example" // arrives on the org's custom domain
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	s := string(body)
+
+	// Test server is plain HTTP, so the request-derived scheme is http.
+	wantURL := fmt.Sprintf(`<meta property="og:url" content="http://wiki.acme.example/p/%d/welcome"`, pageID)
+	if !strings.Contains(s, wantURL) {
+		t.Fatalf("og:url not branded to request host; want %q\n%s", wantURL, s)
+	}
+	wantImg := fmt.Sprintf(`http://wiki.acme.example/p/%d/og.png`, pageID)
+	if !strings.Contains(s, wantImg) {
+		t.Fatalf("og:image not branded to request host; want %q\n%s", wantImg, s)
+	}
+}
+
 // TestPublicShare_XSSGuards verifies HTML-escaping of user-controlled content
 // in the OG payload. Stored XSS via OG cards is a real concern — crawlers
 // rebroadcast title + description into Slack / Twitter / Discord clients.
