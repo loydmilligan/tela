@@ -43,8 +43,8 @@ const (
 	// askPageBodyCap / askExpandBudget bound the cost: per-page and cumulative
 	// rune caps on expanded full bodies. Past the budget, pages degrade to their
 	// chunk text. ~28k chars ≈ 7k tokens — full answers, bounded context.
-	askPageBodyCap  = 9000
-	askExpandBudget = 28000
+	askPageBodyCap  = 12000
+	askExpandBudget = 30000
 	// askMaxPages caps how many distinct pages we render at all (expanded or not).
 	askMaxPages = 12
 	// askHubProbe: how many top-by-density pages the rerank-independent hub probe
@@ -82,22 +82,39 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 		}
 		count[h.PageID]++
 	}
-	// Topical-hub signal (rerank-INDEPENDENT). The precision reranker optimises
-	// per-chunk relevance and demotes terse tables, so a page whose WHOLE body
-	// answers an aggregate question (a "services using X" registry) can have every
-	// one of its chunks ranked low — present but never expanded. HubPages OR-matches
-	// the query terms and counts chunks per page, so the page that's ABOUT the
-	// topic dominates; fold that into the expansion count and pull in a strong hub
-	// the reranker dropped entirely. Best-effort.
+	// Topical-hub signal (rerank-INDEPENDENT). A precision reranker demotes terse
+	// tables, so a page whose WHOLE body answers an aggregate question (a "services
+	// using X" registry) can have every chunk ranked low — present but never
+	// expanded. HubPages finds the page TITLED for the topic. Pull such hubs to the
+	// FRONT so they expand before the per-page budget is spent on lower-value pages
+	// (the registry page ranking ~8th was getting the budget-exhausted fallback —
+	// the bug that kept the table out of the prompt). Best-effort.
+	var hubFront []int64
 	if hubs, herr := s.rag.HubPages(ctx, userID, query, spaceID, askHubProbe); herr == nil {
 		for _, hp := range hubs {
+			if hp.Count < askDenseChunks {
+				continue
+			}
 			count[hp.PageID] += hp.Count
-			if _, seen := best[hp.PageID]; !seen && hp.Count >= askDenseChunks {
+			if _, seen := best[hp.PageID]; !seen {
 				best[hp.PageID] = rag.Hit{PageID: hp.PageID, Title: hp.Title, ChunkID: hp.ChunkID}
-				pageIDs = append(pageIDs, hp.PageID)
 				chunkIDs = append(chunkIDs, hp.ChunkID)
 			}
+			hubFront = append(hubFront, hp.PageID)
 		}
+	}
+	if len(hubFront) > 0 {
+		hub := map[int64]bool{}
+		for _, id := range hubFront {
+			hub[id] = true
+		}
+		reordered := append([]int64{}, hubFront...)
+		for _, id := range pageIDs {
+			if !hub[id] {
+				reordered = append(reordered, id)
+			}
+		}
+		pageIDs = reordered
 	}
 	bodies, err := s.rag.PageBodies(ctx, userID, pageIDs, spaceID)
 	if err != nil {
