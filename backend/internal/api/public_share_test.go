@@ -347,6 +347,7 @@ func TestPublicShare_UnitHelpers(t *testing.T) {
 			{"TelegramBot (like TwitterBot)", true},
 			{"LinkedInBot/1.0", true},
 			{"WhatsApp/2.0", true},
+			{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) … SkypeUriPreview Preview/0.5 skype-url-preview@microsoft.com", true}, // MS Teams
 			{"MyCustomCrawlerBot/1.0", true}, // matches "bot/"
 			{"BotName Bot 5.0", true},        // matches "bot "
 			{"NotABotEater", false},          // no "bot/" or "bot " or named bot

@@ -13,7 +13,7 @@ import (
 // trailing two entries (`bot/` and `bot `) catch the long tail of crawlers
 // that follow the convention `<Name>Bot/<version>` or `<Name>Bot ...`.
 //
-// Mirror of @share_bots regex in deploy/proxy/Caddyfile — keep in sync.
+// Mirror of the bot UA regexes in deploy/proxy/sites.caddy — keep in sync.
 var botUASubstrings = []string{
 	"slackbot-linkexpanding",
 	"twitterbot",
@@ -27,6 +27,7 @@ var botUASubstrings = []string{
 	"slack-imgproxy",  // Slack image unfurl fetcher
 	"facebookcatalog", // Facebook catalog/share crawler (not …externalhit)
 	"pinterest",       // Pinterest rich-pin fetcher
+	"skypeuripreview", // Microsoft Teams / Skype link preview (…SkypeUriPreview Preview/0.5)
 	"bot/",
 	"bot ",
 }
