@@ -96,15 +96,32 @@ func (s *Server) Setup(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var userID int64
-	// Atomic create-if-empty: the guard and the write are one statement, so a
-	// second concurrent call can't slip in between a check and the insert. The
-	// email is pre-verified (the operator owns the box) so the admin can sign
-	// in immediately, exactly like a confirmed registration.
-	err = s.DB.QueryRowContext(ctx, `
-		INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
-		SELECT $1, $2, tela_now(), $3, 1, 1
-		 WHERE NOT EXISTS (SELECT 1 FROM users)
-		RETURNING id`, username, email, hash).Scan(&userID)
+	// Create-if-empty must be serialized explicitly: a single
+	// INSERT … WHERE NOT EXISTS is NOT atomic under READ COMMITTED — two
+	// concurrent calls can each see an empty snapshot and both insert (with
+	// distinct usernames there's no unique constraint to save us). An
+	// advisory xact lock makes the second caller wait out the first commit,
+	// after which its NOT EXISTS sees the row. The email is pre-verified
+	// (the operator owns the box) so the admin can sign in immediately,
+	// exactly like a confirmed registration.
+	err = func() error {
+		tx, err := s.DB.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('tela_first_run_setup'))`); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO users (username, email, email_verified_at, password_hash, is_instance_admin, is_active)
+			SELECT $1, $2, tela_now(), $3, 1, 1
+			 WHERE NOT EXISTS (SELECT 1 FROM users)
+			RETURNING id`, username, email, hash).Scan(&userID); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}()
 	if errors.Is(err, sql.ErrNoRows) {
 		// The table was non-empty → an admin already exists. Never create a
 		// second one through this path.
@@ -113,7 +130,7 @@ func (s *Server) Setup(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if isUniqueConstraintErr(err) {
-			// Lost the race to a concurrent setup (or a username/email clash).
+			// Username/email clash with an existing account.
 			writeError(w, http.StatusConflict, "already_setup", "this instance has already been set up")
 			return
 		}
