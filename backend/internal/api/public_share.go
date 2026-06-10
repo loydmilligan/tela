@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -79,7 +80,7 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeOGHTML(w, pageID, title, body, spaceName)
+	s.writeOGHTML(r.Context(), w, pageID, title, body, spaceName)
 }
 
 // isBotUA reports whether ua matches any entry in the bot allowlist. Match is
@@ -102,11 +103,17 @@ func isBotUA(ua string) bool {
 // XSS via crawler-rendered OG cards is a real concern even though the bot
 // path bypasses the SPA. og:url here is the /p/{id} permalink; the share
 // surface (M15.5) reuses writeOGHTMLWithURL with /share/{token}.
-func writeOGHTML(w http.ResponseWriter, pageID int64, title, body, spaceName string) {
+//
+// og:url + og:image are branded to the page's org custom domain when it has one
+// (shareOriginForPage) — /p/* is served on custom domains too, so a permalink
+// copied from a white-label app should unfurl as that org's domain, matching the
+// /share/* surface. Falls back to the canonical origin (or path-only in dev).
+func (s *Server) writeOGHTML(ctx context.Context, w http.ResponseWriter, pageID int64, title, body, spaceName string) {
+	origin := s.shareOriginForPage(ctx, pageID)
 	// Canonical permalink carries the cosmetic slug (/p/{id}/{slug}); the id is
 	// still what resolves, so a stale slug never breaks.
 	writeOGHTMLWithURL(w, pageID, title, body, spaceName,
-		canonicalBaseURL()+pagePermalinkPath(pageID, title))
+		origin+pagePermalinkPath(pageID, title), origin)
 }
 
 func writeNotFoundHTML(w http.ResponseWriter) {

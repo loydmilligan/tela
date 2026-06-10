@@ -50,7 +50,7 @@ func (s *Server) HandlePublicShareLink(w http.ResponseWriter, r *http.Request) {
 		writeLockedShareOGHTML(w, origin, share.Token)
 		return
 	}
-	s.writeShareOGHTML(w, &share, share.PageID, shareRootURL(origin, share.Token), true)
+	s.writeShareOGHTML(w, &share, share.PageID, shareRootURL(origin, share.Token), origin, true)
 }
 
 // HandlePublicShareLinkPage — GET /share/{token}/p/{page_id}. Same gate as the
@@ -100,11 +100,12 @@ func (s *Server) HandlePublicShareLinkPage(w http.ResponseWriter, r *http.Reques
 		writeNotFoundHTML(w)
 		return
 	}
+	origin := s.shareOriginForPage(r.Context(), pageID)
 	if share.PasswordHash.Valid {
-		writeLockedShareOGHTML(w, s.shareOriginForPage(r.Context(), share.PageID), share.Token)
+		writeLockedShareOGHTML(w, origin, share.Token)
 		return
 	}
-	s.writeShareOGHTML(w, &share, pageID, shareDescendantURL(s.shareOriginForPage(r.Context(), pageID), share.Token, pageID), false)
+	s.writeShareOGHTML(w, &share, pageID, shareDescendantURL(origin, share.Token, pageID), origin, false)
 }
 
 // parseShareLinkPageID parses the {page_id} path value as a positive int64,
@@ -138,7 +139,7 @@ func shareDescendantURL(origin, token string, pageID int64) string {
 // reuses the existing /p/{page_id}/og.png renderer (already public, no auth);
 // only the og:url differs from the /p/{id} flavour, so this routes through
 // writeOGHTMLWithURL.
-func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID int64, pageURL string, withSlug bool) {
+func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID int64, pageURL, origin string, withSlug bool) {
 	var (
 		title     string
 		body      string
@@ -165,14 +166,16 @@ func (s *Server) writeShareOGHTML(w http.ResponseWriter, _ *shareLink, pageID in
 			pageURL += "/" + sl
 		}
 	}
-	writeOGHTMLWithURL(w, pageID, title, body, spaceName, pageURL)
+	writeOGHTMLWithURL(w, pageID, title, body, spaceName, pageURL, origin)
 }
 
 // writeOGHTMLWithURL is the URL-overridable variant of writeOGHTML. The /p/{id}
-// flavour calls writeOGHTML which builds og:url from canonicalBaseURL()+/p/{id};
-// shares need /share/{token} or /share/{token}/p/{id}. og:image stays
-// /p/{page_id}/og.png — it's public and the renderer is keyed only on page id.
-func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceName, pageURL string) {
+// flavour builds og:url from <origin>+/p/{id}; shares need /share/{token} or
+// /share/{token}/p/{id}. og:image is /p/{page_id}/og.png on the SAME origin as
+// og:url — the page's org custom domain when it has one, else canonical (or
+// path-only in dev). The renderer is public and keyed only on page id, so it
+// resolves on either host.
+func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceName, pageURL, origin string) {
 	ogTitle := runeTruncate(title+" — "+spaceName, 100)
 	// Interim privacy fix (docs/visibility-model.md): /p/{id} emits this OG
 	// envelope for ANY page to crawlers — no auth, no share link required — so a
@@ -184,7 +187,7 @@ func writeOGHTMLWithURL(w http.ResponseWriter, pageID int64, title, body, spaceN
 	//   ogDesc := runeTruncate(plain, 200)
 	ogDesc := runeTruncate(title, 200)
 
-	imageURL := fmt.Sprintf("%s/p/%d/og.png", canonicalBaseURL(), pageID)
+	imageURL := fmt.Sprintf("%s/p/%d/og.png", origin, pageID)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")

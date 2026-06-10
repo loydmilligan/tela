@@ -139,6 +139,50 @@ func TestPublicShare_FullFlow(t *testing.T) {
 	}
 }
 
+// TestPublicShare_BrandsCustomDomain pins that a /p/{id} permalink for a page in
+// an org with an active custom domain unfurls with og:url + og:image on that
+// domain (not the canonical host) — /p/* is served on custom domains too, so a
+// permalink copied from a white-label app must brand to the org's domain, like
+// /share/*. With no custom domain the origin stays canonical (path-only here).
+func TestPublicShare_BrandsCustomDomain(t *testing.T) {
+	ts, d := newWiredServer(t)
+	owner := seedUser(t, d, "owner", "ownerpw12", true)
+	org := seedOrg(t, d, "Acme", "acme")
+	space := seedSpace(t, d, "Docs", "docs", owner)
+	if _, err := d.Exec(`UPDATE spaces SET org_id = $1 WHERE id = $2`, org, space); err != nil {
+		t.Fatalf("set space org: %v", err)
+	}
+	if _, err := d.Exec(
+		`INSERT INTO org_hostnames (hostname, org_id, status, verify_token) VALUES ($1,$2,'active',$3)`,
+		"wiki.acme.example", org, "tok"); err != nil {
+		t.Fatalf("insert hostname: %v", err)
+	}
+	var pageID int64
+	if err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                       VALUES ($1, NULL, 'Welcome', 'body', 0) RETURNING id`, space).Scan(&pageID); err != nil {
+		t.Fatalf("seed page: %v", err)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+fmt.Sprintf("/p/%d", pageID), nil)
+	req.Header.Set("User-Agent", "Slackbot-LinkExpanding 1.0")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	s := string(body)
+
+	wantURL := fmt.Sprintf(`<meta property="og:url" content="https://wiki.acme.example/p/%d/welcome"`, pageID)
+	if !strings.Contains(s, wantURL) {
+		t.Fatalf("og:url not branded to custom domain; want %q\n%s", wantURL, s)
+	}
+	wantImg := fmt.Sprintf(`https://wiki.acme.example/p/%d/og.png`, pageID)
+	if !strings.Contains(s, wantImg) {
+		t.Fatalf("og:image not branded to custom domain; want %q\n%s", wantImg, s)
+	}
+}
+
 // TestPublicShare_XSSGuards verifies HTML-escaping of user-controlled content
 // in the OG payload. Stored XSS via OG cards is a real concern — crawlers
 // rebroadcast title + description into Slack / Twitter / Discord clients.
