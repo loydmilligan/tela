@@ -1,12 +1,27 @@
 import { useMemo, useState } from 'react'
 import { useSearch, useNavigate } from '@tanstack/react-router'
-import { Sparkles, Send, AlertTriangle, Loader2 } from 'lucide-react'
+import {
+  Sparkles,
+  Send,
+  AlertTriangle,
+  Loader2,
+  Library,
+  Check,
+  ChevronDown,
+  ArrowUpRight,
+} from 'lucide-react'
 import { Card, CardBody } from '../ui/card'
 import { Button } from '../ui/button'
 import { TextArea } from '../ui/textarea'
-import { Select } from '../ui/select'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu'
 import { EmptyState } from '../ui/empty-state'
 import { useSpaces } from '../../lib/queries/spaces'
+import type { Space } from '../../lib/types'
 import { useAskDocs } from '../../lib/queries/ask'
 import { navigateToPage } from '../../lib/pageHitItem'
 import { ApiError, ASK_UNAVAILABLE_CODES, type SemanticHit } from '../../lib/api'
@@ -100,66 +115,65 @@ export function AskRoute() {
   const unavailable = isUnavailable(ask.error)
 
   return (
-    <div className="flex-1 flex flex-col gap-[var(--space-5)] p-[var(--space-7)] max-w-[64rem] w-full mx-auto min-h-0">
-      <header className="flex items-center gap-[var(--space-3)]">
-        <Sparkles
-          aria-hidden
-          width={18}
-          height={18}
-          className="text-[var(--accent)]"
-        />
-        <h1 className="m-0 text-[length:var(--text-xl)] leading-[var(--leading-tight)] font-[family-name:var(--font-sans)] text-[var(--text-primary)]">
-          Ask your docs
-        </h1>
+    <div className="flex-1 flex flex-col gap-[var(--space-6)] px-[var(--space-7)] pt-[calc(var(--space-8)*1.5)] pb-[var(--space-7)] max-w-[42rem] w-full mx-auto min-h-0">
+      <header className="flex flex-col gap-[var(--space-2)]">
+        <div className="flex items-center gap-[var(--space-3)]">
+          <span
+            aria-hidden
+            className="flex items-center justify-center size-[var(--space-8)] shrink-0 rounded-[var(--radius-md)] bg-[var(--accent)] text-[var(--accent-fg)] shadow-[var(--shadow-sm)]"
+          >
+            <Sparkles width={17} height={17} />
+          </span>
+          <h1 className="m-0 text-[length:var(--text-2xl)] leading-[var(--leading-tight)] tracking-[-0.02em] font-semibold font-[family-name:var(--font-sans)] text-[var(--text-primary)]">
+            Ask your docs
+          </h1>
+        </div>
+        <p className="m-0 text-[length:var(--text-sm)] leading-[var(--leading-normal)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+          Answers grounded in your pages, with the exact sources they came from.
+        </p>
       </header>
 
       {/* One composer surface: the textarea blends into the card (its own border
           removed) and the whole card lights up on focus, so it reads as a single
           input rather than a box-in-a-box. */}
-      <Card className="transition-[border-color,box-shadow] duration-[var(--duration-fast)] focus-within:border-[var(--accent)] focus-within:ring-1 focus-within:ring-[var(--accent)]">
-        <CardBody className="gap-[var(--space-2)]">
+      <Card className="bg-[var(--surface-1)] rounded-[var(--radius-lg)] shadow-[var(--shadow-md)] transition-[border-color,box-shadow] duration-[var(--duration-fast)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)]">
+        <CardBody className="gap-[var(--space-3)] p-[var(--space-4)]">
           <TextArea
             font="sans"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask a question about your pages…"
+            placeholder="Ask anything about your pages…"
             aria-label="Question"
             rows={2}
             autoFocus
             disabled={ask.isPending}
-            className="border-0 bg-transparent resize-none px-[var(--space-1)] py-[var(--space-1)] min-h-[calc(var(--space-8)*2)] focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-transparent"
+            className="border-0 bg-transparent resize-none px-0 py-[var(--space-1)] text-[length:var(--text-base)] min-h-[calc(var(--space-8)*1.75)] placeholder:text-[var(--text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-transparent"
           />
-          <div className="flex items-center gap-[var(--space-2)] border-t border-[var(--border-subtle)] pt-[var(--space-2)]">
-            <Select
-              id="ask-scope"
-              value={scopeSpace != null ? String(scopeSpace) : ''}
-              onChange={(e) => setScope(e.target.value)}
-              className="max-w-[14rem] text-[length:var(--text-sm)]"
-              aria-label="Limit answers to a space"
-            >
-              <option value="">All spaces</option>
-              {spaces.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-            <span className="ml-auto whitespace-nowrap text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)] hidden sm:inline">
-              Enter to ask
+          <div className="flex items-center gap-[var(--space-2)]">
+            <ScopePicker
+              spaces={spaces}
+              value={scopeSpace}
+              onChange={(id) => setScope(id != null ? String(id) : '')}
+            />
+            <span className="ml-auto flex items-center gap-[var(--space-1)] whitespace-nowrap text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)] hidden sm:flex">
+              <Kbd>↵</Kbd> to ask
             </span>
+            {/* Circular send — a focused "ask" affordance, not a generic form
+                button. Owned Button primitive, shaped to a circle. */}
             <Button
               variant="primary"
               size="sm"
               onClick={submit}
+              aria-label="Ask"
               disabled={question.trim().length === 0 || ask.isPending}
+              className="size-[var(--space-8)] shrink-0 rounded-full p-0"
             >
               {ask.isPending ? (
                 <Loader2 width={16} height={16} className="animate-spin" />
               ) : (
                 <Send width={16} height={16} />
               )}
-              Ask
             </Button>
           </div>
         </CardBody>
@@ -230,26 +244,25 @@ export function AskRoute() {
             ) : null}
           </div>
         ) : (
-          <div className="flex flex-col gap-[var(--space-3)] px-[var(--space-1)]">
-            <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
-              Get an answer grounded in your pages, with links to the sources it
-              used. Try one of these:
-            </p>
-            <div className="flex flex-wrap gap-[var(--space-2)]">
+          <div className="flex flex-col gap-[var(--space-3)]">
+            <span className="text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium font-[family-name:var(--font-sans)]">
+              Try asking
+            </span>
+            <div className="flex flex-col gap-[var(--space-1)]">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => runQuestion(s)}
-                  className="inline-flex items-center gap-[var(--space-2)] rounded-full border border-[var(--border-subtle)] bg-[var(--surface-1)] px-[var(--space-3)] py-[var(--space-1)] text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-sans)] cursor-pointer transition-[background-color,border-color] duration-[var(--duration-fast)] hover:bg-[var(--surface-2)] hover:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  className="group flex items-center justify-between gap-[var(--space-3)] w-full text-left rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface-1)] px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-sans)] cursor-pointer transition-[background-color,border-color] duration-[var(--duration-fast)] hover:bg-[var(--surface-2)] hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border-subtle))] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 >
-                  <Sparkles
-                    width={13}
-                    height={13}
+                  <span className="truncate">{s}</span>
+                  <ArrowUpRight
+                    width={15}
+                    height={15}
                     aria-hidden
-                    className="text-[var(--accent)]"
+                    className="shrink-0 text-[var(--text-muted)] opacity-50 transition-[opacity,color,transform] duration-[var(--duration-fast)] group-hover:opacity-100 group-hover:text-[var(--accent)] group-hover:-translate-y-[1px] group-hover:translate-x-[1px]"
                   />
-                  {s}
                 </button>
               ))}
             </div>
@@ -257,5 +270,98 @@ export function AskRoute() {
         )}
       </section>
     </div>
+  )
+}
+
+// Kbd — a small keycap for shortcut hints. The bordered-keycap detail reads as a
+// real tool (Linear/Raycast) where plain text reads generic.
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="inline-flex items-center justify-center min-w-[var(--space-5)] h-[var(--space-5)] px-[var(--space-1)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-2)] text-[length:var(--text-xs)] leading-none text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+      {children}
+    </kbd>
+  )
+}
+
+// ScopePicker — the "answer from" control. A compact, auto-width dropdown (owned
+// Radix menu) rather than a native <select>, so it reads as a deliberate filter
+// instead of a stranded-chevron form box.
+function ScopePicker({
+  spaces,
+  value,
+  onChange,
+}: {
+  spaces: Space[]
+  value: number | undefined
+  onChange: (id: number | undefined) => void
+}) {
+  const current = value != null ? spaces.find((s) => s.id === value) : undefined
+  const label = current ? current.name : 'All spaces'
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Answer from: ${label}`}
+          className="inline-flex max-w-[14rem] items-center gap-[var(--space-1)] rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-sans)] cursor-pointer outline-none transition-colors duration-[var(--duration-fast)] hover:bg-[var(--surface-3)] focus-visible:ring-2 focus-visible:ring-[var(--accent)] data-[state=open]:bg-[var(--surface-3)]"
+        >
+          <Library
+            width={14}
+            height={14}
+            aria-hidden
+            className="shrink-0 text-[var(--text-muted)]"
+          />
+          <span className="truncate">{label}</span>
+          <ChevronDown
+            width={14}
+            height={14}
+            aria-hidden
+            className="shrink-0 text-[var(--text-muted)]"
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-[18rem] overflow-y-auto">
+        <ScopeOption
+          label="All spaces"
+          icon={<Library width={14} height={14} aria-hidden className="text-[var(--text-muted)]" />}
+          selected={value == null}
+          onSelect={() => onChange(undefined)}
+        />
+        {spaces.map((s) => (
+          <ScopeOption
+            key={s.id}
+            label={s.name || 'Untitled space'}
+            selected={value === s.id}
+            onSelect={() => onChange(s.id)}
+          />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function ScopeOption({
+  label,
+  icon,
+  selected,
+  onSelect,
+}: {
+  label: string
+  icon?: React.ReactNode
+  selected: boolean
+  onSelect: () => void
+}) {
+  return (
+    <DropdownMenuItem onSelect={onSelect} className="gap-[var(--space-2)] pr-[var(--space-6)]">
+      <span className="flex w-[var(--space-4)] shrink-0 items-center justify-center">
+        {selected ? (
+          <Check width={14} height={14} aria-hidden className="text-[var(--accent)]" />
+        ) : (
+          icon ?? null
+        )}
+      </span>
+      <span className="truncate">{label}</span>
+    </DropdownMenuItem>
   )
 }
