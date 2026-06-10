@@ -28,6 +28,8 @@ var botUASubstrings = []string{
 	"facebookcatalog", // Facebook catalog/share crawler (not …externalhit)
 	"pinterest",       // Pinterest rich-pin fetcher
 	"skypeuripreview", // Microsoft Teams / Skype link preview (…SkypeUriPreview Preview/0.5)
+	"embedly",         // Embedly fetcher — powers cards in Notion, Medium, Ghost, …
+	"iframely",        // Iframely fetcher — powers cards in Confluence, many editors
 	"bot/",
 	"bot ",
 }

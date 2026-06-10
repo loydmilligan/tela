@@ -109,7 +109,7 @@
 	# Mirror of botUASubstrings in backend/internal/api/public_share.go — keep in sync.
 	@share_bots {
 		path /share/*
-		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|bot/|bot\s)"
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @share_bots {
 		header X-Robots-Tag "noindex"
@@ -129,7 +129,7 @@
 	# wins). Mirror of botUASubstrings in backend/internal/api/public_share.go.
 	@public_bots {
 		path /public/* /u/*
-		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|bot/|bot\s)"
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @public_bots {
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
@@ -156,7 +156,7 @@
 	# in backend/internal/api/public_share.go.
 	@page_bots {
 		path_regexp pageog ^/spaces/[0-9]+/pages/([0-9]+)(?:/.*)?$
-		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|bot/|bot\s)"
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @page_bots {
 		header X-Robots-Tag "noindex"
@@ -288,7 +288,7 @@ https:// {
 	}
 	@share_bots {
 		path /share/*
-		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|bot/|bot\s)"
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @share_bots {
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
@@ -319,7 +319,7 @@ https:// {
 	# sync with botUASubstrings in backend/internal/api/public_share.go.
 	@page_bots {
 		path_regexp pageog ^/spaces/[0-9]+/pages/([0-9]+)(?:/.*)?$
-		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|bot/|bot\s)"
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @page_bots {
 		rewrite * /p/{re.pageog.1}

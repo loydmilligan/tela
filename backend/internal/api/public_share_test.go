@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -395,4 +397,55 @@ func TestPublicShare_UnitHelpers(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestBotUARegexInSyncWithCaddy is the drift gate: the bot-UA allowlist lives
+// in two places that MUST agree — botUASubstrings here and every
+// `header_regexp User-Agent "(?i)(…)"` in deploy/proxy/sites.caddy (5 of them,
+// across the canonical + org-custom-domain blocks). They're held together only
+// by a "keep in sync" comment; this test makes the build fail if one side adds
+// a bot the other lacks. Adding a future bot is then a one-line edit on each
+// side, enforced — not a comment to remember. (This whole class of bug is why
+// Teams unfurls were silently missing.)
+func TestBotUARegexInSyncWithCaddy(t *testing.T) {
+	const caddyPath = "../../../deploy/proxy/sites.caddy"
+	raw, err := os.ReadFile(caddyPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", caddyPath, err)
+	}
+
+	// The set of tokens each Caddy alternation must contain, derived from the Go
+	// allowlist. Compared as sets — order within the alternation is irrelevant to
+	// the match, so we only enforce "same bots on both sides", not their sequence.
+	// Only token divergence is whitespace encoding: the trailing "bot " substring
+	// is written `bot\s` in the Caddy regex.
+	want := map[string]bool{}
+	for _, s := range botUASubstrings {
+		if s == "bot " {
+			s = `bot\s`
+		}
+		want[s] = true
+	}
+
+	re := regexp.MustCompile(`header_regexp User-Agent "\(\?i\)\(([^"]*)\)"`)
+	found := re.FindAllStringSubmatch(string(raw), -1)
+	if len(found) < 5 {
+		t.Fatalf("found %d User-Agent regexes in %s, expected >= 5 (canonical + custom-domain blocks); did the file move or the matcher change?", len(found), caddyPath)
+	}
+	for _, m := range found {
+		got := map[string]bool{}
+		for _, tok := range strings.Split(m[1], "|") {
+			got[tok] = true
+		}
+		for s := range want {
+			if !got[s] {
+				t.Errorf("sites.caddy bot-UA regex is MISSING %q (present in botUASubstrings)", s)
+			}
+		}
+		for s := range got {
+			if !want[s] {
+				t.Errorf("sites.caddy bot-UA regex has EXTRA %q (absent from botUASubstrings)", s)
+			}
+		}
+	}
 }
