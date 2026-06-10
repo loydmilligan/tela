@@ -228,7 +228,14 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := map[string]any{"answer": answer, "sources": hits}
+	// Weak retrieval → still answer, but declare it. The caller (UI) gets a flag;
+	// the answer text carries a deterministic callout so the warning survives even
+	// when only the prose is shown.
+	low := lowConfidence(s.rag.RerankEnabled(), top)
+	if low {
+		answer = lowConfidenceNote + answer
+	}
+	resp := map[string]any{"answer": answer, "sources": hits, "low_confidence": low}
 	// Suggest follow-up questions so an answer becomes a thread to pull on
 	// (ask-first navigation). Best-effort.
 	if f := s.genFollowups(r.Context(), u, req.Question, answer); len(f) > 0 {

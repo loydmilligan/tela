@@ -142,6 +142,27 @@ func TestBuildAskContext_ExpandsHubAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestLowConfidence(t *testing.T) {
+	cases := []struct {
+		name     string
+		rerankOn bool
+		top      float64
+		want     bool
+	}{
+		{"strong query, rerank on", true, 3.3, false},
+		{"answerable aggregate, rerank on", true, -0.2, false},
+		{"out-of-scope, rerank on", true, -6.6, true},
+		{"just over threshold", true, -4.1, true},
+		{"just under threshold", true, -3.9, false},
+		{"rerank off never flags (RRF scale differs)", false, -6.6, false},
+	}
+	for _, c := range cases {
+		if got := lowConfidence(c.rerankOn, c.top); got != c.want {
+			t.Errorf("%s: lowConfidence(%v, %.1f) = %v, want %v", c.name, c.rerankOn, c.top, got, c.want)
+		}
+	}
+}
+
 func TestRAGAsk_Followups(t *testing.T) {
 	ts, d, srv := newRagServer(t)
 	srv.llm = llm.NewServiceWithCompleter(&fakeCompleter{answer: "Use make deploy to ship."})

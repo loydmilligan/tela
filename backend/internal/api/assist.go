@@ -50,7 +50,29 @@ const (
 	// askHubProbe: how many top-by-density pages the rerank-independent hub probe
 	// returns (whole-page answers the reranker would bury).
 	askHubProbe = 8
+	// askLowConfidenceScore: when reranking is on, a top hit scoring below this
+	// cross-encoder logit means retrieval found nothing strongly relevant. The
+	// answer is still produced (best effort) but flagged low-confidence so the
+	// reader knows to verify. Calibrated on the live corpus: a strong query tops
+	// ~+3, an answerable aggregate ~-0.2, a genuinely out-of-scope question ~-6.6 —
+	// so -4 fires only on the last kind. The reranker score scale is the only one
+	// this threshold is valid for; with reranking off there's no comparable signal.
+	askLowConfidenceScore = -4.0
 )
+
+// lowConfidenceNote prefixes an answer the system isn't confident in — rendered
+// as a tela CAUTION callout. Deterministic (not left to the model) so the
+// declaration is reliable.
+const lowConfidenceNote = "> [!CAUTION]\n" +
+	"> Low confidence — I didn't find strongly relevant material in your docs for this. " +
+	"The answer below is a best effort from loosely related excerpts; verify it before relying on it.\n\n"
+
+// lowConfidence reports whether an answer should be flagged low-confidence: only
+// meaningful when reranking is on (the score is then a cross-encoder logit
+// comparable to askLowConfidenceScore); the RRF-only scale has no equivalent.
+func lowConfidence(rerankOn bool, topScore float64) bool {
+	return rerankOn && topScore < askLowConfidenceScore
+}
 
 // askContext retrieves grounding for query and renders the numbered, cited
 // excerpt block that feeds every generative feature, plus the per-page hits (for
