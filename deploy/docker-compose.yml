@@ -68,7 +68,6 @@ services:
       TELA_WORKOS_ISSUER:    ${TELA_WORKOS_ISSUER:-}
       TELA_MCP_RESOURCE:     ${TELA_MCP_RESOURCE:-}
       WORKOS_API_KEY:        ${WORKOS_API_KEY:-}
-      WORKOS_CLIENT_ID:      ${WORKOS_CLIENT_ID:-}
       # Federated sign-in (sso.go). Each provider is dark until BOTH its vars are
       # set; redirect URI is <TELA_PUBLIC_BASE_URL>/api/auth/sso/<provider>/callback.
       # Per-org OIDC SSO is configured at runtime (PUT /api/orgs/{id}/sso), not here.
