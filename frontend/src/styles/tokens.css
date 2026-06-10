@@ -13,6 +13,11 @@
     --text-2xl: 1.5rem;
     --text-3xl: 1.875rem;
 
+    /* Editor body prose. A hair under --text-base so the writing surface reads
+       denser than the chrome; headings keep their absolute scale. The reader has
+       its own larger --reading-font-size for the published read view. */
+    --editor-font-size: 0.9375rem;
+
     --leading-tight: 1.25;
     --leading-normal: 1.5;
     --leading-relaxed: 1.7;

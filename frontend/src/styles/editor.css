@@ -38,7 +38,7 @@
     -webkit-font-variant-ligatures: none;
     padding: var(--space-2);
     font-family: var(--font-sans);
-    font-size: var(--text-base);
+    font-size: var(--editor-font-size);
     line-height: var(--leading-normal);
     color: var(--text-primary);
   }
