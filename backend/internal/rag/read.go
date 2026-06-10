@@ -150,34 +150,39 @@ type HubPage struct {
 	Count   int
 }
 
-// HubPages returns the pages whose chunks mention the query terms most often,
-// ordered by that count. Deliberately OR-matched (not the AND of plainto_tsquery
-// that lexicalRank/search use): for an aggregate question like "which projects
-// use kafka", the authoritative answer is the page that is ABOUT kafka (every
-// chunk mentions it), which an AND over "project & use & kafka" misses and a
-// precision reranker buries. The ask path uses this rerank-independent signal to
-// decide which whole pages to expand. Same space_access anti-leak join as the
-// rest of read.go. Empty/stopword-only queries match nothing (return no rows).
+// HubPages returns the topic-hub pages for a query: pages whose TITLE matches a
+// query term, ranked by how many of their chunks also match. A wiki page titled
+// after the subject ("Kafka") is that subject's hub — its whole body, often a
+// registry TABLE the chunker split and a precision reranker buried, is the real
+// answer to an aggregate question ("which projects use kafka"). Title match is
+// the robust signal here: it beats AND-matching the full question (plainto_tsquery
+// matches almost nothing), raw OR-count (the common words "project"/"use" swamp
+// it), and TF-IDF (in this corpus "project" is rarer than "kafka", so rarity
+// points the wrong way). Terms are OR-matched off plainto_tsquery (sanitised,
+// stemmed; `'a' & 'b'` → `'a' | 'b'`). The ask path expands these; when no titled
+// hub exists it returns nothing and the caller falls back to rank-based
+// expansion. Same space_access anti-leak join. Empty queries return no rows.
 func (s *Service) HubPages(ctx context.Context, userID int64, query string, spaceID *int64, limit int) ([]HubPage, error) {
 	if limit <= 0 {
 		limit = 8
 	}
 	qb := &queryBuilder{}
 	uid := qb.arg(userID)
-	q := qb.arg(query)
-	// plainto_tsquery sanitises the input to `'a' & 'b' & …`; swapping & → | turns
-	// it into an OR query without any hand-built (injectable) tsquery string.
+	orq := `replace(plainto_tsquery('english', ` + qb.arg(query) + `)::text, '&', '|')::tsquery`
 	sql := `
-		SELECT p.id, p.title, min(pc.id), count(*)
-		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
+		SELECT p.id, p.title,
+		       (SELECT min(id) FROM page_chunks WHERE page_id = p.id),
+		       count(pc.id)::int AS matches
+		  FROM pages p
 		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
 		    ON sm.space_id = p.space_id
-		 WHERE pc.content_tsv @@ replace(plainto_tsquery('english', ` + q + `)::text, '&', '|')::tsquery`
+		  LEFT JOIN page_chunks pc ON pc.page_id = p.id AND pc.content_tsv @@ ` + orq + `
+		 WHERE p.deleted_at IS NULL
+		   AND to_tsvector('english', p.title) @@ ` + orq
 	if spaceID != nil {
 		sql += ` AND p.space_id = ` + qb.arg(*spaceID)
 	}
-	sql += ` GROUP BY p.id, p.title ORDER BY count(*) DESC, p.id LIMIT ` + qb.arg(limit)
+	sql += ` GROUP BY p.id, p.title ORDER BY matches DESC, p.id LIMIT ` + qb.arg(limit)
 
 	rows, err := s.db.QueryContext(ctx, sql, qb.args...)
 	if err != nil {

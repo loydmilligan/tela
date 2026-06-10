@@ -117,11 +117,12 @@ func TestChunkContents_ScopedToAccess(t *testing.T) {
 	}
 }
 
-// TestHubPages_ORMatchesTopicalHub proves the hub probe ranks the page that's
-// ABOUT the topic first via OR semantics — the aggregate-question case an AND
-// query (plainto_tsquery) misses. The "Kafka" page mentions kafka in every
-// chunk; an unrelated page shares only one query word ("services").
-func TestHubPages_ORMatchesTopicalHub(t *testing.T) {
+// TestHubPages_TitleHubRanksFirst proves the hub probe surfaces the page TITLED
+// after the topic and ranks it by body density — the aggregate-question case
+// ("which services use kafka") that AND-matching the whole question misses. The
+// "Kafka" page is titled for the topic and mentions it in every chunk; the
+// other page only shares a common word.
+func TestHubPages_TitleHubRanksFirst(t *testing.T) {
 	d := testdb.New(t)
 	ctx := context.Background()
 	alice := newUser(t, d, "alice")
