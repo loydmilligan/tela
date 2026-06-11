@@ -73,6 +73,7 @@ func (s *Server) signInSSO(w http.ResponseWriter, r *http.Request, id ssoIdentit
 		return 0, err
 	}
 	auth.SetSessionCookie(w, sid)
+	s.recordRequestEvent(r, eventInput{Type: evtAuthLogin, ActorUserID: &userID, ActorLabel: username, Detail: "via SSO (" + id.provider + ")"})
 	return userID, nil
 }
 

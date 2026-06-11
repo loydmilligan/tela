@@ -157,6 +157,7 @@ func (s *Server) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.SetSessionCookie(w, sid)
+	s.recordRequestEvent(r, eventInput{Type: evtAuthLogin, ActorUserID: &userID, ActorLabel: username, Detail: "first-run setup"})
 	slog.Info("first-run setup: instance admin created", "username", username)
 	writeJSON(w, http.StatusOK, map[string]any{"user": dto})
 }
