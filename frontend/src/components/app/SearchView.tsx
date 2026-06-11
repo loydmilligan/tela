@@ -16,6 +16,7 @@ import {
 import { navigateToPage } from '../../lib/pageHitItem'
 import type { Space } from '../../lib/types'
 import { SearchResult } from './SearchResult'
+import { usePageHoverPreview } from './wikilink-hover-preview'
 
 interface SearchSearchParams {
   q?: string
@@ -109,6 +110,7 @@ export function SearchRoute() {
   }, [filterSpaces, allSpaces])
 
   const [results, setResults] = useState<SearchRow[]>([])
+  const preview = usePageHoverPreview()
   useEffect(() => {
     const q = urlQ.trim()
     if (q.length === 0) {
@@ -273,9 +275,11 @@ export function SearchRoute() {
               excerpt={bodyExcerpt(row.body, trimmed, EXCERPT_HALF_WIDTH)}
               updatedAt={row.updated_at}
               onSelect={() => navigateToPage(row.space_id, row.id)}
+              hoverProps={preview.triggerProps(row.id, row.title)}
             />
           ))
         )}
+        {preview.card}
       </section>
     </div>
   )
