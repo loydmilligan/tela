@@ -3,6 +3,7 @@ import { useMe } from '../../lib/queries/auth'
 import { useOrgs } from '../../lib/queries/orgs'
 import { useMyUsage, useOrgUsage, usePlans } from '../../lib/queries/billing'
 import type { Plan, Usage } from '../../lib/types'
+import { formatBytes } from '../../lib/format'
 import { PlanTierSelect } from './PlanTierSelect'
 import { Badge } from '../ui/badge'
 import { Card } from '../ui/card'
@@ -25,18 +26,6 @@ const INCLUDED = [
   'SSO, organizations & per-space roles',
   'Plain markdown you own — export anytime',
 ]
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let v = n / 1024
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
-  }
-  return `${v >= 10 || Number.isInteger(v) ? Math.round(v) : v.toFixed(1)} ${units[i]}`
-}
 
 function formatStorageLimit(max: number | null): string {
   return max == null ? INFINITY : formatBytes(max)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,6 +30,36 @@ func TestListAdminUsers_OkSortedByUsername(t *testing.T) {
 	}
 	if !(adminIdx < bobIdx && bobIdx < charlieIdx) {
 		t.Fatalf("ordering wrong: admin=%d bob=%d charlie=%d body=%q", adminIdx, bobIdx, charlieIdx, body)
+	}
+}
+
+func TestListAdminUsers_IncludesUsage(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	adminID := seedUser(t, d, "admin", "adminpw123", true)
+
+	req := userRequest(http.MethodGet, "/api/admin/users", "", authUser(adminID, "admin", true))
+	rec := recordHandler(srv.ListAdminUsers, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q want 200", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Users []adminUserDTO `json:"users"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v body=%q", err, rec.Body.String())
+	}
+	if len(out.Users) != 1 {
+		t.Fatalf("want 1 user, got %d", len(out.Users))
+	}
+	u := out.Users[0]
+	// Usage is enriched from buildUsage; a fresh account has no created spaces
+	// (the personal home is excluded from the space count) and no stored files.
+	if u.Usage == nil {
+		t.Fatalf("usage not populated: %+v", u)
+	}
+	if u.Usage.Spaces != 0 || u.Usage.StorageBytes != 0 {
+		t.Fatalf("unexpected fresh-account usage: %+v", u.Usage)
 	}
 }
 

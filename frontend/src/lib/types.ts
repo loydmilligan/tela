@@ -219,6 +219,19 @@ export interface AdminUserRow {
   plan_key: string
   created_at: string
   updated_at: string
+  // Last authenticated request (most recent session touch); null = never signed in.
+  last_active_at: string | null
+  // Usage vs the account's plan limits. null when the snapshot couldn't be built.
+  usage: AdminUserUsage | null
+}
+
+// Per-user resource snapshot in the admin list — current usage beside the plan
+// limits. A null max means unlimited (mirrors the backend's adminUserUsage).
+export interface AdminUserUsage {
+  spaces: number
+  storage_bytes: number
+  max_spaces: number | null
+  max_storage_bytes: number | null
 }
 
 // Organizations (#153). An org is a grantable principal: a space can be shared

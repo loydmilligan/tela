@@ -7,8 +7,12 @@ import {
   useCreateAdminUser,
   useUpdateAdminUser,
 } from '../../lib/queries/admin-users'
-import { localDateFromSqlite } from '../../lib/relativeTime'
-import type { AdminUserRow } from '../../lib/types'
+import {
+  localDateFromSqlite,
+  relativeTimeFromSqlite,
+} from '../../lib/relativeTime'
+import { formatBytes } from '../../lib/format'
+import type { AdminUserRow, AdminUserUsage } from '../../lib/types'
 import { PlanTierSelect } from './PlanTierSelect'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
@@ -153,6 +157,7 @@ function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
           </span>
         ) : null}
       </div>
+      <UsageCell row={row} />
       <PlanTierSelect
         accountKind="user"
         accountId={row.id}
@@ -201,6 +206,46 @@ function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
         onOpenChange={setResetOpen}
       />
     </li>
+  )
+}
+
+// True when usage has crossed a finite plan limit (storage or spaces) — drives
+// the danger styling so an over-quota account stands out at a glance.
+function isOverLimit(u: AdminUserUsage): boolean {
+  return (
+    (u.max_storage_bytes != null && u.storage_bytes > u.max_storage_bytes) ||
+    (u.max_spaces != null && u.spaces > u.max_spaces)
+  )
+}
+
+// Compact usage + last-active readout, right-aligned before the plan selector.
+// Hidden on narrow widths where the row would otherwise wrap awkwardly.
+function UsageCell({ row }: { row: AdminUserRow }) {
+  const u = row.usage
+  return (
+    <div className="hidden sm:flex flex-col items-end gap-[2px] shrink-0 w-[11rem] text-[length:var(--text-xs)] font-[family-name:var(--font-sans)]">
+      {u ? (
+        <span
+          className={cn(
+            'tabular-nums',
+            isOverLimit(u)
+              ? 'text-[var(--danger)] font-medium'
+              : 'text-[var(--text-muted)]',
+          )}
+        >
+          {u.spaces} {u.spaces === 1 ? 'space' : 'spaces'} ·{' '}
+          {formatBytes(u.storage_bytes)}
+          {u.max_storage_bytes != null
+            ? ` / ${formatBytes(u.max_storage_bytes)}`
+            : ''}
+        </span>
+      ) : null}
+      <span className="text-[var(--text-muted)]">
+        {row.last_active_at
+          ? `Active ${relativeTimeFromSqlite(row.last_active_at)}`
+          : 'Never signed in'}
+      </span>
+    </div>
   )
 }
 

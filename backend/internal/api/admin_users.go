@@ -30,6 +30,20 @@ type adminUserDTO struct {
 	PlanKey         string  `json:"plan_key"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
+	// Populated only by the list endpoint (omitted on create/patch responses).
+	LastActiveAt *string         `json:"last_active_at,omitempty"`
+	Usage        *adminUserUsage `json:"usage,omitempty"`
+}
+
+// adminUserUsage is the per-user resource snapshot the admin list shows: current
+// usage beside the account's plan limits. Built from buildUsage — the same path
+// limits.go enforces against — so these figures never drift from the real quota.
+// A nil max means unlimited.
+type adminUserUsage struct {
+	Spaces          int64  `json:"spaces"`
+	StorageBytes    int64  `json:"storage_bytes"`
+	MaxSpaces       *int64 `json:"max_spaces"`
+	MaxStorageBytes *int64 `json:"max_storage_bytes"`
 }
 
 type adminUserCreateRequest struct {
@@ -73,6 +87,40 @@ func (s *Server) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if err := rows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "iterate users failed")
 		return
+	}
+
+	// Enrich each row with last-active + a usage-vs-limit snapshot. last-active is
+	// the most recent session touch (sessions.last_seen_at, stamped per request);
+	// usage reuses buildUsage so it matches what limits.go enforces. One batched
+	// query for last-seen, then per-user usage — this list is admin-only and small,
+	// so the N+1 is acceptable in exchange for not duplicating the quota counters.
+	ctx := r.Context()
+	lastSeen := map[int64]string{}
+	if lsRows, err := s.DB.QueryContext(ctx,
+		`SELECT user_id, MAX(last_seen_at) FROM sessions GROUP BY user_id`); err == nil {
+		defer lsRows.Close()
+		for lsRows.Next() {
+			var uid int64
+			var seen sql.NullString
+			if err := lsRows.Scan(&uid, &seen); err == nil && seen.Valid {
+				lastSeen[uid] = seen.String
+			}
+		}
+	}
+	for i := range users {
+		if ls, ok := lastSeen[users[i].ID]; ok {
+			users[i].LastActiveAt = &ls
+		}
+		u, err := s.buildUsage(ctx, account{Kind: accountUser, ID: users[i].ID})
+		if err != nil {
+			continue // usage stays nil for this row; the rest of the list still renders
+		}
+		users[i].Usage = &adminUserUsage{
+			Spaces:          u.Usage.Spaces,
+			StorageBytes:    u.Usage.StorageBytes,
+			MaxSpaces:       u.Plan.MaxSpaces,
+			MaxStorageBytes: u.Plan.MaxStorageBytes,
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
