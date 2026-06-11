@@ -22,7 +22,10 @@ export interface GraphNode {
 export interface GraphLink {
   source: number
   target: number
-  kind: 'link' | 'tree'
+  kind: 'link' | 'tree' | 'semantic'
+  // Present only on 'semantic' edges (cosine similarity in [0,1]); drives edge
+  // weight/opacity. Authored link/tree edges omit it.
+  similarity?: number
 }
 
 export interface GraphData {
@@ -80,7 +83,10 @@ export function neighborhood(
   return seen
 }
 
-export function useGraph(spaceId?: number) {
+// `semantic` adds the embedding-similarity edge overlay (kind:'semantic') to the
+// response — a heavier query, so it's opt-in and cached under its own key, fetched
+// only once the user turns the Semantic lens on.
+export function useGraph(spaceId?: number, semantic = false) {
   const qc = useQueryClient()
   useEffect(() => {
     return subscribeToPageMutation(() => {
@@ -88,10 +94,13 @@ export function useGraph(spaceId?: number) {
     })
   }, [qc])
   return useQuery({
-    queryKey: ['graph', spaceId ?? 'all'],
-    queryFn: () =>
-      api<GraphData>(
-        spaceId != null ? `/api/graph?space_id=${spaceId}` : '/api/graph',
-      ),
+    queryKey: ['graph', spaceId ?? 'all', semantic ? 'semantic' : 'plain'],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (spaceId != null) params.set('space_id', String(spaceId))
+      if (semantic) params.set('semantic', '1')
+      const qs = params.toString()
+      return api<GraphData>(qs ? `/api/graph?${qs}` : '/api/graph')
+    },
   })
 }

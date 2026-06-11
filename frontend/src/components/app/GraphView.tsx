@@ -20,7 +20,8 @@ interface GraphSearchParams {
 export function GraphRoute() {
   const { focus, space } = useSearch({ from: '/_app/graph' }) as GraphSearchParams
   const navigate = useNavigate()
-  const graph = useGraph(space)
+  const [showSemantic, setShowSemantic] = useState(false)
+  const graph = useGraph(space, showSemantic)
 
   const [showLinks, setShowLinks] = useState(true)
   const [showTree, setShowTree] = useState(true)
@@ -133,6 +134,9 @@ export function GraphRoute() {
         <ToggleChip active={showTree} onClick={() => setShowTree((v) => !v)}>
           Hierarchy
         </ToggleChip>
+        <ToggleChip active={showSemantic} onClick={() => setShowSemantic((v) => !v)}>
+          Semantic
+        </ToggleChip>
         <ToggleChip active={recency} onClick={() => setRecency((v) => !v)}>
           Recency
         </ToggleChip>
@@ -169,6 +173,7 @@ export function GraphRoute() {
             links={links}
             showLinks={showLinks}
             showTree={showTree}
+            showSemantic={showSemantic}
             recency={recency}
             currentId={focus ?? null}
             matchedIds={matchedIds}

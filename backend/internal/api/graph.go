@@ -31,7 +31,10 @@ type graphNode struct {
 type graphLink struct {
 	Source int64  `json:"source"`
 	Target int64  `json:"target"`
-	Kind   string `json:"kind"` // "link" | "tree"
+	Kind   string `json:"kind"` // "link" | "tree" | "semantic"
+	// Cosine similarity in [0,1], present only on "semantic" edges (drives edge
+	// weight/styling in the view). Omitted for authored link/tree edges.
+	Similarity float64 `json:"similarity,omitempty"`
 }
 
 // GraphData backs GET /api/graph. A space-pinned bearer key narrows the graph to
@@ -198,6 +201,25 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	if err := treeRows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "iterate graph tree failed")
 		return
+	}
+
+	// --- semantic edges (embedding kNN), opt-in via ?semantic=1 ------------
+	// Best-effort overlay: computed from stored vectors (no live embedder). On a
+	// corpus with no embeddings it's simply empty, and any failure is swallowed so
+	// the authored graph still renders — semantic edges are an enhancement, never a
+	// precondition. k / threshold are tunable from the query for live calibration.
+	if q := r.URL.Query(); q.Get("semantic") == "1" {
+		k, _ := strconv.Atoi(q.Get("k"))
+		threshold, _ := strconv.ParseFloat(q.Get("threshold"), 64)
+		edges, serr := s.rag.SemanticEdges(ctx, u.ID, pinSpace, k, threshold, 0)
+		if serr == nil {
+			for _, e := range edges {
+				links = append(links, graphLink{
+					Source: e.Source, Target: e.Target,
+					Kind: "semantic", Similarity: e.Similarity,
+				})
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes, "links": links})

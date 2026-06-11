@@ -36,7 +36,7 @@ interface SimNode extends SimulationNodeDatum {
   broken: number
 }
 interface SimLink extends SimulationLinkDatum<SimNode> {
-  kind: 'link' | 'tree'
+  kind: 'link' | 'tree' | 'semantic'
 }
 
 // Surfaced to the React overlay when a node is hovered long enough.
@@ -68,6 +68,9 @@ export interface PageGraphProps {
   links: GraphLink[]
   showLinks: boolean
   showTree: boolean
+  // Embedding-similarity overlay. Optional (defaults off) so the on-page
+  // LocalGraph — authored edges only — needs no change.
+  showSemantic?: boolean
   recency: boolean
   currentId?: number | null
   matchedIds?: Set<number> | null
@@ -89,6 +92,7 @@ export function PageGraph({
   links,
   showLinks,
   showTree,
+  showSemantic = false,
   recency,
   currentId,
   matchedIds,
@@ -108,8 +112,8 @@ export function PageGraph({
   const needsFitRef = useRef(true)
   const [card, setCard] = useState<HoverCard | null>(null)
   const cardTimerRef = useRef<number | undefined>(undefined)
-  const propsRef = useRef({ showLinks, showTree, recency, currentId, matchedIds })
-  propsRef.current = { showLinks, showTree, recency, currentId, matchedIds }
+  const propsRef = useRef({ showLinks, showTree, showSemantic, recency, currentId, matchedIds })
+  propsRef.current = { showLinks, showTree, showSemantic, recency, currentId, matchedIds }
   const navRef = useRef(onNavigate)
   navRef.current = onNavigate
 
@@ -145,6 +149,9 @@ export function PageGraph({
     const cache = nodeCacheRef.current
     const deg = new Map<number, number>()
     for (const l of links) {
+      // Node size = authored connectivity; semantic overlay edges don't resize
+      // nodes (so toggling the lens doesn't reflow the whole layout).
+      if (l.kind === 'semantic') continue
       deg.set(l.source, (deg.get(l.source) ?? 0) + 1)
       deg.set(l.target, (deg.get(l.target) ?? 0) + 1)
     }
@@ -338,10 +345,26 @@ export function PageGraph({
     for (const l of simLinksRef.current) {
       if (l.kind === 'link' && !p.showLinks) continue
       if (l.kind === 'tree' && !p.showTree) continue
+      if (l.kind === 'semantic' && !p.showSemantic) continue
       const s = l.source as SimNode
       const t = l.target as SimNode
       if (s.x == null || t.x == null) continue
       const lit = focusSet != null && focusSet.has(s.id) && focusSet.has(t.id)
+      // Semantic edges: a soft dashed accent thread (no arrowhead — they're
+      // undirected affinity, not authored references), fainter than real links so
+      // the authored graph still reads as primary. A semantic edge with no link
+      // beneath it is a visible "should these be connected?" — the structural hole.
+      if (l.kind === 'semantic') {
+        ctx.beginPath()
+        ctx.moveTo(s.x, s.y!)
+        ctx.lineTo(t.x!, t.y!)
+        ctx.strokeStyle = c.accent
+        ctx.globalAlpha = focusSet ? (lit ? 0.55 : 0.04) : 0.16
+        ctx.lineWidth = (lit ? 1.3 : 0.8) / k
+        ctx.setLineDash([2 / k, 4 / k])
+        ctx.stroke()
+        continue
+      }
       ctx.beginPath()
       ctx.moveTo(s.x, s.y!)
       ctx.lineTo(t.x!, t.y!)
@@ -438,7 +461,7 @@ export function PageGraph({
       if (l.kind === 'link') {
         if (s === id) linksOut++
         else if (t === id) linksIn++
-      } else if (s === id) {
+      } else if (l.kind === 'tree' && s === id) {
         children++
       }
     }
@@ -605,8 +628,8 @@ export function PageGraph({
 
   useEffect(() => {
     draw()
-     
-  }, [showLinks, showTree, recency, currentId, matchedIds])
+
+  }, [showLinks, showTree, showSemantic, recency, currentId, matchedIds])
 
   return (
     <div className="relative h-full w-full">
