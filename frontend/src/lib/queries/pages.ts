@@ -15,6 +15,7 @@ import type {
   PageExposure,
   PageListItem,
   PageTreeNode,
+  RelatedPage,
   UpdatePageInput,
 } from '../types'
 
@@ -44,6 +45,8 @@ export const pageKeys = {
   allFlat: () => [...pageKeys.all, 'all-flat'] as const,
   backlinks: (pageId: number) =>
     [...pageKeys.detail(pageId), 'backlinks'] as const,
+  related: (pageId: number) =>
+    [...pageKeys.detail(pageId), 'related'] as const,
 }
 
 interface UsePagesArgs {
@@ -125,6 +128,35 @@ export function useBacklinks(pageId: number | null | undefined) {
     },
     enabled: pageId != null,
     // Inherits the global SWR staleTime; bus-invalidated on any page mutation.
+  })
+}
+
+// Semantically-related pages ("see also") for the page view — GET
+// /api/pages/{id}/related. Backed by a single pgvector query over the chunk
+// embeddings already in the DB: NO live model/embedder call, so it's cheap
+// enough to fire on every page view. Returns [] (not an error) on an instance
+// with no embedder configured / an unindexed page. Re-derived on page mutation
+// so a freshly-edited corpus surfaces fresh neighbours.
+export function useRelatedPages(
+  pageId: number | null | undefined,
+  limit = 6,
+) {
+  const qc = useQueryClient()
+  useEffect(() => {
+    if (pageId == null) return
+    return subscribeToPageMutation(() => {
+      void qc.invalidateQueries({ queryKey: pageKeys.related(pageId) })
+    })
+  }, [qc, pageId])
+  return useQuery({
+    queryKey: pageId != null ? pageKeys.related(pageId) : pageKeys.related(-1),
+    queryFn: async () => {
+      const { related } = await api<{ related: RelatedPage[] }>(
+        `/api/pages/${pageId}/related?limit=${limit}`,
+      )
+      return related
+    },
+    enabled: pageId != null,
   })
 }
 

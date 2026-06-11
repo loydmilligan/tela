@@ -110,6 +110,17 @@ export interface Backlink {
   snippet: string
 }
 
+// A semantically-related page from GET /api/pages/{id}/related — computed from
+// stored chunk embeddings (no live model call), ranked by cosine similarity to
+// the source page's centroid. Unlike a Backlink, no human ever drew this edge.
+export interface RelatedPage {
+  page_id: number
+  space_id: number
+  title: string
+  similarity: number // cosine similarity in [0,1], higher = closer
+  updated_at: string
+}
+
 export interface CreateSpaceInput {
   name: string
   slug?: string

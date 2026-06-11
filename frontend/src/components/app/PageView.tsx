@@ -103,6 +103,7 @@ import {
 } from '../ui/dropdown-menu'
 import { cn } from '../../lib/utils'
 import { BacklinksSection } from './BacklinksSection'
+import { RelatedPagesSection } from './RelatedPagesSection'
 import { MarkdownView } from '../view/MarkdownView'
 import { prefetchMilkdownEditor } from '../../lib/prefetchEditor'
 import { useFileDownload } from './use-file-download'
@@ -489,6 +490,8 @@ function PageViewer({
         />
 
         <BacklinksSection pageId={page.id} />
+
+        <RelatedPagesSection pageId={page.id} spaceId={spaceId} />
 
         <LocalGraphCard pageId={page.id} />
         </div>
@@ -1343,6 +1346,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted }: PageEditorProps) {
         />
 
         <BacklinksSection pageId={page.id} />
+
+        <RelatedPagesSection pageId={page.id} spaceId={spaceId} />
 
         <LocalGraphCard pageId={page.id} />
       </div>
