@@ -36,7 +36,14 @@ when changing it:
   and right-sized chunk reads over one-shot answer assembly.
 - **Humans, via the search box + "ask your docs"** (`/api/rag/search`,
   `/api/rag/ask`). Classic one-shot RAG: retrieve top-k → ground an answer →
-  cite sources.
+  cite sources. The web UI uses the **streaming twin** `POST /api/rag/ask/stream`
+  (SSE: `sources` → `token*` → `followups` → `done`, or an `error` frame) so the
+  answer types in live and the connection never idles — `/api/rag/ask` stays as
+  the blocking JSON path for MCP + non-web clients. Both share retrieval, prompt,
+  and guards; the LLM client streams via `llm.Service.CompleteStream` (falling
+  back to a blocking `Complete` for providers that don't stream). Answer length
+  is capped by `TELA_LLM_MAX_TOKENS` (default 1024) so a slow model can't run past
+  the request timeout.
 
 Neither needs heavyweight machinery (GraphRAG, multi-step agentic pipelines, a
 dedicated vector DB). At this corpus scale they'd add fragility, not robustness.
