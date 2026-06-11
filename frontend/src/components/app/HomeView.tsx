@@ -62,7 +62,12 @@ export function HomeRoute() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="max-w-[64rem] w-full mx-auto px-[var(--space-6)] py-[var(--space-7)] flex flex-col gap-[var(--space-6)]">
+      {/* Roving target for the j/k keyboard layer (see lib/keys): the cursor
+          flows through every page row (PageRow) across the dashboard widgets. */}
+      <div
+        data-keynav-region="list"
+        className="max-w-[64rem] w-full mx-auto px-[var(--space-6)] py-[var(--space-7)] flex flex-col gap-[var(--space-6)]"
+      >
         <header className="flex flex-col gap-[var(--space-2)]">
           <h1 className="m-0 font-[family-name:var(--font-sans)] text-[length:var(--text-2xl)] leading-[var(--leading-tight)] font-semibold text-[var(--text-primary)]">
             {displayName ? `${greeting}, ${displayName}` : greeting}
@@ -404,6 +409,7 @@ function PageRow({
       <Link
         to="/spaces/$spaceId/pages/$pageId/{-$slug}"
         params={{ spaceId, pageId, slug: undefined }}
+        data-keynav-item
         className={cn(
           'flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-2)]',
           'rounded-[var(--radius-sm)] no-underline',
