@@ -43,6 +43,28 @@ function isUnavailable(err: unknown): boolean {
   )
 }
 
+// isModelUnreachable — the failure is the answer model being cold / unreachable /
+// timing out, not a configuration gap: a network error (no HTTP response, status
+// 0), an upstream gateway error (502/504), or the backend's "generation failed".
+// These are transient — a retry usually works once the model has warmed up.
+function isModelUnreachable(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    (err.status === 0 ||
+      err.status === 502 ||
+      err.status === 504 ||
+      err.code === 'completion_failed')
+  )
+}
+
+function askErrorMessage(err: unknown): string {
+  if (isModelUnreachable(err)) {
+    return 'The model may be warming up or briefly offline. Give it a moment and try again.'
+  }
+  if (err instanceof ApiError) return err.message
+  return 'Something went wrong. Try again.'
+}
+
 // /ask — "Ask your docs". A question box → an LLM answer grounded in the user's
 // pages (POST /api/rag/ask), followed by the cited source pages as clickable
 // rows. Mirrors the SearchRoute shell (header + Card + result list) and reuses
@@ -190,12 +212,8 @@ export function AskRoute() {
           <EmptyState
             icon={AlertTriangle}
             tone="danger"
-            title="Couldn't generate an answer"
-            description={
-              ask.error instanceof ApiError
-                ? ask.error.message
-                : 'Something went wrong. Try again.'
-            }
+            title={isModelUnreachable(ask.error) ? 'The answer model didn’t respond' : 'Couldn’t generate an answer'}
+            description={askErrorMessage(ask.error)}
             actions={
               <Button variant="secondary" size="sm" onClick={submit}>
                 Try again

@@ -24,6 +24,13 @@ import (
 // cross-encoder stays cheap.
 const rerankCandidates = 30
 
+// rerankTimeout bounds the cross-encoder call. Rerank is best-effort — on failure
+// the caller falls back to the fused order — so this is kept short: a healthy
+// reranker answers in well under a second, and a slow/cold one must NOT drag the
+// whole /ask out (a stalled reranker once turned every ask into a ~2-minute hang
+// before the browser gave up). Fail fast, degrade gracefully.
+const rerankTimeout = 5 * time.Second
+
 // RerankResult is one document's score from the reranker, by its index in the
 // input list. Higher score = more relevant.
 type RerankResult struct {
@@ -102,7 +109,7 @@ func NewHTTPReranker(url, model, token string) *HTTPReranker {
 		url:    strings.TrimSpace(url),
 		model:  model,
 		token:  strings.TrimSpace(token),
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{Timeout: rerankTimeout},
 	}
 }
 
