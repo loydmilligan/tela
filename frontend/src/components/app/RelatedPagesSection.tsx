@@ -32,10 +32,6 @@ export function RelatedPagesSection({ pageId, spaceId }: RelatedPagesSectionProp
   }, [spacesQuery.data])
 
   const rows = data ?? []
-  // Normalise the meter to the strongest neighbour so the bars always use the
-  // full width — raw cosine similarities cluster in a narrow high band, which
-  // would render every bar near-full and meaningless.
-  const top = rows.length > 0 ? rows[0].similarity : 1
 
   if (isLoading || isError) return null
   if (rows.length === 0) return null
@@ -55,7 +51,11 @@ export function RelatedPagesSection({ pageId, spaceId }: RelatedPagesSectionProp
       <ul className="m-0 p-0 list-none flex flex-col gap-[1px]">
         {rows.map((row) => {
           const crossSpace = row.space_id !== spaceId
-          const fraction = top > 0 ? Math.max(row.similarity / top, 0.08) : 0
+          // Absolute perceptual scale (not normalised to the top hit): a cosine
+          // similarity in ~[0.5, 0.92] maps across the bar, so the meter reads as
+          // "how related" on its own terms. Normalising to the best match made
+          // tightly-clustered scores all render near-full and meaningless.
+          const fraction = Math.min(Math.max((row.similarity - 0.5) / 0.42, 0.06), 1)
           return (
             <li key={row.page_id} className="m-0 p-0 list-none">
               <Link

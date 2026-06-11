@@ -359,9 +359,9 @@ export function PageGraph({
         ctx.moveTo(s.x, s.y!)
         ctx.lineTo(t.x!, t.y!)
         ctx.strokeStyle = c.accent
-        ctx.globalAlpha = focusSet ? (lit ? 0.55 : 0.04) : 0.16
-        ctx.lineWidth = (lit ? 1.3 : 0.8) / k
-        ctx.setLineDash([2 / k, 4 / k])
+        ctx.globalAlpha = focusSet ? (lit ? 0.6 : 0.04) : 0.32
+        ctx.lineWidth = (lit ? 1.4 : 1) / k
+        ctx.setLineDash([2 / k, 3 / k])
         ctx.stroke()
         continue
       }
