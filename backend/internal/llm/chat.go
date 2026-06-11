@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -109,4 +110,80 @@ func (c *OpenAIClient) Complete(ctx context.Context, systemPrompt, userPrompt st
 		return "", fmt.Errorf("llm chat: empty completion for model %q", c.model)
 	}
 	return out.Choices[0].Message.Content, nil
+}
+
+// streamChunk is the per-frame delta shape for stream:true responses.
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+	} `json:"choices"`
+}
+
+// CompleteStream runs a streaming chat completion (stream:true), invoking onToken
+// for each content delta as it arrives. Because the connection streams bytes
+// continuously it never sits idle, so a slow local model can't trip the proxy /
+// idle timeout that a blocking completion did. onToken returning an error (e.g.
+// the downstream SSE client disconnected) aborts the stream; ctx cancellation
+// (client gone) stops generation too.
+func (c *OpenAIClient) CompleteStream(ctx context.Context, systemPrompt, userPrompt string, onToken func(string) error) error {
+	msgs := make([]chatMessage, 0, 2)
+	if strings.TrimSpace(systemPrompt) != "" {
+		msgs = append(msgs, chatMessage{Role: "system", Content: systemPrompt})
+	}
+	msgs = append(msgs, chatMessage{Role: "user", Content: userPrompt})
+
+	body, _ := json.Marshal(chatRequest{Model: c.model, Messages: msgs, Stream: true, MaxTokens: c.maxTokens})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("llm chat stream: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+		return fmt.Errorf("llm chat stream: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	// Parse the OpenAI/Ollama SSE shape: lines of `data: {…}` framing per-token
+	// deltas, terminated by `data: [DONE]`. Non-data lines (blanks, comments) skip.
+	br := bufio.NewReader(resp.Body)
+	for {
+		line, rerr := br.ReadString('\n')
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			if data, ok := strings.CutPrefix(trimmed, "data:"); ok {
+				data = strings.TrimSpace(data)
+				if data == "[DONE]" {
+					return nil
+				}
+				var chunk streamChunk
+				if json.Unmarshal([]byte(data), &chunk) == nil {
+					for _, ch := range chunk.Choices {
+						if ch.Delta.Content == "" {
+							continue
+						}
+						if err := onToken(ch.Delta.Content); err != nil {
+							return err
+						}
+					}
+				}
+			}
+		}
+		if rerr != nil {
+			if rerr == io.EOF {
+				return nil
+			}
+			return rerr
+		}
+	}
 }

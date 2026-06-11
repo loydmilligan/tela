@@ -224,10 +224,7 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	const system = "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
-		"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts. " +
-		"If the excerpts disagree — one excerpt's value, status, or claim conflicting with another's — surface the discrepancy explicitly rather than assuming they agree or silently picking one."
-	answer, ok := s.askComplete(w, r, u, "ask", system,
+	answer, ok := s.askComplete(w, r, u, "ask", askSystemPrompt,
 		"Answer the question using only these document excerpts.\n\n"+excerpts+"Question: "+req.Question)
 	if !ok {
 		return
@@ -247,6 +244,106 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		resp["followups"] = f
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// askSystemPrompt is the grounding instruction shared by the JSON and streaming
+// ask handlers (single source so the two never drift).
+const askSystemPrompt = "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
+	"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts. " +
+	"If the excerpts disagree — one excerpt's value, status, or claim conflicting with another's — surface the discrepancy explicitly rather than assuming they agree or silently picking one."
+
+// RAGAskStream is the streaming (SSE) twin of RAGAsk: identical retrieval and
+// prompt, but the answer is streamed token-by-token over text/event-stream so the
+// UI renders it live AND the connection never idles — structurally killing the
+// idle/proxy-timeout failure a slow blocking generation hit. Events:
+//   - sources:   { sources: []Hit, low_confidence: bool }  (before generation)
+//   - token:     { t: "…" }                                 (per delta)
+//   - followups: { followups: []string }                    (after the answer)
+//   - done:      {}
+//   - error:     { code: "completion_failed" }              (mid-stream failure)
+//
+// The JSON /api/rag/ask is left untouched for MCP + non-web clients.
+func (s *Server) RAGAskStream(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.askGuards(w) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
+	var req askRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
+		return
+	}
+	if strings.TrimSpace(req.Question) == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "question is required")
+		return
+	}
+	spaceID := req.SpaceID
+	if b := bearerSpace(r); b != nil {
+		spaceID = b
+	}
+
+	excerpts, hits, top, err := s.askContext(r.Context(), u.ID, req.Question, spaceID, req.Limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
+		return
+	}
+	_ = s.rag.LogAsk(r.Context(), u.ID, spaceID, req.Question, len(hits), top)
+	s.recordRequestEvent(r, eventInput{
+		Type: evtAsk, ActorUserID: &u.ID, ActorLabel: u.Username,
+		Detail: fmt.Sprintf("%q (%d hits)", req.Question, len(hits)),
+	})
+
+	// Clear the compute guards BEFORE any SSE byte so a 429/cap stays a clean HTTP
+	// status. No LLM call on the zero-hit path, so skip the guard there.
+	if len(hits) > 0 && !s.askComputeOK(w, r, u, "ask") {
+		return
+	}
+
+	sse, ok := newSSEWriter(w)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "internal", "streaming unsupported")
+		return
+	}
+
+	low := lowConfidence(s.rag.RerankEnabled(), top)
+	_ = sse.event("sources", map[string]any{"sources": hits, "low_confidence": low})
+
+	if len(hits) == 0 {
+		_ = sse.event("token", map[string]string{"t": "I couldn't find anything in your documents to answer that."})
+		_ = sse.event("done", map[string]any{})
+		return
+	}
+
+	// Low retrieval confidence → still answer, but lead with the deterministic
+	// callout (streamed as the first tokens so it survives prose-only views).
+	var answer strings.Builder
+	if low {
+		answer.WriteString(lowConfidenceNote)
+		_ = sse.event("token", map[string]string{"t": lowConfidenceNote})
+	}
+	streamErr := s.llm.CompleteStream(r.Context(), askSystemPrompt,
+		"Answer the question using only these document excerpts.\n\n"+excerpts+"Question: "+req.Question,
+		func(tok string) error {
+			answer.WriteString(tok)
+			return sse.event("token", map[string]string{"t": tok})
+		})
+	if streamErr != nil {
+		// Client gone (ctx canceled) → just stop; nothing to deliver. Otherwise the
+		// generation upstream failed — tell the UI so it shows the retry message.
+		if r.Context().Err() == nil {
+			_ = sse.event("error", map[string]string{"code": "completion_failed"})
+		}
+		return
+	}
+
+	if f := s.genFollowups(r.Context(), u, req.Question, answer.String()); len(f) > 0 {
+		_ = sse.event("followups", map[string]any{"followups": f})
+	}
+	_ = sse.event("done", map[string]any{})
 }
 
 // bearerSpace returns the space a space-pinned bearer key is locked to (else

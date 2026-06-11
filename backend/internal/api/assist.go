@@ -201,12 +201,7 @@ func clampRunes(s string, n int) string {
 // writing the HTTP error itself on any failure. Returns (answer, true) only on
 // success. label categorises the rate bucket (e.g. "ask", "draft").
 func (s *Server) askComplete(w http.ResponseWriter, r *http.Request, u *auth.User, label, system, user string) (string, bool) {
-	acct := account{Kind: accountUser, ID: u.ID}
-	if !s.cloudRateOK(w, label, acct) {
-		return "", false
-	}
-	if ae := s.checkAndRecordLLMCall(r.Context(), acct); ae != nil {
-		writeError(w, ae.Status, ae.Code, ae.Message)
+	if !s.askComputeOK(w, r, u, label) {
 		return "", false
 	}
 	answer, err := s.llm.Complete(r.Context(), system, user)
@@ -215,6 +210,22 @@ func (s *Server) askComplete(w http.ResponseWriter, r *http.Request, u *auth.Use
 		return "", false
 	}
 	return answer, true
+}
+
+// askComputeOK runs the compute caps (per-request rate + monthly cap), writing
+// the HTTP error itself on failure. Shared by askComplete (JSON) and the
+// streaming ask path, which must clear the guards BEFORE it starts the SSE body
+// so a 429/cap stays a clean HTTP status rather than a mid-stream surprise.
+func (s *Server) askComputeOK(w http.ResponseWriter, r *http.Request, u *auth.User, label string) bool {
+	acct := account{Kind: accountUser, ID: u.ID}
+	if !s.cloudRateOK(w, label, acct) {
+		return false
+	}
+	if ae := s.checkAndRecordLLMCall(r.Context(), acct); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return false
+	}
+	return true
 }
 
 // askGuards is the shared precondition for every generative endpoint: embedder +

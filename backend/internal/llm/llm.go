@@ -47,6 +47,15 @@ type Completer interface {
 	Model() string
 }
 
+// StreamCompleter is the optional streaming counterpart to Completer. A client
+// that implements it (the OpenAI client) streams token deltas; one that doesn't
+// (test fakes, a future provider) is handled by Service.CompleteStream's
+// blocking fallback, so callers can always stream without every client growing
+// a streaming path.
+type StreamCompleter interface {
+	CompleteStream(ctx context.Context, systemPrompt, userPrompt string, onToken func(string) error) error
+}
+
 // Service bundles the config and the active client. A nil client means disabled.
 type Service struct {
 	cfg Config
@@ -80,6 +89,27 @@ func (s *Service) Complete(ctx context.Context, systemPrompt, userPrompt string)
 		return "", errLLMDisabled
 	}
 	return s.cl.Complete(ctx, systemPrompt, userPrompt)
+}
+
+// CompleteStream streams the completion token-by-token via onToken. If the active
+// client doesn't implement StreamCompleter, it falls back to a blocking Complete
+// and delivers the whole answer as a single onToken call — so the streaming ask
+// path works against any provider (and the test fakes) unchanged.
+func (s *Service) CompleteStream(ctx context.Context, systemPrompt, userPrompt string, onToken func(string) error) error {
+	if !s.Enabled() {
+		return errLLMDisabled
+	}
+	if sc, ok := s.cl.(StreamCompleter); ok {
+		return sc.CompleteStream(ctx, systemPrompt, userPrompt, onToken)
+	}
+	out, err := s.cl.Complete(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		return err
+	}
+	if out == "" {
+		return nil
+	}
+	return onToken(out)
 }
 
 // Model returns the active model name (for the managed proxy default).

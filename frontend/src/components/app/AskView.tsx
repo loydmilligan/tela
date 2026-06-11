@@ -22,7 +22,7 @@ import {
 import { EmptyState } from '../ui/empty-state'
 import { useSpaces } from '../../lib/queries/spaces'
 import type { Space } from '../../lib/types'
-import { useAskDocs } from '../../lib/queries/ask'
+import { useAskDocsStream } from '../../lib/queries/ask'
 import { navigateToPage } from '../../lib/pageHitItem'
 import { ApiError, ASK_UNAVAILABLE_CODES, type SemanticHit } from '../../lib/api'
 import { SearchResult } from './SearchResult'
@@ -82,21 +82,20 @@ export function AskRoute() {
     typeof params.space === 'number' ? params.space : undefined
 
   const [question, setQuestion] = useState('')
-  const ask = useAskDocs()
+  const ask = useAskDocsStream()
 
   // Dedupe chunk-level sources to one row per page (hits arrive score-ordered,
   // so the first chunk per page is its strongest citation).
   const sources = useMemo<SemanticHit[]>(() => {
-    const hits = ask.data?.sources ?? []
     const seen = new Set<number>()
     const out: SemanticHit[] = []
-    for (const h of hits) {
+    for (const h of ask.sources) {
       if (seen.has(h.page_id)) continue
       seen.add(h.page_id)
       out.push(h)
     }
     return out
-  }, [ask.data])
+  }, [ask.sources])
 
   function setScope(value: string) {
     const id = value ? Number(value) : undefined
@@ -111,7 +110,7 @@ export function AskRoute() {
     const trimmed = q.trim()
     if (trimmed.length === 0 || ask.isPending) return
     setQuestion(trimmed)
-    ask.mutate({ question: trimmed, spaceId: scopeSpace })
+    ask.ask(trimmed, scopeSpace)
   }
 
   function submit() {
@@ -135,6 +134,14 @@ export function AskRoute() {
   }
 
   const unavailable = isUnavailable(ask.error)
+  // The answer area appears the moment retrieval returns sources or the first
+  // token lands, and persists once done — so a finished answer with zero sources
+  // still shows.
+  const showAnswer =
+    ask.status === 'done' || ask.answer.length > 0 || sources.length > 0
+  // Retrieval phase: streaming has started but nothing has come back yet.
+  const retrieving =
+    ask.isPending && ask.answer.length === 0 && sources.length === 0
 
   return (
     <div className="flex-1 flex flex-col gap-[var(--space-6)] px-[var(--space-7)] pt-[calc(var(--space-8)*1.5)] pb-[var(--space-7)] max-w-[42rem] w-full mx-auto min-h-0">
@@ -208,7 +215,7 @@ export function AskRoute() {
             title="Ask your docs isn't available yet"
             description="This tela instance hasn't been configured with an AI model for answering questions. Search still works in the meantime."
           />
-        ) : ask.isError ? (
+        ) : ask.status === 'error' ? (
           <EmptyState
             icon={AlertTriangle}
             tone="danger"
@@ -220,7 +227,7 @@ export function AskRoute() {
               </Button>
             }
           />
-        ) : ask.isPending ? (
+        ) : retrieving ? (
           <Card>
             <CardBody className="flex-row items-center gap-[var(--space-3)]">
               <Loader2
@@ -230,17 +237,30 @@ export function AskRoute() {
                 className="animate-spin text-[var(--text-muted)]"
               />
               <span className="text-[length:var(--text-sm)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
-                Reading your pages and writing an answer…
+                Reading your pages…
               </span>
             </CardBody>
           </Card>
-        ) : ask.data ? (
+        ) : showAnswer ? (
           <div className="flex flex-col gap-[var(--space-5)]">
             <Card>
               <CardBody>
-                {/* Answers come back as markdown (bold, lists, …) — render
-                    them through the shared read-view renderer, not as text. */}
-                <MarkdownView body={ask.data.answer} />
+                {/* Answer streams in as markdown — render through the shared
+                    read-view renderer, with a live caret while still writing. */}
+                {ask.answer ? <MarkdownView body={ask.answer} /> : null}
+                {ask.isPending ? (
+                  ask.answer ? (
+                    <span
+                      aria-hidden
+                      className="inline-block ml-[2px] w-[2px] h-[1.1em] align-text-bottom bg-[var(--accent)] animate-pulse"
+                    />
+                  ) : (
+                    <span className="inline-flex items-center gap-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+                      <Loader2 width={14} height={14} className="animate-spin" />
+                      Writing…
+                    </span>
+                  )
+                ) : null}
               </CardBody>
             </Card>
             {sources.length > 0 ? (
@@ -259,6 +279,13 @@ export function AskRoute() {
                   />
                 ))}
               </div>
+            ) : null}
+            {ask.status === 'done' && ask.followups.length > 0 ? (
+              <FollowUps
+                questions={ask.followups}
+                onAsk={runQuestion}
+                disabled={ask.isPending}
+              />
             ) : null}
           </div>
         ) : (
@@ -287,6 +314,46 @@ export function AskRoute() {
           </div>
         )}
       </section>
+    </div>
+  )
+}
+
+// FollowUps — the ask-first navigation thread. The backend suggests up to 3 next
+// questions per answer; clicking one runs it, so an answer becomes something to
+// pull on rather than a dead end. Same row language as the empty-state starters.
+function FollowUps({
+  questions,
+  onAsk,
+  disabled,
+}: {
+  questions: string[]
+  onAsk: (q: string) => void
+  disabled: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-[var(--space-2)]">
+      <h2 className="m-0 px-[var(--space-4)] text-[length:var(--text-xs)] uppercase tracking-[0.04em] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+        Keep exploring
+      </h2>
+      <div className="flex flex-col gap-[var(--space-1)]">
+        {questions.map((q) => (
+          <button
+            key={q}
+            type="button"
+            disabled={disabled}
+            onClick={() => onAsk(q)}
+            className="group flex items-center justify-between gap-[var(--space-3)] w-full text-left rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface-1)] px-[var(--space-3)] py-[var(--space-2)] text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-sans)] cursor-pointer transition-[background-color,border-color] duration-[var(--duration-fast)] hover:bg-[var(--surface-2)] hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border-subtle))] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="truncate">{q}</span>
+            <ArrowUpRight
+              width={15}
+              height={15}
+              aria-hidden
+              className="shrink-0 text-[var(--text-muted)] opacity-50 transition-[opacity,color,transform] duration-[var(--duration-fast)] group-hover:opacity-100 group-hover:text-[var(--accent)] group-hover:-translate-y-[1px] group-hover:translate-x-[1px]"
+            />
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

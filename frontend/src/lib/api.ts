@@ -158,6 +158,13 @@ export const ASK_UNAVAILABLE_CODES = ['rag_disabled', 'llm_disabled'] as const
 export interface AskAnswer {
   answer: string
   sources: SemanticHit[]
+  // Weak retrieval: the answer is a best-effort from loosely-related excerpts and
+  // already carries a CAUTION callout in its prose — the flag lets the view add a
+  // quiet chip too. Absent (older payloads) reads as confident.
+  low_confidence?: boolean
+  // Up to 3 model-suggested next questions — the ask-first navigation thread.
+  // Best-effort server-side, so may be absent or empty.
+  followups?: string[]
 }
 
 export function askDocs(
@@ -169,4 +176,107 @@ export function askDocs(
     body: JSON.stringify(body),
     signal,
   })
+}
+
+// Streaming "Ask your docs" — POST /api/rag/ask/stream (SSE). Same retrieval and
+// answer as askDocs, but the answer streams token-by-token so the UI renders it
+// live AND the connection stays continuously active (a slow model can't trip the
+// idle/proxy timeout the blocking endpoint hit). Raw fetch + ReadableStream, not
+// api() — that wrapper assumes one JSON body. Events: sources → token* →
+// (followups) → done, or a single error frame on a mid-stream failure. Clean HTTP
+// errors (503/429/…) are thrown as ApiError before the stream starts, so the
+// caller's existing ASK_UNAVAILABLE_CODES / model-unreachable handling still works.
+export interface AskStreamHandlers {
+  onSources?: (sources: SemanticHit[], lowConfidence: boolean) => void
+  onToken?: (text: string) => void
+  onFollowups?: (followups: string[]) => void
+  onDone?: () => void
+  onError?: (err: ApiError) => void
+}
+
+export async function askDocsStream(
+  body: { question: string; space_id?: number },
+  handlers: AskStreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(BASE + '/api/rag/ask/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(body),
+      signal,
+    })
+  } catch (err) {
+    if (signal?.aborted) return
+    throw new ApiError(0, 'network', err instanceof Error ? err.message : 'network error')
+  }
+
+  if (!res.ok || !res.body) {
+    // A clean HTTP error landed before the stream opened (disabled/rate-limit/etc).
+    let code = 'http_error'
+    let message = `HTTP ${res.status}`
+    if ((res.headers.get('Content-Type') ?? '').includes('application/json')) {
+      const b = (await res.json().catch(() => null)) as ApiErrorBody | null
+      if (b && typeof b.error === 'string' && typeof b.code === 'string') {
+        code = b.code
+        message = b.error
+      }
+    }
+    if (res.status === 401 && !isAuthEndpoint('/api/rag/ask/stream')) emitAuthRequired()
+    throw new ApiError(res.status, code, message)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      // SSE frames are blank-line delimited; dispatch each complete one.
+      let sep: number
+      while ((sep = buf.indexOf('\n\n')) !== -1) {
+        dispatchSSE(buf.slice(0, sep), handlers)
+        buf = buf.slice(sep + 2)
+      }
+    }
+  } catch (err) {
+    if (signal?.aborted) return
+    throw new ApiError(0, 'network', err instanceof Error ? err.message : 'stream error')
+  }
+}
+
+function dispatchSSE(frame: string, h: AskStreamHandlers): void {
+  let event = ''
+  let data = ''
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim()
+    else if (line.startsWith('data:')) data += line.slice(5).trim()
+  }
+  if (!event) return
+  let parsed: Record<string, unknown>
+  try {
+    parsed = data ? (JSON.parse(data) as Record<string, unknown>) : {}
+  } catch {
+    return
+  }
+  switch (event) {
+    case 'sources':
+      h.onSources?.((parsed.sources as SemanticHit[]) ?? [], !!parsed.low_confidence)
+      break
+    case 'token':
+      if (typeof parsed.t === 'string') h.onToken?.(parsed.t)
+      break
+    case 'followups':
+      h.onFollowups?.((parsed.followups as string[]) ?? [])
+      break
+    case 'error':
+      h.onError?.(new ApiError(502, (parsed.code as string) ?? 'completion_failed', 'generation failed'))
+      break
+    case 'done':
+      h.onDone?.()
+      break
+  }
 }
