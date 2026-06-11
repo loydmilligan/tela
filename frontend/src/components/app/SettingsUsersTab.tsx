@@ -4,9 +4,19 @@ import { ApiError } from '../../lib/api'
 import { useMe } from '../../lib/queries/auth'
 import {
   useAdminUsers,
+  useAdminUserActivity,
   useCreateAdminUser,
   useUpdateAdminUser,
 } from '../../lib/queries/admin-users'
+import { navigateToPage } from '../../lib/pageHitItem'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '../ui/sheet'
 import {
   localDateFromSqlite,
   relativeTimeFromSqlite,
@@ -94,6 +104,7 @@ export function SettingsUsersTab() {
 
 function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
   const [resetOpen, setResetOpen] = useState(false)
+  const [activityOpen, setActivityOpen] = useState(false)
   const [rowError, setRowError] = useState<string | null>(null)
   const updateUser = useUpdateAdminUser()
 
@@ -178,6 +189,10 @@ function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setActivityOpen(true)}>
+              View activity
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setResetOpen(true)}>
               Reset password
             </DropdownMenuItem>
@@ -205,7 +220,82 @@ function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
         open={resetOpen}
         onOpenChange={setResetOpen}
       />
+      <UserActivitySheet
+        user={row}
+        open={activityOpen}
+        onOpenChange={setActivityOpen}
+      />
     </li>
+  )
+}
+
+// Instance-wide recent edits by one user — the latest edit per page, newest
+// first. Reuses the recent-changes feed shape; querying is deferred until the
+// drawer opens. Clicking a row jumps to that page (which leaves Settings).
+function UserActivitySheet({
+  user,
+  open,
+  onOpenChange,
+}: {
+  user: AdminUserRow
+  open: boolean
+  onOpenChange: (next: boolean) => void
+}) {
+  const activity = useAdminUserActivity(user.id, open)
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-[min(28rem,100vw)]">
+        <SheetHeader>
+          <SheetTitle>Activity — {user.username}</SheetTitle>
+          <SheetDescription>
+            Most recently edited pages, across every space.
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          {activity.isLoading ? (
+            <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              Loading…
+            </p>
+          ) : activity.isError ? (
+            <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+              Couldn't load activity.
+            </p>
+          ) : activity.data && activity.data.length > 0 ? (
+            <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
+              {activity.data.map((c) => (
+                <li key={c.page_id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false)
+                      navigateToPage(c.space_id, c.page_id)
+                    }}
+                    className={cn(
+                      'w-full text-left flex flex-col gap-[2px]',
+                      'px-[var(--space-3)] py-[var(--space-2)]',
+                      'rounded-[var(--radius-sm)] bg-transparent border-0 cursor-pointer',
+                      'outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+                      'hover:bg-[var(--surface-2)]',
+                    )}
+                  >
+                    <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-[family-name:var(--font-sans)]">
+                      {c.title || 'Untitled'}
+                    </span>
+                    <span className="text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+                      {c.space_name} · {relativeTimeFromSqlite(c.updated_at)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              No edits yet.
+            </p>
+          )}
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
   )
 }
 

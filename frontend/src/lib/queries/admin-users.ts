@@ -1,11 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import type { AdminUserRow } from '../types'
+import type { RecentChange } from './recent-changes'
 import { authKeys } from './auth'
 
 export const adminUserKeys = {
   all: ['admin-users'] as const,
   list: () => [...adminUserKeys.all, 'list'] as const,
+  activity: (id: number) => [...adminUserKeys.all, 'activity', id] as const,
+}
+
+// One user's recent edits, instance-wide (GET /api/admin/users/{id}/activity).
+// Instance-admin only; unlike the home feed it isn't scoped to the caller's
+// space access. `enabled` defers the fetch until the activity drawer opens.
+export function useAdminUserActivity(userId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: adminUserKeys.activity(userId),
+    enabled,
+    queryFn: async () => {
+      const { changes } = await api<{ changes: RecentChange[] }>(
+        `/api/admin/users/${userId}/activity`,
+      )
+      return changes
+    },
+    staleTime: 15_000,
+  })
 }
 
 // Lists every user (active + inactive) for the instance-admin Settings tab.

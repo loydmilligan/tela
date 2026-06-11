@@ -63,6 +63,44 @@ func TestListAdminUsers_IncludesUsage(t *testing.T) {
 	}
 }
 
+// The admin activity view is instance-wide: an admin sees a user's edits even
+// in a space the admin isn't a member of (no space_access gate). That's the
+// whole point of #3 — and why it's instance-admin-only.
+func TestListUserActivity_AdminSeesUserEditsInstanceWide(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	ctx := context.Background()
+
+	admin := seedUser(t, d, "admin", "adminpw123", true)
+	alice := seedUser(t, d, "alice", "alicepw123", false)
+	// Space owned by alice; the admin is NOT a member.
+	spaceID := seedSpace(t, d, "Alice Space", "alice-space", alice)
+	au := authUser(alice, "alice", false)
+	if _, ae := srv.createPageCore(ctx, au, nil, pageCreateRequest{SpaceID: spaceID, Title: "Alice Note", Body: "x"}); ae != nil {
+		t.Fatalf("create: %v", ae)
+	}
+
+	rec := routedRecorder("GET /api/admin/users/{id}/activity", srv.ListUserActivity,
+		userRequest(http.MethodGet, "/api/admin/users/"+strconv.FormatInt(alice, 10)+"/activity", "", authUser(admin, "admin", true)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Alice Note") {
+		t.Fatalf("admin didn't see alice's edit instance-wide: %q", rec.Body.String())
+	}
+}
+
+func TestListUserActivity_NonAdmin_Forbidden(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	uid := seedUser(t, d, "user", "userpw1234", false)
+	rec := routedRecorder("GET /api/admin/users/{id}/activity", srv.ListUserActivity,
+		userRequest(http.MethodGet, "/api/admin/users/"+strconv.FormatInt(uid, 10)+"/activity", "", authUser(uid, "user", false)))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("code=%d want 403 body=%q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestListAdminUsers_NonAdmin_Forbidden(t *testing.T) {
 	d := newAPITestDB(t)
 	srv := New(d)

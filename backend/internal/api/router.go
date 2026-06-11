@@ -286,6 +286,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/users", srv.CreateAdminUser)
 	mux.HandleFunc("PATCH /api/admin/users/{id}", srv.PatchAdminUser)
 	mux.HandleFunc("DELETE /api/admin/users/{id}", srv.DeleteAdminUser)
+	mux.HandleFunc("GET /api/admin/users/{id}/activity", srv.ListUserActivity)
 	mux.HandleFunc("GET /api/admin/settings", srv.GetInstanceSettings)
 	mux.HandleFunc("PATCH /api/admin/settings", srv.PatchInstanceSettings)
 
