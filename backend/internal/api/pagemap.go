@@ -21,7 +21,8 @@ var mapHeadingRE = regexp.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
 type pageSection struct {
 	Level   int    `json:"level"`
 	Heading string `json:"heading"`
-	Path    string `json:"path"` // "Parent > Child" breadcrumb — the patch_page target
+	Path    string `json:"path"`              // "Parent > Child" breadcrumb — the patch_page target
+	Preview string `json:"preview,omitempty"` // a short prose snippet of the section's own content
 
 	headingLine int // line index of the heading
 	bodyStart   int // first line after the heading
@@ -85,9 +86,59 @@ func pageOutline(body string) []pageSection {
 				break
 			}
 		}
-		out[j] = pageSection{Level: h.level, Heading: h.heading, Path: h.path, headingLine: h.idx, bodyStart: h.idx + 1, end: end}
+		// Preview spans only this section's OWN content — up to the very next
+		// heading of any level — so a parent's preview isn't its whole subtree.
+		ownEnd := len(lines)
+		if j+1 < len(heads) {
+			ownEnd = heads[j+1].idx
+		}
+		out[j] = pageSection{
+			Level: h.level, Heading: h.heading, Path: h.path,
+			headingLine: h.idx, bodyStart: h.idx + 1, end: end,
+			Preview: sectionPreview(lines, h.idx+1, ownEnd),
+		}
 	}
 	return out
+}
+
+var mdLinkRE = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
+var mdStripper = strings.NewReplacer("**", "", "__", "", "*", "", "`", "", "~~", "")
+
+// sectionPreview builds a short, prose-ish snippet from a section's content lines
+// (fence-aware), stripping the loudest markdown so an agent can tell what a
+// section is about without reading the body. Clamped to ~140 runes.
+func sectionPreview(lines []string, start, end int) string {
+	const cap = 140
+	var b strings.Builder
+	inFence := false
+	for i := start; i < end && i < len(lines); i++ {
+		ln := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(ln, "```") || strings.HasPrefix(ln, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || ln == "" {
+			continue
+		}
+		ln = strings.TrimLeft(ln, "#>-*+| \t")
+		ln = mdLinkRE.ReplaceAllString(ln, "$1")
+		ln = strings.TrimSpace(mdStripper.Replace(ln))
+		if ln == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(ln)
+		if len([]rune(b.String())) >= cap {
+			break
+		}
+	}
+	r := []rune(b.String())
+	if len(r) > cap {
+		return strings.TrimRight(string(r[:cap]), " ") + "…"
+	}
+	return string(r)
 }
 
 // matchSection resolves a patch target to a section: exact path, then exact

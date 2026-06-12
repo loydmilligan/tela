@@ -37,6 +37,14 @@ func TestPageOutline(t *testing.T) {
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("outline paths = %v, want %v", got, want)
 	}
+	// Preview must be the section's OWN content (Setup → "Install the thing.",
+	// not its Linux subsection), and a fenced "## not a heading" must not leak in.
+	if secs[0].Preview != "Install the thing." {
+		t.Fatalf("Setup preview = %q, want %q", secs[0].Preview, "Install the thing.")
+	}
+	if strings.Contains(secs[2].Preview, "not a heading") {
+		t.Fatalf("Deploy preview leaked fenced text: %q", secs[2].Preview)
+	}
 }
 
 func TestApplyPatch(t *testing.T) {
