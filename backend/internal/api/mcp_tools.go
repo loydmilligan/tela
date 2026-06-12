@@ -52,7 +52,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_page",
 		Title:       "Get page",
-		Description: "Full markdown body + metadata for a numeric page id.",
+		Description: "Full markdown body + metadata for a numeric page id. Includes an `epistemic` block — trust signals computed from the wiki's own state: freshness (age, stale, review_overdue), provenance (human / agent / sync), and corroboration vs. dispute against same-space pages. Weigh it: prefer fresh, corroborated, human-reviewed pages; treat a stale or disputed page as lower-confidence and check its listed disputes before relying on it.",
 		Annotations: readOnly,
 		Meta:        widgetToolMeta(uiPageReaderOpenAI, uiPageReaderMCPApp, "Renders the page as formatted markdown.", "Opening page…", "Page ready"),
 	}, s.mcpGetPage)
@@ -215,6 +215,9 @@ type mcpPage struct {
 	models.Page
 	URL       string `json:"url"`
 	Truncated bool   `json:"truncated,omitempty"`
+	// Epistemic — trust signals (freshness, provenance, corroboration/dispute) so
+	// an agent weighs the page, not just reads it. Set on get_page; nil elsewhere.
+	Epistemic *EpistemicStatus `json:"epistemic,omitempty"`
 }
 
 // mcpBodyCap bounds a tool-result body so a single huge page can't blow the
@@ -384,9 +387,10 @@ func (s *Server) mcpGetPage(ctx context.Context, req *mcp.CallToolRequest, in ge
 	if ae != nil {
 		return mcpErr(ae), getPageOut{}, nil
 	}
+	epi := s.pageEpistemic(ctx, p)
 	body, whole := mcpCapBody(p.Body)
 	p.Body = body
-	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p), Truncated: !whole}}
+	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p), Truncated: !whole, Epistemic: epi}}
 	return nil, out, nil
 }
 
