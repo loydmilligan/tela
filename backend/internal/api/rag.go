@@ -224,8 +224,9 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	conflicts := s.askConflictNote(r.Context(), hits)
 	answer, ok := s.askComplete(w, r, u, "ask", askSystemPrompt,
-		"Answer the question using only these document excerpts.\n\n"+excerpts+"Question: "+req.Question)
+		askUserPrompt(excerpts, conflicts, req.Question))
 	if !ok {
 		return
 	}
@@ -250,7 +251,14 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 // ask handlers (single source so the two never drift).
 const askSystemPrompt = "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
 	"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts. " +
-	"If the excerpts disagree — one excerpt's value, status, or claim conflicting with another's — surface the discrepancy explicitly rather than assuming they agree or silently picking one."
+	"Sources may also be flagged in a 'Known disagreements' note, and excerpts can themselves conflict on a value, status, or claim. " +
+	"When such a conflict is relevant to the question, surface it explicitly and give both sides rather than silently picking one or assuming they agree; when a flagged disagreement is NOT relevant to the question, ignore it. Never invent a conflict that isn't stated."
+
+// askUserPrompt assembles the grounded user turn shared by both ask handlers: the
+// cited excerpts, the (optional) known-disagreements block, then the question.
+func askUserPrompt(excerpts, conflicts, question string) string {
+	return "Answer the question using only these document excerpts.\n\n" + excerpts + conflicts + "Question: " + question
+}
 
 // RAGAskStream is the streaming (SSE) twin of RAGAsk: identical retrieval and
 // prompt, but the answer is streamed token-by-token over text/event-stream so the
@@ -325,8 +333,9 @@ func (s *Server) RAGAskStream(w http.ResponseWriter, r *http.Request) {
 		answer.WriteString(lowConfidenceNote)
 		_ = sse.event("token", map[string]string{"t": lowConfidenceNote})
 	}
+	conflicts := s.askConflictNote(r.Context(), hits)
 	streamErr := s.llm.CompleteStream(r.Context(), askSystemPrompt,
-		"Answer the question using only these document excerpts.\n\n"+excerpts+"Question: "+req.Question,
+		askUserPrompt(excerpts, conflicts, req.Question),
 		func(tok string) error {
 			answer.WriteString(tok)
 			return sse.event("token", map[string]string{"t": tok})

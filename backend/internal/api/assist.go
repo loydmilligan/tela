@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zcag/tela/backend/internal/agreement"
 	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/rag"
 )
@@ -186,6 +187,68 @@ func buildAskContext(pageIDs []int64, best map[int64]rag.Hit, count map[int64]in
 		pageHits = append(pageHits, h)
 	}
 	return b.String(), pageHits
+}
+
+// askMaxConflicts caps how many known-disagreement lines we hand the model — a
+// noise/cost bound; the LLM filters these to the question-relevant ones anyway.
+const askMaxConflicts = 6
+
+// askConflictNote builds the "known disagreements" block for the cited sources:
+// precomputed contradictions (the agreement worker) keyed to the [n] excerpt
+// numbers, INCLUDING ones whose other side wasn't retrieved. Returns "" when none.
+// The system prompt tells the model to raise only the question-relevant ones. The
+// caller must pass the access-scoped cited hits (same order as the [n] numbering).
+func (s *Server) askConflictNote(ctx context.Context, pageHits []rag.Hit) string {
+	if s.agreement == nil || len(pageHits) == 0 {
+		return ""
+	}
+	ids := make([]int64, len(pageHits))
+	for i, h := range pageHits {
+		ids[i] = h.PageID
+	}
+	byPage, err := s.agreement.DisputesFor(ctx, ids)
+	if err != nil || len(byPage) == 0 {
+		return ""
+	}
+	return formatConflicts(pageHits, byPage)
+}
+
+// formatConflicts renders the disagreement block (pure, so it's unit-testable).
+// It walks pageHits in [n] order, dedups symmetric pairs (a conflict recorded on
+// both pages' rows), skips reasonless entries, and caps the list.
+func formatConflicts(pageHits []rag.Hit, byPage map[int64][]agreement.Dispute) string {
+	numOf := make(map[int64]int, len(pageHits))
+	for i, h := range pageHits {
+		numOf[h.PageID] = i + 1
+	}
+	seen := map[[2]int64]bool{}
+	var b strings.Builder
+	lines := 0
+	for _, h := range pageHits {
+		for _, d := range byPage[h.PageID] {
+			if lines >= askMaxConflicts {
+				break
+			}
+			reason := strings.TrimSpace(d.Reason)
+			if reason == "" {
+				continue
+			}
+			key := [2]int64{h.PageID, d.PageID}
+			if key[0] > key[1] {
+				key[0], key[1] = key[1], key[0]
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			fmt.Fprintf(&b, "- [%d] %q may conflict with %q — %s\n", numOf[h.PageID], h.Title, d.Title, reason)
+			lines++
+		}
+	}
+	if lines == 0 {
+		return ""
+	}
+	return "\nKnown disagreements among these sources (raise only if relevant to the question, and give both values):\n" + b.String() + "\n"
 }
 
 // clampRunes truncates s to at most n runes (never splitting a rune).

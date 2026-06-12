@@ -233,6 +233,44 @@ func parseVerdicts(out string, neighbors []rag.Neighbor) (int, int, []Dispute) {
 	return corr, disp, disputes
 }
 
+// DisputesFor returns the cached disputes for each given page (clean rows only,
+// dispute > 0), keyed by page id. The Ask path uses it to tell the model where its
+// cited sources are known to conflict — so it can flag a question-relevant
+// contradiction even when retrieval surfaced only one side. NOT access-scoped: the
+// caller must pass page ids it has already authorised (each dispute names only a
+// same-space page, which the reader of the cited page can also see).
+func (s *Service) DisputesFor(ctx context.Context, pageIDs []int64) (map[int64][]Dispute, error) {
+	out := map[int64][]Dispute{}
+	if len(pageIDs) == 0 {
+		return out, nil
+	}
+	ph := make([]string, len(pageIDs))
+	args := make([]any, len(pageIDs))
+	for i, id := range pageIDs {
+		ph[i] = "$" + strconv.Itoa(i+1)
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT page_id, disputes FROM page_agreement
+		 WHERE last_error = '' AND dispute > 0 AND page_id IN (`+strings.Join(ph, ",")+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pid int64
+		var raw string
+		if err := rows.Scan(&pid, &raw); err != nil {
+			return nil, err
+		}
+		var ds []Dispute
+		if json.Unmarshal([]byte(raw), &ds) == nil && len(ds) > 0 {
+			out[pid] = ds
+		}
+	}
+	return out, rows.Err()
+}
+
 // recordFailure upserts a failure row so the page stays eligible for a backed-off
 // retry (the worker's fresh-check skips only rows with last_error = ”).
 func (s *Service) recordFailure(ctx context.Context, pageID int64, cause error) {

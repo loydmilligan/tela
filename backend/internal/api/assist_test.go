@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zcag/tela/backend/internal/agreement"
 	"github.com/zcag/tela/backend/internal/llm"
 	"github.com/zcag/tela/backend/internal/rag"
 )
@@ -139,6 +140,48 @@ func TestBuildAskContext_ExpandsHubAndFallsBack(t *testing.T) {
 		if h.PageID != pageIDs[i] {
 			t.Errorf("pageHits[%d] = page %d, want %d", i, h.PageID, pageIDs[i])
 		}
+	}
+}
+
+func TestFormatConflicts(t *testing.T) {
+	// Cited sources [1]=page10, [2]=page20, [3]=page30. A symmetric conflict between
+	// 10 and 20 is recorded on BOTH rows; a one-sided conflict on 30 points at an
+	// uncited page 99; a reasonless entry must be dropped.
+	pageHits := []rag.Hit{
+		{PageID: 10, Title: "Report Helper"},
+		{PageID: 20, Title: "Domain Context"},
+		{PageID: 30, Title: "Connector"},
+	}
+	byPage := map[int64][]agreement.Dispute{
+		10: {{PageID: 20, Title: "Domain Context", Reason: "report port: 2480 vs 8444"}},
+		20: {{PageID: 10, Title: "Report Helper", Reason: "report port: 8444 vs 2480"}}, // symmetric dup
+		30: {
+			{PageID: 99, Title: "Legacy Connector", Reason: "host: a vs b"}, // one-sided (99 not cited)
+			{PageID: 12, Title: "No Reason Page", Reason: "  "},             // dropped: blank reason
+		},
+	}
+
+	out := formatConflicts(pageHits, byPage)
+
+	// The symmetric 10<->20 conflict appears exactly once, keyed to the first [n].
+	if strings.Count(out, "report port") != 1 {
+		t.Errorf("symmetric conflict should be de-duped to one line:\n%s", out)
+	}
+	if !strings.Contains(out, "[1] \"Report Helper\" may conflict with \"Domain Context\"") {
+		t.Errorf("missing/mis-numbered symmetric conflict line:\n%s", out)
+	}
+	// The one-sided conflict (other page not retrieved) is still surfaced.
+	if !strings.Contains(out, "[3] \"Connector\" may conflict with \"Legacy Connector\" — host: a vs b") {
+		t.Errorf("one-sided conflict should be surfaced:\n%s", out)
+	}
+	// The reasonless entry is dropped.
+	if strings.Contains(out, "No Reason Page") {
+		t.Errorf("reasonless conflict should be dropped:\n%s", out)
+	}
+
+	// No disputes among cited pages → empty string (no header).
+	if got := formatConflicts(pageHits, map[int64][]agreement.Dispute{}); got != "" {
+		t.Errorf("want empty string when no conflicts, got %q", got)
 	}
 }
 
