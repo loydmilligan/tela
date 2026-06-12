@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -204,6 +206,29 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Description: "Submit free-text feedback about tela / tela-mcp itself (friction, bugs, missing capabilities). NOT for page content — use add_comment for that.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpSubmitFeedback)
+
+	// ---- attachments (files on a page: images, PDFs, datasets, …) ----
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_attachments",
+		Title:       "List attachments",
+		Description: "List the files attached to a page (uploads AND rclone-synced files): name, mime, byte size, a stable serve URL, an absolute download_url, and a ready-to-embed `markdown` snippet. `embedded` tells you the page body already references the file.",
+		Annotations: readOnly,
+	}, s.mcpListAttachments)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "upload_attachment",
+		Title:       "Upload attachment",
+		Description: "Upload a file (base64) and attach it to a page (editor+) — an image, PDF, dataset, etc. Returns the serve URL plus a ready-to-paste `markdown` snippet; then call update_page or patch_page to place it in the body (images render inline as ![](…), other files as a download card). Payload is inline base64, so this is for reasonably-sized files — very large files exceed the protocol message limit.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpUploadAttachment)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_attachment",
+		Title:       "Delete attachment",
+		Description: "Detach a file from a page by attachment id (editor+; ids come from list_attachments). Soft-delete. It does NOT edit the page body, so remove any inline embed separately with update_page/patch_page.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes, OpenWorldHint: &no},
+	}, s.mcpDeleteAttachment)
 }
 
 // ---- shared output shapes ------------------------------------------------
@@ -995,4 +1020,116 @@ func (s *Server) mcpSubmitFeedback(ctx context.Context, req *mcp.CallToolRequest
 		return mcpErr(ae), submitFeedbackOut{}, nil
 	}
 	return nil, submitFeedbackOut{Feedback: dto}, nil
+}
+
+// ---- attachments (list_attachments / upload_attachment / delete_attachment) ----
+
+// mcpAttachment is an attachmentOut plus two agent conveniences: an absolute
+// download_url (the embedded `url` is relative, for the body; this one is
+// fetchable over HTTP directly) and a ready-to-paste `markdown` embed snippet.
+type mcpAttachment struct {
+	attachmentOut
+	DownloadURL string `json:"download_url"`
+	Markdown    string `json:"markdown"`
+}
+
+func newMCPAttachment(a attachmentOut) mcpAttachment {
+	return mcpAttachment{
+		attachmentOut: a,
+		DownloadURL:   canonicalBaseURL() + a.URL,
+		Markdown:      attachmentEmbedMarkdown(a),
+	}
+}
+
+// attachmentEmbedMarkdown is the snippet to drop into a page body: inline image
+// syntax for image mimes, a :::file download card for everything else.
+func attachmentEmbedMarkdown(a attachmentOut) string {
+	if strings.HasPrefix(a.Mime, "image/") {
+		return fmt.Sprintf("![%s](%s)", a.Name, a.URL)
+	}
+	return fmt.Sprintf(":::file{name=%q size=\"%d\"}\n%s\n:::", a.Name, a.ByteSize, a.URL)
+}
+
+// decodeMCPBase64 decodes a base64 tool argument, tolerating a leading
+// `data:<mime>;base64,` URL prefix that agents often include.
+func decodeMCPBase64(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "data:") {
+		if i := strings.Index(s, ";base64,"); i >= 0 {
+			s = s[i+len(";base64,"):]
+		}
+	}
+	return base64.StdEncoding.DecodeString(s)
+}
+
+type listAttachmentsIn struct {
+	PageID int64 `json:"page_id" jsonschema:"page whose attachments to list"`
+}
+
+type listAttachmentsOut struct {
+	Attachments []mcpAttachment `json:"attachments"`
+}
+
+func (s *Server) mcpListAttachments(ctx context.Context, req *mcp.CallToolRequest, in listAttachmentsIn) (*mcp.CallToolResult, listAttachmentsOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), listAttachmentsOut{}, nil
+	}
+	atts, ae := s.listPageAttachmentsCore(ctx, u, k, in.PageID)
+	if ae != nil {
+		return mcpErr(ae), listAttachmentsOut{}, nil
+	}
+	out := listAttachmentsOut{Attachments: make([]mcpAttachment, len(atts))}
+	for i, a := range atts {
+		out.Attachments[i] = newMCPAttachment(a)
+	}
+	return nil, out, nil
+}
+
+type uploadAttachmentIn struct {
+	PageID     int64  `json:"page_id" jsonschema:"page to attach the file to"`
+	Name       string `json:"name" jsonschema:"file name including extension, e.g. report.pdf or chart.png (drives the displayed name + type detection)"`
+	DataBase64 string `json:"data_base64" jsonschema:"the file bytes, base64-encoded; a leading data:<mime>;base64,… URL prefix is also accepted"`
+}
+
+type uploadAttachmentOut struct {
+	Attachment mcpAttachment `json:"attachment"`
+}
+
+func (s *Server) mcpUploadAttachment(ctx context.Context, req *mcp.CallToolRequest, in uploadAttachmentIn) (*mcp.CallToolResult, uploadAttachmentOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), uploadAttachmentOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), uploadAttachmentOut{}, nil
+	}
+	data, err := decodeMCPBase64(in.DataBase64)
+	if err != nil {
+		return mcpErr(&apiErr{400, "bad_request", "data_base64 is not valid base64"}), uploadAttachmentOut{}, nil
+	}
+	a, ae := s.uploadPageAttachmentCore(ctx, u, k, in.PageID, in.Name, data)
+	if ae != nil {
+		return mcpErr(ae), uploadAttachmentOut{}, nil
+	}
+	return nil, uploadAttachmentOut{Attachment: newMCPAttachment(a)}, nil
+}
+
+type deleteAttachmentIn struct {
+	PageID int64 `json:"page_id" jsonschema:"the page the file is attached to"`
+	ID     int64 `json:"id" jsonschema:"attachment id (from list_attachments)"`
+}
+
+func (s *Server) mcpDeleteAttachment(ctx context.Context, req *mcp.CallToolRequest, in deleteAttachmentIn) (*mcp.CallToolResult, okOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), okOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	if ae := s.deletePageAttachmentCore(ctx, u, k, in.PageID, in.ID); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	return nil, okOut{OK: true}, nil
 }

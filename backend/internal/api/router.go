@@ -175,11 +175,6 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// is on /api/diagrams/* (public) so it can be served without a session.
 	mux.HandleFunc("PUT /api/pages/{id}/diagrams", srv.UploadPageDiagram)
 
-	// Image-upload sidecar. POST is session-authed editor+ on the page's
-	// space; the GET counterpart below is on /api/images/* (public) so it can
-	// be served without a session (incl. share-mode). Mirrors diagrams.
-	mux.HandleFunc("POST /api/pages/{id}/images", srv.UploadPageImage)
-
 	// Page attachments — the space_files parented to this page (incl. files
 	// rclone-synced into its folder). Session-authed read; the bytes are served
 	// by the public /api/files/ route below.
@@ -461,7 +456,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// segment); the handler strips it before validating against the hex regex.
 	mux.HandleFunc("GET /api/diagrams/{page_id}/{file}", srv.ServePageDiagramPNG)
 
-	// Public image serve — content-addressed, immutable. MUST be on
+	// Legacy public image serve — content-addressed, immutable. Serve-only:
+	// uploads moved to the unified space_files attachments store, but this stays
+	// for images already embedded in historical page bodies. MUST be on
 	// auth.IsPublicPath via the /api/images/ HasPrefix branch.
 	mux.HandleFunc("GET /api/images/{page_id}/{file}", srv.ServePageImage)
 

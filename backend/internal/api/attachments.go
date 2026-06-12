@@ -12,6 +12,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/zcag/tela/backend/internal/auth"
 )
 
 // attachments.go — the page-attachments surface over the unified space_files
@@ -57,82 +59,151 @@ func spaceFileServeURL(spaceID int64, name, hash string) string {
 	return fmt.Sprintf("/api/files/%d/%s%s", spaceID, hash, ext)
 }
 
-// ListPageAttachments handles GET /api/pages/{id}/attachments.
-func (s *Server) ListPageAttachments(w http.ResponseWriter, r *http.Request) {
-	pageID, ok := parseIDParam(w, r, "id")
-	if !ok {
-		return
-	}
-	ctx := r.Context()
+// ---- transport-agnostic cores (shared by the REST handlers + the MCP
+// list_attachments / upload_attachment / delete_attachment tools) ----
+//
+// A missing page resolves to the same 403 "not a member" the membership check
+// returns, so the routes don't become a page-existence enumeration oracle.
+
+// listPageAttachmentsCore lists a page's live space_files (uploads AND files
+// rclone-synced into its folder) with stable serve URLs + an embedded flag. Any
+// space member may read.
+func (s *Server) listPageAttachmentsCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64) ([]attachmentOut, *apiErr) {
 	page, err := selectPageByID(ctx, s.DB, pageID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
+		return nil, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
-	if _, ok := s.requireMembership(w, r, page.SpaceID); !ok {
-		return
+	if _, ae := s.membershipCore(ctx, u, k, page.SpaceID); ae != nil {
+		return nil, ae
 	}
-
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT id, name, mime, byte_size, content_hash
 		  FROM space_files
 		 WHERE parent_page_id = $1 AND deleted_at IS NULL
 		 ORDER BY name ASC, id ASC`, pageID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "list attachments failed")
-		return
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "list attachments failed"}
 	}
 	defer rows.Close()
 	out := []attachmentOut{}
 	for rows.Next() {
 		var a attachmentOut
 		if err := rows.Scan(&a.ID, &a.Name, &a.Mime, &a.ByteSize, &a.Hash); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "scan attachment failed")
-			return
+			return nil, &apiErr{http.StatusInternalServerError, "internal", "scan attachment failed"}
 		}
 		a.URL = spaceFileServeURL(page.SpaceID, a.Name, a.Hash)
 		a.Embedded = strings.Contains(page.Body, a.Hash)
 		out = append(out, a)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "list attachments failed")
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "list attachments failed"}
+	}
+	return out, nil
+}
+
+// uploadPageAttachmentCore stores data as a space_file parented to the page and
+// returns its metadata + serve URL (editor+). The unified path for BOTH inline
+// images and other attachments. Callers pass the already-read bytes (the REST
+// handler streams the multipart under a MaxBytesReader; the MCP tool decodes
+// base64), so the size cap is enforced here too.
+func (s *Server) uploadPageAttachmentCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, filename string, data []byte) (attachmentOut, *apiErr) {
+	if len(data) == 0 {
+		return attachmentOut{}, &apiErr{http.StatusBadRequest, "bad_request", "uploaded file is empty"}
+	}
+	if int64(len(data)) > davFileMaxBytes() {
+		return attachmentOut{}, &apiErr{http.StatusRequestEntityTooLarge, "too_large", "file exceeds the size limit"}
+	}
+	page, err := selectPageByID(ctx, s.DB, pageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return attachmentOut{}, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	}
+	if err != nil {
+		return attachmentOut{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
+	}
+	role, ae := s.membershipCore(ctx, u, k, page.SpaceID)
+	if ae != nil {
+		return attachmentOut{}, ae
+	}
+	if !canEdit(role) {
+		return attachmentOut{}, &apiErr{http.StatusForbidden, "viewer_no_write", "editor or owner role required"}
+	}
+	if ae := s.checkStorageQuota(ctx, page.SpaceID, int64(len(data))); ae != nil {
+		return attachmentOut{}, ae
+	}
+	sf, err := createPageUploadFile(ctx, s.DB, page.SpaceID, pageID, sanitizeUploadName(filename), data)
+	if err != nil {
+		return attachmentOut{}, &apiErr{http.StatusInternalServerError, "internal", "store attachment failed"}
+	}
+	return attachmentOut{
+		ID: sf.id, Name: sf.name, Mime: sf.mime, ByteSize: sf.size, Hash: sf.hash,
+		URL:      spaceFileServeURL(page.SpaceID, sf.name, sf.hash),
+		Embedded: strings.Contains(page.Body, sf.hash),
+	}, nil
+}
+
+// deletePageAttachmentCore soft-deletes a space_file parented to the page (editor+).
+func (s *Server) deletePageAttachmentCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID, fileID int64) *apiErr {
+	page, err := selectPageByID(ctx, s.DB, pageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+	}
+	if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
+	}
+	role, ae := s.membershipCore(ctx, u, k, page.SpaceID)
+	if ae != nil {
+		return ae
+	}
+	if !canEdit(role) {
+		return &apiErr{http.StatusForbidden, "viewer_no_write", "editor or owner role required"}
+	}
+	res, err := s.DB.ExecContext(ctx, `
+		UPDATE space_files SET deleted_at = tela_now()
+		 WHERE id = $1 AND parent_page_id = $2 AND deleted_at IS NULL`, fileID, pageID)
+	if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete attachment failed"}
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return &apiErr{http.StatusNotFound, "not_found", "attachment not found on this page"}
+	}
+	return nil
+}
+
+// ListPageAttachments handles GET /api/pages/{id}/attachments.
+func (s *Server) ListPageAttachments(w http.ResponseWriter, r *http.Request) {
+	pageID, ok := parseIDParam(w, r, "id")
+	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"attachments": out})
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	k, _ := auth.APIKeyFromContext(r.Context())
+	atts, ae := s.listPageAttachmentsCore(r.Context(), u, k, pageID)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attachments": atts})
 }
 
 // UploadPageAttachment handles POST /api/pages/{id}/attachments (multipart,
-// field "file"). Editor+ on the page's space. Stores the bytes as a space_file
-// parented to the page and returns its metadata + serve URL. This is the unified
-// upload path the editor uses for BOTH inline images and other attachments.
+// field "file"). Editor+ on the page's space. This is the unified upload path
+// the editor uses for BOTH inline images and other attachments.
 func (s *Server) UploadPageAttachment(w http.ResponseWriter, r *http.Request) {
 	pageID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
-	ctx := r.Context()
-	page, err := selectPageByID(ctx, s.DB, pageID)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
-	}
-	role, ok := s.requireMembership(w, r, page.SpaceID)
+	u, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "viewer_no_write", "editor or owner role required")
-		return
-	}
-
+	k, _ := auth.APIKeyFromContext(r.Context())
 	r.Body = http.MaxBytesReader(w, r.Body, davFileMaxBytes())
 	file, hdr, err := r.FormFile("file")
 	if err != nil {
@@ -145,30 +216,15 @@ func (s *Server) UploadPageAttachment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "could not read uploaded file (too large?)")
 		return
 	}
-	if len(data) == 0 {
-		writeError(w, http.StatusBadRequest, "bad_request", "uploaded file is empty")
-		return
-	}
-	if ae := s.checkStorageQuota(ctx, page.SpaceID, int64(len(data))); ae != nil {
+	a, ae := s.uploadPageAttachmentCore(r.Context(), u, k, pageID, hdr.Filename, data)
+	if ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
-	name := sanitizeUploadName(hdr.Filename)
-
-	sf, err := createPageUploadFile(ctx, s.DB, page.SpaceID, pageID, name, data)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "store attachment failed")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"attachment": attachmentOut{
-		ID: sf.id, Name: sf.name, Mime: sf.mime, ByteSize: sf.size, Hash: sf.hash,
-		URL:      spaceFileServeURL(page.SpaceID, sf.name, sf.hash),
-		Embedded: strings.Contains(page.Body, sf.hash),
-	}})
+	writeJSON(w, http.StatusOK, map[string]any{"attachment": a})
 }
 
 // DeletePageAttachment handles DELETE /api/pages/{id}/attachments/{file_id}.
-// Editor+; soft-deletes a space_file that is parented to the page.
 func (s *Server) DeletePageAttachment(w http.ResponseWriter, r *http.Request) {
 	pageID, ok := parseIDParam(w, r, "id")
 	if !ok {
@@ -178,33 +234,13 @@ func (s *Server) DeletePageAttachment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx := r.Context()
-	page, err := selectPageByID(ctx, s.DB, pageID)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusForbidden, "forbidden", "not a member")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
-	}
-	role, ok := s.requireMembership(w, r, page.SpaceID)
+	u, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
-	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "viewer_no_write", "editor or owner role required")
-		return
-	}
-	res, err := s.DB.ExecContext(ctx, `
-		UPDATE space_files SET deleted_at = tela_now()
-		 WHERE id = $1 AND parent_page_id = $2 AND deleted_at IS NULL`, fileID, pageID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "delete attachment failed")
-		return
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "attachment not found on this page")
+	k, _ := auth.APIKeyFromContext(r.Context())
+	if ae := s.deletePageAttachmentCore(r.Context(), u, k, pageID, fileID); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

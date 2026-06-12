@@ -117,6 +117,7 @@ func TestMCP_SpikeListSpaces(t *testing.T) {
 		"search", "search_bodies", "semantic_search", "read_chunk", "fetch",
 		"create_page", "update_page", "delete_page", "move_page", "add_comment",
 		"create_space", "update_space", "delete_space", "submit_feedback",
+		"list_attachments", "upload_attachment", "delete_attachment",
 	} {
 		if !got[want] {
 			t.Errorf("tool %q not advertised", want)

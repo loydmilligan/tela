@@ -30,7 +30,7 @@ func TestIsPublicPath(t *testing.T) {
 		"/api/pages/1":                 false,
 		"/api/pages/1/backlink":        false,
 		"/api/pages/1/diagrams":        false, // M13.2 PUT lives on the session-gated /api/pages/* path
-		"/api/pages/1/images":          false, // POST lives on the session-gated /api/pages/* path
+		"/api/pages/1/images":          false, // session-gated /api/pages/* (the public sidecar is GET /api/images/*)
 		"/api/pages/1/attachments":     false, // list lives on the session-gated /api/pages/* path
 		"/api/search":                  false,
 		"/api/auth":                    false, // no trailing slash — not under /api/auth/
