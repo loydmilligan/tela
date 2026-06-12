@@ -26,6 +26,9 @@ type graphNode struct {
 	// Count of outgoing wikilinks whose target page no longer exists (recorded
 	// in page_links with a last_known_title). Powers broken-link surfacing.
 	Broken int `json:"broken"`
+	// Count of same-space pages that contradict this one (cached page_agreement).
+	// Drives the Trust lens + the health stats. 0 when unanalyzed/clean.
+	Dispute int `json:"dispute,omitempty"`
 }
 
 type graphLink struct {
@@ -70,17 +73,19 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	)
 	if pinSpace != nil {
 		nodeRows, err = s.DB.QueryContext(ctx, `
-			SELECT p.id, p.space_id, s.name, p.title, p.updated_at
+			SELECT p.id, p.space_id, s.name, p.title, p.updated_at, COALESCE(a.dispute, 0)
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+			  LEFT JOIN page_agreement a ON a.page_id = p.id AND a.last_error = ''
 			 WHERE p.space_id = $2 AND p.deleted_at IS NULL`, u.ID, *pinSpace)
 	} else {
 		nodeRows, err = s.DB.QueryContext(ctx, `
-			SELECT p.id, p.space_id, s.name, p.title, p.updated_at
+			SELECT p.id, p.space_id, s.name, p.title, p.updated_at, COALESCE(a.dispute, 0)
 			  FROM pages p
 			  JOIN spaces s ON s.id = p.space_id
 			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+			  LEFT JOIN page_agreement a ON a.page_id = p.id AND a.last_error = ''
 			 WHERE p.deleted_at IS NULL`, u.ID)
 	}
 	if err != nil {
@@ -92,7 +97,7 @@ func (s *Server) GraphData(w http.ResponseWriter, r *http.Request) {
 	nodes := []graphNode{}
 	for nodeRows.Next() {
 		var n graphNode
-		if err := nodeRows.Scan(&n.ID, &n.SpaceID, &n.SpaceName, &n.Title, &n.UpdatedAt); err != nil {
+		if err := nodeRows.Scan(&n.ID, &n.SpaceID, &n.SpaceName, &n.Title, &n.UpdatedAt, &n.Dispute); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan graph node failed")
 			return
 		}

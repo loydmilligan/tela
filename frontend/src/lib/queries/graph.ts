@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
+import { parseSqliteTs } from '../types'
 import { subscribeToPageMutation } from '../pageMutationEvent'
 
 // Graph view data — pages the caller can see plus the edges between them. Two
@@ -17,6 +18,20 @@ export interface GraphNode {
   updated_at: string
   // Count of outgoing wikilinks whose target no longer exists.
   broken: number
+  // Count of same-space pages that contradict this one (Trust lens / health).
+  dispute?: number
+}
+
+// STALE_DAYS — a node older than this reads as stale in the Trust lens / health
+// stats. Matches the per-page trust strip's threshold (~4 months).
+export const GRAPH_STALE_DAYS = 120
+
+// isStaleNode — whether a page's last edit is older than the staleness cutoff.
+// Lives here (not in a component) so the Date.now() clock read stays out of
+// render — React's purity lint forbids impure calls during a render pass.
+export function isStaleNode(updatedAt: string): boolean {
+  const t = parseSqliteTs(updatedAt).getTime()
+  return !Number.isNaN(t) && t > 0 && Date.now() - t > GRAPH_STALE_DAYS * 86_400_000
 }
 
 export interface GraphLink {

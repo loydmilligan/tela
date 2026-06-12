@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Crosshair, Maximize2, Search, X } from 'lucide-react'
 import {
   buildSpacePalette,
+  isStaleNode,
   neighborhood,
   useGraph,
   type GraphLink,
@@ -25,6 +26,7 @@ export function GraphRoute() {
 
   const [showLinks, setShowLinks] = useState(true)
   const [showTree, setShowTree] = useState(true)
+  const [showTrust, setShowTrust] = useState(false)
   const [recency, setRecency] = useState(false)
   const [orphansOnly, setOrphansOnly] = useState(false)
   const [query, setQuery] = useState('')
@@ -137,6 +139,9 @@ export function GraphRoute() {
         <ToggleChip active={showSemantic} onClick={() => setShowSemantic((v) => !v)}>
           Semantic
         </ToggleChip>
+        <ToggleChip active={showTrust} onClick={() => setShowTrust((v) => !v)}>
+          Trust
+        </ToggleChip>
         <ToggleChip active={recency} onClick={() => setRecency((v) => !v)}>
           Recency
         </ToggleChip>
@@ -174,6 +179,7 @@ export function GraphRoute() {
             showLinks={showLinks}
             showTree={showTree}
             showSemantic={showSemantic}
+            showTrust={showTrust}
             recency={recency}
             currentId={focus ?? null}
             matchedIds={matchedIds}
@@ -219,6 +225,8 @@ export function GraphRoute() {
 interface Stats {
   hubs: { id: number; title: string; deg: number }[]
   recent: { id: number; title: string }[]
+  disputed: { id: number; title: string; n: number }[]
+  stale: { id: number; title: string }[]
   orphanCount: number
   brokenCount: number
 }
@@ -240,9 +248,20 @@ function computeStats(nodes: GraphNode[], links: GraphLink[]): Stats {
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
     .slice(0, 6)
     .map((n) => ({ id: n.id, title: n.title || 'Untitled' }))
+  // Trust health: disputed first (most disputes first), then the stale worklist.
+  const disputed = nodes
+    .filter((n) => (n.dispute ?? 0) > 0)
+    .sort((a, b) => (b.dispute ?? 0) - (a.dispute ?? 0))
+    .map((n) => ({ id: n.id, title: n.title || 'Untitled', n: n.dispute ?? 0 }))
+  const stale = nodes
+    .filter((n) => isStaleNode(n.updated_at))
+    .sort((a, b) => (a.updated_at < b.updated_at ? -1 : 1))
+    .map((n) => ({ id: n.id, title: n.title || 'Untitled' }))
   return {
     hubs,
     recent,
+    disputed,
+    stale,
     orphanCount: nodes.filter((n) => !connected.has(n.id)).length,
     brokenCount: nodes.filter((n) => n.broken > 0).length,
   }
@@ -272,10 +291,30 @@ function StatsPanel({
           <X width={14} height={14} />
         </button>
       </div>
-      <div className="flex gap-[var(--space-3)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
+      <div className="flex flex-wrap gap-x-[var(--space-3)] gap-y-[var(--space-1)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
         <span>{stats.orphanCount} orphans</span>
-        <span>{stats.brokenCount} with broken links</span>
+        <span>{stats.brokenCount} broken-link</span>
+        {stats.disputed.length > 0 ? (
+          <span className="text-[var(--danger)]">{stats.disputed.length} disputed</span>
+        ) : null}
+        {stats.stale.length > 0 ? (
+          <span className="text-[var(--warning)]">{stats.stale.length} stale</span>
+        ) : null}
       </div>
+      {stats.disputed.length > 0 ? (
+        <StatList
+          label="Disputed"
+          rows={stats.disputed.map((d) => ({ id: d.id, title: d.title, meta: `${d.n}` }))}
+          onNavigate={onNavigate}
+        />
+      ) : null}
+      {stats.stale.length > 0 ? (
+        <StatList
+          label="Stale — needs review"
+          rows={stats.stale.slice(0, 8).map((s) => ({ id: s.id, title: s.title }))}
+          onNavigate={onNavigate}
+        />
+      ) : null}
       <StatList label="Most connected" rows={stats.hubs.map((h) => ({ id: h.id, title: h.title, meta: `${h.deg}` }))} onNavigate={onNavigate} />
       <StatList label="Recently updated" rows={stats.recent.map((r) => ({ id: r.id, title: r.title }))} onNavigate={onNavigate} />
     </div>

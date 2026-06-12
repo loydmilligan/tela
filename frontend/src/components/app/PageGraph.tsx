@@ -13,7 +13,7 @@ import {
 import { subscribeToTheme } from '../../lib/theme'
 import { parseSqliteTs } from '../../lib/types'
 import { relativeTimeFromSqlite } from '../../lib/relativeTime'
-import { buildSpacePalette, type GraphLink, type GraphNode } from '../../lib/queries/graph'
+import { buildSpacePalette, GRAPH_STALE_DAYS, type GraphLink, type GraphNode } from '../../lib/queries/graph'
 
 // Interactive force-directed graph on a <canvas>: d3-force does the layout, a
 // thin hand-rolled renderer + pointer layer does the rest (pan / wheel-zoom /
@@ -34,6 +34,8 @@ interface SimNode extends SimulationNodeDatum {
   r: number
   ageT: number // 0 = newest, 1 = oldest (for recency tint)
   broken: number
+  dispute: number // same-space pages that contradict this one
+  stale: boolean  // older than the staleness threshold
 }
 interface SimLink extends SimulationLinkDatum<SimNode> {
   kind: 'link' | 'tree' | 'semantic'
@@ -71,6 +73,8 @@ export interface PageGraphProps {
   // Embedding-similarity overlay. Optional (defaults off) so the on-page
   // LocalGraph — authored edges only — needs no change.
   showSemantic?: boolean
+  // Trust lens: recolour nodes by health (disputed / stale) instead of by space.
+  showTrust?: boolean
   recency: boolean
   currentId?: number | null
   matchedIds?: Set<number> | null
@@ -93,6 +97,7 @@ export function PageGraph({
   showLinks,
   showTree,
   showSemantic = false,
+  showTrust = false,
   recency,
   currentId,
   matchedIds,
@@ -112,8 +117,8 @@ export function PageGraph({
   const needsFitRef = useRef(true)
   const [card, setCard] = useState<HoverCard | null>(null)
   const cardTimerRef = useRef<number | undefined>(undefined)
-  const propsRef = useRef({ showLinks, showTree, showSemantic, recency, currentId, matchedIds })
-  propsRef.current = { showLinks, showTree, showSemantic, recency, currentId, matchedIds }
+  const propsRef = useRef({ showLinks, showTree, showSemantic, showTrust, recency, currentId, matchedIds })
+  propsRef.current = { showLinks, showTree, showSemantic, showTrust, recency, currentId, matchedIds }
   const navRef = useRef(onNavigate)
   navRef.current = onNavigate
 
@@ -131,6 +136,7 @@ export function PageGraph({
         ...spaceColors,
         accent: get('--accent'),
         danger: get('--danger'),
+        warning: get('--warning'),
         text: get('--text-primary'),
         muted: get('--text-muted'),
         edge: get('--border-strong'),
@@ -167,12 +173,16 @@ export function PageGraph({
       if (t > maxTs) maxTs = t
     }
     const span = maxTs - minTs
+    // Staleness cutoff for the Trust lens (Date.now() in an effect, not render).
+    const staleBefore = Date.now() - GRAPH_STALE_DAYS * 86_400_000
 
     const live = new Set(nodes.map((n) => n.id))
     for (const id of [...cache.keys()]) if (!live.has(id)) cache.delete(id)
     const simNodes = nodes.map((n) => {
       const d = deg.get(n.id) ?? 0
       const ageT = span > 0 ? 1 - ((ts.get(n.id) ?? minTs) - minTs) / span : 0
+      const dispute = n.dispute ?? 0
+      const stale = (ts.get(n.id) ?? 0) > 0 && (ts.get(n.id) ?? 0) < staleBefore
       const existing = cache.get(n.id)
       if (existing) {
         Object.assign(existing, {
@@ -185,6 +195,8 @@ export function PageGraph({
           r: nodeRadius(d),
           ageT,
           broken: n.broken,
+          dispute,
+          stale,
         })
         return existing
       }
@@ -199,6 +211,8 @@ export function PageGraph({
         r: nodeRadius(d),
         ageT,
         broken: n.broken,
+        dispute,
+        stale,
       }
       cache.set(n.id, created)
       return created
@@ -403,7 +417,15 @@ export function PageGraph({
       ctx.globalAlpha = alpha
       ctx.beginPath()
       ctx.arc(n.x, n.y!, n.r, 0, Math.PI * 2)
-      ctx.fillStyle = c[`space:${n.spaceId}`] ?? c.accent
+      // Trust lens recolours by health: disputed → danger, stale → warning, clean
+      // → muted. Otherwise the usual per-space colour.
+      ctx.fillStyle = p.showTrust
+        ? n.dispute > 0
+          ? c.danger
+          : n.stale
+            ? c.warning
+            : c.muted
+        : c[`space:${n.spaceId}`] ?? c.accent
       ctx.fill()
       // Broken-link warning ring.
       if (n.broken > 0) {
@@ -629,7 +651,7 @@ export function PageGraph({
   useEffect(() => {
     draw()
 
-  }, [showLinks, showTree, showSemantic, recency, currentId, matchedIds])
+  }, [showLinks, showTree, showSemantic, showTrust, recency, currentId, matchedIds])
 
   return (
     <div className="relative h-full w-full">
