@@ -150,9 +150,9 @@ func (s *Service) sweepStale(ctx context.Context) {
 		  LEFT JOIN page_agreement a ON a.page_id = p.id
 		 WHERE p.deleted_at IS NULL AND length(btrim(p.body)) > 0
 		   AND (a.page_id IS NULL OR a.last_error <> ''
-		        OR a.src_hash <> encode(sha256(convert_to(p.body, 'UTF8')), 'hex'))
+		        OR a.src_hash <> encode(sha256(convert_to($1 || p.body, 'UTF8')), 'hex'))
 		 ORDER BY p.updated_at DESC
-		 LIMIT $1`, sweepBatch)
+		 LIMIT $2`, hashSeed, sweepBatch)
 	if err != nil {
 		slog.Warn("agreement: stale sweep query failed", "err", err)
 		return

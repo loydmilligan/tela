@@ -79,8 +79,17 @@ func (s *Service) Enabled() bool {
 // Model returns the active chat model name ("" when disabled).
 func (s *Service) Model() string { return s.llm.Model() }
 
+// agreementVersion folds into the body hash so that changing how pages are judged
+// (the prompt below) invalidates every cached row — the stale sweep then re-computes
+// the whole corpus. Bump it on any judging change. (Same idea as rag folding its
+// model name into chunk hashes.) hashSeed must be byte-identical to the SQL the
+// sweep uses to recompute the expected hash (see sweepStale).
+const agreementVersion = "v2"
+
+var hashSeed = agreementVersion + ":"
+
 func srcHash(body string) string {
-	h := sha256.Sum256([]byte(body))
+	h := sha256.Sum256([]byte(hashSeed + body))
 	return hex.EncodeToString(h[:])
 }
 
@@ -99,7 +108,19 @@ type Dispute struct {
 	Reason string `json:"reason"`
 }
 
-const agreementSystem = "You compare a TARGET wiki page against other pages from the same wiki and decide, for each, whether it CORROBORATES the target (states or supports the same facts), CONTRADICTS it (asserts something that genuinely conflicts), or is UNRELATED (different topic, or related but neither agrees nor disagrees). Only say contradict on a real factual conflict — never on a mere difference of scope, detail, or recency. Output ONE line per page, exactly in the form: INDEX|VERDICT|REASON — where VERDICT is one of corroborate, contradict, unrelated, and REASON is a brief phrase (leave empty for unrelated). No preamble, no extra lines."
+const agreementSystem = `You audit a TARGET wiki page against other pages from the SAME wiki for factual agreement. Classify each numbered page with exactly one verdict.
+
+The test for CONTRADICT is a SHARED SUBJECT. A page contradicts the target ONLY IF both pages make a claim about the SAME specific thing — the same component, service, endpoint, port, host, value, owner, or behaviour — AND those two claims cannot both be true. Before you answer contradict, name that one shared thing and the two conflicting values. If you cannot, it is NOT a contradiction.
+
+It is NOT a contradiction when the pages describe DIFFERENT things (different services, adapters, machines, network types, environments), when they differ only in scope, detail, or recency, or when one simply omits what the other states. Two distinct components having different ports, hosts, or behaviours is normal coexistence — that is unrelated, not a conflict. Similar-sounding names (e.g. "PTN Flow" vs "RTN Flow", "Nokia X" vs "Nokia Y") are usually DIFFERENT components, not the same one disagreeing.
+
+A page CORROBORATES the target when it states or supports the same fact about a shared subject. Everything else is UNRELATED. When you are unsure between contradict and unrelated, choose unrelated.
+
+Output ONE line per page, exactly in the form: INDEX|VERDICT|REASON
+- VERDICT is one of: corroborate, contradict, unrelated
+- For contradict, REASON MUST name the shared subject and the two conflicting values, e.g. "report service port: target 2480 vs 8444".
+- For corroborate, REASON is a brief phrase. For unrelated, leave REASON empty.
+No preamble, no extra lines.`
 
 // AgreePage computes and stores the agreement signal for one page. Idempotent via
 // the body hash (force bypasses). Skips the LLM call entirely when the page has
