@@ -182,6 +182,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/pages/{id}/attachments", srv.UploadPageAttachment)
 	mux.HandleFunc("DELETE /api/pages/{id}/attachments/{file_id}", srv.DeletePageAttachment)
 
+	// Signed-PUT upload handshake (attachment_uploads.go). PUBLIC — the bytes are
+	// authorized by the short-lived HMAC token in the path, not a session (on
+	// auth.IsPublicPath via /api/uploads/). Lets an MCP agent upload a file
+	// out-of-band so the bytes never ride through the model context.
+	mux.HandleFunc("PUT /api/uploads/{token}", srv.UploadAttachmentBytes)
+
 	// URL unfurl for paste-as-titled-link. Session-authed (makes an outbound
 	// SSRF-guarded request); never public.
 	mux.HandleFunc("GET /api/unfurl", srv.Unfurl)

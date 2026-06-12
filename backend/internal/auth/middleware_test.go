@@ -26,6 +26,7 @@ func TestIsPublicPath(t *testing.T) {
 		"/api/diagrams/123/abcdef.png": true, // M13.2 PNG sidecar (public, content-addressed)
 		"/api/images/123/abcdef.png":   true, // image sidecar (public, content-addressed)
 		"/api/files/9/abcdef.pdf":      true, // unified attachment blob serve (public, content-addressed)
+		"/api/uploads/tok.sig":         true, // signed-PUT upload handshake (token self-auth)
 		"/api/spaces":                  false,
 		"/api/pages/1":                 false,
 		"/api/pages/1/backlink":        false,

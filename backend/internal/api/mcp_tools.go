@@ -219,7 +219,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "upload_attachment",
 		Title:       "Upload attachment",
-		Description: "Upload a file (base64) and attach it to a page (editor+) — an image, PDF, dataset, etc. Returns the serve URL plus a ready-to-paste `markdown` snippet; then call update_page or patch_page to place it in the body (images render inline as ![](…), other files as a download card). The payload is inline base64 and rides through the model's context, so it is capped at 5 MB — keep it to small files (screenshots, charts, short PDFs). Upload larger files through the tela editor (drag-drop) instead.",
+		Description: "Upload a file (base64) and attach it to a page (editor+) — an image, PDF, dataset, etc. Returns the serve URL plus a ready-to-paste `markdown` snippet; then call update_page or patch_page to place it in the body (images render inline as ![](…), other files as a download card). The payload is inline base64 and rides through the model's context, so it is capped at 5 MB — keep it to small files (screenshots, charts, short PDFs). For larger files use request_attachment_upload (a direct PUT URL, bytes off-context), or the tela editor (drag-drop).",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpUploadAttachment)
 
@@ -229,6 +229,20 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Description: "Detach a file from a page by attachment id (editor+; ids come from list_attachments). Soft-delete. It does NOT edit the page body, so remove any inline embed separately with update_page/patch_page.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &yes, OpenWorldHint: &no},
 	}, s.mcpDeleteAttachment)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "request_attachment_upload",
+		Title:       "Request a direct upload URL",
+		Description: "Get a short-lived signed PUT URL to upload a file WITHOUT sending its bytes through the model context — for files over upload_attachment's 5 MB inline cap, or to avoid context bloat. Flow: call this → the host PUTs the raw bytes to the returned `put_url` over HTTP → then either read that PUT response or call confirm_attachment_upload to get the embed snippet, and place it with update_page/patch_page. Editor+. Only works on hosts that can make an outbound HTTP PUT; otherwise use upload_attachment.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpRequestAttachmentUpload)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "confirm_attachment_upload",
+		Title:       "Confirm a direct upload",
+		Description: "After the bytes have been PUT to a request_attachment_upload URL, return the stored file's serve URL + ready-to-embed `markdown` (for hosts that couldn't read the PUT response). Editor+. Then place the snippet with update_page/patch_page.",
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpConfirmAttachmentUpload)
 }
 
 // ---- shared output shapes ------------------------------------------------
@@ -1119,7 +1133,7 @@ func (s *Server) mcpUploadAttachment(ctx context.Context, req *mcp.CallToolReque
 	}
 	if len(data) > mcpInlineUploadCap {
 		return mcpErr(&apiErr{413, "too_large", fmt.Sprintf(
-			"file is %.1f MB; inline base64 upload is capped at %d MB (it rides through the model context). Upload larger files via the tela editor (drag-drop), or the direct upload-URL flow.",
+			"file is %.1f MB; inline base64 upload is capped at %d MB (it rides through the model context). For larger files call request_attachment_upload for a direct PUT URL, or use the tela editor (drag-drop).",
 			float64(len(data))/(1<<20), mcpInlineUploadCap>>20)}), uploadAttachmentOut{}, nil
 	}
 	a, ae := s.uploadPageAttachmentCore(ctx, u, k, in.PageID, in.Name, data)
@@ -1146,4 +1160,50 @@ func (s *Server) mcpDeleteAttachment(ctx context.Context, req *mcp.CallToolReque
 		return mcpErr(ae), okOut{}, nil
 	}
 	return nil, okOut{OK: true}, nil
+}
+
+// ---- direct upload handshake (request → PUT out-of-band → confirm) ----
+
+type requestAttachmentUploadIn struct {
+	PageID int64  `json:"page_id" jsonschema:"page to attach the file to"`
+	Name   string `json:"name" jsonschema:"file name including extension, e.g. deck.pdf or photo.png"`
+	Mime   string `json:"mime,omitempty" jsonschema:"optional content-type hint; for images the server still trusts magic bytes"`
+}
+
+type requestAttachmentUploadOut struct {
+	Upload uploadTicket `json:"upload"`
+}
+
+func (s *Server) mcpRequestAttachmentUpload(ctx context.Context, req *mcp.CallToolRequest, in requestAttachmentUploadIn) (*mcp.CallToolResult, requestAttachmentUploadOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), requestAttachmentUploadOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), requestAttachmentUploadOut{}, nil
+	}
+	t, ae := s.requestAttachmentUploadCore(ctx, u, k, in.PageID, in.Name, in.Mime)
+	if ae != nil {
+		return mcpErr(ae), requestAttachmentUploadOut{}, nil
+	}
+	return nil, requestAttachmentUploadOut{Upload: t}, nil
+}
+
+type confirmAttachmentUploadIn struct {
+	UploadID string `json:"upload_id" jsonschema:"the upload_id from request_attachment_upload"`
+}
+
+func (s *Server) mcpConfirmAttachmentUpload(ctx context.Context, req *mcp.CallToolRequest, in confirmAttachmentUploadIn) (*mcp.CallToolResult, uploadAttachmentOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), uploadAttachmentOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), uploadAttachmentOut{}, nil
+	}
+	a, ae := s.confirmAttachmentUploadCore(ctx, u, k, in.UploadID)
+	if ae != nil {
+		return mcpErr(ae), uploadAttachmentOut{}, nil
+	}
+	return nil, uploadAttachmentOut{Attachment: newMCPAttachment(a)}, nil
 }

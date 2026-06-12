@@ -318,6 +318,13 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/print/") {
 		return true
 	}
+	// Signed-PUT attachment upload (attachment_uploads.go): PUT /api/uploads/{token}.
+	// The short-lived HMAC token (page id + name + max size, minted for an editor)
+	// IS the authorization, so the agent's host can upload bytes out-of-band with
+	// no session. The handler validates the token + single-use itself.
+	if strings.HasPrefix(p, "/api/uploads/") {
+		return true
+	}
 	if strings.HasPrefix(p, "/share/") {
 		return true
 	}

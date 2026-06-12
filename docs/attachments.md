@@ -46,17 +46,40 @@ attached):
 - `list_attachments(page_id)` — read; each file plus an absolute `download_url`
   (fetchable over HTTP) and a ready-to-paste `markdown` embed snippet.
 - `upload_attachment(page_id, name, data_base64)` — editor+; stores the bytes
-  (inline base64, so reasonably-sized files) and returns the attachment +
-  `markdown`. The agent then `update_page`/`patch_page`s the snippet into the
-  body — `![](…)` for images, a `:::file` card otherwise.
+  (inline base64) and returns the attachment + `markdown`. The agent then
+  `update_page`/`patch_page`s the snippet into the body — `![](…)` for images, a
+  `:::file` card otherwise. **Capped at 5 MB** (`mcpInlineUploadCap`): the base64
+  rides through the model's context, so an oversize blob bloats tokens and can
+  trip a host content filter — over the cap it 413s and points to the handshake.
 - `delete_attachment(page_id, id)` — editor+; soft-delete. Does **not** edit the
   body, so an inline embed must be removed separately.
 
-Binary over MCP: download is just the public `download_url` (the host fetches it
-directly, per the MCP guidance for web-fetchable resources); upload is inline
-base64 in the tool argument. A signed upload-URL handshake is the future path for
-large files. PDF attachments render inline in the reader via a client-side
-viewer (`ui/pdf-viewer.tsx`).
+### Two upload tiers (binary over MCP)
+
+MCP has **no upload primitive** (resources are server→client only), so servers
+improvise; we follow the de-facto two-tier convention (cf. Notion's File Upload
+API, Scenario MCP):
+
+1. **Inline base64** — `upload_attachment`, ≤ 5 MB. Works on every host. The
+   common case (a screenshot, a chart, a short PDF). The cap is the *transport*
+   limit; `TELA_WEBDAV_FILE_MAX_BYTES` (50 MiB) stays the storage limit.
+2. **Signed-PUT handshake** (`attachment_uploads.go`, migration `0035`) — for
+   larger files, so the bytes never touch the model context:
+   - `request_attachment_upload(page_id, name, mime)` → a short-TTL (5 min) HMAC
+     `put_url` (share-secret signed, like the PDF print token) + an `upload_id`.
+   - the host `PUT`s the raw bytes to `put_url` (public `PUT /api/uploads/{token}`,
+     self-authenticating on `auth.IsPublicPath`, single-use, size-capped) → stored
+     content-addressed into `space_files`, parented to the page; the PUT response
+     carries the attachment ref.
+   - `confirm_attachment_upload(upload_id)` → returns the ref + `markdown` for
+     hosts that couldn't read the PUT response; then embed with `update_page`.
+   - Only usable where the host can make an outbound HTTP PUT (a code sandbox);
+     otherwise inline base64 is the universal fallback. The `attachment_uploads`
+     row maps `upload_id → space_file`; rows are swept (>24h) on the next request.
+
+Download needs no upload tier: `download_url` is a public URL the host fetches
+directly (the MCP guidance for web-fetchable resources). PDF attachments render
+inline in the reader via a client-side viewer (`ui/pdf-viewer.tsx`).
 
 ## Notes
 
