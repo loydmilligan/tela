@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-router'
 import { FilePlus, FileQuestion, Menu } from 'lucide-react'
 import { AppCommandHost } from '../components/app/AppCommandHost'
+import { SpaceView } from '../components/app/SpaceView'
 import { KeymapHost } from '../components/app/KeymapHost'
 import { BrandLogo } from '../components/BrandLogo'
 import { NotificationBell } from '../components/app/NotificationBell'
@@ -491,13 +492,7 @@ const spaceIndexRoute = createRoute({
       )
     }
 
-    return (
-      <div className="flex-1 flex items-center justify-center p-[var(--space-7)]">
-        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          Select a page from the sidebar or create one.
-        </p>
-      </div>
-    )
+    return <SpaceView spaceId={spaceId} />
   },
 })
 
