@@ -26,6 +26,7 @@ import {
 import { accentForValue, statLineClass } from '../../lib/blocks/stat-trend'
 import { wikilinkSlug } from '../../lib/markdown/transforms/wikilink'
 import { embedIframeSrc } from '../../lib/markdown/embed'
+import { isPdf, PdfPreviewDialog } from '../ui/pdf-viewer'
 import type { CommentThread } from '../../lib/comments/use-comments'
 import { useCommentHighlights } from '../../lib/comments/useCommentHighlights'
 import { cn } from '../../lib/utils'
@@ -384,7 +385,9 @@ function FileView({ node }: { node: MdNode }) {
   const attrs = directiveAttrs(node)
   const name = attrs.name ?? ''
   const size = Number(attrs.size ?? '0') || 0
-  return (
+  const [preview, setPreview] = useState(false)
+  const pdf = isPdf(name || url)
+  const chip = (
     <a
       className="tela-file"
       href={url || '#'}
@@ -397,6 +400,25 @@ function FileView({ node }: { node: MdNode }) {
       <span className="tela-file-name">{name || url || 'file'}</span>
       {size ? <span className="tela-file-size">{prettySize(size)}</span> : null}
     </a>
+  )
+  if (!pdf || !url) return chip
+  return (
+    <span className="tela-file-row">
+      {chip}
+      <button
+        type="button"
+        className="tela-file-preview"
+        onClick={() => setPreview(true)}
+      >
+        Preview
+      </button>
+      <PdfPreviewDialog
+        url={url}
+        name={name}
+        open={preview}
+        onOpenChange={setPreview}
+      />
+    </span>
   )
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Download, FileText, Paperclip, Trash2, CornerLeftUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { isPdf, PdfPreviewDialog } from '../ui/pdf-viewer'
 import {
   attachmentKeys,
   useAttachments,
@@ -109,6 +110,30 @@ function AttachmentChip({
   deleting,
 }: AttachmentChipProps) {
   const image = isImageMime(a.mime)
+  const pdf = isPdf(a.name, a.mime)
+  const [preview, setPreview] = useState(false)
+  const inner = (
+    <>
+      {image ? (
+        <img
+          src={a.url}
+          alt=""
+          className="h-5 w-5 rounded-[var(--radius-xs)] object-cover shrink-0"
+        />
+      ) : (
+        <FileText
+          aria-hidden
+          width={16}
+          height={16}
+          className="text-[var(--text-muted)] shrink-0"
+        />
+      )}
+      <span className="truncate text-[var(--text-primary)]">{a.name}</span>
+      <span className="text-[var(--text-muted)] shrink-0">
+        {prettySize(a.byte_size)}
+      </span>
+    </>
+  )
   return (
     <span
       className={cn(
@@ -119,33 +144,35 @@ function AttachmentChip({
         deleting && 'opacity-50',
       )}
     >
-      <a
-        href={a.url}
-        target="_blank"
-        rel="noreferrer"
-        download={image ? undefined : a.name}
-        className="inline-flex items-center gap-[var(--space-2)] min-w-0"
-        title={a.name}
-      >
-        {image ? (
-          <img
-            src={a.url}
-            alt=""
-            className="h-5 w-5 rounded-[var(--radius-xs)] object-cover shrink-0"
-          />
-        ) : (
-          <FileText
-            aria-hidden
-            width={16}
-            height={16}
-            className="text-[var(--text-muted)] shrink-0"
-          />
-        )}
-        <span className="truncate text-[var(--text-primary)]">{a.name}</span>
-        <span className="text-[var(--text-muted)] shrink-0">
-          {prettySize(a.byte_size)}
-        </span>
-      </a>
+      {pdf ? (
+        <button
+          type="button"
+          onClick={() => setPreview(true)}
+          className="inline-flex items-center gap-[var(--space-2)] min-w-0 cursor-pointer border-0 bg-transparent p-0 text-left"
+          title={`Preview ${a.name}`}
+        >
+          {inner}
+        </button>
+      ) : (
+        <a
+          href={a.url}
+          target="_blank"
+          rel="noreferrer"
+          download={image ? undefined : a.name}
+          className="inline-flex items-center gap-[var(--space-2)] min-w-0"
+          title={a.name}
+        >
+          {inner}
+        </a>
+      )}
+      {pdf ? (
+        <PdfPreviewDialog
+          url={a.url}
+          name={a.name}
+          open={preview}
+          onOpenChange={setPreview}
+        />
+      ) : null}
       {a.embedded ? (
         <CornerLeftUp
           aria-label="Embedded in page"
