@@ -29,11 +29,12 @@ export function SpaceView({ spaceId }: { spaceId: number }) {
   )
 
   const h = data?.health
-  const issues =
-    (h?.disputed.length ?? 0) +
-    (h?.review_overdue.length ?? 0) +
-    (h?.orphans.length ?? 0) +
-    (h?.duplicates.length ?? 0)
+  // The badge counts genuine defects only — a contradiction, a redundant page, a
+  // page past its own review cadence. Orphans are a mild "could be better linked"
+  // nudge (a standalone reference is fine), so they get a section but no alarm.
+  const problems =
+    (h?.disputed.length ?? 0) + (h?.review_overdue.length ?? 0) + (h?.duplicates.length ?? 0)
+  const anything = problems + (h?.orphans.length ?? 0)
 
   return (
     <div className="flex-1 overflow-y-auto min-h-0">
@@ -55,9 +56,9 @@ export function SpaceView({ spaceId }: { spaceId: number }) {
             <TabsTrigger value="health">
               <span className="inline-flex items-center gap-[var(--space-2)]">
                 Health
-                {issues > 0 ? (
+                {problems > 0 ? (
                   <span className="inline-flex items-center justify-center min-w-[var(--space-5)] h-[var(--space-5)] px-[var(--space-1)] rounded-full text-[length:var(--text-xs)] bg-[color-mix(in_oklch,var(--danger)_18%,transparent)] text-[var(--danger)]">
-                    {issues}
+                    {problems}
                   </span>
                 ) : null}
               </span>
@@ -115,7 +116,7 @@ export function SpaceView({ spaceId }: { spaceId: number }) {
           <TabsContent value="health" className="flex flex-col gap-[var(--space-6)]">
             {isLoading ? (
               <Skeleton />
-            ) : issues === 0 ? (
+            ) : anything === 0 ? (
               <EmptyState
                 icon={ShieldAlert}
                 title="This space looks healthy"
