@@ -151,6 +151,13 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpUpdatePage)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "patch_page",
+		Title:       "Patch page section",
+		Description: "Surgically edit ONE section of a page instead of rewriting the whole body (editor+). First call get_page format:\"map\" to see the section paths, then patch the target. Cheaper and safer than update_page on a long page — it never touches the rest of the document. Snapshots a revision like any edit.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpPatchPage)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_page",
 		Title:       "Delete page",
 		Description: "Delete a page (editor+). Backlinks from other pages are preserved with the last-known title.",
@@ -218,6 +225,9 @@ type mcpPage struct {
 	// Epistemic — trust signals (freshness, provenance, corroboration/dispute) so
 	// an agent weighs the page, not just reads it. Set on get_page; nil elsewhere.
 	Epistemic *EpistemicStatus `json:"epistemic,omitempty"`
+	// Sections — the heading outline, returned (and Body emptied) when get_page is
+	// called with format:"map". Each section's path is a patch_page target.
+	Sections []pageSection `json:"sections,omitempty"`
 }
 
 // mcpBodyCap bounds a tool-result body so a single huge page can't blow the
@@ -337,7 +347,8 @@ func (s *Server) mcpListPages(ctx context.Context, req *mcp.CallToolRequest, in 
 // ---- get_page ------------------------------------------------------------
 
 type getPageIn struct {
-	ID int64 `json:"id" jsonschema:"numeric page id"`
+	ID     int64  `json:"id" jsonschema:"numeric page id"`
+	Format string `json:"format,omitempty" jsonschema:"'full' (default) returns the markdown body; 'map' returns just the heading outline (section levels + paths) and no body — cheap to read, and each path is a target for patch_page"`
 }
 
 type getPageOut struct {
@@ -388,6 +399,12 @@ func (s *Server) mcpGetPage(ctx context.Context, req *mcp.CallToolRequest, in ge
 		return mcpErr(ae), getPageOut{}, nil
 	}
 	epi := s.pageEpistemic(ctx, p)
+	if in.Format == "map" {
+		sections := pageOutline(p.Body)
+		p.Body = ""
+		mp := mcpPage{Page: p, URL: mcpPageURL(p), Epistemic: epi, Sections: sections}
+		return nil, getPageOut{Page: mp}, nil
+	}
 	body, whole := mcpCapBody(p.Body)
 	p.Body = body
 	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p), Truncated: !whole, Epistemic: epi}}
@@ -743,6 +760,46 @@ func (s *Server) mcpUpdatePage(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
 	return nil, out, nil
+}
+
+// ---- patch_page (surgical section edit) ----------------------------------
+
+type patchPageIn struct {
+	ID             int64  `json:"id" jsonschema:"page id to patch"`
+	Target         string `json:"target" jsonschema:"the section to edit, by its heading path from get_page format:\"map\" (e.g. 'Setup' or 'Deploy > Production'); the bare heading text also resolves"`
+	Operation      string `json:"operation" jsonschema:"append (add to the end of the section's body), prepend (add right under the heading), replace (swap the section's body, heading kept), or delete (remove the heading and its body)"`
+	Content        string `json:"content,omitempty" jsonschema:"markdown to insert; omit for delete"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"optional client-generated key; a retry with the same key returns the original result instead of re-applying the patch"`
+}
+
+func (s *Server) mcpPatchPage(ctx context.Context, req *mcp.CallToolRequest, in patchPageIn) (*mcp.CallToolResult, getPageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), getPageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), getPageOut{}, nil
+	}
+	return mcpIdempotent(ctx, s.DB, u.ID, in.IdempotencyKey, "patch_page", func() (*mcp.CallToolResult, getPageOut, error) {
+		p, ae := s.getPageCore(ctx, u, k, in.ID)
+		if ae != nil {
+			return mcpErr(ae), getPageOut{}, nil
+		}
+		newBody, _, err := applyPatch(p.Body, in.Target, in.Operation, in.Content)
+		if err != nil {
+			return mcpErr(&apiErr{Status: 400, Code: "bad_request", Message: err.Error()}), getPageOut{}, nil
+		}
+		// Write through the normal update path (agentWrite=true) so the revision,
+		// reindex, agreement and provenance all fire exactly as for any edit.
+		up, ae := s.updatePageCore(ctx, u, k, in.ID, pageUpdateRequest{Body: &newBody}, true)
+		if ae != nil {
+			return mcpErr(ae), getPageOut{}, nil
+		}
+		epi := s.pageEpistemic(ctx, up)
+		body, whole := mcpCapBody(up.Body)
+		up.Body = body
+		return nil, getPageOut{Page: mcpPage{Page: up, URL: mcpPageURL(up), Truncated: !whole, Epistemic: epi}}, nil
+	})
 }
 
 // ---- delete_page ---------------------------------------------------------
