@@ -370,6 +370,91 @@
     white-space: nowrap;
     pointer-events: none;
   }
+  /* Deck Present mode — a full-screen, paginated overlay over a :::deck's
+     slides (portaled to <body>, launched from the in-doc deck's "Present"
+     button). One slide on a 16:9 stage; nav bar below; View-Transition
+     crossfade between slides (guarded for reduced motion in JS + below). */
+  .tela-deck-present {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-1);
+    color: var(--text-primary);
+  }
+  .tela-deck-present-stage {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: var(--space-6);
+  }
+  .tela-slide-present {
+    view-transition-name: tela-slide-present;
+    width: min(100%, 60rem);
+    aspect-ratio: 16 / 9;
+    max-height: 100%;
+    overflow: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface-1);
+    padding: var(--space-8);
+    font-size: var(--text-lg);
+  }
+  .tela-slide-present .ProseMirror > :first-child {
+    margin-top: 0;
+  }
+  .tela-deck-present-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+    background: var(--surface-2);
+  }
+  .tela-deck-present-count {
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .tela-deck-present-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--space-7);
+    height: var(--space-7);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-size: var(--text-lg);
+    line-height: 1;
+    cursor: pointer;
+  }
+  .tela-deck-present-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  /* In-doc launch button, top-right of the deck. */
+  .tela-deck-present-launch {
+    align-self: flex-end;
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-3);
+    cursor: pointer;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tela-slide-present {
+      view-transition-name: none;
+    }
+  }
+
   /* The anchor is a reading aid, not content — never print it. */
   @media print {
     .tela-reader .reader-anchor {
