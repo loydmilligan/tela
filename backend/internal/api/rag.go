@@ -252,7 +252,9 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 const askSystemPrompt = "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
 	"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts. " +
 	"Sources may also be flagged in a 'Known disagreements' note, and excerpts can themselves conflict on a value, status, or claim. " +
-	"When such a conflict is relevant to the question, surface it explicitly and give both sides rather than silently picking one or assuming they agree; when a flagged disagreement is NOT relevant to the question, ignore it. Never invent a conflict that isn't stated."
+	"When a conflict bears on the question, surface it explicitly and give both sides — never present a contested value as settled or silently pick one. " +
+	"In particular, if a flagged disagreement is about the very thing the question asks for, you MUST report both values and name the conflicting sources, even when one excerpt states a single value confidently. " +
+	"Ignore a flagged disagreement only when it is unrelated to the question, and never invent a conflict that isn't stated."
 
 // askUserPrompt assembles the grounded user turn shared by both ask handlers: the
 // cited excerpts, the (optional) known-disagreements block, then the question.

@@ -1,8 +1,13 @@
 package agreement
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"testing"
 
-import "github.com/zcag/tela/backend/internal/rag"
+	"github.com/zcag/tela/backend/internal/rag"
+	"github.com/zcag/tela/backend/internal/testdb"
+)
 
 func TestParseVerdicts(t *testing.T) {
 	neighbors := []rag.Neighbor{
@@ -32,6 +37,46 @@ func TestParseVerdicts(t *testing.T) {
 	}
 	if disputes[0].Reason == "" {
 		t.Fatalf("dispute reason should be captured, got empty")
+	}
+}
+
+func TestDisputesFor(t *testing.T) {
+	d := testdb.New(t)
+	ctx := context.Background()
+	var spaceID int64
+	if err := d.QueryRow(`INSERT INTO spaces (name, slug) VALUES ('s','s') RETURNING id`).Scan(&spaceID); err != nil {
+		t.Fatalf("space: %v", err)
+	}
+	mk := func(title string) int64 {
+		var id int64
+		if err := d.QueryRow(`INSERT INTO pages (space_id, title, body) VALUES ($1,$2,'x') RETURNING id`, spaceID, title).Scan(&id); err != nil {
+			t.Fatalf("page %s: %v", title, err)
+		}
+		return id
+	}
+	a, b, c := mk("A"), mk("B"), mk("C")
+	// A has a clean dispute against B; C has a FAILED row (must be excluded).
+	if _, err := d.Exec(`INSERT INTO page_agreement (page_id, src_hash, model, dispute, disputes, last_error)
+		VALUES ($1,'h','m',1,$2,'')`, a, fmt.Sprintf(`[{"page_id":%d,"title":"B","reason":"port 1 vs 2"}]`, b)); err != nil {
+		t.Fatalf("seed A: %v", err)
+	}
+	if _, err := d.Exec(`INSERT INTO page_agreement (page_id, src_hash, model, dispute, disputes, last_error)
+		VALUES ($1,'','m',0,'[]','boom')`, c); err != nil {
+		t.Fatalf("seed C: %v", err)
+	}
+
+	got, err := (&Service{db: d}).DisputesFor(ctx, []int64{a, b, c})
+	if err != nil {
+		t.Fatalf("DisputesFor: %v", err)
+	}
+	if len(got[a]) != 1 || got[a][0].PageID != b || got[a][0].Reason != "port 1 vs 2" {
+		t.Fatalf("A's disputes = %+v, want one for B", got[a])
+	}
+	if _, ok := got[c]; ok {
+		t.Errorf("failed row (last_error set) must be excluded, got %+v", got[c])
+	}
+	if _, ok := got[b]; ok {
+		t.Errorf("B has no row, must be absent, got %+v", got[b])
 	}
 }
 
