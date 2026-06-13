@@ -1,0 +1,14 @@
+{
+  "name": "tela-deck-render",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Slidev render sidecar for tela — deck markdown in, presentable SPA + PDF/PPTX out.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@slidev/cli": "^52.16.0",
+    "playwright-chromium": "^1.49.0"
+  }
+}
