@@ -20,9 +20,11 @@ import (
 // before until TELA_RAG_RERANK_URL is set. Gate any rollout on `tela rag-eval`.
 
 // rerankCandidates is how many top fused hits get re-scored before the final
-// trim. Deep enough to rescue a relevant chunk RRF buried, bounded so the
-// cross-encoder stays cheap.
-const rerankCandidates = 30
+// trim. Deep enough to rescue a relevant chunk RRF buried — including a single
+// on-topic doc that a large, vocabulary-overlapping corpus pushed well down the
+// fused list (the cross-encoder ranks it #1 once it actually sees it) — bounded so
+// the cross-encoder stays cheap.
+const rerankCandidates = 50
 
 // rerankTimeout bounds the cross-encoder call. Rerank is best-effort — on failure
 // the caller falls back to the fused order — so this is kept short: a healthy

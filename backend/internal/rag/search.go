@@ -60,11 +60,13 @@ func (s *Service) Search(ctx context.Context, userID int64, q string, spaceID *i
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	// Pull a deeper candidate pool from each ranker than we return, so fusion
-	// has room to reorder.
+	// Pull a deeper candidate pool from each ranker than we return, so fusion has
+	// room to reorder AND the second-stage reranker sees a relevant doc that fused
+	// past the shallow ranks (the floor must clear rerankCandidates, else a doc the
+	// cross-encoder would rank #1 never reaches it — the cross-space-needle case).
 	pool := limit * 4
-	if pool < 40 {
-		pool = 40
+	if pool < 60 {
+		pool = 60
 	}
 
 	var lex, vec []int64
@@ -131,7 +133,17 @@ func (s *Service) lexicalRank(ctx context.Context, userID int64, q string, space
 	qb := &queryBuilder{}
 	uid := qb.arg(userID)
 	qry := qb.arg(q)
-	tsq := `plainto_tsquery('english', ` + qry + `)`
+	// OR-recall: rewrite plainto_tsquery's AND-conjunction to OR, so a doc is a
+	// lexical candidate if it contains ANY query term, not all of them. A
+	// conversational query ("what's the X response time and Y price?") carries
+	// filler/co-occurring words absent from a relevant doc; AND-matching silently
+	// zeroed that doc out of the lexical pool, leaving vector-only ranking to fend
+	// off a large overlapping corpus (the buried-needle case). ts_rank_cd still
+	// ranks by how many terms matched + proximity, and the reranker supplies
+	// precision downstream — so recall here is the right tradeoff. Same OR trick as
+	// HubPages. Empty/stopword-only queries → empty tsquery → no lexical rows (vector
+	// still runs).
+	tsq := `replace(plainto_tsquery('english', ` + qry + `)::text, '&', '|')::tsquery`
 	var pageSp, fileSp string
 	if spaceID != nil {
 		sp := qb.arg(*spaceID)

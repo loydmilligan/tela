@@ -220,6 +220,46 @@ func TestReadChunk_FoundAndScoped(t *testing.T) {
 	}
 }
 
+// TestLexicalRank_ORRecall pins the recall fix: a doc must surface lexically when
+// the query shares SOME terms with it, even though other query terms are absent.
+// AND-matching (the old plainto_tsquery) returned nothing here, starving the
+// candidate pool; OR-matching retrieves it on the overlapping terms.
+func TestLexicalRank_ORRecall(t *testing.T) {
+	d := testdb.New(t)
+	ctx := context.Background()
+	u := newUser(t, d, "alice")
+	sp := newSpace(t, d, "alpha", u)
+	page := newPage(t, d, sp, "Orbital Mesh SLA",
+		"## Terms\nSeverity 1 first response within 15 minutes. Egress billed per gigabyte.")
+
+	svc := NewServiceWithEmbedder(d, &fakeEmbedder{})
+	if _, _, err := svc.ReindexSpace(ctx, sp); err != nil {
+		t.Fatalf("index: %v", err)
+	}
+
+	// Query mixes doc terms (severity, egress, response) with words ABSENT from the
+	// doc (whats, the, time, price). AND-matching needs all → zero rows; OR-matching
+	// retrieves the chunk on the shared terms.
+	ids, err := svc.lexicalRank(ctx, u, "whats the severity 1 response time and egress price", nil, 40)
+	if err != nil {
+		t.Fatalf("lexicalRank: %v", err)
+	}
+	if len(ids) == 0 {
+		t.Fatal("OR-recall failed: no lexical candidates for a partially-overlapping query")
+	}
+	var chunk int64
+	d.QueryRow(`SELECT id FROM page_chunks WHERE page_id = $1 LIMIT 1`, page).Scan(&chunk)
+	found := false
+	for _, id := range ids {
+		if id == chunk {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("OR-recall: relevant chunk %d not among lexical candidates %v", chunk, ids)
+	}
+}
+
 func TestReindex_ReusesCachedVectors(t *testing.T) {
 	d := testdb.New(t)
 	ctx := context.Background()
