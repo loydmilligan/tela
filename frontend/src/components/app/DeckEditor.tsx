@@ -62,12 +62,9 @@ export function DeckEditor({
       params: { spaceId, pageId: page.id, slug: undefined },
       search: (p) => ({ ...p, edit: undefined, view: 'read' as const }),
     })
-  const exit = () =>
-    void navigate({
-      to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
-      params: { spaceId, pageId: page.id, slug: undefined },
-      search: (p) => ({ ...p, edit: undefined }),
-    })
+  // The deck editor IS the page's in-shell home (default view), so there's no
+  // intermediate read state to "close" to — backing out leaves for the space.
+  const exit = () => void navigate({ to: '/spaces/$spaceId', params: { spaceId } })
 
   return (
     <div className="flex h-full w-full flex-col bg-[var(--surface-1)]">

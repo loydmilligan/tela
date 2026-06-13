@@ -167,6 +167,10 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
   const { slug: currentSlug } = useParams({
     from: '/_app/spaces/$spaceId/pages/$pageId/{-$slug}',
   })
+  // Needed up here (before the early returns) only for the deck branch below:
+  // editors land on the in-shell deck editor by default, read-only viewers on
+  // the full-screen presenter. Cheap — the space query is already cached.
+  const { resolved: roleResolved, isViewer } = useSpaceRole(spaceId)
 
   // Confluence-style canonical URL: keep the address bar at /pages/{id}/{slug}
   // (or bare when the title yields no slug), refreshed on rename. This is a
@@ -212,22 +216,28 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
     void navigate({ to: '/spaces/$spaceId', params: { spaceId } })
 
   // Deck pages (props.deck) are their own content model: edit as plain Slidev
-  // markdown (DeckEditor) and read/present as a full-screen slide carousel
+  // markdown (DeckEditor) and present as a full-screen slide carousel
   // (DeckPresenter) — never the Milkdown editor or the prose reader.
+  //
+  // Full-screen present is the EXPLICIT intent (?view=read, the Present / Read
+  // action) — clicking a deck in the sidebar shouldn't slam into a takeover, the
+  // same way a doc opens in-shell, not full-bleed. So editors land on the
+  // in-shell DeckEditor (which carries the Present button) by default; only a
+  // read-only viewer — who has nothing to edit — defaults to the presenter.
   if (page.data.props?.deck === true) {
-    if (editParam || draftRevId != null) {
+    if (view === 'read' || (roleResolved && isViewer)) {
       return (
-        <Suspense fallback={null}>
-          <DeckEditor key={page.data.id} page={page.data} spaceId={spaceId} onDeleted={onDeleted} />
-        </Suspense>
+        <div className="fixed inset-0 z-50 bg-[var(--surface-1)]">
+          <Suspense fallback={null}>
+            <DeckPresenter spaceId={spaceId} pageId={page.data.id} />
+          </Suspense>
+        </div>
       )
     }
     return (
-      <div className="fixed inset-0 z-50 bg-[var(--surface-1)]">
-        <Suspense fallback={null}>
-          <DeckPresenter spaceId={spaceId} pageId={page.data.id} />
-        </Suspense>
-      </div>
+      <Suspense fallback={null}>
+        <DeckEditor key={page.data.id} page={page.data} spaceId={spaceId} onDeleted={onDeleted} />
+      </Suspense>
     )
   }
 
