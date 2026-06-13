@@ -7,7 +7,7 @@ output** — per-slide PNGs + a PDF/PPTX. There is **no interactive SPA** and
 nothing Slidev runs in the viewer's browser: tela presents the rendered images
 in its own simple full-screen viewer. That keeps this service tiny.
 
-> Quality note: the theme in `theme/` is a **placeholder**. The premium,
+> Quality note: the themes in `themes/` are **placeholders**. The premium,
 > pp-grade theme is a separate, deliberate design pass (later, via the
 > frontend-design skill). This directory is the *plumbing*, not the look.
 
@@ -21,20 +21,36 @@ references the theme path — the service injects tela's theme (overriding any
 stay portable. **Render-only** (no per-deck SPA build, no SPA serving) is the
 deliberate simplification: present is just images.
 
+## Parser vs render (two tiers)
+
+The heavy path (PNG/PDF/PPTX) shells out to the Slidev **CLI + headless
+Chromium**. But **structure** — slide count, titles, layouts, speaker notes,
+detected features (KaTeX/Monaco/Mermaid/Tweet) — comes from `@slidev/parser`
+**in-process, no Chromium, in milliseconds**. So:
+
+- Theme injection sets `theme` on the parsed first-slide YAML doc and
+  re-serializes (`parse` → `prettifySlide` → `stringify`) — no frontmatter
+  regex surgery.
+- `/parse` returns deck structure with no render at all (powers an editor
+  outline / slide navigator).
+- `/render` and `/export/*` **preflight** with the parser first, so a malformed
+  deck fails fast as `400` instead of dying deep in a multi-minute Chromium run.
+
 ## Contract
 
 ```
-POST /render            body: slidev markdown -> { id, count, slides:[url], pdf }
-POST /export/pdf        body: slidev markdown -> application/pdf
-POST /export/pptx       body: slidev markdown -> .pptx
-GET  /d/<id>/<n>.png    -> a rendered slide image (Present + thumbnails)
-GET  /d/<id>/deck.pdf   -> the exported PDF
-GET  /health           -> ok
+GET  /themes                  -> [{ name, label, description }]   (theme selector)
+POST /parse                   body: slidev markdown -> { count, slides:[{no,title,layout,note}], features, errors }
+POST /render?theme=<name>     body: slidev markdown -> { id, count, theme, slides:[url] }
+POST /export/<pdf|pptx>?theme body: slidev markdown -> the file bytes
+GET  /d/<id>/<file>           -> a rendered slide PNG / the PDF / the PPTX
+GET  /health                  -> ok
 ```
 
-`/render` returns one PNG per slide. Everything is cached by content hash, so
-re-rendering an unchanged deck is instant. `DECK_CACHE` (default `./cache`,
-`/data` in the image) holds the rendered output.
+`/render` returns one PNG per slide. Render/export are cached by content hash
+(keyed on `RENDER_VERSION` + theme + markdown), so re-rendering an unchanged
+deck is instant; `/parse` is cheap enough to skip caching. `DECK_CACHE`
+(default `./cache`, `/data` in the image) holds the rendered output.
 
 ## Run
 
@@ -45,16 +61,27 @@ npm start                     # :3344
 docker build -t tela-deck . && docker run -p 3344:3344 tela-deck
 ```
 
-## tela integration (next layer, not built yet)
+## tela integration (built)
 
-- **Page type:** a page is a deck when `deck: true` (frontmatter / props —
-  `pagemd`/PageProperties already support it). Its body is Slidev markdown.
-- **Edit:** a deck page edits as **plain markdown** (not the rich Milkdown
-  editor — deck and doc are separate paths; no shared slide code).
-- **Present:** tela renders the deck (POST `/render`), then shows the per-slide
-  PNGs in a simple **full-screen image viewer** (arrow-key nav). PNGs double as
-  thumbnails. Render-on-save keeps Present instant.
-- **Export:** PDF / PPTX proxy `/export/*`.
-- **Backend:** a deck route proxies this sidecar (mirrors `pdf_export.go`, the
-  gotenberg proxy). **Compose:** add a `deck` service alongside gotenberg; the
-  backend reaches it at `http://deck:3344`.
+- **Page type:** a page is a deck when `props.deck === true`. Its body is
+  Slidev markdown; deck and doc are separate paths (no shared slide code).
+- **Edit:** a deck page edits as **plain markdown** (raw textarea, not the rich
+  Milkdown editor) — see `PageEditor`'s `isDeck` branch.
+- **Present:** `DeckPresenter` calls `GET /api/pages/{id}/deck` → this sidecar's
+  `/render` → shows the per-slide PNGs in a full-screen image viewer (arrow-key
+  nav). PNGs double as thumbnails.
+- **Export:** `GET /api/pages/{id}/deck.pdf` proxies `/export/pdf`.
+- **Backend:** `backend/internal/api/deck_render.go` proxies this sidecar
+  (mirrors `pdf_export.go`, the gotenberg proxy). Asset reads go through the
+  public `GET /api/deck/d/{renderId}/{file}` (content-addressed, immutable).
+- **Compose:** a `deck` service alongside gotenberg; the backend reaches it at
+  `http://deck:3344` (`TELA_DECK_URL`).
+
+## Roadmap (parser, not yet wired into the UI)
+
+- **Slide outline in the editor** — a backend `…/deck/outline` proxy over
+  `/parse` feeds a live slide navigator while editing (no render).
+- **Presenter notes / instant structure** — `DeckPresenter` shows count + titles
+  from `/parse` immediately, and exposes per-slide speaker notes.
+- **Incremental render** — hash each parsed slide; re-render only changed slides
+  (`slidev export --range`) instead of the whole deck on save.

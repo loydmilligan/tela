@@ -7,10 +7,15 @@
 // images in its own simple full-screen viewer. That keeps this service tiny.
 //
 //   GET  /themes                      -> [{ name, label, description }]   (for the editor's selector)
+//   POST /parse                       body: markdown -> { count, slides:[{no,title,layout,note}], features, errors }
 //   POST /render?theme=<name>         body: markdown -> { id, count, slides:[url], theme }
 //   POST /export/<pdf|pptx>?theme=<name>  body: markdown -> the file bytes
 //   GET  /d/<id>/<file>               -> a rendered slide PNG / the PDF / the PPTX
 //   GET  /health                      -> ok
+//
+// Two tiers: structure (count/titles/layouts/notes/features) comes from
+// @slidev/parser in-process — no Chromium — and powers /parse, theme injection,
+// and a fast preflight on /render + /export. Only pixels go through the CLI.
 //
 // Hardening: cache key folds in RENDER_VERSION + theme (so a theme/engine change
 // busts stale renders); renders are bounded by a small concurrency gate + a
@@ -27,6 +32,7 @@ import { join, extname, dirname, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { parse, stringify, prettifySlide, detectFeatures } from '@slidev/parser/core'
 
 const exec = promisify(execFile)
 const ROOT = dirname(fileURLToPath(import.meta.url))
@@ -54,18 +60,60 @@ const deckId = (md, theme) => hash(`${RENDER_VERSION}|${theme}|${md}`)
 const deckDir = (id) => join(CACHE, 'd', id)
 const pickTheme = (t) => (t && THEMES.has(t) ? t : DEFAULT_THEME)
 
-// Inject the chosen theme into the deck headmatter (override any user `theme:`),
-// so the stored markdown stays portable and the look is controlled centrally.
-function withTheme(md, theme) {
-  const path = join(THEMES_DIR, theme)
-  const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
-  if (fm.test(md)) {
-    return md.replace(fm, (_m, body) => {
-      const kept = body.split('\n').filter((l) => !/^\s*theme\s*:/.test(l))
-      return `---\ntheme: ${path}\n${kept.join('\n')}\n---\n`
-    })
+// Parse deck markdown once via @slidev/parser (in-process — no Chromium, so
+// milliseconds). The result drives theme injection, preflight validation, and
+// the /parse metadata endpoint. `errors` carries any frontmatter/YAML problems.
+const parseDeck = (md) => parse(md, 'deck.md')
+
+// Structure for the /parse endpoint and editor outline: one entry per slide
+// (title, layout, speaker note) plus detected feature flags — all without
+// rendering a single pixel.
+function deckMeta(data, md) {
+  return {
+    count: data.slides.length,
+    slides: data.slides.map((s, i) => ({
+      no: i + 1,
+      title: s.title || '',
+      layout: (s.frontmatter && s.frontmatter.layout) || (i === 0 ? 'cover' : 'default'),
+      note: s.note || '',
+    })),
+    features: detectFeatures(md),
+    errors: data.errors || [],
   }
-  return `---\ntheme: ${path}\n---\n\n${md}`
+}
+
+// Parse-validate before a render: surfaces a malformed deck (e.g. broken YAML
+// headmatter) as a fast 400 with the parser's message, instead of letting it
+// fail deep inside a multi-minute Chromium export and bubble up as an opaque 502.
+async function preflight(md) {
+  let data
+  try {
+    data = await parseDeck(md)
+  } catch (e) {
+    // The parser is lenient, but a hard YAML/syntax failure throws — make it a 400.
+    throw Object.assign(new Error(String(e?.message || e)), { status: 400 })
+  }
+  if (data.errors && data.errors.length) {
+    const msg = data.errors.map((e) => (e.row != null ? `line ${e.row}: ${e.message}` : e.message)).join('; ')
+    throw Object.assign(new Error(msg), { status: 400 })
+  }
+  return data
+}
+
+// Inject the chosen theme into the deck headmatter (overriding any user `theme:`)
+// so the stored markdown stays portable and the look is controlled centrally.
+// Done through the parser — set `theme` on the first slide's YAML document and
+// re-serialize — instead of fragile frontmatter regex surgery.
+function withTheme(data, theme) {
+  const path = join(THEMES_DIR, theme)
+  const head = data.slides[0]
+  if (head && head.frontmatterDoc && head.frontmatterDoc.contents) {
+    head.frontmatterDoc.set('theme', path)
+    prettifySlide(head) // rebuild head.raw from the mutated YAML doc (stringify reads raw)
+    return stringify(data)
+  }
+  // No headmatter block to edit — prepend one.
+  return `---\ntheme: ${path}\n---\n\n${data.raw}`
 }
 
 // Bounded concurrency — Chromium renders are heavy; an unbounded burst OOMs.
@@ -90,7 +138,7 @@ function acquire() {
 
 async function slidevExport(md, theme, format, outPath) {
   const entry = join(WORK, `${hash(theme + format + md)}.md`)
-  await writeFile(entry, withTheme(md, theme))
+  await writeFile(entry, withTheme(await parseDeck(md), theme))
   const release = await acquire()
   try {
     await exec(SLIDEV, ['export', entry, '--format', format, '--output', outPath, '--timeout', '60000'], {
@@ -155,13 +203,21 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && path === '/themes') {
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await listThemes()))
+    } else if (req.method === 'POST' && path === '/parse') {
+      // Cheap structure + features, no render. Powers the editor outline + preflight.
+      const md = await readBody(req)
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(deckMeta(await parseDeck(md), md)))
     } else if (req.method === 'POST' && path === '/render') {
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(await renderImages(await readBody(req), theme)))
+      const md = await readBody(req)
+      await preflight(md) // parse first — a bad deck fails fast as 400, not a slow 502
+      const manifest = await renderImages(md, theme) // resolve BEFORE writing headers
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(manifest))
     } else if (req.method === 'POST' && path.startsWith('/export/')) {
       const format = path.slice('/export/'.length)
       if (!EXPORT_MIME[format]) return void res.writeHead(400).end('format must be pdf or pptx')
-      const file = await renderFile(await readBody(req), theme, format)
+      const md = await readBody(req)
+      await preflight(md)
+      const file = await renderFile(md, theme, format)
       res.writeHead(200, { 'content-type': EXPORT_MIME[format] })
       createReadStream(file).pipe(res)
     } else if (req.method === 'GET' && path.startsWith('/d/')) {
@@ -173,7 +229,17 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404).end()
     }
   } catch (e) {
-    res.writeHead(500, { 'content-type': 'text/plain' }).end(String(e?.stack || e))
+    // A render that already started streaming can't have headers rewritten —
+    // log and drop the connection instead of crashing the process.
+    if (res.headersSent) {
+      console.error('deck error after headers sent:', e?.stack || e)
+      return void res.destroy()
+    }
+    if ((e?.status || 500) === 400) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'parse', message: String(e.message || e) }))
+    } else {
+      res.writeHead(500, { 'content-type': 'text/plain' }).end(String(e?.stack || e))
+    }
   }
 })
 
