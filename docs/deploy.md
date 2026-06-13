@@ -26,6 +26,17 @@ prod box is deployed.
 commit and the health gate fails if `/api/version` doesn't report it — so a
 forgotten `git push` (or a build that didn't land) is caught, not silently shipped.
 
+> [!WARNING]
+> **Images build from the WORKING TREE, not from `HEAD`.** `docker build … backend`
+> / `frontend` and `landing-build` use the current directory as the build context,
+> so **uncommitted changes ship**. The commit tag is cosmetic (only the backend's
+> `/api/version` is gated; the frontend/landing have no such check), so a `-dirty`
+> build can silently carry someone else's in-progress edits. When two people work
+> in one tree, deploy only the surface you own: `make deploy-backend` rebuilds the
+> Go image from `backend/` alone (a clean context if only the frontend has WIP),
+> and vice-versa for `deploy-frontend`. Commit or stash unrelated WIP before a full
+> `make deploy`.
+
 ## Why a registry (and not `docker save`)
 
 `docker save | ssh docker load` streams the **whole** image every time — no
