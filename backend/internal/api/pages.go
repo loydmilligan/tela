@@ -866,6 +866,25 @@ func (s *Server) deletePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		}
 	}
 
+	// Attachments parented to the trashed subtree: SOFT-delete the file rows
+	// (recoverable, same promise as the pages — a re-sync resurrects + re-indexes
+	// them) but HARD-clear their disposable RAG index (file_chunks) and summary
+	// bookkeeping (file_summaries). Without this a deleted page's files stay live
+	// and keep surfacing in semantic_search / Ask, citing a now-deleted page, and
+	// the summarize stale-sweep keeps re-processing them. Mirrors the per-file
+	// delete path (soft-delete + clear chunks) across the whole subtree at once.
+	const filesUnderSubtree = ` (SELECT id FROM space_files WHERE parent_page_id IN (SELECT id FROM subtree))`
+	for _, stmt := range []string{
+		`DELETE FROM file_chunks WHERE space_file_id IN` + filesUnderSubtree,
+		`DELETE FROM file_summaries WHERE space_file_id IN` + filesUnderSubtree,
+		`UPDATE space_files SET deleted_at = tela_now()
+		   WHERE parent_page_id IN (SELECT id FROM subtree) AND deleted_at IS NULL`,
+	} {
+		if _, err := tx.ExecContext(ctx, subtreeCTE+stmt, id); err != nil {
+			return &apiErr{http.StatusInternalServerError, "internal", "delete page attachments failed"}
+		}
+	}
+
 	// Feed every soft-deleted page (whole subtree) so a polling client learns of
 	// the deletions, not just the root (sync §4). Same space for the whole subtree.
 	for _, did := range deletedIDs {

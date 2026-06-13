@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"hash/fnv"
 	"io"
 	"net/http"
@@ -222,6 +223,57 @@ func TestRAG_Freshness(t *testing.T) {
 
 // mustFile seeds a space_files row (an attachment) under a parent page. Returns
 // the file id. content_hash is just the name (unique enough for a test).
+// TestDeletePage_TearsDownAttachmentIndex pins the orphan fix: deleting a page
+// must soft-delete its attachments and clear their RAG index, so a deleted page's
+// files stop surfacing in search and stop citing a now-deleted page.
+func TestDeletePage_TearsDownAttachmentIndex(t *testing.T) {
+	ts, d, srv := newRagServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	aSpace := seedSpace(t, d, "Alpha", "alpha", alice)
+	page := mustPage(t, d, aSpace, "Folder", "## x\nplain page body")
+	fileID := mustFile(t, d, aSpace, page, "doc.md", "text/markdown",
+		"# Doc\n\nThe Quibblesnatch protocol streams parcels through the Vornblat hub.")
+	if _, err := srv.rag.ReindexFile(context.Background(), fileID); err != nil {
+		t.Fatalf("reindex: %v", err)
+	}
+	var n int
+	d.QueryRow(`SELECT count(*) FROM file_chunks WHERE space_file_id=$1`, fileID).Scan(&n)
+	if n == 0 {
+		t.Fatal("file not indexed before delete")
+	}
+
+	c := loginClient(t, ts, "alice", "alicepw12")
+	req, _ := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/pages/%d", ts.URL, page), nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete status = %d", resp.StatusCode)
+	}
+
+	// Chunks gone, file soft-deleted, no longer retrievable.
+	d.QueryRow(`SELECT count(*) FROM file_chunks WHERE space_file_id=$1`, fileID).Scan(&n)
+	if n != 0 {
+		t.Errorf("file chunks survived page delete: %d", n)
+	}
+	var del sql.NullString
+	d.QueryRow(`SELECT deleted_at FROM space_files WHERE id=$1`, fileID).Scan(&del)
+	if !del.Valid {
+		t.Error("attachment not soft-deleted with its page")
+	}
+	hits, err := srv.rag.Search(context.Background(), alice, "Quibblesnatch Vornblat parcels", nil, 5, "hybrid")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	for _, h := range hits {
+		if h.FileID == fileID {
+			t.Errorf("deleted page's attachment still retrievable (chunk %d)", h.ChunkID)
+		}
+	}
+}
+
 func mustFile(t *testing.T, d *sql.DB, spaceID, parentPageID int64, name, mime, body string) int64 {
 	t.Helper()
 	var id int64
