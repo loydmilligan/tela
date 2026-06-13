@@ -27,6 +27,14 @@ func Text(mime, name string, data []byte) (text string, ok bool) {
 	}
 }
 
+// Extractable reports whether Text would attempt extraction for this mime/name
+// (plaintext family or a PDF). It's a CHEAP pre-filter — a PDF can still yield no
+// text (scanned/encrypted) — used to skip obviously-binary files (images, etc.)
+// without loading their bytes. A true here means "worth trying", not "has text".
+func Extractable(mime, name string) bool {
+	return isPlainText(mime, name) || mime == "application/pdf" || lowerExt(name) == "pdf"
+}
+
 func isPlainText(mime, name string) bool {
 	if strings.HasPrefix(mime, "text/") {
 		return true

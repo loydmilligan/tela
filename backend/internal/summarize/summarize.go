@@ -41,10 +41,14 @@ type Service struct {
 
 	// Debounce queue (see worker.go). pending maps page id → debounce deadline;
 	// nil until Start runs. attempts tracks consecutive failures per page to
-	// drive exponential retry backoff (cleared on success). Both under queueMu.
-	queueMu  sync.Mutex
-	pending  map[int64]time.Time
-	attempts map[int64]int
+	// drive exponential retry backoff (cleared on success). pendingFiles/
+	// fileAttempts are the identical machinery for space_file ids (the file half
+	// of auto-summary). All under queueMu.
+	queueMu      sync.Mutex
+	pending      map[int64]time.Time
+	attempts     map[int64]int
+	pendingFiles map[int64]time.Time
+	fileAttempts map[int64]int
 }
 
 // NewService builds the service. Never fails; with a disabled llm the service
@@ -228,6 +232,7 @@ func sanitize(out string) string {
 // RunSummary is SummarizeAll's tally, for the CLI exit report.
 type RunSummary struct {
 	Spaces, Pages, Generated, Skipped, Failed int
+	Files                                     int // attachments processed (the file half)
 }
 
 // SummarizeAll walks every live page in every space serially and summarizes
@@ -289,10 +294,51 @@ func (s *Service) SummarizeAll(ctx context.Context, force bool) (RunSummary, err
 			"progress", i+1, "total", len(spaces), "space_id", sp.id, "name", sp.name,
 			"pages", len(ids), "generated", generated, "skipped", skipped, "failed", failed)
 	}
+	// The file half: summarize every live attachment (text-extractable ones get a
+	// standfirst; non-text files record an empty, fresh row so they're not retried).
+	// Idempotent via the content_hash skip, exactly like pages. Failures counted.
+	fileIDs, err := s.allFileIDs(ctx)
+	if err != nil {
+		return sum, fmt.Errorf("list files: %w", err)
+	}
+	for _, fid := range fileIDs {
+		res, err := s.SummarizeFile(ctx, fid, force)
+		switch {
+		case err != nil:
+			sum.Failed++
+			slog.Warn("summarize-all: file failed", "file_id", fid, "err", err)
+		case res == Generated:
+			sum.Files++
+			sum.Generated++
+		default:
+			sum.Skipped++
+		}
+	}
+
 	slog.Info("summarize-all: DONE",
 		"spaces", sum.Spaces, "pages", sum.Pages, "generated", sum.Generated,
-		"skipped", sum.Skipped, "failed", sum.Failed, "model", s.llm.Model())
+		"skipped", sum.Skipped, "failed", sum.Failed, "files", sum.Files, "model", s.llm.Model())
 	return sum, nil
+}
+
+// allFileIDs returns every live attachment id (corpus-wide), for SummarizeAll's
+// file pass. Ordered by id for stable, resumable progress.
+func (s *Service) allFileIDs(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM space_files WHERE deleted_at IS NULL ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *Service) spacePageIDs(ctx context.Context, spaceID int64) ([]int64, error) {

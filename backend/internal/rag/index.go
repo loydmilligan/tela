@@ -161,6 +161,7 @@ func (s *Service) reindexSpace(ctx context.Context, spaceID int64, force bool) (
 // ReindexSummary is the result of a whole-corpus reindex (the reindex-all CLI).
 type ReindexSummary struct {
 	Spaces, Pages, Chunks, Failed int
+	Files, FileChunks             int // the file half (attachments → file_chunks)
 }
 
 // ReindexAll re-embeds every page in every space against the current embedder,
@@ -208,9 +209,50 @@ func (s *Service) ReindexAll(ctx context.Context, force bool) (ReindexSummary, e
 			"progress", i+1, "total", len(spaces), "space_id", sp.id, "name", sp.name,
 			"pages", pages, "chunks", chunks, "failed", failed)
 	}
+	// The file half: walk every live attachment and (re)index its extracted text.
+	// ReindexFile is idempotent (the per-chunk vector cache skips unchanged text;
+	// non-text files index to zero chunks), so this back-fills attachments uploaded
+	// before the feature AND re-embeds them on a model change — the same "reindex
+	// everything" contract the name promises. Failures are counted, never fatal.
+	fileIDs, err := s.allFileIDs(ctx)
+	if err != nil {
+		return sum, fmt.Errorf("list files: %w", err)
+	}
+	for _, fid := range fileIDs {
+		n, err := s.ReindexFile(ctx, fid)
+		if err != nil {
+			sum.Failed++
+			slog.Warn("reindex-all: file failed", "file_id", fid, "err", err)
+			continue
+		}
+		sum.Files++
+		sum.FileChunks += n
+	}
+
 	slog.Info("reindex-all: DONE",
-		"spaces", sum.Spaces, "pages", sum.Pages, "chunks", sum.Chunks, "failed", sum.Failed, "model", s.emb.Model())
+		"spaces", sum.Spaces, "pages", sum.Pages, "chunks", sum.Chunks,
+		"files", sum.Files, "file_chunks", sum.FileChunks, "failed", sum.Failed, "model", s.emb.Model())
 	return sum, nil
+}
+
+// allFileIDs returns every live attachment id (corpus-wide), for ReindexAll's
+// file pass. Ordered by id for stable, resumable progress.
+func (s *Service) allFileIDs(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM space_files WHERE deleted_at IS NULL ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *Service) pageIDs(ctx context.Context, spaceID int64) ([]int64, error) {

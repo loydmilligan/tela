@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Download, FileText, Paperclip, Trash2, CornerLeftUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { isPdf, PdfPreviewDialog } from '../ui/pdf-viewer'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import {
   attachmentKeys,
   useAttachments,
@@ -112,6 +113,7 @@ function AttachmentChip({
   const image = isImageMime(a.mime)
   const pdf = isPdf(a.name, a.mime)
   const [preview, setPreview] = useState(false)
+  const summary = a.summary?.trim()
   const inner = (
     <>
       {image ? (
@@ -134,7 +136,7 @@ function AttachmentChip({
       </span>
     </>
   )
-  return (
+  const chip = (
     <span
       className={cn(
         'group inline-flex items-center gap-[var(--space-2)] max-w-[16rem]',
@@ -207,6 +209,25 @@ function AttachmentChip({
         </span>
       ) : null}
     </span>
+  )
+
+  // When the background worker has summarized the file's text, hovering the chip
+  // reveals the standfirst — the same affordance the page title gets (SummaryHint).
+  if (!summary) return chip
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        align="start"
+        className="max-w-[24rem] p-[var(--space-3)] text-[length:var(--text-sm)] leading-[var(--leading-normal)]"
+      >
+        <p className="m-0 mb-[var(--space-1)] text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-mono)]">
+          file summary
+        </p>
+        <p className="m-0">{summary}</p>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

@@ -16,6 +16,11 @@ export interface Attachment {
   url: string
   /** The page body already references this file's hash (it's embedded inline). */
   embedded: boolean
+  /**
+   * Machine-generated 1-2 sentence summary of the file's extracted text. Empty
+   * until the background worker runs, or for non-text files (images, binaries).
+   */
+  summary?: string
 }
 
 export const attachmentKeys = {

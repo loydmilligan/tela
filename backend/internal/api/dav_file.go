@@ -292,6 +292,7 @@ func (f *davSpaceWriteFile) flush() error {
 	// re-sync reindexes cheaply (the per-chunk vector cache skips the embedder),
 	// and the debounce coalesces rapid syncs.
 	f.fs.s.rag.QueueReindexFile(sf.id)
+	f.fs.s.summarize.QueueFile(sf.id)
 	return nil
 }
 

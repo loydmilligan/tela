@@ -49,6 +49,7 @@ type attachmentOut struct {
 	Hash     string `json:"hash"`
 	URL      string `json:"url"`
 	Embedded bool   `json:"embedded"` // body already references this file's hash
+	Summary  string `json:"summary,omitempty"` // machine-generated, "" until the worker runs (or non-text)
 }
 
 // spaceFileServeURL is the stable, rename-proof URL for a stored file: keyed by
@@ -80,7 +81,7 @@ func (s *Server) listPageAttachmentsCore(ctx context.Context, u *auth.User, k *a
 		return nil, ae
 	}
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT id, name, mime, byte_size, content_hash
+		SELECT id, name, mime, byte_size, content_hash, summary
 		  FROM space_files
 		 WHERE parent_page_id = $1 AND deleted_at IS NULL
 		 ORDER BY name ASC, id ASC`, pageID)
@@ -91,7 +92,7 @@ func (s *Server) listPageAttachmentsCore(ctx context.Context, u *auth.User, k *a
 	out := []attachmentOut{}
 	for rows.Next() {
 		var a attachmentOut
-		if err := rows.Scan(&a.ID, &a.Name, &a.Mime, &a.ByteSize, &a.Hash); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Mime, &a.ByteSize, &a.Hash, &a.Summary); err != nil {
 			return nil, &apiErr{http.StatusInternalServerError, "internal", "scan attachment failed"}
 		}
 		a.URL = spaceFileServeURL(page.SpaceID, a.Name, a.Hash)
@@ -299,8 +300,10 @@ func (s *Server) createPageUploadFile(ctx context.Context, spaceID, pageID int64
 	}
 	sf.spaceID, sf.parentID, sf.name, sf.hash, sf.mime, sf.size = spaceID, &pageID, finalName, hash, mimeType, int64(len(data))
 	// Store-and-announce: a new blob → enqueue text extraction + indexing (the
-	// file half of the RAG index). No-op when the embedder is unconfigured.
+	// file half of the RAG index) and an auto-summary. Both no-op when their
+	// service is unconfigured.
 	s.rag.QueueReindexFile(sf.id)
+	s.summarize.QueueFile(sf.id)
 	return sf, nil
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/zcag/tela/backend/internal/extract"
 )
 
 // Auto-summarize: a debounced, coalescing background worker that keeps
@@ -71,9 +73,27 @@ func (s *Service) Start(ctx context.Context) {
 	}
 	s.pending = make(map[int64]time.Time)
 	s.attempts = make(map[int64]int)
+	s.pendingFiles = make(map[int64]time.Time)
+	s.fileAttempts = make(map[int64]int)
 	s.queueMu.Unlock()
 	go s.summarizeLoop(ctx)
 	go s.staleSweepLoop(ctx)
+}
+
+// QueueFile is Queue for a space_file (the file half of auto-summary) — the
+// trigger every upload path fires after a content change, alongside
+// rag.QueueReindexFile. Same debounce/coalesce/backoff machinery, keyed on file id.
+func (s *Service) QueueFile(fileID int64) {
+	if !s.Enabled() {
+		return
+	}
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	if s.pendingFiles == nil {
+		return // worker not started
+	}
+	s.pendingFiles[fileID] = time.Now().Add(summarizeDebounce)
+	delete(s.fileAttempts, fileID)
 }
 
 func (s *Service) summarizeLoop(ctx context.Context) {
@@ -92,6 +112,16 @@ func (s *Service) summarizeLoop(ctx context.Context) {
 					s.requeueAfterFailure(id)
 				} else {
 					s.clearAttempts(id)
+				}
+			}
+			for _, id := range s.dueFileSummaries() {
+				sctx, cancel := context.WithTimeout(ctx, summarizeTimeout)
+				_, err := s.SummarizeFile(sctx, id, false)
+				cancel()
+				if err != nil {
+					s.requeueFileAfterFailure(id)
+				} else {
+					s.clearFileAttempts(id)
 				}
 			}
 		}
@@ -127,6 +157,50 @@ func (s *Service) clearAttempts(pageID int64) {
 	s.queueMu.Unlock()
 }
 
+// dueFileSummaries / requeueFileAfterFailure / clearFileAttempts mirror the page
+// trio for the file queue — same debounce + exponential backoff, keyed on file id.
+
+func (s *Service) dueFileSummaries() []int64 {
+	now := time.Now()
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	var due []int64
+	for id, deadline := range s.pendingFiles {
+		if !now.Before(deadline) {
+			due = append(due, id)
+			delete(s.pendingFiles, id)
+		}
+	}
+	return due
+}
+
+func (s *Service) requeueFileAfterFailure(fileID int64) {
+	s.queueMu.Lock()
+	if s.pendingFiles == nil {
+		s.queueMu.Unlock()
+		return
+	}
+	s.fileAttempts[fileID]++
+	n := s.fileAttempts[fileID]
+	shift := n - 1
+	if shift > 16 {
+		shift = 16
+	}
+	backoff := summarizeRetryBase << uint(shift)
+	if backoff > summarizeRetryMax || backoff <= 0 {
+		backoff = summarizeRetryMax
+	}
+	s.pendingFiles[fileID] = time.Now().Add(backoff)
+	s.queueMu.Unlock()
+	slog.Warn("summarize: file generation failed, will retry", "file_id", fileID, "attempt", n, "retry_in", backoff)
+}
+
+func (s *Service) clearFileAttempts(fileID int64) {
+	s.queueMu.Lock()
+	delete(s.fileAttempts, fileID)
+	s.queueMu.Unlock()
+}
+
 // dueSummaries removes and returns the page IDs whose debounce window has
 // elapsed. Pages still settling (or backing off after a failure) stay queued.
 func (s *Service) dueSummaries() []int64 {
@@ -157,6 +231,7 @@ func (s *Service) staleSweepLoop(ctx context.Context) {
 	defer t.Stop()
 	for {
 		s.sweepStale(ctx)
+		s.sweepStaleFiles(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -187,4 +262,29 @@ func (s *Service) sweepStale(ctx context.Context) {
 		s.Queue(id)
 	}
 	slog.Info("summarize: stale-sweep enqueued", "pages", len(ids))
+}
+
+// sweepStaleFiles is the file half of the stale sweep: enqueue text-extractable
+// attachments whose summary is missing, failed, or generated from older content
+// — the back-fill that summarizes files uploaded before the feature (or while the
+// LLM was down). Obviously-binary files are filtered out in Go (extract.Extractable)
+// so the sweep doesn't churn on images. Called from staleSweepLoop alongside
+// sweepStale. Best-effort.
+func (s *Service) sweepStaleFiles(ctx context.Context) {
+	files, err := s.staleFileIDs(ctx, staleSweepBatch)
+	if err != nil {
+		slog.Error("summarize: file stale-sweep query", "err", err)
+		return
+	}
+	n := 0
+	for _, f := range files {
+		if !extract.Extractable(f.mime, f.name) {
+			continue
+		}
+		s.QueueFile(f.id)
+		n++
+	}
+	if n > 0 {
+		slog.Info("summarize: file stale-sweep enqueued", "files", n)
+	}
 }

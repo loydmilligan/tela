@@ -19,12 +19,29 @@ function file(
   mime: string,
   byte_size: number,
   embedded = false,
+  summary?: string,
 ): Attachment {
-  return { id, name, mime, byte_size, hash: `${id}`.repeat(8), url: '#', embedded }
+  return {
+    id,
+    name,
+    mime,
+    byte_size,
+    hash: `${id}`.repeat(8),
+    url: '#',
+    embedded,
+    summary,
+  }
 }
 
 const mixed: Attachment[] = [
-  file(1, 'q3-planning.pdf', 'application/pdf', 248_000),
+  file(
+    1,
+    'q3-planning.pdf',
+    'application/pdf',
+    248_000,
+    false,
+    'Q3 roadmap: ships the billing rework and the new onboarding flow, with hiring targets for two backend engineers.',
+  ),
   file(2, 'architecture.png', 'image/png', 91_000, true),
   file(3, 'budget.xlsx', 'application/vnd.ms-excel', 18_400),
   file(4, 'notes.txt', 'text/plain', 1_200),
