@@ -1,7 +1,12 @@
 # AI over attachments — design note
 
-**Status:** in progress. Slice-1 indexing foundation landed (extraction +
-`file_chunks` + `ReindexFile`); trigger seam + retrieval follow.
+**Status:** Slice 1 complete. Indexing foundation (extraction + `file_chunks` +
+`ReindexFile`, slice 1a), the auto-index trigger on every upload seam (slice 1b),
+and **retrieval** (slice 1c) all landed: file chunks `UNION` into hybrid search,
+`read_chunk`, and the Ask path, ACL-gated through the live `space_files` row and
+citing the file (name + parent page + `download_url`). Files are now searchable +
+answerable. Next: slice 2 (file auto-summaries), slice 3 (office formats via
+gotenberg; `related_pages`/`find_overlaps` across files).
 
 ## Decisions locked at build time (supersede the recommendations below)
 

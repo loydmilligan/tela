@@ -220,6 +220,84 @@ func TestRAG_Freshness(t *testing.T) {
 	}
 }
 
+// mustFile seeds a space_files row (an attachment) under a parent page. Returns
+// the file id. content_hash is just the name (unique enough for a test).
+func mustFile(t *testing.T, d *sql.DB, spaceID, parentPageID int64, name, mime, body string) int64 {
+	t.Helper()
+	var id int64
+	if err := d.QueryRowContext(context.Background(), `INSERT INTO space_files
+		(space_id, parent_page_id, name, content_hash, mime, data, byte_size)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		spaceID, parentPageID, name, name+"hash", mime, []byte(body), len(body)).Scan(&id); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	return id
+}
+
+// TestRAG_FileChunks_SearchAndRead exercises the full HTTP retrieval path for
+// attachments: a reindexed file surfaces in /api/rag/search with a file citation
+// (source_kind, file_name, parent page_id, an absolute download_url), and its
+// chunk reads back through /api/rag/chunk.
+func TestRAG_FileChunks_SearchAndRead(t *testing.T) {
+	ts, d, srv := newRagServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	aSpace := seedSpace(t, d, "Alpha", "alpha", alice)
+	parent := mustPage(t, d, aSpace, "Vendor", "## Notes\nvendor context")
+	fileID := mustFile(t, d, aSpace, parent, "msa.md", "text/markdown",
+		"# Master Service Agreement\n\nThe indemnification liability cap is two million dollars.")
+
+	if _, err := srv.rag.ReindexFile(context.Background(), fileID); err != nil {
+		t.Fatalf("reindex file: %v", err)
+	}
+
+	c := loginClient(t, ts, "alice", "alicepw12")
+	resp, err := c.Get(ts.URL + "/api/rag/search?q=indemnification+liability+cap")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Results []rag.Hit `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var fh *rag.Hit
+	for i := range out.Results {
+		if out.Results[i].SourceKind == "file" {
+			fh = &out.Results[i]
+		}
+	}
+	if fh == nil {
+		t.Fatalf("no file hit in results: %+v", out.Results)
+	}
+	if fh.FileID != fileID || fh.FileName != "msa.md" || fh.PageID != parent {
+		t.Errorf("file citation wrong: %+v", *fh)
+	}
+	if fh.DownloadURL == "" || !strings.Contains(fh.DownloadURL, "/api/files/"+strconv.FormatInt(aSpace, 10)+"/") {
+		t.Errorf("file hit missing/wrong download_url: %q", fh.DownloadURL)
+	}
+
+	// read_chunk routes the file chunk id to file_chunks and cites the file.
+	resp2, err := c.Get(ts.URL + "/api/rag/chunk?chunk_id=" + strconv.FormatInt(fh.ChunkID, 10))
+	if err != nil {
+		t.Fatalf("read chunk: %v", err)
+	}
+	defer resp2.Body.Close()
+	var rr struct {
+		Chunk rag.ChunkRead `json:"chunk"`
+	}
+	if err := json.NewDecoder(resp2.Body).Decode(&rr); err != nil {
+		t.Fatalf("decode chunk: %v", err)
+	}
+	if rr.Chunk.SourceKind != "file" || rr.Chunk.FileID != fileID || rr.Chunk.Content == "" {
+		t.Errorf("file chunk read wrong: %+v", rr.Chunk)
+	}
+	if rr.Chunk.DownloadURL == "" {
+		t.Errorf("file chunk read missing download_url")
+	}
+}
+
 func mustPage(t *testing.T, d *sql.DB, spaceID int64, title, body string) int64 {
 	t.Helper()
 	var id int64

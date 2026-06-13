@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -11,8 +12,15 @@ import (
 // Hit is one ranked chunk result. Carries everything a caller needs to cite the
 // source: page id + heading path (and the API layer adds the in-app URL).
 // UpdatedAt surfaces freshness so an agent/UI can warn on stale facts.
+//
+// A chunk's source is a page OR a file (SourceKind). For a file hit, Title is the
+// file name, FileID/FileName/Hash identify the attachment, and PageID is its
+// PARENT page (0 = space root). DownloadURL is left empty here and filled by the
+// API layer (rag can't build /api URLs without importing api) — see
+// enrichFileCitations.
 type Hit struct {
 	ChunkID     int64   `json:"chunk_id"`
+	SourceKind  string  `json:"source_kind"` // "page" | "file"
 	PageID      int64   `json:"page_id"`
 	SpaceID     int64   `json:"space_id"`
 	Title       string  `json:"title"`
@@ -20,7 +28,21 @@ type Hit struct {
 	Snippet     string  `json:"snippet"`
 	Score       float64 `json:"score"`
 	UpdatedAt   string  `json:"updated_at"`
+
+	// File-source only.
+	FileID      int64  `json:"file_id,omitempty"`
+	FileName    string `json:"file_name,omitempty"`
+	DownloadURL string `json:"download_url,omitempty"`
+	Hash        string `json:"-"` // carrier for the API layer's download_url build
 }
+
+// fileChunkIDBase is file_chunks.id's identity floor (2^40, see migration 0036):
+// a chunk id at or above it is a FILE chunk, below it a PAGE chunk. The two id
+// spaces never collide, so a bare chunk id routes to the right table by range.
+const fileChunkIDBase = 1 << 40
+
+// IsFileChunk reports whether a chunk id belongs to file_chunks (vs page_chunks).
+func IsFileChunk(chunkID int64) bool { return chunkID >= fileChunkIDBase }
 
 // rrfK is the standard Reciprocal Rank Fusion constant. Larger = flatter
 // weighting across ranks; 60 is the well-trodden default and needs no score
@@ -100,24 +122,38 @@ func (s *Service) Search(ctx context.Context, userID int64, q string, spaceID *i
 }
 
 // lexicalRank returns chunk ids ranked by ts_rank_cd over the generated
-// content_tsv, scoped by space_access (and optionally a single space). The
-// permission join is against the LIVE pages row (p.space_id), never a chunk
-// copy — the anti-leak invariant.
+// content_tsv, scoped by space_access (and optionally a single space). The pool
+// is the UNION of page chunks (joined to the LIVE pages row) and file chunks
+// (joined to the LIVE space_files row) — one ranked list across both sources.
+// The permission join is always against the live source row, never a chunk copy
+// — the anti-leak invariant.
 func (s *Service) lexicalRank(ctx context.Context, userID int64, q string, spaceID *int64, limit int) ([]int64, error) {
 	qb := &queryBuilder{}
 	uid := qb.arg(userID)
 	qry := qb.arg(q)
-	sql := `
-		SELECT pc.id
-		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
-		    ON sm.space_id = p.space_id
-		 WHERE pc.content_tsv @@ plainto_tsquery('english', ` + qry + `)`
+	tsq := `plainto_tsquery('english', ` + qry + `)`
+	var pageSp, fileSp string
 	if spaceID != nil {
-		sql += ` AND p.space_id = ` + qb.arg(*spaceID)
+		sp := qb.arg(*spaceID)
+		pageSp, fileSp = ` AND p.space_id = `+sp, ` AND sf.space_id = `+sp
 	}
-	sql += ` ORDER BY ts_rank_cd(pc.content_tsv, plainto_tsquery('english', ` + qry + `)) DESC LIMIT ` + qb.arg(limit)
+	lim := qb.arg(limit)
+	sql := `
+		SELECT id FROM (
+			SELECT pc.id AS id, ts_rank_cd(pc.content_tsv, ` + tsq + `) AS r
+			  FROM page_chunks pc
+			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			    ON sm.space_id = p.space_id
+			 WHERE pc.content_tsv @@ ` + tsq + pageSp + `
+			UNION ALL
+			SELECT fc.id AS id, ts_rank_cd(fc.content_tsv, ` + tsq + `) AS r
+			  FROM file_chunks fc
+			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			    ON sm.space_id = sf.space_id
+			 WHERE fc.content_tsv @@ ` + tsq + fileSp + `
+		) u ORDER BY r DESC LIMIT ` + lim
 	return s.queryIDs(ctx, sql, qb.args...)
 }
 
@@ -140,8 +176,9 @@ func (s *Service) embedQuery(ctx context.Context, q string) ([]float32, error) {
 }
 
 // vectorRank embeds the query and returns chunk ids ranked by cosine distance
-// (pgvector <=>, ascending = closest), scoped by space_access. No ANN index yet
-// — an exact scan over the (small) permitted candidate set (see 0002_rag.sql).
+// (pgvector <=>, ascending = closest), scoped by space_access. The pool UNIONs
+// page chunks and file chunks (each ACL-joined to its live source row). No ANN
+// index yet — an exact scan over the (small) permitted candidate set.
 func (s *Service) vectorRank(ctx context.Context, userID int64, q string, spaceID *int64, limit int) ([]int64, error) {
 	vec, err := s.embedQuery(ctx, q)
 	if err != nil {
@@ -149,18 +186,29 @@ func (s *Service) vectorRank(ctx context.Context, userID int64, q string, spaceI
 	}
 	qb := &queryBuilder{}
 	uid := qb.arg(userID)
-	qvec := qb.arg(vecLiteral(vec))
-	sql := `
-		SELECT pc.id
-		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
-		    ON sm.space_id = p.space_id
-		 WHERE pc.embedding IS NOT NULL`
+	qvec := qb.arg(vecLiteral(vec)) + `::vector`
+	var pageSp, fileSp string
 	if spaceID != nil {
-		sql += ` AND p.space_id = ` + qb.arg(*spaceID)
+		sp := qb.arg(*spaceID)
+		pageSp, fileSp = ` AND p.space_id = `+sp, ` AND sf.space_id = `+sp
 	}
-	sql += ` ORDER BY pc.embedding <=> ` + qvec + `::vector LIMIT ` + qb.arg(limit)
+	lim := qb.arg(limit)
+	sql := `
+		SELECT id FROM (
+			SELECT pc.id AS id, (pc.embedding <=> ` + qvec + `) AS d
+			  FROM page_chunks pc
+			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			    ON sm.space_id = p.space_id
+			 WHERE pc.embedding IS NOT NULL` + pageSp + `
+			UNION ALL
+			SELECT fc.id AS id, (fc.embedding <=> ` + qvec + `) AS d
+			  FROM file_chunks fc
+			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
+			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			    ON sm.space_id = sf.space_id
+			 WHERE fc.embedding IS NOT NULL` + fileSp + `
+		) u ORDER BY d ASC LIMIT ` + lim
 	return s.queryIDs(ctx, sql, qb.args...)
 }
 
@@ -182,41 +230,91 @@ func (s *Service) queryIDs(ctx context.Context, query string, args ...any) ([]in
 }
 
 // hydrate fetches display fields for the fused id list and returns hits in fused
-// order (the IN-clause result order is undefined, so we re-sort by score).
+// order (the IN-clause result order is undefined, so we re-sort by score). The id
+// list can mix page and file chunks; each table is hydrated separately (routed by
+// the fileChunkIDBase id range) and merged. No re-ACL here — the rankers already
+// scoped ids by space_access; hydrate joins only to pick up display fields.
 func (s *Service) hydrate(ctx context.Context, ids []int64, score map[int64]float64) ([]Hit, error) {
 	if len(ids) == 0 {
 		return []Hit{}, nil
 	}
-	qb := &queryBuilder{}
-	ph := make([]string, len(ids))
-	for i, id := range ids {
-		ph[i] = qb.arg(id)
+	var pageIDs, fileIDs []int64
+	for _, id := range ids {
+		if IsFileChunk(id) {
+			fileIDs = append(fileIDs, id)
+		} else {
+			pageIDs = append(pageIDs, id)
+		}
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT pc.id, pc.page_id, p.space_id, pc.heading_path, pc.content, p.title, p.updated_at
-		  FROM page_chunks pc
-		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
-		 WHERE pc.id IN (`+strings.Join(ph, ",")+`)`, qb.args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	byID := make(map[int64]Hit, len(ids))
-	for rows.Next() {
-		var (
-			h       Hit
-			content string
-		)
-		if err := rows.Scan(&h.ChunkID, &h.PageID, &h.SpaceID, &h.HeadingPath, &content, &h.Title, &h.UpdatedAt); err != nil {
+
+	if len(pageIDs) > 0 {
+		qb := &queryBuilder{}
+		ph := make([]string, len(pageIDs))
+		for i, id := range pageIDs {
+			ph[i] = qb.arg(id)
+		}
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT pc.id, pc.page_id, p.space_id, pc.heading_path, pc.content, p.title, p.updated_at
+			  FROM page_chunks pc
+			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
+			 WHERE pc.id IN (`+strings.Join(ph, ",")+`)`, qb.args...)
+		if err != nil {
 			return nil, err
 		}
-		h.Snippet = snippet(content, 280)
-		h.Score = score[h.ChunkID]
-		byID[h.ChunkID] = h
+		for rows.Next() {
+			var (
+				h       Hit
+				content string
+			)
+			if err := rows.Scan(&h.ChunkID, &h.PageID, &h.SpaceID, &h.HeadingPath, &content, &h.Title, &h.UpdatedAt); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			h.SourceKind = "page"
+			h.Snippet = snippet(content, 280)
+			h.Score = score[h.ChunkID]
+			byID[h.ChunkID] = h
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+
+	if len(fileIDs) > 0 {
+		qb := &queryBuilder{}
+		ph := make([]string, len(fileIDs))
+		for i, id := range fileIDs {
+			ph[i] = qb.arg(id)
+		}
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT fc.id, fc.space_file_id, sf.space_id, sf.parent_page_id, fc.heading_path, fc.content, sf.name, sf.content_hash, sf.updated_at
+			  FROM file_chunks fc
+			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
+			 WHERE fc.id IN (`+strings.Join(ph, ",")+`)`, qb.args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var (
+				h       Hit
+				content string
+				parent  sql.NullInt64
+			)
+			if err := rows.Scan(&h.ChunkID, &h.FileID, &h.SpaceID, &parent, &h.HeadingPath, &content, &h.FileName, &h.Hash, &h.UpdatedAt); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			h.SourceKind = "file"
+			h.PageID = parent.Int64 // 0 = space root
+			h.Title = h.FileName
+			h.Snippet = snippet(content, 280)
+			h.Score = score[h.ChunkID]
+			byID[h.ChunkID] = h
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
 	}
 
 	out := make([]Hit, 0, len(ids))

@@ -53,6 +53,7 @@ func (s *Server) RAGSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "semantic search failed")
 		return
 	}
+	enrichFileCitations(hits)
 	writeJSON(w, http.StatusOK, map[string]any{"results": hits})
 }
 
@@ -89,6 +90,7 @@ func (s *Server) RAGReadChunk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "read chunk failed")
 		return
 	}
+	enrichFileChunk(chunk)
 	writeJSON(w, http.StatusOK, map[string]any{"chunk": chunk})
 }
 

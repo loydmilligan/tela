@@ -102,20 +102,23 @@ func TestBuildAskContext_ExpandsHubAndFallsBack(t *testing.T) {
 	// chunk) must fall back to its chunk; page 6 (LAST by rank but a dense hub —
 	// the "kafka registry" shape) must still expand via the density rule.
 	pageIDs := []int64{1, 2, 3, 4, 5, 6}
-	best := map[int64]rag.Hit{}
+	order := make([]string, 0, len(pageIDs))
+	best := map[string]rag.Hit{}
 	bodies := map[int64]string{}
 	contents := map[int64]string{}
-	count := map[int64]int{}
+	count := map[string]int{}
 	for _, pid := range pageIDs {
-		best[pid] = rag.Hit{PageID: pid, ChunkID: pid * 10, Title: "Page" + strconv.FormatInt(pid, 10),
+		k := "p" + strconv.FormatInt(pid, 10)
+		order = append(order, k)
+		best[k] = rag.Hit{SourceKind: "page", PageID: pid, ChunkID: pid * 10, Title: "Page" + strconv.FormatInt(pid, 10),
 			HeadingPath: "Sec" + strconv.FormatInt(pid, 10), Snippet: "snip"}
 		bodies[pid] = "FULLBODY" + strconv.FormatInt(pid, 10) + " whole page text"
 		contents[pid*10] = "CHUNK" + strconv.FormatInt(pid, 10) + " fragment"
-		count[pid] = 1
+		count[k] = 1
 	}
-	count[6] = askDenseChunks // page 6 is the dense hub despite ranking last
+	count["p6"] = askDenseChunks // page 6 is the dense hub despite ranking last
 
-	block, pageHits := buildAskContext(pageIDs, best, count, bodies, contents)
+	block, pageHits := buildAskContext(order, best, count, bodies, contents)
 
 	// Top-ranked pages expanded to full body.
 	if !strings.Contains(block, "FULLBODY1") {

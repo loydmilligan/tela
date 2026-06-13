@@ -83,14 +83,14 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "semantic_search",
 		Title:       "Semantic search",
-		Description: "Meaning-aware chunk search (vector + keyword, RRF). Returns ranked chunks with chunk_id + citations (page id + heading path). Requires a configured embedder.",
+		Description: "Meaning-aware chunk search (vector + keyword, RRF) over pages AND attached files (PDFs, text docs). Returns ranked chunks with chunk_id + citations. `source_kind` is \"page\" or \"file\"; a file hit also carries file_name, the parent page_id, and a download_url. Requires a configured embedder.",
 		Annotations: readOnly,
 	}, s.mcpSemanticSearch)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_chunk",
 		Title:       "Read chunk",
-		Description: "Fetch one chunk's full section text by chunk_id (from semantic_search). Middle granularity between a search snippet and get_page.",
+		Description: "Fetch one chunk's full section text by chunk_id (from semantic_search), for a page OR a file chunk. Middle granularity between a search snippet and get_page; a file chunk cites the file (file_name + parent page_id + download_url).",
 		Annotations: readOnly,
 	}, s.mcpReadChunk)
 
@@ -543,6 +543,7 @@ func (s *Server) mcpSemanticSearch(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return mcpErr(&apiErr{500, "internal", "semantic search failed"}), semanticSearchOut{}, nil
 	}
+	enrichFileCitations(hits)
 	out := semanticSearchOut{Results: hits}
 	return nil, out, nil
 }
@@ -576,6 +577,7 @@ func (s *Server) mcpReadChunk(ctx context.Context, req *mcp.CallToolRequest, in 
 		}
 		return mcpErr(&apiErr{500, "internal", "read chunk failed"}), readChunkOut{}, nil
 	}
+	enrichFileChunk(chunk)
 	return nil, readChunkOut{Chunk: *chunk}, nil
 }
 

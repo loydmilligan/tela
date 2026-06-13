@@ -92,18 +92,27 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 	if len(hits) == 0 {
 		return "", nil, 0, nil
 	}
-	// Best hit + chunk count per page, in rank order of first appearance.
-	pageIDs := make([]int64, 0, len(hits))
-	count := map[int64]int{}
-	best := map[int64]rag.Hit{}
+	// Dedup to SOURCES, in rank order of first appearance. A source is a page or a
+	// file (a file hit's key is "f<id>", a page's "p<id>") so multiple root files
+	// — which share parent page 0 — never collapse into one entry, and a file never
+	// merges with the page it's attached to. Only page sources expand to a full
+	// body (HubPages/PageBodies below); file sources render their chunk text.
+	order := make([]string, 0, len(hits))
+	count := map[string]int{}
+	best := map[string]rag.Hit{}
 	chunkIDs := make([]int64, 0, len(hits))
+	pageIDs := make([]int64, 0, len(hits)) // page sources only, for PageBodies
 	for _, h := range hits {
-		if _, seen := best[h.PageID]; !seen {
-			best[h.PageID] = h
-			pageIDs = append(pageIDs, h.PageID)
+		k := hitKey(h)
+		if _, seen := best[k]; !seen {
+			best[k] = h
+			order = append(order, k)
 			chunkIDs = append(chunkIDs, h.ChunkID)
+			if h.SourceKind != "file" {
+				pageIDs = append(pageIDs, h.PageID)
+			}
 		}
-		count[h.PageID]++
+		count[k]++
 	}
 	// Topical-hub signal (rerank-INDEPENDENT). A precision reranker demotes terse
 	// tables, so a page whose WHOLE body answers an aggregate question (a "services
@@ -112,32 +121,34 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 	// FRONT so they expand before the per-page budget is spent on lower-value pages
 	// (the registry page ranking ~8th was getting the budget-exhausted fallback —
 	// the bug that kept the table out of the prompt). Best-effort.
-	var hubFront []int64
+	var hubFront []string
 	if hubs, herr := s.rag.HubPages(ctx, userID, query, spaceID, askHubProbe); herr == nil {
 		for _, hp := range hubs {
 			if hp.Count < askDenseChunks {
 				continue
 			}
-			count[hp.PageID] += hp.Count
-			if _, seen := best[hp.PageID]; !seen {
-				best[hp.PageID] = rag.Hit{PageID: hp.PageID, Title: hp.Title, ChunkID: hp.ChunkID}
+			k := "p" + strconv.FormatInt(hp.PageID, 10)
+			count[k] += hp.Count
+			if _, seen := best[k]; !seen {
+				best[k] = rag.Hit{SourceKind: "page", PageID: hp.PageID, Title: hp.Title, ChunkID: hp.ChunkID}
 				chunkIDs = append(chunkIDs, hp.ChunkID)
+				pageIDs = append(pageIDs, hp.PageID)
 			}
-			hubFront = append(hubFront, hp.PageID)
+			hubFront = append(hubFront, k)
 		}
 	}
 	if len(hubFront) > 0 {
-		hub := map[int64]bool{}
-		for _, id := range hubFront {
-			hub[id] = true
+		hub := map[string]bool{}
+		for _, k := range hubFront {
+			hub[k] = true
 		}
-		reordered := append([]int64{}, hubFront...)
-		for _, id := range pageIDs {
-			if !hub[id] {
-				reordered = append(reordered, id)
+		reordered := append([]string{}, hubFront...)
+		for _, k := range order {
+			if !hub[k] {
+				reordered = append(reordered, k)
 			}
 		}
-		pageIDs = reordered
+		order = reordered
 	}
 	bodies, err := s.rag.PageBodies(ctx, userID, pageIDs, spaceID)
 	if err != nil {
@@ -147,29 +158,48 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 	if err != nil {
 		return "", nil, 0, err
 	}
-	block, pageHits := buildAskContext(pageIDs, best, count, bodies, contents)
+	block, pageHits := buildAskContext(order, best, count, bodies, contents)
 	return block, pageHits, hits[0].Score, nil
 }
 
-// buildAskContext renders the numbered excerpt block from ranked pages, expanding
-// topically-central pages (top-by-rank or dense hubs) to their full body and
-// falling back to chunk text otherwise. Pure (no I/O) so it's unit-testable.
-// Returns the block and the per-page hits aligned to the [n] numbering.
-func buildAskContext(pageIDs []int64, best map[int64]rag.Hit, count map[int64]int, bodies, contents map[int64]string) (string, []rag.Hit) {
+// hitKey is the dedup key for a retrieved source: page hits collapse by page id,
+// file hits by file id (so multiple root files, all with parent page 0, stay
+// distinct). Page is the default for a zero-value SourceKind (HubPages-built hits).
+func hitKey(h rag.Hit) string {
+	if h.SourceKind == "file" {
+		return "f" + strconv.FormatInt(h.FileID, 10)
+	}
+	return "p" + strconv.FormatInt(h.PageID, 10)
+}
+
+// buildAskContext renders the numbered excerpt block from ranked sources (pages
+// and files, keyed by `order`), expanding topically-central PAGES (top-by-rank or
+// dense hubs) to their full body and falling back to chunk text otherwise. File
+// sources have no body — they always render their chunk text. Pure (no I/O) so
+// it's unit-testable. `bodies` is keyed by PAGE id; `contents` by chunk id.
+// Returns the block and the per-source hits aligned to the [n] numbering.
+func buildAskContext(order []string, best map[string]rag.Hit, count map[string]int, bodies, contents map[int64]string) (string, []rag.Hit) {
 	var b strings.Builder
-	pageHits := make([]rag.Hit, 0, len(pageIDs))
+	pageHits := make([]rag.Hit, 0, len(order))
 	spent, n := 0, 0
-	for rank, pid := range pageIDs {
+	for rank, key := range order {
 		if n >= askMaxPages {
 			break
 		}
-		h := best[pid]
+		h := best[key]
 		n++
-		full, hasBody := bodies[pid]
+		full, hasBody := "", false
+		if h.SourceKind != "file" {
+			full, hasBody = bodies[h.PageID]
+		}
 		expand := hasBody && full != "" && spent < askExpandBudget &&
-			(rank < askExpandTopRank || count[pid] >= askDenseChunks)
+			(rank < askExpandTopRank || count[key] >= askDenseChunks)
 
-		fmt.Fprintf(&b, "[%d] %s", n, h.Title)
+		label := h.Title
+		if h.SourceKind == "file" {
+			label += " (file)" // mark an attachment source so the model cites it as a file
+		}
+		fmt.Fprintf(&b, "[%d] %s", n, label)
 		if !expand && h.HeadingPath != "" {
 			fmt.Fprintf(&b, " — %s", h.HeadingPath) // heading path only adds context to a fragment
 		}
@@ -202,9 +232,16 @@ func (s *Server) askConflictNote(ctx context.Context, pageHits []rag.Hit) string
 	if s.agreement == nil || len(pageHits) == 0 {
 		return ""
 	}
-	ids := make([]int64, len(pageHits))
-	for i, h := range pageHits {
-		ids[i] = h.PageID
+	// Disagreements are tracked between PAGES; a file source has no page identity
+	// of its own (its PageID is the parent page), so skip file hits here.
+	ids := make([]int64, 0, len(pageHits))
+	for _, h := range pageHits {
+		if h.SourceKind != "file" {
+			ids = append(ids, h.PageID)
+		}
+	}
+	if len(ids) == 0 {
+		return ""
 	}
 	byPage, err := s.agreement.DisputesFor(ctx, ids)
 	if err != nil || len(byPage) == 0 {
@@ -219,12 +256,17 @@ func (s *Server) askConflictNote(ctx context.Context, pageHits []rag.Hit) string
 func formatConflicts(pageHits []rag.Hit, byPage map[int64][]agreement.Dispute) string {
 	numOf := make(map[int64]int, len(pageHits))
 	for i, h := range pageHits {
-		numOf[h.PageID] = i + 1
+		if h.SourceKind != "file" {
+			numOf[h.PageID] = i + 1
+		}
 	}
 	seen := map[[2]int64]bool{}
 	var b strings.Builder
 	lines := 0
 	for _, h := range pageHits {
+		if h.SourceKind == "file" {
+			continue
+		}
 		for _, d := range byPage[h.PageID] {
 			if lines >= askMaxConflicts {
 				break
@@ -341,6 +383,27 @@ func parseLines(s string, max int) []string {
 	return out
 }
 
+// enrichFileCitations fills download_url on file-source hits — the rag layer
+// carries the file's space + name + hash but can't build an /api URL without
+// importing api, so the citation URL is composed here (same shape as
+// list_attachments). Page hits are untouched.
+func enrichFileCitations(hits []rag.Hit) {
+	base := canonicalBaseURL()
+	for i := range hits {
+		h := &hits[i]
+		if h.SourceKind == "file" && h.FileName != "" && h.Hash != "" {
+			h.DownloadURL = base + spaceFileServeURL(h.SpaceID, h.FileName, h.Hash)
+		}
+	}
+}
+
+// enrichFileChunk is enrichFileCitations for a single read_chunk result.
+func enrichFileChunk(c *rag.ChunkRead) {
+	if c != nil && c.SourceKind == "file" && c.FileName != "" && c.Hash != "" {
+		c.DownloadURL = canonicalBaseURL() + spaceFileServeURL(c.SpaceID, c.FileName, c.Hash)
+	}
+}
+
 // sourcesBlock renders retrieved hits as a markdown "Sources" section with
 // tela://page links (which the indexer records as backlinks — so a generated
 // page wires itself back to its sources).
@@ -348,15 +411,24 @@ func sourcesBlock(hits []rag.Hit) string {
 	if len(hits) == 0 {
 		return ""
 	}
-	seen := map[int64]bool{}
+	seen := map[string]bool{}
 	var b strings.Builder
 	b.WriteString("\n\n---\n\n## Sources\n\n")
 	for _, h := range hits {
-		if seen[h.PageID] {
+		k := hitKey(h)
+		if seen[k] {
 			continue
 		}
-		seen[h.PageID] = true
-		fmt.Fprintf(&b, "- [%s](tela://page/%d)\n", h.Title, h.PageID)
+		seen[k] = true
+		switch {
+		case h.SourceKind == "file" && h.PageID > 0:
+			// File source: link to the page it's attached to (the citable location).
+			fmt.Fprintf(&b, "- [%s](tela://page/%d) (file)\n", h.Title, h.PageID)
+		case h.SourceKind == "file":
+			fmt.Fprintf(&b, "- %s (file)\n", h.Title) // space-root file, no parent page
+		default:
+			fmt.Fprintf(&b, "- [%s](tela://page/%d)\n", h.Title, h.PageID)
+		}
 	}
 	return b.String()
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/rag"
 )
 
 // bearerRoundTripper injects a tela PAT on every request the MCP client makes,
@@ -698,5 +699,51 @@ func TestMCP_Widgets(t *testing.T) {
 		if !seen[name] {
 			t.Errorf("tool %q not advertised", name)
 		}
+	}
+}
+
+// TestMCP_SemanticSearchFiles proves the MCP retrieval surface covers attachments:
+// a reindexed file surfaces in semantic_search with a file citation (source_kind,
+// file_name, parent page_id, download_url) and reads back through read_chunk.
+func TestMCP_SemanticSearchFiles(t *testing.T) {
+	ts, d, srv := newRagServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	aSpace := seedSpace(t, d, "Alpha", "alpha", alice)
+	parent := mustPage(t, d, aSpace, "Vendor", "## Notes\nvendor context here")
+	fileID := mustFile(t, d, aSpace, parent, "msa.md", "text/markdown",
+		"# Master Service Agreement\n\nThe indemnification liability cap is two million dollars.")
+	if _, err := srv.rag.ReindexFile(context.Background(), fileID); err != nil {
+		t.Fatalf("reindex file: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeRead))
+
+	var sout semanticSearchOut
+	mcpCallJSON(t, ctx, sess, "semantic_search", map[string]any{"query": "indemnification liability cap"}, &sout)
+	var fileHit *rag.Hit
+	for i := range sout.Results {
+		if sout.Results[i].SourceKind == "file" {
+			fileHit = &sout.Results[i]
+		}
+	}
+	if fileHit == nil {
+		t.Fatalf("no file hit from semantic_search: %+v", sout.Results)
+	}
+	if fileHit.FileID != fileID || fileHit.FileName != "msa.md" || fileHit.PageID != parent {
+		t.Errorf("file citation wrong: %+v", *fileHit)
+	}
+	if fileHit.DownloadURL == "" {
+		t.Errorf("file hit missing download_url")
+	}
+
+	var rout readChunkOut
+	mcpCallJSON(t, ctx, sess, "read_chunk", map[string]any{"chunk_id": fileHit.ChunkID}, &rout)
+	if rout.Chunk.SourceKind != "file" || rout.Chunk.FileID != fileID || rout.Chunk.Content == "" {
+		t.Errorf("read_chunk file result wrong: %+v", rout.Chunk)
+	}
+	if rout.Chunk.DownloadURL == "" {
+		t.Errorf("read_chunk file result missing download_url")
 	}
 }
