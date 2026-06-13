@@ -2,7 +2,6 @@ import {
   createContext,
   createElement,
   Fragment,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -10,7 +9,6 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { createPortal, flushSync } from 'react-dom'
 import katex from 'katex'
 import { refractor } from 'refractor/core'
 import { parsePageMarkdown } from '../../lib/markdown/remark-stack'
@@ -302,148 +300,6 @@ function TabsView({ nodes }: { nodes: MdNode[] }) {
         ))}
       </div>
     </div>
-  )
-}
-
-// Split a `:::deck` directive's children into slides on `---` (thematicBreak) —
-// mirrors the editor schema's parse runner (milkdown-deck.ts). N breaks → N+1
-// slide groups (leading/trailing/empty groups are kept so view ⇄ edit match).
-function groupSlides(children: MdNode[]): MdNode[][] {
-  const slides: MdNode[][] = [[]]
-  for (const child of children) {
-    if (child.type === 'thematicBreak') slides.push([])
-    else slides[slides.length - 1].push(child)
-  }
-  return slides
-}
-
-function DeckView({ nodes }: { nodes: MdNode[] }) {
-  const slides = useMemo(() => groupSlides(nodes), [nodes])
-  const [presenting, setPresenting] = useState(false)
-  return (
-    <div className="tela-deck" data-deck="">
-      <button
-        type="button"
-        className="tela-deck-present-launch"
-        onClick={() => setPresenting(true)}
-        aria-label="Present this deck full screen"
-      >
-        Present
-      </button>
-      {slides.map((content, i) => (
-        <section key={i} className="tela-slide" data-slide="">
-          {content.map((n, j) => renderNode(n, j))}
-        </section>
-      ))}
-      {presenting && (
-        <DeckPresent slides={slides} onClose={() => setPresenting(false)} />
-      )}
-    </div>
-  )
-}
-
-// Full-screen, paginated Present mode over a deck's slides — one slide at a
-// time, keyboard/click nav, View-Transition crossfade (a browser primitive,
-// guarded by prefers-reduced-motion; no animation library). Portaled to <body>
-// so it escapes the reader layout, and it reuses the same `renderNode` as the
-// doc projection, so live embeds (mermaid/excalidraw/charts) present unchanged.
-function DeckPresent({
-  slides,
-  onClose,
-}: {
-  slides: MdNode[][]
-  onClose: () => void
-}) {
-  const [i, setI] = useState(0)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const n = slides.length
-
-  const go = useCallback(
-    (delta: number) => {
-      const apply = () =>
-        setI((prev) => Math.max(0, Math.min(n - 1, prev + delta)))
-      const reduce = window.matchMedia?.(
-        '(prefers-reduced-motion: reduce)',
-      )?.matches
-      const start = (
-        document as Document & {
-          startViewTransition?: (cb: () => void) => void
-        }
-      ).startViewTransition?.bind(document)
-      if (start && !reduce) start(() => flushSync(apply))
-      else apply()
-    },
-    [n],
-  )
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
-        e.preventDefault()
-        go(1)
-      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-        e.preventDefault()
-        go(-1)
-      } else if (e.key === 'Escape') {
-        onClose()
-      } else if (e.key === 'f' || e.key === 'F') {
-        rootRef.current?.requestFullscreen?.().catch(() => {})
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [go, onClose])
-
-  return createPortal(
-    <div
-      ref={rootRef}
-      className="tela-deck-present"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Presentation, slide ${i + 1} of ${n}`}
-    >
-      <div className="tela-deck-present-stage">
-        <div className="tela-slide-present">
-          <div className="tela-milkdown">
-            <div className="ProseMirror">
-              {(slides[i] ?? []).map((node, j) => renderNode(node, j))}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="tela-deck-present-bar">
-        <button
-          type="button"
-          className="tela-deck-present-btn"
-          onClick={() => go(-1)}
-          disabled={i === 0}
-          aria-label="Previous slide"
-        >
-          ‹
-        </button>
-        <span className="tela-deck-present-count">
-          {i + 1} / {n}
-        </span>
-        <button
-          type="button"
-          className="tela-deck-present-btn"
-          onClick={() => go(1)}
-          disabled={i === n - 1}
-          aria-label="Next slide"
-        >
-          ›
-        </button>
-        <button
-          type="button"
-          className="tela-deck-present-btn"
-          onClick={onClose}
-          aria-label="Exit presentation"
-        >
-          ✕
-        </button>
-      </div>
-    </div>,
-    document.body,
   )
 }
 
@@ -867,7 +723,6 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
     case 'textDirective': {
       const name = String(node.name ?? '')
       if (name === 'tabs') return <TabsView key={key} nodes={node.children ?? []} />
-      if (name === 'deck') return <DeckView key={key} nodes={node.children ?? []} />
       if (name === 'quote') return <PullQuoteView key={key} node={node} />
       if (name === 'embed') return <EmbedView key={key} node={node} />
       if (name === 'file') return <FileView key={key} node={node} />

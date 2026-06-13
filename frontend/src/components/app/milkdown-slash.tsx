@@ -24,7 +24,6 @@ import { setPos, setShow } from './milkdown-floating'
 import { insertMermaid } from './milkdown-mermaid'
 import { insertChart } from './milkdown-chart'
 import { insertTabs } from './milkdown-tabs'
-import { insertDeck } from './milkdown-deck'
 import { insertKanban } from './milkdown-kanban'
 import { insertStatGrid } from './milkdown-stat-grid'
 import { insertTimeline } from './milkdown-timeline'
@@ -71,7 +70,6 @@ const RUN: Record<string, (ctx: Ctx) => void> = {
   chart: insertChart,
   embed: insertEmbed,
   tabs: insertTabs,
-  deck: insertDeck,
   kanban: insertKanban,
   'stat-grid': insertStatGrid,
   timeline: insertTimeline,

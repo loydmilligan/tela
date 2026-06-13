@@ -77,7 +77,6 @@ import { typographyInputRules } from './milkdown-typography'
 import { listIndentKeymap } from './milkdown-list-indent'
 import { directiveRemarkPlugin } from './milkdown-directives'
 import { tabSchema, tabsNodeView, tabsSchema } from './milkdown-tabs'
-import { deckSchema, slideSchema } from './milkdown-deck'
 import {
   kanbanColumnSchema,
   kanbanNodeViews,
@@ -747,9 +746,6 @@ function MilkdownEditorInner({
       .use(tabSchema)
       .use(tabsSchema)
       .use(tabsNodeView)
-      // Deck (:::deck) — `---`-separated slides, also on the directive foundation.
-      .use(slideSchema)
-      .use(deckSchema)
       // Kanban board, also on the directive foundation.
       .use(kanbanColumnSchema)
       .use(kanbanSchema)

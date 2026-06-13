@@ -180,24 +180,6 @@
       "note": "Each ### heading inside the block becomes a tab label."
     },
     {
-      "id": "deck",
-      "label": "Slide deck",
-      "hint": "Presentation slides",
-      "category": "Layout",
-      "slash": true,
-      "agent": true,
-      "keywords": [
-        "deck",
-        "slide",
-        "slides",
-        "presentation",
-        "present"
-      ],
-      "syntax": ":::deck\n# Slide one\n\nFirst slide.\n\n---\n\n# Slide two\n\nSecond slide.\n:::",
-      "when": "Present a sequence of slides; a deck is a normal page rendered slide-by-slide.",
-      "note": "Slides are split by `---` (blank lines around it). Marp-compatible: the body round-trips to a Marp deck."
-    },
-    {
       "id": "kanban",
       "label": "Kanban board",
       "hint": "Columns of draggable cards",

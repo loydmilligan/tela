@@ -98,33 +98,6 @@ export const Empty: Story = {
   args: { body: '' },
 }
 
-const DECK = `# A page that is also a deck
-
-:::deck
-# What is tela?
-
-A markdown-native team wiki.
-
----
-
-# One body, two views
-
-- This page reads as a doc.
-- The same markdown presents as a deck.
-- \`---\` splits the slides.
-
----
-
-> The best deck and the best doc are the same markdown, looked at two ways.
-:::
-`
-
-// A :::deck renders as stacked, numbered slide cards — the doc projection.
-// Slides split on \`---\`; the body is Marp-compatible.
-export const Deck: Story = {
-  args: { body: DECK },
-}
-
 const DIAGRAMS = `## Mermaid
 
 \`\`\`mermaid
