@@ -306,7 +306,10 @@ func footerHTML(title string) string {
 }
 
 // pdfFilename turns a page title into a safe download filename.
-func pdfFilename(title string) string {
+func pdfFilename(title string) string { return pageFileSlug(title) + ".pdf" }
+
+// pageFileSlug turns a page title into a safe download-filename stem (no ext).
+func pageFileSlug(title string) string {
 	var b strings.Builder
 	for _, r := range strings.TrimSpace(title) {
 		switch {
@@ -323,7 +326,7 @@ func pdfFilename(title string) string {
 	if len(slug) > 80 {
 		slug = strings.Trim(slug[:80], "-")
 	}
-	return slug + ".pdf"
+	return slug
 }
 
 // themeQuery validates a caller-supplied ?theme= and returns it as a query

@@ -44,7 +44,8 @@ const PORT = Number(process.env.PORT || 3344)
 const MAX_CONCURRENCY = Number(process.env.DECK_CONCURRENCY || 2)
 
 // Bump when the theme set or the render pipeline changes so cached decks rerender.
-const RENDER_VERSION = 'r1'
+// r2: render with --with-clicks (one frame per click-step) so build animations survive.
+const RENDER_VERSION = 'r2'
 const DEFAULT_THEME = 'default'
 const THEMES = new Set(
   readdirSync(THEMES_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name),
@@ -65,21 +66,49 @@ const pickTheme = (t) => (t && THEMES.has(t) ? t : DEFAULT_THEME)
 // the /parse metadata endpoint. `errors` carries any frontmatter/YAML problems.
 const parseDeck = (md) => parse(md, 'deck.md')
 
-// Structure for the /parse endpoint and editor outline: one entry per slide
-// (title, layout, speaker note) plus detected feature flags — all without
-// rendering a single pixel.
+// One outline entry per LOGICAL slide (title, layout, speaker note) — pure
+// parse, no pixels. Shared by /parse and the render manifest.
+function outlineSlides(data) {
+  return data.slides.map((s, i) => ({
+    no: i + 1,
+    title: s.title || '',
+    layout: (s.frontmatter && s.frontmatter.layout) || (i === 0 ? 'cover' : 'default'),
+    note: s.note || '',
+  }))
+}
+
+// Structure for the /parse endpoint and editor outline: the slide list plus
+// detected feature flags (KaTeX/Monaco/Mermaid/Tweet) and any parse errors.
 function deckMeta(data, md) {
   return {
     count: data.slides.length,
-    slides: data.slides.map((s, i) => ({
-      no: i + 1,
-      title: s.title || '',
-      layout: (s.frontmatter && s.frontmatter.layout) || (i === 0 ? 'cover' : 'default'),
-      note: s.note || '',
-    })),
+    slides: outlineSlides(data),
     features: detectFeatures(md),
     errors: data.errors || [],
   }
+}
+
+// Best-effort count of extra click-steps a slide adds (v-click/v-clicks/v-after,
+// or an explicit `clicks:` frontmatter). Exact for the common no-click case;
+// may drift for runtime-computed clicks (components, v-clicks `every`). Used only
+// to map rendered frames back to logical slides for presenter notes.
+function slideClicks(s) {
+  if (s.frontmatter && Number.isInteger(s.frontmatter.clicks)) return s.frontmatter.clicks
+  const m = (s.content || '').match(/\bv-clicks?\b|\bv-after\b|<v-clicks?\b/g)
+  return m ? m.length : 0
+}
+
+// Map each rendered frame (--with-clicks emits one PNG per click-step) back to
+// its logical slide index, so the presenter can show the right speaker note.
+// Identity when there are no clicks (frames === slides); a monotonic clamp if
+// the heuristic disagrees with the real frame count.
+function frameSlideMap(data, frameCount) {
+  const map = []
+  data.slides.forEach((s, i) => {
+    for (let k = 0; k <= slideClicks(s); k++) map.push(i)
+  })
+  if (map.length === frameCount) return map
+  return Array.from({ length: frameCount }, (_, i) => Math.min(i, data.slides.length - 1))
 }
 
 // Parse-validate before a render: surfaces a malformed deck (e.g. broken YAML
@@ -141,7 +170,9 @@ async function slidevExport(md, theme, format, outPath) {
   await writeFile(entry, withTheme(await parseDeck(md), theme))
   const release = await acquire()
   try {
-    await exec(SLIDEV, ['export', entry, '--format', format, '--output', outPath, '--timeout', '60000'], {
+    // --with-clicks: one frame per click-step, so v-click/v-clicks/v-motion/
+    // Magic Move build-ups survive instead of collapsing to the final state.
+    await exec(SLIDEV, ['export', entry, '--format', format, '--output', outPath, '--with-clicks', '--timeout', '60000'], {
       cwd: ROOT, timeout: 240_000, maxBuffer: 1 << 24,
     })
   } finally {
@@ -157,7 +188,18 @@ async function renderImages(md, theme) {
     await slidevExport(md, theme, 'png', dir) // -> 1.png, 2.png, ...
   }
   const pngs = (await readdir(dir)).filter((f) => /^\d+\.png$/.test(f)).sort((a, b) => parseInt(a) - parseInt(b))
-  return { id, theme, count: pngs.length, slides: pngs.map((f) => `/d/${id}/${f}`) }
+  // Frames may exceed logical slides (--with-clicks). Ship the logical outline
+  // (titles + speaker notes) and a frame→slide map so the presenter view can
+  // show the right note per frame.
+  const data = await parseDeck(md)
+  return {
+    id,
+    theme,
+    count: pngs.length,
+    slides: pngs.map((f) => `/d/${id}/${f}`),
+    outline: outlineSlides(data),
+    slideForFrame: frameSlideMap(data, pngs.length),
+  }
 }
 
 async function renderFile(md, theme, format) {

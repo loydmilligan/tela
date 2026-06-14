@@ -67,6 +67,9 @@ const PageReader = lazy(() =>
 const DeckPresenter = lazy(() =>
   import('./DeckPresenter').then((m) => ({ default: m.DeckPresenter })),
 )
+const DeckOverview = lazy(() =>
+  import('./DeckOverview').then((m) => ({ default: m.DeckOverview })),
+)
 import {
   prefetchPage,
   useAllPages,
@@ -507,18 +510,26 @@ function PageViewer({
 
         <AttachmentStrip pageId={page.id} />
 
-        <MarkdownView
-          body={page.body}
-          pageId={page.id}
-          resolveWikilink={resolveWikilink}
-          pageHref={pageHref}
-          commentThreads={commentsEnabled ? commentThreads : null}
-          onCommentClick={() => {
-            setGraphOpen(false)
-            setCommentsOpen(true)
-          }}
-          className={EDITOR_MIN_H}
-        />
+        {isDeck ? (
+          // A deck's default view shows its identity (outline + Present), not the
+          // raw Slidev markdown as prose. Present (?view=read) renders the slides.
+          <Suspense fallback={<div className={EDITOR_MIN_H} />}>
+            <DeckOverview spaceId={spaceId} pageId={page.id} />
+          </Suspense>
+        ) : (
+          <MarkdownView
+            body={page.body}
+            pageId={page.id}
+            resolveWikilink={resolveWikilink}
+            pageHref={pageHref}
+            commentThreads={commentsEnabled ? commentThreads : null}
+            onCommentClick={() => {
+              setGraphOpen(false)
+              setCommentsOpen(true)
+            }}
+            className={EDITOR_MIN_H}
+          />
+        )}
 
         <ChildPagesSection
           spaceId={spaceId}

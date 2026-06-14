@@ -45,11 +45,23 @@ func deckTheme(p models.Page) string {
 	return ""
 }
 
+type deckSlide struct {
+	No     int    `json:"no"`
+	Title  string `json:"title"`
+	Layout string `json:"layout"`
+	Note   string `json:"note"`
+}
+
 type deckManifest struct {
-	ID     string   `json:"id"`
-	Count  int      `json:"count"`
-	Theme  string   `json:"theme"`
+	ID    string `json:"id"`
+	Count int    `json:"count"`
+	Theme string `json:"theme"`
+	// Rendered frames (one per click-step) proxied through tela.
 	Slides []string `json:"slides"`
+	// Logical slides (titles + speaker notes) and a frame→slide map, for the
+	// presenter view. Pass-through from the sidecar.
+	Outline       []deckSlide `json:"outline,omitempty"`
+	SlideForFrame []int       `json:"slideForFrame,omitempty"`
 }
 
 // GetPageDeck (GET /api/pages/{id}/deck): session-authed. Renders the page's
@@ -147,6 +159,75 @@ func (s *Server) ExportPageDeckPDF(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(pdf)
+}
+
+// ExportPageDeckPPTX (GET /api/pages/{id}/deck.pptx): session-authed. Exports
+// the deck to a downloadable PowerPoint via the sidecar.
+func (s *Server) ExportPageDeckPPTX(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	p, err := selectPageByID(r.Context(), s.DB, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "fetch page failed")
+		return
+	}
+	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
+		return
+	}
+	pptx, err := deckExport(r.Context(), p.Body, deckTheme(p), "pptx")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "deck_render_failed", "could not export deck")
+		return
+	}
+	noStore(w)
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", pageFileSlug(p.Title)+".pptx"))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pptx)
+}
+
+// GetPageDeckOutline (GET /api/pages/{id}/deck/outline): session-authed. Returns
+// the deck's structure (slide count, titles, layouts, speaker notes, detected
+// features) via the sidecar's /parse — no render, no Chromium. Powers the deck's
+// default-view identity and the editor outline.
+func (s *Server) GetPageDeckOutline(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	p, err := selectPageByID(r.Context(), s.DB, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "fetch page failed")
+		return
+	}
+	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
+		return
+	}
+	resp, err := deckPost(r.Context(), "/parse", p.Body, "")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "deck_unavailable", "deck service unavailable")
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		writeError(w, http.StatusBadGateway, "deck_parse_failed", "could not parse deck")
+		return
+	}
+	noStore(w)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // ServeDeckThemes (GET /api/deck/themes): PUBLIC. Proxies the sidecar's theme

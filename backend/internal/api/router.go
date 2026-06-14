@@ -164,7 +164,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// Deck (Slidev) pages: render → slide images (Present) + export PDF. The
 	// asset proxy is public (content-addressed renderId); the rest session-authed.
 	mux.HandleFunc("GET /api/pages/{id}/deck", srv.GetPageDeck)
+	mux.HandleFunc("GET /api/pages/{id}/deck/outline", srv.GetPageDeckOutline)
 	mux.HandleFunc("GET /api/pages/{id}/deck.pdf", srv.ExportPageDeckPDF)
+	mux.HandleFunc("GET /api/pages/{id}/deck.pptx", srv.ExportPageDeckPPTX)
 	mux.HandleFunc("GET /api/deck/d/{renderId}/{file}", srv.ServeDeckAsset)
 	mux.HandleFunc("GET /api/deck/themes", srv.ServeDeckThemes)
 
