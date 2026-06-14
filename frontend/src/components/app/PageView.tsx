@@ -626,21 +626,9 @@ function PageActionsMenu({
   onDelete: () => void
 }) {
   const navigate = useNavigate()
-  const updatePage = useUpdatePage()
   const { download: downloadPdf } = useFileDownload(`/api/pages/${pageId}/pdf`, {
     themed: true,
   })
-  const convertToDeck = () => {
-    void updatePage
-      .mutateAsync({ id: pageId, props: { deck: true } })
-      .then(() =>
-        navigate({
-          to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
-          params: { spaceId, pageId, slug: undefined },
-          search: (p) => ({ ...p, edit: true }),
-        }),
-      )
-  }
   const { download: downloadMd } = useFileDownload(`/api/pages/${pageId}/md`, {
     fallbackName: 'page.md',
   })
@@ -689,11 +677,6 @@ function PageActionsMenu({
         <DropdownMenuItem onSelect={() => void downloadMd()}>
           <FileDown width={14} height={14} /> Export Markdown
         </DropdownMenuItem>
-        {!isViewer ? (
-          <DropdownMenuItem onSelect={convertToDeck}>
-            <Presentation width={14} height={14} /> Convert to slide deck
-          </DropdownMenuItem>
-        ) : null}
         {!isViewer ? (
           <DropdownMenuItem
             onSelect={() =>
