@@ -52,7 +52,9 @@ const MAX_CONCURRENCY = Number(process.env.DECK_CONCURRENCY || 2)
 
 // Bump when the theme or render pipeline changes so cached decks re-render/re-build.
 // r6: history-mode SPA + index.html fallback (hash mode broke routes under the base).
-const RENDER_VERSION = 'r6'
+// r7: inject a router guard that undoes Slidev's base double-prepend on programmatic
+//     nav (the "404 on slide 2" bug under a sub-path --base). See SPA_NAV_FIX below.
+const RENDER_VERSION = 'r7'
 
 // The look lives entirely in the theme package — tela owns no layouts/styles.
 // Variant catalog + the themeConfig keys come from the theme's own manifests.
@@ -78,6 +80,31 @@ const AUTHORING = (() => {
 
 const SPA = join(CACHE, 'spa') // built interactive SPAs, one dir per buildId
 await mkdir(WORK, { recursive: true })
+
+// Slidev auto-loads `<root>/setup/main.{ts,js,mts,mjs}` and runs its default export
+// with the app context ({ app, router }). The build root is WORK (the dir holding the
+// entry markdown), so one shared setup file applies to every deck build.
+//
+// SPA_NAV_FIX: we serve each deck's SPA under a sub-path (`--base /api/pages/<id>/
+// deck/spa/`). Slidev's getSlidePath() prepends import.meta.env.BASE_URL to the path
+// it pushes, but vue-router's history ALSO prepends base on push — so programmatic
+// navigation (next/prev/goto/presenter) doubles the base and lands on NotFound (the
+// "404 on slide 2" bug). <RouterLink> is unaffected (it pushes base-relative paths).
+// This guard strips the duplicated base prefix so the router matches the real route.
+// No-ops at root base (BASE_URL === '/'), e.g. Chromium export builds.
+await mkdir(join(WORK, 'setup'), { recursive: true })
+await writeFile(join(WORK, 'setup', 'main.mjs'), `// Injected by the tela deck sidecar — not part of any deck. See SPA_NAV_FIX in server.mjs.
+export default function ({ router }) {
+  const base = import.meta.env.BASE_URL
+  if (!base || base === '/') return
+  router.beforeEach((to) => {
+    if (to.path.startsWith(base) && to.path.length > base.length) {
+      const rel = '/' + to.path.slice(base.length)
+      if (rel !== to.path) return { path: rel, query: to.query, hash: to.hash }
+    }
+  })
+}
+`)
 
 const MIME = { '.png': 'image/png', '.pdf': 'application/pdf', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }
 const EXPORT_MIME = { pdf: MIME['.pdf'], pptx: MIME['.pptx'] }
