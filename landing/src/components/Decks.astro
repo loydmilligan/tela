@@ -1,0 +1,214 @@
+---
+// §8c — Decks. A page flipped to a deck (props.deck=true) is a real Slidev
+// presentation: present live in the browser (presenter mode, overview, draw),
+// export to PDF/PPTX/PNG, and — the tela angle — agents author the whole deck
+// over MCP (lint_deck / preview_deck). Body is plain Slidev markdown, portable;
+// the look is a swappable theme (slidev-theme-tahta) with a variant/accent.
+// Sibling to Publish (§8a): "your wiki doubles as X". See docs/deck.md.
+const feats = [
+  'Convert any page to slides',
+  'Present live — presenter mode, overview, draw',
+  'Export to PDF, PPTX or PNG',
+  'Agents author decks over MCP',
+];
+const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
+---
+<section id="decks" class="section">
+  <div class="section-head reveal-up">
+    <p class="kicker"><span class="kicker-dot"></span>Presentations</p>
+    <h2 class="h2">Any page is a presentation.</h2>
+    <p class="lede">
+      Turn any page into real slides — its body is just <strong>Slidev markdown</strong>.
+      Present it live in the browser, or export to PDF, PPTX or PNG. And because tela is
+      agent-native, your agent can write the whole deck — <em>"turn the launch notes into a
+      10-slide talk"</em> — right inside Claude or ChatGPT.
+    </p>
+  </div>
+
+  <div class="deck-wrap reveal-up">
+    <!-- Presentation mock: cover slide + filmstrip + output chips -->
+    <div class="deck-frame" role="img" aria-label="A tela page presented as slides: a themed cover slide above a filmstrip of slides, with Present, PDF and PPTX outputs">
+      <div class="deck-bar">
+        <span class="deck-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="deck-chips">
+          <span class="deck-chip deck-chip--go">Present</span>
+          <span class="deck-chip">PDF</span>
+          <span class="deck-chip">PPTX</span>
+        </span>
+      </div>
+
+      <div class="deck-stage">
+        <div class="deck-slide deck-slide--cover">
+          <span class="deck-kick">01 — Launch</span>
+          <span class="deck-title">Shipping tela 0.7</span>
+          <span class="deck-sub">Decks, semantic retrieval, and the MCP connector.</span>
+          <span class="deck-theme" aria-hidden="true">tahta · indigo</span>
+        </div>
+
+        <ol class="deck-strip" aria-hidden="true">
+          {thumbs.map((t, i) => (
+            <li class={`deck-thumb${i === 0 ? ' is-current' : ''}`}>
+              <span class="deck-thumb-bar"></span>
+              <span class="deck-thumb-line deck-thumb-line--wide"></span>
+              <span class="deck-thumb-line"></span>
+              <span class="deck-thumb-n">{t}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+
+    <!-- Capabilities -->
+    <ul class="deck-feats">
+      {feats.map((f) => (
+        <li>
+          <svg class="tick" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>{f}</span>
+        </li>
+      ))}
+      <li class="deck-note">
+        A deck is just a page whose body is plain Slidev markdown — portable like everything else.
+        The look is a swappable theme; agents lint and preview their slides before you do.
+      </li>
+    </ul>
+  </div>
+</section>
+
+<style>
+  .section-head .lede strong { color: var(--fg); font-weight: 600; }
+  .section-head .lede em { color: var(--fg-soft); font-style: italic; }
+
+  .deck-wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  @media (min-width: 860px) {
+    .deck-wrap { grid-template-columns: 1.5fr 1fr; gap: 2.5rem; }
+  }
+
+  /* ── presentation mock ────────────────────────────────────────────── */
+  .deck-frame {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-frame, none);
+    overflow: hidden;
+  }
+  .deck-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding: 0.7rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-sunk);
+  }
+  .deck-dots { display: inline-flex; gap: 0.4rem; }
+  .deck-dots i {
+    width: 0.55rem; height: 0.55rem; border-radius: var(--radius-full);
+    background: var(--border-strong);
+  }
+  .deck-chips { display: inline-flex; gap: 0.4rem; }
+  .deck-chip {
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    color: var(--fg-faint);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.5rem;
+  }
+  .deck-chip--go {
+    color: var(--brand-strong);
+    background: var(--brand-wash);
+    border-color: var(--pill-border);
+  }
+
+  .deck-stage { padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+
+  /* the themed cover slide */
+  .deck-slide--cover {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    padding: 1.5rem 1.75rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+    overflow: hidden;
+    background:
+      linear-gradient(135deg, var(--brand-wash), transparent 60%),
+      repeating-linear-gradient(0deg, var(--border) 0 1px, transparent 1px 28px),
+      repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 28px),
+      var(--surface-sunk);
+  }
+  .deck-slide--cover::before {
+    content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
+    width: 3px; border-radius: var(--radius-full);
+    background: var(--brand);
+  }
+  .deck-kick {
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    letter-spacing: var(--tracking-kicker, 0.16em); text-transform: uppercase;
+    color: var(--accent);
+  }
+  .deck-title {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: var(--text-2xl);
+    line-height: var(--leading-tight, 1.05);
+    letter-spacing: var(--tracking-display, -0.025em);
+    color: var(--fg);
+  }
+  .deck-sub { font-size: var(--text-sm); color: var(--fg-soft); max-width: 32ch; }
+  .deck-theme {
+    position: absolute; right: 1rem; bottom: 0.85rem;
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    color: var(--fg-faint);
+  }
+
+  /* filmstrip of mini slides */
+  .deck-strip {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.65rem;
+  }
+  .deck-thumb {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-sunk);
+    padding: 0.5rem 0.55rem;
+    display: flex; flex-direction: column; gap: 0.3rem;
+    overflow: hidden;
+  }
+  .deck-thumb.is-current { border-color: var(--brand); box-shadow: var(--glow-brand, none); }
+  .deck-thumb-bar { width: 45%; height: 0.25rem; border-radius: var(--radius-full); background: var(--brand); opacity: 0.7; }
+  .deck-thumb-line { width: 100%; height: 0.2rem; border-radius: var(--radius-full); background: var(--border-strong); }
+  .deck-thumb-line--wide { width: 80%; }
+  .deck-thumb-n {
+    margin-top: auto;
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    color: var(--fg-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  @media (max-width: 560px) {
+    .deck-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ── capability list ──────────────────────────────────────────────── */
+  .deck-feats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.85rem; }
+  .deck-feats li {
+    display: flex; align-items: flex-start; gap: 0.55rem;
+    font-size: var(--text-base); color: var(--fg-soft);
+  }
+  .deck-feats .tick { color: var(--brand); flex: none; margin-top: 0.2rem; }
+  .deck-note {
+    margin-top: 0.25rem; padding-top: 0.85rem;
+    border-top: 1px solid var(--border);
+    font-size: var(--text-sm); color: var(--fg-faint);
+  }
+</style>

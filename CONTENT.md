@@ -237,6 +237,15 @@ Section order is the narrative arc. Tier = visual prominence (1 = hero/max, 4 = 
 - **Capabilities:** `No-login public reader` · `RSS feed per space` · `OG, JSON-LD & sitemap for SEO` · `Author home at /u/handle`.
 - **Honesty line:** read-only by design — making a space public grants no write access; owner flips it on and can flip it back.
 
+### 8c. Decks / Presentations — "Any page is a presentation."  — Tier 2  (added 2026-06: Slidev decks shipped)
+- **Purpose:** Surface presentations — a new big ability. A page flipped to a deck (`props.deck=true`) is a real **[Slidev](https://sli.dev) presentation**: present it live in the browser, export it, and — the tela angle — **your agent can author the whole deck** from Claude/ChatGPT. Same "your wiki doubles as X" beat as Publish (§8a). **Page order: rendered after Publish (§8a), before Pricing (§8b).**
+- **Copy term:** lead with the universal word **"presentation" / "slides"** (the 5-second test) — *not* "slide deck" / "deck" as the primary noun (it's tech jargon, even though the in-product action is literally "Convert to slide deck"). Use "deck" at most once, as the product term.
+- **Headline (H2):** `Any page is a presentation.`
+- **Lede:** `Turn any page into real slides — its body is just Slidev markdown. Present it live in the browser (presenter mode, slide overview, draw on slides), or export to PDF, PPTX, or PNG. And because tela is agent-native, your agent can write the whole deck: "turn the launch notes into a 10-slide talk" — in Claude or ChatGPT.`
+- **Visual:** a presentation mock — a 16:9 cover slide (themed, accent title) above a filmstrip of 3–4 mini slide thumbnails, with a small toolbar of output chips (`Present` · `PDF` · `PPTX`). Themed look nods to the real deck theme (slidev-theme-tahta); never a generic stock slide.
+- **Capabilities:** `Convert any page to slides` · `Present live — presenter mode, overview, draw` · `Export to PDF, PPTX or PNG` · `Agents author decks over MCP`.
+- **Honesty line:** a presentation is just a page whose body is plain Slidev markdown — portable like everything else; the look comes from a swappable theme, and you pick a variant/accent. Agents author via the same MCP tools (`lint_deck`, `preview_deck`) so they can see and fix their slides before you do.
+
 ### 8b. Pricing — "Simple plans. Your markdown either way."  — Tier 2  (added 2026-06: tiers shipped)
 - **Purpose:** Show the plan ladder without hype. The product meters per-account tiers (personal + org); pricing makes the ladder legible. The thesis: tiers change *limits* — now including a **monthly AI-answer allowance** — never the product. Same wiki, search, ask-your-docs, and agent connector on every plan.
 - **Headline (H2):** `Simple plans. Your markdown either way.`
