@@ -18,8 +18,9 @@ import (
 
 // Deck render. A "deck" page's body IS Slidev markdown; the deck render sidecar
 // (deck/ — a render-only Slidev service) turns it into per-slide PNGs (Present)
-// and PDF/PPTX (export), applying one of tela's themes (chosen per deck via the
-// `theme` prop). Mirrors pdf_export.go's gotenberg proxy: the backend never
+// and PDF/PPTX (export). The look lives entirely in the slidev-theme-tahta
+// package; tela passes only a per-deck visual config (variant/accent/lang, from
+// page props). Mirrors pdf_export.go's gotenberg proxy: the backend never
 // renders markdown itself, it proxies the sidecar.
 //
 //   GET /api/pages/{id}/deck            (session-authed) — render → slide manifest
@@ -36,13 +37,25 @@ func deckBaseURL() string {
 	return "http://deck:3344"
 }
 
-// deckTheme reads the per-deck theme from page props (the editor's selector
-// writes it). Empty → the sidecar applies its default theme.
-func deckTheme(p models.Page) string {
-	if v, ok := p.Props["theme"].(string); ok {
-		return v
+// deckConfig is tela's per-deck visual config — the only inputs to the theme.
+// The whole look lives in the slidev-theme-tahta package; tela just declares
+// which variant (and optional accent/lang).
+type deckConfig struct {
+	Variant string
+	Accent  string
+	Lang    string
+}
+
+// deckThemeConfig reads the per-deck visual config from page props (the editor's
+// selector writes them). Empty values → the sidecar applies tahta defaults.
+func deckThemeConfig(p models.Page) deckConfig {
+	s := func(k string) string {
+		if v, ok := p.Props[k].(string); ok {
+			return v
+		}
+		return ""
 	}
-	return ""
+	return deckConfig{Variant: s("variant"), Accent: s("accent"), Lang: s("lang")}
 }
 
 type deckSlide struct {
@@ -53,9 +66,9 @@ type deckSlide struct {
 }
 
 type deckManifest struct {
-	ID    string `json:"id"`
-	Count int    `json:"count"`
-	Theme string `json:"theme"`
+	ID      string `json:"id"`
+	Count   int    `json:"count"`
+	Variant string `json:"variant"`
 	// Rendered frames (one per click-step) proxied through tela.
 	Slides []string `json:"slides"`
 	// Logical slides (titles + speaker notes) and a frame→slide map, for the
@@ -84,7 +97,7 @@ func (s *Server) GetPageDeck(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
 		return
 	}
-	m, err := deckRender(r.Context(), p.Body, deckTheme(p))
+	m, err := deckRender(r.Context(), p.Body, deckThemeConfig(p))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_render_failed", "could not render deck")
 		return
@@ -148,7 +161,7 @@ func (s *Server) ExportPageDeckPDF(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
 		return
 	}
-	pdf, err := deckExport(r.Context(), p.Body, deckTheme(p), "pdf")
+	pdf, err := deckExport(r.Context(), p.Body, deckThemeConfig(p), "pdf")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_render_failed", "could not export deck")
 		return
@@ -180,7 +193,7 @@ func (s *Server) ExportPageDeckPPTX(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
 		return
 	}
-	pptx, err := deckExport(r.Context(), p.Body, deckTheme(p), "pptx")
+	pptx, err := deckExport(r.Context(), p.Body, deckThemeConfig(p), "pptx")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_render_failed", "could not export deck")
 		return
@@ -214,7 +227,7 @@ func (s *Server) GetPageDeckOutline(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
 		return
 	}
-	resp, err := deckPost(r.Context(), "/parse", p.Body, "")
+	resp, err := deckPost(r.Context(), "/parse", p.Body, deckConfig{})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_unavailable", "deck service unavailable")
 		return
@@ -257,7 +270,7 @@ func (s *Server) PostPageDeckParse(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "could not read body")
 		return
 	}
-	resp, err := deckPost(r.Context(), "/parse", string(body), "")
+	resp, err := deckPost(r.Context(), "/parse", string(body), deckConfig{})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_unavailable", "deck service unavailable")
 		return
@@ -295,8 +308,8 @@ func (s *Server) ServeDeckThemes(w http.ResponseWriter, r *http.Request) {
 
 // ── proxy core ──────────────────────────────────────────────────────────────
 
-func deckRender(ctx context.Context, body, theme string) (*deckManifest, error) {
-	resp, err := deckPost(ctx, "/render", body, theme)
+func deckRender(ctx context.Context, body string, cfg deckConfig) (*deckManifest, error) {
+	resp, err := deckPost(ctx, "/render", body, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -311,8 +324,8 @@ func deckRender(ctx context.Context, body, theme string) (*deckManifest, error) 
 	return &m, nil
 }
 
-func deckExport(ctx context.Context, body, theme, format string) ([]byte, error) {
-	resp, err := deckPost(ctx, "/export/"+format, body, theme)
+func deckExport(ctx context.Context, body string, cfg deckConfig, format string) ([]byte, error) {
+	resp, err := deckPost(ctx, "/export/"+format, body, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -323,10 +336,20 @@ func deckExport(ctx context.Context, body, theme, format string) ([]byte, error)
 	return io.ReadAll(resp.Body)
 }
 
-func deckPost(ctx context.Context, path, body, theme string) (*http.Response, error) {
+func deckPost(ctx context.Context, path, body string, cfg deckConfig) (*http.Response, error) {
 	u := deckBaseURL() + path
-	if theme != "" {
-		u += "?theme=" + url.QueryEscape(theme)
+	q := url.Values{}
+	if cfg.Variant != "" {
+		q.Set("variant", cfg.Variant)
+	}
+	if cfg.Accent != "" {
+		q.Set("accent", cfg.Accent)
+	}
+	if cfg.Lang != "" {
+		q.Set("lang", cfg.Lang)
+	}
+	if len(q) > 0 {
+		u += "?" + q.Encode()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(body))
 	if err != nil {

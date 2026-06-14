@@ -21,7 +21,7 @@ interface DeckSlide {
 interface DeckManifest {
   id: string
   count: number
-  theme: string
+  variant?: string
   slides: string[]
   // Logical slides + a frame→slide map (frames can exceed slides with --with-clicks).
   outline?: DeckSlide[]

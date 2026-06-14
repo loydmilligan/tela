@@ -7,19 +7,22 @@ output** — per-slide PNGs + a PDF/PPTX. There is **no interactive SPA** and
 nothing Slidev runs in the viewer's browser: tela presents the rendered images
 in its own simple full-screen viewer. That keeps this service tiny.
 
-> Quality note: the themes in `themes/` are **placeholders**. The premium,
-> pp-grade theme is a separate, deliberate design pass (later, via the
-> frontend-design skill). This directory is the *plumbing*, not the look.
+> The look lives entirely in **[`slidev-theme-tahta`](https://github.com/zcag/tahta)**
+> (an npm dependency) — a token-driven design system with style **variants**.
+> This service owns **no** layouts/styles; it just injects the theme + a per-deck
+> visual config. This directory is the *plumbing*, not the look.
 
 ## Why a service (and why render-only)
 
 Slidev is a Vue/Vite tool, not an embeddable library — it has to *render*.
 Rendering lives in its own Node process; tela stores the markdown, this service
 renders it, tela serves + presents the output. The stored markdown never
-references the theme path — the service injects tela's theme (overriding any
-`theme:` in the deck headmatter), so the look is controlled centrally and decks
-stay portable. **Render-only** (no per-deck SPA build, no SPA serving) is the
-deliberate simplification: present is just images.
+references the theme — the service injects `theme: slidev-theme-tahta` plus a
+per-deck `themeConfig` (`variant`/`accent`/`lang`, overriding any user values for
+those keys), so the look is controlled centrally and decks stay portable. The
+variant catalog comes from the theme package's own `variants.json` — tela
+hardcodes nothing visual. **Render-only** (no per-deck SPA build, no SPA serving)
+is the deliberate simplification: present is just images.
 
 ## Parser vs render (two tiers)
 
@@ -28,9 +31,9 @@ Chromium**. But **structure** — slide count, titles, layouts, speaker notes,
 detected features (KaTeX/Monaco/Mermaid/Tweet) — comes from `@slidev/parser`
 **in-process, no Chromium, in milliseconds**. So:
 
-- Theme injection sets `theme` on the parsed first-slide YAML doc and
-  re-serializes (`parse` → `prettifySlide` → `stringify`) — no frontmatter
-  regex surgery.
+- Theme injection sets `theme: slidev-theme-tahta` + `themeConfig` on the parsed
+  first-slide YAML doc and re-serializes (`parse` → `prettifySlide` →
+  `stringify`) — no frontmatter regex surgery.
 - `/parse` returns deck structure with no render at all (powers an editor
   outline / slide navigator).
 - `/render` and `/export/*` **preflight** with the parser first, so a malformed
@@ -39,18 +42,19 @@ detected features (KaTeX/Monaco/Mermaid/Tweet) — comes from `@slidev/parser`
 ## Contract
 
 ```
-GET  /themes                  -> [{ name, label, description }]   (theme selector)
-POST /parse                   body: slidev markdown -> { count, slides:[{no,title,layout,note}], features, errors }
-POST /render?theme=<name>     body: slidev markdown -> { id, count, theme, slides:[url] }
-POST /export/<pdf|pptx>?theme body: slidev markdown -> the file bytes
-GET  /d/<id>/<file>           -> a rendered slide PNG / the PDF / the PPTX
-GET  /health                  -> ok
+GET  /themes                      -> [{ name, label, scheme, description }]  (tahta variants)
+POST /parse                       body: slidev markdown -> { count, slides:[{no,title,layout,note}], features, errors }
+POST /render?variant&accent&lang  body: slidev markdown -> { id, count, variant, slides:[url], outline, slideForFrame }
+POST /export/<pdf|pptx>?variant…  body: slidev markdown -> the file bytes
+GET  /d/<id>/<file>               -> a rendered slide PNG / the PDF / the PPTX
+GET  /health                      -> ok
 ```
 
-`/render` returns one PNG per slide. Render/export are cached by content hash
-(keyed on `RENDER_VERSION` + theme + markdown), so re-rendering an unchanged
-deck is instant; `/parse` is cheap enough to skip caching. `DECK_CACHE`
-(default `./cache`, `/data` in the image) holds the rendered output.
+`/render` returns one PNG per click-step (`--with-clicks`). Render/export are
+cached by content hash (keyed on `RENDER_VERSION` + the visual config +
+markdown), so re-rendering an unchanged deck is instant; `/parse` is cheap enough
+to skip caching. `DECK_CACHE` (default `./cache`, `/data` in the image) holds the
+rendered output. The variant catalog is read from `slidev-theme-tahta/variants.json`.
 
 ## Run
 

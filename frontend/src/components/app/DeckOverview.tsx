@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Download, Play, Presentation } from 'lucide-react'
+import { Check, Download, Palette, Play, Presentation } from 'lucide-react'
 import { api } from '../../lib/api'
+import { useUpdatePage } from '../../lib/queries/pages'
+import type { Page } from '../../lib/types'
 import { Button } from '../ui/button'
 import {
   DropdownMenu,
@@ -22,6 +24,12 @@ interface DeckOutline {
   features?: { katex?: boolean; mermaid?: boolean; tweet?: boolean; bluesky?: boolean; monaco?: unknown }
   errors?: { row?: number; message: string }[]
 }
+interface DeckVariant {
+  name: string
+  label: string
+  scheme: string
+  description: string
+}
 
 const featureLabels: [keyof NonNullable<DeckOutline['features']>, string][] = [
   ['katex', 'Math'],
@@ -34,8 +42,10 @@ const featureLabels: [keyof NonNullable<DeckOutline['features']>, string][] = [
 // The deck's default (non-present) view. Instead of dumping raw Slidev markdown
 // as prose, show the deck's identity: slide count, a Present CTA, exports, and a
 // parsed outline (title + layout per slide). Cheap — backed by /parse, no render.
-export function DeckOverview({ spaceId, pageId }: { spaceId: number; pageId: number }) {
+export function DeckOverview({ page, spaceId }: { page: Page; spaceId: number }) {
+  const pageId = page.id
   const navigate = useNavigate()
+  const updatePage = useUpdatePage()
 
   const { data = null, error } = useQuery({
     queryKey: ['deck-outline', pageId],
@@ -44,6 +54,19 @@ export function DeckOverview({ spaceId, pageId }: { spaceId: number; pageId: num
     retry: false,
   })
   const err = error ? (error as Error).message || 'Failed to read deck' : null
+
+  // Style variants come from the theme package (slidev-theme-tahta) — tela
+  // hardcodes none. Picking one writes props.variant (merged, PUT semantics).
+  const { data: variants } = useQuery({
+    queryKey: ['deck-variants'],
+    queryFn: () => api<DeckVariant[]>('/api/deck/themes'),
+    staleTime: Infinity,
+    retry: false,
+  })
+  const currentVariant = (page.props?.variant as string) || 'editorial'
+  const currentLabel = variants?.find((v) => v.name === currentVariant)?.label || 'Editorial'
+  const setVariant = (name: string) =>
+    void updatePage.mutateAsync({ id: pageId, props: { ...(page.props ?? {}), variant: name } })
 
   const present = () =>
     void navigate({
@@ -67,6 +90,26 @@ export function DeckOverview({ spaceId, pageId }: { spaceId: number; pageId: num
             {features.length ? ` · ${features.join(' · ')}` : ''}
           </div>
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm">
+              <Palette width={16} height={16} /> {currentLabel}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {(variants ?? []).map((v) => (
+              <DropdownMenuItem key={v.name} onSelect={() => setVariant(v.name)}>
+                <Check
+                  width={14}
+                  height={14}
+                  className={v.name === currentVariant ? 'opacity-100' : 'opacity-0'}
+                />
+                <span className="ml-[var(--space-1)]">{v.label}</span>
+                <span className="ml-auto pl-[var(--space-3)] text-[var(--text-xs)] text-[var(--text-muted)]">{v.scheme}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button variant="primary" size="sm" onClick={present}>
           <Play width={16} height={16} /> Present
         </Button>

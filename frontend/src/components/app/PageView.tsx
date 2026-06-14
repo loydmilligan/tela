@@ -517,7 +517,7 @@ function PageViewer({
           // A deck's default view shows its identity (outline + Present), not the
           // raw Slidev markdown as prose. Present (?view=read) renders the slides.
           <Suspense fallback={<div className={EDITOR_MIN_H} />}>
-            <DeckOverview spaceId={spaceId} pageId={page.id} />
+            <DeckOverview page={page} spaceId={spaceId} />
           </Suspense>
         ) : (
           <MarkdownView

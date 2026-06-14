@@ -1,15 +1,17 @@
 // tela deck render sidecar — Slidev as a RENDER-ONLY service.
 //
 // A tela deck is a page whose body IS Slidev markdown. This service renders that
-// markdown to static premium output (per-slide PNGs + PDF/PPTX), applying ONE OF
-// tela's themes (chosen per deck via ?theme=). There is no interactive SPA and
+// markdown to static premium output (per-slide PNGs + PDF/PPTX). The entire look
+// lives in the `slidev-theme-tahta` theme package — tela owns no layouts/styles;
+// it only declares a per-deck visual config (variant/accent/lang), which this
+// service injects into the deck headmatter. There is no interactive SPA and
 // nothing Slidev runs in the viewer's browser — tela presents the rendered
 // images in its own simple full-screen viewer. That keeps this service tiny.
 //
-//   GET  /themes                      -> [{ name, label, description }]   (for the editor's selector)
+//   GET  /themes                      -> [{ name, label, scheme, description }]  (tahta variants)
 //   POST /parse                       body: markdown -> { count, slides:[{no,title,layout,note}], features, errors }
-//   POST /render?theme=<name>         body: markdown -> { id, count, slides:[url], theme }
-//   POST /export/<pdf|pptx>?theme=<name>  body: markdown -> the file bytes
+//   POST /render?variant&accent&lang  body: markdown -> { id, count, slides:[url], variant }
+//   POST /export/<pdf|pptx>?variant…  body: markdown -> the file bytes
 //   GET  /d/<id>/<file>               -> a rendered slide PNG / the PDF / the PPTX
 //   GET  /health                      -> ok
 //
@@ -17,8 +19,8 @@
 // @slidev/parser in-process — no Chromium — and powers /parse, theme injection,
 // and a fast preflight on /render + /export. Only pixels go through the CLI.
 //
-// Hardening: cache key folds in RENDER_VERSION + theme (so a theme/engine change
-// busts stale renders); renders are bounded by a small concurrency gate + a
+// Hardening: cache key folds in RENDER_VERSION + visual config (so a variant/
+// accent/lang change busts stale renders); renders are bounded by a small concurrency gate + a
 // per-render timeout (Chromium is heavy). Cached by content hash. Runs as a
 // compose sidecar (the gotenberg pattern); tela proxies it. The container is
 // treated as untrusted-code execution (Slidev compiles deck markdown) — isolate
@@ -26,30 +28,34 @@
 
 import http from 'node:http'
 import { createHash } from 'node:crypto'
-import { writeFile, mkdir, readdir, readFile } from 'node:fs/promises'
-import { existsSync, createReadStream, statSync, readdirSync } from 'node:fs'
+import { writeFile, mkdir, readdir } from 'node:fs/promises'
+import { existsSync, createReadStream, statSync } from 'node:fs'
 import { join, extname, dirname, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { parse, stringify, prettifySlide, detectFeatures } from '@slidev/parser/core'
 
 const exec = promisify(execFile)
+const require = createRequire(import.meta.url)
 const ROOT = dirname(fileURLToPath(import.meta.url))
-const THEMES_DIR = join(ROOT, 'themes')
 const CACHE = process.env.DECK_CACHE || join(ROOT, 'cache')
 const WORK = join(CACHE, 'work')
 const SLIDEV = join(ROOT, 'node_modules', '.bin', 'slidev')
 const PORT = Number(process.env.PORT || 3344)
 const MAX_CONCURRENCY = Number(process.env.DECK_CONCURRENCY || 2)
 
-// Bump when the theme set or the render pipeline changes so cached decks rerender.
-// r2: render with --with-clicks (one frame per click-step) so build animations survive.
-const RENDER_VERSION = 'r2'
-const DEFAULT_THEME = 'default'
-const THEMES = new Set(
-  readdirSync(THEMES_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name),
-)
+// Bump when the theme or render pipeline changes so cached decks rerender.
+// r3: visual backbone moved to slidev-theme-tahta (variants), was local placeholders.
+const RENDER_VERSION = 'r3'
+
+// The look lives entirely in the theme package — tela owns no layouts/styles.
+// Variant catalog + the themeConfig keys come from the theme's own manifests.
+const THEME_PKG = 'slidev-theme-tahta'
+const DEFAULT_VARIANT = 'editorial'
+const VARIANT_CATALOG = require(`${THEME_PKG}/variants.json`).variants
+const VARIANTS = new Set(VARIANT_CATALOG.map((v) => v.id))
 
 await mkdir(WORK, { recursive: true })
 
@@ -57,9 +63,18 @@ const MIME = { '.png': 'image/png', '.pdf': 'application/pdf', '.pptx': 'applica
 const EXPORT_MIME = { pdf: MIME['.pdf'], pptx: MIME['.pptx'] }
 
 const hash = (s) => createHash('sha256').update(s).digest('hex').slice(0, 16)
-const deckId = (md, theme) => hash(`${RENDER_VERSION}|${theme}|${md}`)
+// Cache key folds in the full visual config so a variant/accent/lang change rerenders.
+const cfgKey = (c) => `${pickVariant(c.variant)}|${c.accent || ''}|${c.lang || ''}`
+const deckId = (md, cfg) => hash(`${RENDER_VERSION}|${cfgKey(cfg)}|${md}`)
 const deckDir = (id) => join(CACHE, 'd', id)
-const pickTheme = (t) => (t && THEMES.has(t) ? t : DEFAULT_THEME)
+const pickVariant = (v) => (v && VARIANTS.has(v) ? v : DEFAULT_VARIANT)
+
+// The deck render config tela controls per-deck — the only inputs to the theme.
+const reqConfig = (params) => ({
+  variant: params.get('variant') || '',
+  accent: params.get('accent') || '',
+  lang: params.get('lang') || '',
+})
 
 // Parse deck markdown once via @slidev/parser (in-process — no Chromium, so
 // milliseconds). The result drives theme injection, preflight validation, and
@@ -129,20 +144,34 @@ async function preflight(md) {
   return data
 }
 
-// Inject the chosen theme into the deck headmatter (overriding any user `theme:`)
-// so the stored markdown stays portable and the look is controlled centrally.
-// Done through the parser — set `theme` on the first slide's YAML document and
-// re-serialize — instead of fragile frontmatter regex surgery.
-function withTheme(data, theme) {
-  const path = join(THEMES_DIR, theme)
+// Point the deck at the tahta theme and apply tela's per-deck visual config
+// (variant/accent/lang) — the whole look lives in the theme package; tela just
+// declares which variant. Done through the parser: set `theme` + `themeConfig`
+// on the first slide's YAML doc and re-serialize, overriding any user values for
+// the keys tela manages while preserving the rest. The stored deck markdown is
+// untouched — this only shapes the ephemeral render input.
+function tahtaThemeConfig(cfg, existing) {
+  const tc = { ...(existing || {}), variant: pickVariant(cfg.variant) }
+  if (cfg.accent) tc.accent = cfg.accent
+  if (cfg.lang) tc.lang = cfg.lang
+  return tc
+}
+
+function withTheme(data, cfg) {
   const head = data.slides[0]
   if (head && head.frontmatterDoc && head.frontmatterDoc.contents) {
-    head.frontmatterDoc.set('theme', path)
+    const cur = head.frontmatterDoc.get('themeConfig')
+    head.frontmatterDoc.set('theme', THEME_PKG)
+    head.frontmatterDoc.set('themeConfig', tahtaThemeConfig(cfg, cur && cur.toJSON ? cur.toJSON() : cur))
     prettifySlide(head) // rebuild head.raw from the mutated YAML doc (stringify reads raw)
     return stringify(data)
   }
   // No headmatter block to edit — prepend one.
-  return `---\ntheme: ${path}\n---\n\n${data.raw}`
+  const tc = tahtaThemeConfig(cfg)
+  const lines = [`theme: ${THEME_PKG}`, 'themeConfig:', `  variant: ${tc.variant}`]
+  if (tc.accent) lines.push(`  accent: ${JSON.stringify(tc.accent)}`)
+  if (tc.lang) lines.push(`  lang: ${tc.lang}`)
+  return `---\n${lines.join('\n')}\n---\n\n${data.raw}`
 }
 
 // Bounded concurrency — Chromium renders are heavy; an unbounded burst OOMs.
@@ -165,9 +194,9 @@ function acquire() {
   })
 }
 
-async function slidevExport(md, theme, format, outPath) {
-  const entry = join(WORK, `${hash(theme + format + md)}.md`)
-  await writeFile(entry, withTheme(await parseDeck(md), theme))
+async function slidevExport(md, cfg, format, outPath) {
+  const entry = join(WORK, `${hash(cfgKey(cfg) + format + md)}.md`)
+  await writeFile(entry, withTheme(await parseDeck(md), cfg))
   const release = await acquire()
   try {
     // --with-clicks: one frame per click-step, so v-click/v-clicks/v-motion/
@@ -180,21 +209,33 @@ async function slidevExport(md, theme, format, outPath) {
   }
 }
 
-async function renderImages(md, theme) {
-  const id = deckId(md, theme)
+// Slidev `export --format png --with-clicks` names frames `<slide>-<click>.png`,
+// zero-padded (e.g. 001-01.png, 001-02.png, 002-01.png); without clicks it's
+// still per-slide padded. Match both and order by (slide, click).
+const isFrame = (f) => /^\d+(-\d+)?\.png$/.test(f)
+const frameOrder = (f) => f.replace(/\.png$/, '').split('-').map(Number)
+const frameCmp = (a, b) => {
+  const [as, ac = 0] = frameOrder(a)
+  const [bs, bc = 0] = frameOrder(b)
+  return as - bs || ac - bc
+}
+const listFrames = async (dir) => (existsSync(dir) ? (await readdir(dir)).filter(isFrame) : [])
+
+async function renderImages(md, cfg) {
+  const id = deckId(md, cfg)
   const dir = deckDir(id)
-  if (!existsSync(join(dir, '1.png'))) {
+  if (!(await listFrames(dir)).length) {
     await mkdir(dir, { recursive: true })
-    await slidevExport(md, theme, 'png', dir) // -> 1.png, 2.png, ...
+    await slidevExport(md, cfg, 'png', dir)
   }
-  const pngs = (await readdir(dir)).filter((f) => /^\d+\.png$/.test(f)).sort((a, b) => parseInt(a) - parseInt(b))
+  const pngs = (await listFrames(dir)).sort(frameCmp)
   // Frames may exceed logical slides (--with-clicks). Ship the logical outline
   // (titles + speaker notes) and a frame→slide map so the presenter view can
   // show the right note per frame.
   const data = await parseDeck(md)
   return {
     id,
-    theme,
+    variant: pickVariant(cfg.variant),
     count: pngs.length,
     slides: pngs.map((f) => `/d/${id}/${f}`),
     outline: outlineSlides(data),
@@ -202,25 +243,19 @@ async function renderImages(md, theme) {
   }
 }
 
-async function renderFile(md, theme, format) {
-  const file = join(deckDir(deckId(md, theme)), `deck.${format}`)
+async function renderFile(md, cfg, format) {
+  const file = join(deckDir(deckId(md, cfg)), `deck.${format}`)
   if (!existsSync(file)) {
     await mkdir(dirname(file), { recursive: true })
-    await slidevExport(md, theme, format, file)
+    await slidevExport(md, cfg, format, file)
   }
   return file
 }
 
-async function listThemes() {
-  const out = []
-  for (const name of THEMES) {
-    let meta = { name, label: name, description: '' }
-    try {
-      meta = { ...meta, ...JSON.parse(await readFile(join(THEMES_DIR, name, 'theme.json'), 'utf8')) }
-    } catch { /* no metadata */ }
-    out.push({ name: meta.name, label: meta.label, description: meta.description })
-  }
-  return out
+// The style catalog comes straight from the theme package's manifest — tela
+// defines no themes of its own.
+function listVariants() {
+  return VARIANT_CATALOG.map((v) => ({ name: v.id, label: v.label, scheme: v.scheme, description: v.description }))
 }
 
 function serveStatic(res, id, name) {
@@ -241,10 +276,10 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x')
     const path = url.pathname
-    const theme = pickTheme(url.searchParams.get('theme'))
+    const cfg = reqConfig(url.searchParams)
 
     if (req.method === 'GET' && path === '/themes') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(await listThemes()))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(listVariants()))
     } else if (req.method === 'POST' && path === '/parse') {
       // Cheap structure + features, no render. Powers the editor outline + preflight.
       const md = await readBody(req)
@@ -252,14 +287,14 @@ const server = http.createServer(async (req, res) => {
     } else if (req.method === 'POST' && path === '/render') {
       const md = await readBody(req)
       await preflight(md) // parse first — a bad deck fails fast as 400, not a slow 502
-      const manifest = await renderImages(md, theme) // resolve BEFORE writing headers
+      const manifest = await renderImages(md, cfg) // resolve BEFORE writing headers
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(manifest))
     } else if (req.method === 'POST' && path.startsWith('/export/')) {
       const format = path.slice('/export/'.length)
       if (!EXPORT_MIME[format]) return void res.writeHead(400).end('format must be pdf or pptx')
       const md = await readBody(req)
       await preflight(md)
-      const file = await renderFile(md, theme, format)
+      const file = await renderFile(md, cfg, format)
       res.writeHead(200, { 'content-type': EXPORT_MIME[format] })
       createReadStream(file).pipe(res)
     } else if (req.method === 'GET' && path.startsWith('/d/')) {
@@ -285,4 +320,4 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, () => console.log(`tela deck sidecar on :${PORT} — themes: [${[...THEMES]}], concurrency ${MAX_CONCURRENCY}`))
+server.listen(PORT, () => console.log(`tela deck sidecar on :${PORT} — ${THEME_PKG} variants: [${[...VARIANTS]}], concurrency ${MAX_CONCURRENCY}`))
