@@ -152,6 +152,20 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpUpdatePage)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "lint_deck",
+		Title:       "Lint slide deck",
+		Description: "Validate a deck page's slides against the tahta theme contract — unknown layouts, missing required fields, type/format mistakes. Run after authoring/editing a deck to catch problems before presenting. Returns structured issues per slide.",
+		Annotations: readOnly,
+	}, s.mcpLintDeck)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "preview_deck",
+		Title:       "Preview slide deck",
+		Description: "Render a deck page to slide images and return them, so you can SEE how the deck looks (don't author blind). Pass `slides` to preview specific 1-based frames; omit for the first few. Renders are cached.",
+		Annotations: readOnly,
+	}, s.mcpPreviewDeck)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "patch_page",
 		Title:       "Patch page section",
 		Description: "Surgically edit ONE section of a page instead of rewriting the whole body (editor+). First call get_page format:\"map\" to see the section paths, then patch the target. Cheaper and safer than update_page on a long page — it never touches the rest of the document. Snapshots a revision like any edit.",

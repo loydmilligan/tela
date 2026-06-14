@@ -10,6 +10,7 @@
 //
 //   GET  /themes                      -> [{ name, label, scheme, description }]  (tahta variants)
 //   GET  /authoring                   -> { rules, themeConfig, layouts, components, variants }  (theme contract, for the MCP deck guide)
+//   POST /lint                        body: markdown -> { ok, errors, warnings, issues:[{slide,level,field?,message}] }  (tahta validator)
 //   POST /parse                       body: markdown -> { count, slides:[{no,title,layout,note}], features, errors }
 //   POST /render?variant&accent&lang  body: markdown -> { id, count, slides:[url], variant }
 //   POST /export/<pdf|pptx>?variant…  body: markdown -> the file bytes
@@ -37,6 +38,7 @@ import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { parse, stringify, prettifySlide, detectFeatures } from '@slidev/parser/core'
+import { lint as tahtaLint } from 'slidev-theme-tahta/lint.mjs'
 
 const exec = promisify(execFile)
 const require = createRequire(import.meta.url)
@@ -299,6 +301,15 @@ const server = http.createServer(async (req, res) => {
     } else if (req.method === 'GET' && path === '/authoring') {
       // The theme's full layout/component/variant contract, for tela's MCP guide.
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' }).end(JSON.stringify(AUTHORING))
+    } else if (req.method === 'POST' && path === '/lint') {
+      // tahta's own structural validator (it owns the layout/field semantics).
+      // Parse with the real parser, then lint per-slide frontmatter. Slide numbers
+      // surfaced 1-based to match /parse + the editor outline.
+      const md = await readBody(req)
+      const data = await parseDeck(md)
+      const r = await tahtaLint(data.slides.map((s) => s.frontmatter || {}))
+      const issues = (r.issues || []).map((it) => ({ ...it, slide: (it.slide ?? 0) + 1 }))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...r, issues }))
     } else if (req.method === 'POST' && path === '/parse') {
       // Cheap structure + features, no render. Powers the editor outline + preflight.
       const md = await readBody(req)
