@@ -110,6 +110,13 @@ Frontend → `/api/...` (Vite proxy in dev, Caddy in prod) → ServeMux → hand
 ### Rich view
 - Callouts (5 GitHub alert types), collapsibles (`<details>`), Excalidraw diagrams (sidecar `page_diagrams`, content-addressed PNG, `GET /api/diagrams/{page_id}/{file}` public+immutable, `PUT /api/pages/{id}/diagrams` editor+ 8 MiB PNG-magic-byte). Editor lazy-imports `@excalidraw/excalidraw`. Mermaid preserved as fenced code (not rendered).
 
+### Decks (Slidev) — full detail in [`deck.md`](deck.md)
+- A **deck** is a page with `props.deck=true` whose body is **Slidev markdown**; the look is the `slidev-theme-tahta` npm package (tela injects `theme`/`themeConfig`/`mdc:true`, never stored in the body). Rendered by a sidecar (`deck/`, `:3344`, proxied like gotenberg). Deck bodies are stored **verbatim** (the one exception to the no-frontmatter-in-body invariant).
+- **Present = the live Slidev SPA** (`slidev build`, no Chromium) served page-scoped + membership-gated at `GET /api/pages/{id}/deck/spa/{path...}` (`requirePageRead`), opened in a new tab (cookie carries RBAC). **Export/preview = Chromium** (`deck.pdf`/`deck.pptx`, public content-addressed assets under `/api/deck/`).
+- **GOTCHA:** Slidev's `getSlidePath()` + vue-router both prepend `--base`, so programmatic nav under our sub-path base **doubles the base** → NotFound ("404 on slide 2"). Fixed by an injected `setup/main.mjs` router guard (`SPA_NAV_FIX`). `RENDER_VERSION` is for pipeline changes only.
+- **Cache key folds in the theme version** (`CACHE_EPOCH = RENDER_VERSION|THEME_VERSION`) + config + base + body → a tahta bump or any source edit auto-invalidates; a size-capped LRU **GC** bounds `spa/`+`d/`. **Pre-warm** at `afterPageWrite`/`createPageCore` (all write paths) + FE on deck open makes Present instant; correctness is content-keyed, independent of warming.
+- **Agent authoring is drift-proof:** tahta ships `AGENTS.md` (generated from its manifests); the sidecar serves it verbatim at `/authoring`, the backend frames it as `tela://deck-authoring-guide` — a pure pass-through, so new layouts/components surface on a tahta bump with zero tela changes. Tools `lint_deck`/`preview_deck` close the agent loop.
+
 ### Markdown import
 - `POST /api/spaces/{id}/import` (editor+), multipart `parent_id`/`dry_run`/`files`. Flatten-root pre-pass, parents-before-children, README-as-index, frontmatter→H1→filename title, `(2)`/`(3)` dedupe. FE Import tab uses raw `fetch()` (multipart), not `api()`.
 

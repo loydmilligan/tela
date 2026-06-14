@@ -1,0 +1,153 @@
+# Decks (Slidev presentations)
+
+A tela **deck** is a normal **page** whose body is **[Slidev](https://sli.dev)
+markdown** — a page is *either* a doc or a deck (set by the `deck` page property),
+never slides embedded mid-document. The visual design lives entirely in
+**[`slidev-theme-tahta`](https://github.com/zcag/tahta)** (an npm dependency); tela
+owns no layouts/styles and injects only a per-deck visual config.
+
+Rendering runs in a **sidecar** (`deck/`, a tiny Node service on `:3344`, the
+gotenberg pattern) that the backend proxies. Two output paths off one
+parse+theme-injection core:
+
+- **Present** = the **live interactive Slidev SPA** (`slidev build` → pure Vite,
+  no Chromium): the real app — presenter mode, slide overview, drawing, clicks.
+  Served page-scoped + membership-gated, opened in a new tab.
+- **Export / agent-preview / thumbnails** = **static frames** (`slidev export` →
+  headless Chromium): PNG / PDF / PPTX.
+
+> Two doc surfaces: this file is the developer/internals view. The end-user
+> writeup is the tela **Docs space** (space 16) → *Using Tela → Presentations &
+> decks*. Keep both current when deck UX changes.
+
+## Files
+
+- `deck/server.mjs` — the sidecar. Routes: `POST /spa` (build-if-needed + serve one
+  SPA file), `POST /render` + `POST /export/{pdf,pptx}` (Chromium), `GET /d/<id>/<file>`
+  (rendered asset), `POST /parse` + `POST /lint` (`@slidev/parser` + tahta's
+  `lint.mjs`, no render), `GET /authoring` (the agent guide), `GET /themes`, `/health`.
+- `backend/internal/api/deck_render.go` — backend proxy: the `requirePageRead`
+  gate, `deckSPA`/`deckSPA` serving, export, outline/parse, `deckThemeConfig` (reads
+  `variant`/`accent`/`lang` from page props).
+- `backend/internal/api/deck_warm.go` — the Present pre-warmer (see below).
+- `backend/internal/api/mcp_deck_authoring.go` — the `tela://deck-authoring-guide`
+  MCP resource + the create/update tool hint.
+- `backend/internal/api/mcp_deck_tools.go` — the `lint_deck` / `preview_deck` MCP tools.
+- `frontend/src/components/app/DeckOverview.tsx` — the deck's non-present view
+  (slide count, variant picker, Present, PDF/PPTX export). `PageView.tsx` has the
+  "Convert to slide deck" action + the Present buttons + the warm-on-open effect.
+  `DeckEditorOutline.tsx` — the live slide outline while editing.
+
+## Routes
+
+Page-scoped, **membership-gated** (`requirePageRead`): not in `IsPublicPath`.
+
+```
+GET  /api/pages/{id}/deck/spa/{path...}   live SPA (Present) — proxies sidecar /spa
+GET  /api/pages/{id}/deck/outline         structure only (editor outline) — /parse
+POST /api/pages/{id}/deck/parse           parse a draft (editor outline)
+GET  /api/pages/{id}/deck.pdf | .pptx     export (Chromium)
+```
+
+Public (`/api/deck/` is in `IsPublicPath`) — content-addressed, self-authenticating:
+
+```
+GET  /api/deck/d/{renderId}/{file}        a rendered PNG/PDF/PPTX (immutable)
+GET  /api/deck/themes                     tahta variant catalog (FE picker)
+```
+
+A page becomes a deck via **⋯ menu → Convert to slide deck** (sets `props.deck =
+true`), or the API/MCP setting `deck: true`.
+
+## Theme injection (shared by both paths)
+
+The stored markdown never references the theme. The sidecar injects `theme:
+slidev-theme-tahta` + a per-deck `themeConfig` (`variant`/`accent`/`lang`) +
+`mdc: true` (tahta is MDC-authored), via the parser (`parse` → set keys on the
+first-slide YAML → `prettifySlide` → `stringify`), overriding any user values for
+those keys. Variant catalog comes from the theme's own `variants.json`; tela
+hardcodes nothing visual.
+
+**Deck body is stored verbatim** — the one exception to tela's "frontmatter never
+lives in `pages.body`" invariant. A deck's leading `---…---` is Slidev headmatter /
+the first slide, NOT page properties, so `createPageCore`/`applyUpdateTx` keep deck
+bodies byte-for-byte (`isDeckBag`/`pageIsDeckTx`). Stripping it blanks the cover slide.
+
+## The live SPA (Present) — and its load-bearing gotcha
+
+`buildSPA` runs `slidev build --base /api/pages/<id>/deck/spa/ --out <cache>` (pure
+Vite, no Chromium), then `serveSPA` streams files. History routing; non-asset
+client routes (slide N, `presenter/N`) fall back to `index.html`. The browser hits
+`/api/pages/{id}/deck/spa/...` → backend `requirePageRead` → proxies the sidecar's
+`/spa` (same session cookie carries RBAC; Present opens in a new tab same-origin).
+
+> **GOTCHA — Slidev nav doubles a non-root `--base`.** `getSlidePath()` prepends
+> `import.meta.env.BASE_URL` to the path it `router.push()`es, but vue-router's
+> history layer **also** prepends base on push. Under our sub-path `--base`,
+> programmatic nav (next/prev/goto/presenter) produces a *doubled* base
+> (`/api/pages/288/deck/spa/api/pages/288/deck/spa/2`) that matches no route →
+> Slidev's NotFound → the "404 on slide 2" bug. `<RouterLink>` is unaffected (it
+> pushes base-relative paths). **Fix:** the sidecar writes a Slidev `setup/main.mjs`
+> into the build root (auto-discovered, runs with `{app, router}`) that installs a
+> `router.beforeEach` guard stripping the duplicated base prefix; no-ops at root
+> base. This affects *both* history and hash routing, so it's the only clean fix
+> short of hosting at root. See `SPA_NAV_FIX` in `server.mjs`.
+
+Cross-device presenter↔audience sync is **out of scope** by design — Slidev static
+builds only sync same-device (BroadcastChannel/localStorage); cross-device needs a
+dev server + `--remote`, which we don't run.
+
+## Caching & invalidation
+
+Everything is content-addressed and recomputable.
+
+- **Cache key = `CACHE_EPOCH` (`RENDER_VERSION | THEME_VERSION`) + visual config +
+  base + markdown.** Folding the installed theme version in means a **tahta bump
+  auto-rebuilds every deck** (no manual `RENDER_VERSION` bump), and any source
+  change via any path (editor/MCP/WebDAV/automation) yields a new key → **a stale
+  slide can never be served.** Bump `RENDER_VERSION` only for *pipeline* changes
+  (e.g. the nav-guard).
+- **GC** (`gcSweep`): built SPAs + rendered frames are never overwritten, so edits
+  and theme bumps orphan dirs. A periodic sweep caps total (`spa/` + `d/`) size
+  (`DECK_CACHE_MAX_MB`, default 512), evicting least-recently-served dirs (in-mem
+  `lastUsed`, mtime fallback), protecting dirs < 5 min old, and reaping stale
+  `work/*.md` build entries. Eviction is safe — a dropped deck rebuilds on request.
+
+## Pre-warm (instant Present)
+
+A cold `slidev build` is ~5 s on the prod box, so it's pre-built off the click.
+Correctness never depends on this (content-keyed); it only moves the cost.
+
+- **Server-side** (`deck_warm.go`): `afterPageWrite` + `createPageCore` — the
+  universal write chokepoint — schedule a warm for any deck whose body changed. So
+  **every** save path warms uniformly: UI, MCP `update_page`, WebDAV/rsync, sync,
+  automation. Debounced per page (reads the page fresh at fire time → always warms
+  the latest content) + globally capped.
+- **Frontend** (`PageView.tsx`): a fire-and-forget fetch of the SPA base on deck
+  open (covers viewing, and re-warms decks after a deploy invalidates the cache —
+  the server warm only fires on writes). Must sit with the other hooks **above**
+  the early returns (a hook after a conditional return = React #310).
+
+## Agent authoring — drift-proof guide
+
+The whole reason agent-written decks used to be flat bullets: the rich palette was
+never disclosed. Now tahta ships its **own** agent contract — `AGENTS.md`,
+auto-generated from its `layouts.json`/`variants.json` (every rule, variant,
+universal field, layout, component with fields/props/examples). The sidecar serves
+it **verbatim** at `/authoring`; the backend frames it with a short tela preamble
+("set `deck:true` + a `variant` prop; tela injects the theme") and serves the whole
+thing as the `tela://deck-authoring-guide` MCP resource.
+
+This is a deliberate **pass-through**: the theme is the single source of truth, so
+the guide **cannot drift** as tahta grows — a new layout/component appears the
+moment tahta is bumped, with zero tela changes (no typed field list, no codegen,
+no vendoring). The authoring trigger fires on **"presentation" / "slides" / "deck"
+/ "talk"** (any wording), not just "deck".
+
+Agent loop tools: `lint_deck` (tahta's structural validator) and `preview_deck`
+(renders frames to images so the agent can *see* its output and iterate). The
+agent self-corrects via discover-guide → create → lint → preview → fix.
+
+> Richness/quality guidance (layouts-vs-components, pacing, empty-slide lint) lives
+> on the **tahta** side (`docs/notes-from-tela.md` there) precisely because of the
+> pass-through — improving the guide there improves tela's agent flow automatically.
