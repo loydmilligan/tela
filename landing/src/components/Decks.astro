@@ -8,7 +8,7 @@
 //
 // To re-render (e.g. after a theme bump) — source is tooling/showcase-deck.md:
 //   cd ../deck && PORT=3344 node server.mjs &        # deck sidecar (needs chromium)
-//   curl -s -X POST "localhost:3344/render?variant=muse&accent=%236366f1" \
+//   curl -s -X POST "localhost:3344/render?variant=paper" \
 //     --data-binary @../landing/tooling/showcase-deck.md   # -> {id, slides:[/d/<id>/<file>]}
 //   # fetch each frame, then: magick <png> -resize 1280x -quality 82 public/decks/slide-0N.webp
 const feats = [
