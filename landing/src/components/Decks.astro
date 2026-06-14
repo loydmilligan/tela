@@ -1,17 +1,33 @@
 ---
-// §8c — Decks. A page flipped to a deck (props.deck=true) is a real Slidev
+// §6a — Presentations. A page flipped to a deck (props.deck=true) is a real
 // presentation: present live in the browser (presenter mode, overview, draw),
-// export to PDF/PPTX/PNG, and — the tela angle — agents author the whole deck
-// over MCP (lint_deck / preview_deck). Body is plain Slidev markdown, portable;
-// the look is a swappable theme (slidev-theme-tahta) with a variant/accent.
-// Sibling to Publish (§8a): "your wiki doubles as X". See docs/deck.md.
+// export to PDF/PPTX/PNG, and — the tela angle — agents author the whole thing
+// over MCP. The showcase uses REAL rendered slides (public/decks/*.webp,
+// rendered from a tela deck with the actual theme) so the quality is shown, not
+// described. Engine names (Slidev/tahta) are credited at the bottom, never sold.
+//
+// To re-render (e.g. after a theme bump) — source is tooling/showcase-deck.md:
+//   cd ../deck && PORT=3344 node server.mjs &        # deck sidecar (needs chromium)
+//   curl -s -X POST "localhost:3344/render?variant=atelier&accent=%236366f1" \
+//     --data-binary @../landing/tooling/showcase-deck.md   # -> {id, slides:[/d/<id>/<file>]}
+//   # fetch each frame, then: magick <png> -resize 1280x -quality 82 public/decks/slide-0N.webp
 const feats = [
   'Agents build whole presentations for you',
   'Present live — presenter mode, overview, draw',
   'Export to PDF, PPTX or PNG',
   'Plain markdown you own underneath',
 ];
-const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
+// Real slides rendered from a tela deck (the cover leads the viewer).
+const slides = [
+  { src: '/decks/slide-001.webp', label: 'The wiki your agents reason over' },
+  { src: '/decks/slide-002.webp', label: 'What is tela?' },
+  { src: '/decks/slide-003.webp', label: 'How an agent uses it' },
+  { src: '/decks/slide-004.webp', label: "What's in the box" },
+  { src: '/decks/slide-005.webp', label: 'By the numbers' },
+  { src: '/decks/slide-006.webp', label: 'Connect it — one URL' },
+  { src: '/decks/slide-007.webp', label: 'Stop starting from zero' },
+  { src: '/decks/slide-008.webp', label: 'Try tela' },
+];
 ---
 <section id="decks" class="section">
   <div class="section-head reveal-up">
@@ -26,8 +42,8 @@ const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
   </div>
 
   <div class="deck-wrap reveal-up">
-    <!-- Presentation mock: cover slide + filmstrip + output chips -->
-    <div class="deck-frame" role="img" aria-label="A tela page presented as slides: a themed cover slide above a filmstrip of slides, with Present, PDF and PPTX outputs">
+    <!-- Real rendered slides: a framed viewer + clickable filmstrip -->
+    <div class="deck-frame" data-deck>
       <div class="deck-bar">
         <span class="deck-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         <span class="deck-chips">
@@ -38,20 +54,31 @@ const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
       </div>
 
       <div class="deck-stage">
-        <div class="deck-slide deck-slide--cover">
-          <span class="deck-kick">01 — Launch</span>
-          <span class="deck-title">Shipping tela 0.7</span>
-          <span class="deck-sub">Decks, semantic retrieval, and the MCP connector.</span>
-          <span class="deck-theme" aria-hidden="true">Theme · Indigo</span>
-        </div>
+        <img
+          class="deck-main"
+          data-deck-main
+          src={slides[0].src}
+          width="1960"
+          height="1104"
+          alt={`A tela presentation slide: ${slides[0].label}. Made with the built-in deck theme.`}
+          loading="lazy"
+          decoding="async"
+        />
 
-        <ol class="deck-strip" aria-hidden="true">
-          {thumbs.map((t, i) => (
-            <li class={`deck-thumb${i === 0 ? ' is-current' : ''}`}>
-              <span class="deck-thumb-bar"></span>
-              <span class="deck-thumb-line deck-thumb-line--wide"></span>
-              <span class="deck-thumb-line"></span>
-              <span class="deck-thumb-n">{t}</span>
+        <ol class="deck-strip" aria-label="Slides in this presentation">
+          {slides.map((s, i) => (
+            <li>
+              <button
+                type="button"
+                class={`deck-thumb${i === 0 ? ' is-current' : ''}`}
+                data-deck-thumb
+                data-src={s.src}
+                data-label={s.label}
+                aria-label={`Show slide ${i + 1}: ${s.label}`}
+                aria-pressed={i === 0 ? 'true' : 'false'}
+              >
+                <img src={s.src} width="1960" height="1104" alt="" loading="lazy" decoding="async" />
+              </button>
             </li>
           ))}
         </ol>
@@ -81,6 +108,30 @@ const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
   </p>
 </section>
 
+<script>
+  // Filmstrip → swap the main slide. Pure progressive enhancement; without JS the
+  // first slide simply shows and every thumbnail is still a real, visible slide.
+  for (const deck of document.querySelectorAll('[data-deck]')) {
+    const main = deck.querySelector('[data-deck-main]') as HTMLImageElement | null;
+    const thumbs = deck.querySelectorAll<HTMLButtonElement>('[data-deck-thumb]');
+    if (!main) continue;
+    for (const thumb of thumbs) {
+      thumb.addEventListener('click', () => {
+        const src = thumb.dataset.src;
+        const label = thumb.dataset.label ?? '';
+        if (!src || main.src.endsWith(src)) return;
+        main.src = src;
+        main.alt = `A tela presentation slide: ${label}. Made with the built-in deck theme.`;
+        for (const t of thumbs) {
+          const on = t === thumb;
+          t.classList.toggle('is-current', on);
+          t.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+      });
+    }
+  }
+</script>
+
 <style>
   .section-head .lede strong { color: var(--fg); font-weight: 600; }
   .section-head .lede em { color: var(--fg-soft); font-style: italic; }
@@ -95,7 +146,7 @@ const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
     .deck-wrap { grid-template-columns: 1.5fr 1fr; gap: 2.5rem; }
   }
 
-  /* ── presentation mock ────────────────────────────────────────────── */
+  /* ── slide viewer ─────────────────────────────────────────────────── */
   .deck-frame {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -132,78 +183,45 @@ const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
     border-color: var(--pill-border);
   }
 
-  .deck-stage { padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+  .deck-stage { padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem; }
 
-  /* the themed cover slide */
-  .deck-slide--cover {
-    position: relative;
-    aspect-ratio: 16 / 9;
+  .deck-main {
+    display: block;
+    width: 100%; height: auto;
+    aspect-ratio: 1960 / 1104;
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
-    padding: 1.5rem 1.75rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.5rem;
-    overflow: hidden;
-    background:
-      linear-gradient(135deg, var(--brand-wash), transparent 60%),
-      repeating-linear-gradient(0deg, var(--border) 0 1px, transparent 1px 28px),
-      repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 28px),
-      var(--surface-sunk);
-  }
-  .deck-slide--cover::before {
-    content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
-    width: 3px; border-radius: var(--radius-full);
-    background: var(--brand);
-  }
-  .deck-kick {
-    font-family: var(--font-mono); font-size: var(--text-xs);
-    letter-spacing: var(--tracking-kicker, 0.16em); text-transform: uppercase;
-    color: var(--accent);
-  }
-  .deck-title {
-    font-family: var(--font-display); font-weight: 700;
-    font-size: var(--text-2xl);
-    line-height: var(--leading-tight, 1.05);
-    letter-spacing: var(--tracking-display, -0.025em);
-    color: var(--fg);
-  }
-  .deck-sub { font-size: var(--text-sm); color: var(--fg-soft); max-width: 32ch; }
-  .deck-theme {
-    position: absolute; right: 1rem; bottom: 0.85rem;
-    font-family: var(--font-mono); font-size: var(--text-xs);
-    color: var(--fg-faint);
+    background: var(--surface-sunk);
+    transition: opacity var(--dur-fast, 140ms) var(--ease-out, ease);
   }
 
-  /* filmstrip of mini slides */
+  /* filmstrip of real slide thumbnails */
   .deck-strip {
     list-style: none; margin: 0; padding: 0;
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.65rem;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.55rem;
   }
   .deck-thumb {
-    position: relative;
-    aspect-ratio: 16 / 9;
+    display: block; width: 100%; padding: 0;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--surface-sunk);
-    padding: 0.5rem 0.55rem;
-    display: flex; flex-direction: column; gap: 0.3rem;
     overflow: hidden;
+    cursor: pointer;
+    transition: border-color var(--dur-fast, 140ms) var(--ease-out, ease),
+                transform var(--dur-fast, 140ms) var(--ease-out, ease);
   }
+  .deck-thumb img {
+    display: block;
+    width: 100%; height: auto;
+    aspect-ratio: 1960 / 1104;
+    object-fit: cover;
+  }
+  .deck-thumb:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .deck-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .deck-thumb.is-current { border-color: var(--brand); box-shadow: var(--glow-brand, none); }
-  .deck-thumb-bar { width: 45%; height: 0.25rem; border-radius: var(--radius-full); background: var(--brand); opacity: 0.7; }
-  .deck-thumb-line { width: 100%; height: 0.2rem; border-radius: var(--radius-full); background: var(--border-strong); }
-  .deck-thumb-line--wide { width: 80%; }
-  .deck-thumb-n {
-    margin-top: auto;
-    font-family: var(--font-mono); font-size: var(--text-xs);
-    color: var(--fg-faint);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
 
   @media (max-width: 560px) {
-    .deck-strip { grid-template-columns: repeat(2, 1fr); }
+    .deck-strip { grid-template-columns: repeat(4, 1fr); gap: 0.4rem; }
   }
 
   /* ── capability list ──────────────────────────────────────────────── */
@@ -231,4 +249,9 @@ const thumbs = ['Why now', 'What shipped', 'Numbers', 'Next'];
     text-decoration-color: var(--border-strong);
   }
   .deck-credit a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .deck-main, .deck-thumb { transition: none; }
+    .deck-thumb:hover { transform: none; }
+  }
 </style>
