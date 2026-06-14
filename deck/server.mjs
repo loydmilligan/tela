@@ -491,11 +491,12 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' }).end(JSON.stringify(AUTHORING))
     } else if (req.method === 'POST' && path === '/lint') {
       // tahta's own structural validator (it owns the layout/field semantics).
-      // Parse with the real parser, then lint per-slide frontmatter. Slide numbers
-      // surfaced 1-based to match /parse + the editor outline.
+      // Pass the RAW markdown — tahta's lint reparses it to see slide bodies + raw
+      // YAML, which its body-level checks need (empty slide, duplicate YAML keys,
+      // leaked/unclosed frontmatter). Passing only frontmatter objects silently
+      // disables those. Slide numbers surfaced 1-based to match /parse + the outline.
       const md = await readBody(req)
-      const data = await parseDeck(md)
-      const r = await tahtaLint(data.slides.map((s) => s.frontmatter || {}))
+      const r = await tahtaLint(md)
       const issues = (r.issues || []).map((it) => ({ ...it, slide: (it.slide ?? 0) + 1 }))
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...r, issues }))
     } else if (req.method === 'POST' && path === '/parse') {

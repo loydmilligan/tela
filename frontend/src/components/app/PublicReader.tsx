@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Menu, Play } from 'lucide-react'
 import { applyPdfThemeParam } from '../../lib/theme'
@@ -254,6 +254,12 @@ function PublicDeckView({
   const presentPath = `/api/public/spaces/${spaceId}/pages/${pageId}/deck/spa/`
   const coverPath = `/api/public/spaces/${spaceId}/pages/${pageId}/deck/cover`
   const present = () => window.open(presentPath, '_blank', 'noopener')
+  // Pre-warm the public Present build while the visitor looks at the cover, so
+  // clicking Present opens instantly instead of waiting on a cold slidev build.
+  // The public base is a separate build from the gated one — fire-and-forget.
+  useEffect(() => {
+    void fetch(presentPath, { credentials: 'same-origin' }).catch(() => {})
+  }, [presentPath])
   return (
     <div className="flex min-h-dvh flex-col bg-[var(--surface-1)] text-[var(--text-primary)]">
       <header className="flex items-center justify-between gap-[var(--space-2)] border-b border-[var(--border-subtle)] px-[var(--space-4)] py-[var(--space-3)]">

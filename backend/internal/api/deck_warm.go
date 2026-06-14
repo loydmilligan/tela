@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/zcag/tela/backend/internal/models"
 )
 
 // deckWarmer pre-builds a deck's interactive SPA after its source changes, so the
@@ -78,14 +80,24 @@ func (w *deckWarmer) run(pageID int64) {
 	if _, err := deckCover(ctx, p.Body, cfg); err != nil {
 		slog.Debug("deck cover warm failed", "page_id", pageID, "err", err)
 	}
-	base := fmt.Sprintf("/api/pages/%d/deck/spa/", p.ID)
+	// The SPA build is keyed on its `base`, so the gated and public Present paths
+	// are SEPARATE builds. Warm the gated one always; warm the public one too when
+	// the space is public (else the first public present pays a cold build).
+	w.warmSPA(ctx, p, cfg, fmt.Sprintf("/api/pages/%d/deck/spa/", p.ID))
+	if sp, err := selectSpaceByID(ctx, w.s.DB, p.SpaceID); err == nil && sp.Visibility == spaceVisibilityPublic {
+		w.warmSPA(ctx, p, cfg, fmt.Sprintf("/api/public/spaces/%d/pages/%d/deck/spa/", p.SpaceID, p.ID))
+	}
+}
+
+// warmSPA builds (and discards) one SPA base so a later Present is instant.
+func (w *deckWarmer) warmSPA(ctx context.Context, p models.Page, cfg deckConfig, base string) {
 	resp, err := deckSPA(ctx, p.Body, cfg, base, "")
 	if err != nil {
-		slog.Debug("deck warm failed", "page_id", pageID, "err", err)
+		slog.Debug("deck warm failed", "page_id", p.ID, "base", base, "err", err)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		slog.Debug("deck warm non-200", "page_id", pageID, "status", resp.StatusCode)
+		slog.Debug("deck warm non-200", "page_id", p.ID, "base", base, "status", resp.StatusCode)
 	}
 }
