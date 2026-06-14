@@ -482,6 +482,7 @@ Status of the full-functionality surface. ✅ done · ⬜ todo · 🟡 partial �
 - ⬜ **import_mira** — extract `importMiraCore`; keep SSRF allowlist + https-only + no-redirects; source_url XOR inline payload (payload as typed arg, not MaxBytesReader)
 - ✅ **move_page** tool — `movePageCore` extracted from `MovePage`; reparent / make_root / reorder / relocate across spaces (editor+ both spaces, cycle check)
 - ✅ **get_space** tool — single space fetch by id, membership-gated (`getSpaceCore`)
+- ✅ **share_page / list_shares / revoke_share** tools — per-page public share links, via extracted `createShareLinkCore` / `listShareLinksCore` / `revokeShareLinkCore` (editor+; share-token shortened to 11 chars / 64-bit). `list_shares` write-gated because the returned tokens are bearer secrets.
 - 🟡 **import_markdown** — DEFERRED (decide later). `local_path` is meaningless on a remote server; if revived, redesign to take inline `{path, content}[]` and feed the existing bulk-import pipeline. Absent from the surface until then.
 
 ### Phase 2 — resources + links ✅ (on main)

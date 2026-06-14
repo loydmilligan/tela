@@ -187,6 +187,27 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpMovePage)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "share_page",
+		Title:       "Share page (public link)",
+		Description: "Mint a public share link for a page — a URL anyone can open with NO tela login (editor+). Returns the absolute `url` plus the link's `id` and `token`. Options: include_descendants shares the whole subtree (not just this page); password gates it behind a passphrase; expires_at (UTC 'YYYY-MM-DD HH:MM:SS') auto-expires it. Each call mints a NEW link — use list_shares to see existing ones and revoke_share to disable one. This shares a single page tree; to publish a WHOLE space, use the space's visibility setting instead.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpSharePage)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_shares",
+		Title:       "List share links",
+		Description: "List a page's public share links (editor+): id, token, absolute url, has_password, include_descendants, expires_at, revoked_at. Active links only by default; pass include_revoked to also see revoked ones. Tokens are bearer secrets, so this needs a write-scoped key.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &no},
+	}, s.mcpListShares)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "revoke_share",
+		Title:       "Revoke share link",
+		Description: "Disable a public share link by its share id (editor+; ids come from list_shares). The link stops working immediately. Idempotent — revoking an already-revoked link is a no-op.",
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: &yes, OpenWorldHint: &no},
+	}, s.mcpRevokeShare)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_comment",
 		Title:       "Add comment",
 		Description: "Attach a root comment to a page, anchored by a {prefix, exact, suffix} text triplet (editor+).",
@@ -964,6 +985,83 @@ func (s *Server) mcpMovePage(ctx context.Context, req *mcp.CallToolRequest, in m
 	}
 	out := getPageOut{Page: mcpPage{Page: p, URL: mcpPageURL(p)}}
 	return nil, out, nil
+}
+
+// ---- share_page / list_shares / revoke_share -----------------------------
+
+type sharePageIn struct {
+	PageID             int64   `json:"page_id" jsonschema:"page to mint a public link for"`
+	IncludeDescendants bool    `json:"include_descendants,omitempty" jsonschema:"share the whole subtree, not just this page"`
+	Password           *string `json:"password,omitempty" jsonschema:"gate the link behind a passphrase (omit for open access)"`
+	ExpiresAt          *string `json:"expires_at,omitempty" jsonschema:"auto-expire at this UTC 'YYYY-MM-DD HH:MM:SS' (omit for no expiry)"`
+}
+
+type sharePageOut struct {
+	Share shareLinkDTO `json:"share"`
+}
+
+func (s *Server) mcpSharePage(ctx context.Context, req *mcp.CallToolRequest, in sharePageIn) (*mcp.CallToolResult, sharePageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), sharePageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), sharePageOut{}, nil
+	}
+	dto, ae := s.createShareLinkCore(ctx, u, k, in.PageID, shareCreateRequest{
+		IncludeDescendants: in.IncludeDescendants,
+		Password:           in.Password,
+		ExpiresAt:          in.ExpiresAt,
+	})
+	if ae != nil {
+		return mcpErr(ae), sharePageOut{}, nil
+	}
+	return nil, sharePageOut{Share: dto}, nil
+}
+
+type listSharesIn struct {
+	PageID         int64 `json:"page_id" jsonschema:"page whose share links to list"`
+	IncludeRevoked bool  `json:"include_revoked,omitempty" jsonschema:"also include revoked links (default: active only)"`
+}
+
+type listSharesOut struct {
+	Shares []shareLinkDTO `json:"shares"`
+}
+
+// mcpListShares gates on write scope even though it mutates nothing: the
+// returned tokens are bearer secrets that grant the same public reach as
+// share_page, so a read-only key has no business reading them.
+func (s *Server) mcpListShares(ctx context.Context, req *mcp.CallToolRequest, in listSharesIn) (*mcp.CallToolResult, listSharesOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), listSharesOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), listSharesOut{}, nil
+	}
+	out, ae := s.listShareLinksCore(ctx, u, k, in.PageID, in.IncludeRevoked)
+	if ae != nil {
+		return mcpErr(ae), listSharesOut{}, nil
+	}
+	return nil, listSharesOut{Shares: out}, nil
+}
+
+type revokeShareIn struct {
+	ShareID int64 `json:"share_id" jsonschema:"id of the share link to revoke (from list_shares)"`
+}
+
+func (s *Server) mcpRevokeShare(ctx context.Context, req *mcp.CallToolRequest, in revokeShareIn) (*mcp.CallToolResult, okOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), okOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	if ae := s.revokeShareLinkCore(ctx, u, k, in.ShareID); ae != nil {
+		return mcpErr(ae), okOut{}, nil
+	}
+	return nil, okOut{OK: true}, nil
 }
 
 // ---- add_comment ---------------------------------------------------------

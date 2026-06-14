@@ -166,7 +166,7 @@ func TestShareLinks_Create_Success(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	sh := got.Share
-	if sh.ID == 0 || sh.Token == "" || len(sh.Token) != 43 {
+	if sh.ID == 0 || sh.Token == "" || len(sh.Token) != 11 {
 		t.Fatalf("token shape unexpected: %+v", sh)
 	}
 	if sh.PageID != env.page {

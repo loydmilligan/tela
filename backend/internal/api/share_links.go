@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/models"
 	"github.com/zcag/tela/backend/internal/settings"
 )
 
@@ -35,7 +36,7 @@ import (
 // gate on /share/{token} and the FE share-mode UI ship in later M15 slices.
 
 const (
-	shareTokenBytes   = 32                    // → 43-char base64.RawURLEncoding token
+	shareTokenBytes   = 8                     // → 11-char base64.RawURLEncoding token (64-bit)
 	shareSecretBytes  = 32                    // HMAC-SHA256 key length
 	shareTokenRetries = 3                     // INSERT retries on UNIQUE collision
 	shareRateLimit    = 5                     // password attempts per (token, IP)
@@ -136,8 +137,10 @@ func resolveShareSecret(ctx context.Context, st *settings.Store) []byte {
 	return b
 }
 
-// newShareToken returns a 43-char URL-safe random token. crypto/rand is the
-// only source of entropy; 32 bytes is overwhelmingly collision-resistant.
+// newShareToken returns an 11-char URL-safe random token. crypto/rand is the
+// only source of entropy; 8 bytes (64 bits) keeps the URL short while staying
+// far out of brute-force/enumeration range, and the caller retries on the rare
+// UNIQUE collision.
 func newShareToken() (string, error) {
 	buf := make([]byte, shareTokenBytes)
 	if _, err := rand.Read(buf); err != nil {
@@ -477,6 +480,151 @@ func parseFutureExpires(raw string) (string, error) {
 	return t.UTC().Format(tsLayout), nil
 }
 
+// shareEditGate resolves a page for the share manager and enforces the
+// subsystem's enumeration-resistant editor+ gate: a missing page OR a
+// non-member caller both collapse to 404 not_found (no existence oracle), a
+// space-pinned bearer key targeting another space → api_key_space_scope, and a
+// viewer → 403 viewer_no_write. Shared by the create + list cores (both
+// addressed by page id). Revoke runs its own gate (share-id addressed, so a
+// viewer also collapses to 404 — see revokeShareLinkCore).
+func (s *Server) shareEditGate(ctx context.Context, tx *sql.Tx, u *auth.User, k *auth.APIKey, pageID int64) (models.Page, *apiErr) {
+	page, err := selectPageByIDTx(ctx, tx, pageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Page{}, &apiErr{http.StatusNotFound, "not_found", "page not found"}
+	}
+	if err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
+	}
+	if ae := apiKeySpaceScopeErr(k, page.SpaceID); ae != nil {
+		return models.Page{}, ae
+	}
+	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Page{}, &apiErr{http.StatusNotFound, "not_found", "page not found"}
+	}
+	if err != nil {
+		return models.Page{}, &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
+	}
+	if !canEdit(role) {
+		return models.Page{}, &apiErr{http.StatusForbidden, "viewer_no_write", "editor or owner role required"}
+	}
+	return page, nil
+}
+
+// createShareLinkCore mints a share link for a page (editor+) and returns the
+// management DTO with the absolute share URL. Transport-agnostic core behind
+// POST /api/pages/{id}/shares and the MCP share_page tool.
+func (s *Server) createShareLinkCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, req shareCreateRequest) (shareLinkDTO, *apiErr) {
+	var expiresArg any = nil
+	// Empty string is treated as absent — keeps the FE's optional-input UX clean.
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+		normalised, err := parseFutureExpires(*req.ExpiresAt)
+		if err != nil {
+			return shareLinkDTO{}, &apiErr{http.StatusBadRequest, "bad_request", "expires_at must be a future YYYY-MM-DD HH:MM:SS"}
+		}
+		expiresArg = normalised
+	}
+
+	var passwordHash any = nil
+	if req.Password != nil && *req.Password != "" {
+		h, err := auth.HashPassword(*req.Password)
+		if err != nil {
+			return shareLinkDTO{}, &apiErr{http.StatusInternalServerError, "internal", "hash password failed"}
+		}
+		passwordHash = h
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return shareLinkDTO{}, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
+	}
+	defer tx.Rollback()
+
+	page, ae := s.shareEditGate(ctx, tx, u, k, pageID)
+	if ae != nil {
+		return shareLinkDTO{}, ae
+	}
+
+	includeFlag := 0
+	if req.IncludeDescendants {
+		includeFlag = 1
+	}
+	var (
+		insertedID int64
+		token      string
+	)
+	for attempt := 0; attempt < shareTokenRetries; attempt++ {
+		token, err = newShareToken()
+		if err != nil {
+			return shareLinkDTO{}, &apiErr{http.StatusInternalServerError, "internal", "generate token failed"}
+		}
+		ierr := tx.QueryRowContext(ctx, `
+			INSERT INTO share_links
+			  (token, page_id, include_descendants, password_hash,
+			   created_by, created_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, tela_now(), $6) RETURNING id`,
+			token, pageID, includeFlag, passwordHash, u.ID, expiresArg).Scan(&insertedID)
+		if ierr == nil {
+			break
+		}
+		if !isUniqueConstraintErr(ierr) {
+			return shareLinkDTO{}, &apiErr{http.StatusInternalServerError, "internal", "insert share failed"}
+		}
+		if attempt == shareTokenRetries-1 {
+			return shareLinkDTO{}, &apiErr{http.StatusInternalServerError, "internal", "could not allocate unique share token"}
+		}
+	}
+
+	created, err := selectShareLinkByIDTx(ctx, tx, insertedID)
+	if err != nil {
+		return shareLinkDTO{}, &apiErr{http.StatusInternalServerError, "internal", "fetch created share failed"}
+	}
+	if err := tx.Commit(); err != nil {
+		return shareLinkDTO{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
+	}
+	return shareLinkToDTO(&created, page.Title, s.shareOrigin(ctx, page.SpaceID)), nil
+}
+
+// listShareLinksCore returns a page's share links (editor+). Active links only
+// unless includeRevoked. Transport-agnostic core behind GET /api/pages/{id}/shares
+// and the MCP list_shares tool.
+func (s *Server) listShareLinksCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, includeRevoked bool) ([]shareLinkDTO, *apiErr) {
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
+	}
+	defer tx.Rollback()
+
+	page, ae := s.shareEditGate(ctx, tx, u, k, pageID)
+	if ae != nil {
+		return nil, ae
+	}
+
+	q := shareLinkSelectColumns + ` WHERE page_id = $1 AND revoked_at IS NULL ORDER BY id DESC`
+	if includeRevoked {
+		q = shareLinkSelectColumns + ` WHERE page_id = $1 ORDER BY id DESC`
+	}
+	rows, err := tx.QueryContext(ctx, q, pageID)
+	if err != nil {
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "list shares failed"}
+	}
+	defer rows.Close()
+
+	origin := s.shareOrigin(ctx, page.SpaceID)
+	out := []shareLinkDTO{}
+	for rows.Next() {
+		sh, err := scanShareLink(rows)
+		if err != nil {
+			return nil, &apiErr{http.StatusInternalServerError, "internal", "scan share row failed"}
+		}
+		out = append(out, shareLinkToDTO(&sh, page.Title, origin))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "iterate shares failed"}
+	}
+	return out, nil
+}
+
 // CreateShareLink — POST /api/pages/{id}/shares. Editor+ on the page's space.
 // Returns the canonical management envelope, including the absolute share URL.
 func (s *Server) CreateShareLink(w http.ResponseWriter, r *http.Request) {
@@ -493,109 +641,13 @@ func (s *Server) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "could not parse request body")
 		return
 	}
-
-	var expiresArg any = nil
-	if req.ExpiresAt != nil {
-		if *req.ExpiresAt == "" {
-			// treat empty string as absent — keeps the FE's optional-input UX clean.
-		} else {
-			normalised, err := parseFutureExpires(*req.ExpiresAt)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, "bad_request", "expires_at must be a future YYYY-MM-DD HH:MM:SS")
-				return
-			}
-			expiresArg = normalised
-		}
-	}
-
-	var passwordHash any = nil
-	if req.Password != nil && *req.Password != "" {
-		h, err := auth.HashPassword(*req.Password)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "hash password failed")
-			return
-		}
-		passwordHash = h
-	}
-
-	ctx := r.Context()
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
+	k, _ := auth.APIKeyFromContext(r.Context())
+	dto, ae := s.createShareLinkCore(r.Context(), u, k, pageID, req)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
-	defer tx.Rollback()
-
-	page, err := selectPageByIDTx(ctx, tx, pageID)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "page not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
-	}
-	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
-		return
-	}
-	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
-	if errors.Is(err, sql.ErrNoRows) {
-		// Collapse non-member to 404 so non-members can't enumerate pages.
-		writeError(w, http.StatusNotFound, "not_found", "page not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
-	}
-	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "viewer_no_write", "editor or owner role required")
-		return
-	}
-
-	var (
-		insertedID int64
-		token      string
-	)
-	for attempt := 0; attempt < shareTokenRetries; attempt++ {
-		token, err = newShareToken()
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "generate token failed")
-			return
-		}
-		includeFlag := 0
-		if req.IncludeDescendants {
-			includeFlag = 1
-		}
-		ierr := tx.QueryRowContext(ctx, `
-			INSERT INTO share_links
-			  (token, page_id, include_descendants, password_hash,
-			   created_by, created_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5, tela_now(), $6) RETURNING id`,
-			token, pageID, includeFlag, passwordHash, u.ID, expiresArg).Scan(&insertedID)
-		if ierr == nil {
-			break
-		}
-		if !isUniqueConstraintErr(ierr) {
-			writeError(w, http.StatusInternalServerError, "internal", "insert share failed")
-			return
-		}
-		if attempt == shareTokenRetries-1 {
-			writeError(w, http.StatusInternalServerError, "internal", "could not allocate unique share token")
-			return
-		}
-	}
-
-	created, err := selectShareLinkByIDTx(ctx, tx, insertedID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "fetch created share failed")
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"share": shareLinkToDTO(&created, page.Title, s.shareOrigin(ctx, page.SpaceID))})
+	writeJSON(w, http.StatusCreated, map[string]any{"share": dto})
 }
 
 // ListShareLinks — GET /api/pages/{id}/shares. Editor+ on the page's space.
@@ -610,62 +662,11 @@ func (s *Server) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx := r.Context()
-	page, err := selectPageByID(ctx, s.DB, pageID)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "page not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup page failed")
-		return
-	}
-	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
-		return
-	}
-	role, err := spaceRole(ctx, s.DB, u.ID, page.SpaceID)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "page not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
-	}
-	if !canEdit(role) {
-		writeError(w, http.StatusForbidden, "viewer_no_write", "editor or owner role required")
-		return
-	}
-
+	k, _ := auth.APIKeyFromContext(r.Context())
 	includeRevoked := r.URL.Query().Get("include_revoked") == "true"
-	var rows *sql.Rows
-	if includeRevoked {
-		rows, err = s.DB.QueryContext(ctx, shareLinkSelectColumns+`
-			 WHERE page_id = $1
-			 ORDER BY id DESC`, pageID)
-	} else {
-		rows, err = s.DB.QueryContext(ctx, shareLinkSelectColumns+`
-			 WHERE page_id = $1 AND revoked_at IS NULL
-			 ORDER BY id DESC`, pageID)
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "list shares failed")
-		return
-	}
-	defer rows.Close()
-
-	origin := s.shareOrigin(r.Context(), page.SpaceID)
-	out := []shareLinkDTO{}
-	for rows.Next() {
-		sh, err := scanShareLink(rows)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "scan share row failed")
-			return
-		}
-		out = append(out, shareLinkToDTO(&sh, page.Title, origin))
-	}
-	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "iterate shares failed")
+	out, ae := s.listShareLinksCore(r.Context(), u, k, pageID, includeRevoked)
+	if ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"shares": out})
@@ -867,63 +868,61 @@ func (s *Server) DeleteShareLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx := r.Context()
+	k, _ := auth.APIKeyFromContext(r.Context())
+	if ae := s.revokeShareLinkCore(r.Context(), u, k, shareID); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// revokeShareLinkCore soft-deletes a share by stamping revoked_at (editor+).
+// Idempotent: revoking an already-revoked share is a no-op. The gate is
+// share-id addressed, so missing share / non-member / viewer all collapse to
+// 404 not_found — neither a non-editor nor an outsider can probe share state.
+// Transport-agnostic core behind DELETE /api/shares/{share_id} and the MCP
+// revoke_share tool.
+func (s *Server) revokeShareLinkCore(ctx context.Context, u *auth.User, k *auth.APIKey, shareID int64) *apiErr {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
 	share, err := selectShareLinkByIDTx(ctx, tx, shareID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "share not found")
-		return
+		return &apiErr{http.StatusNotFound, "not_found", "share not found"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup share failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup share failed"}
 	}
 	page, err := selectPageByIDTx(ctx, tx, share.PageID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup parent page failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup parent page failed"}
 	}
-	if !enforceAPIKeySpaceScope(w, r, page.SpaceID) {
-		return
+	if ae := apiKeySpaceScopeErr(k, page.SpaceID); ae != nil {
+		return ae
 	}
 	role, err := spaceRoleTx(ctx, tx, u.ID, page.SpaceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "share not found")
-		return
+		return &apiErr{http.StatusNotFound, "not_found", "share not found"}
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "lookup membership failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup membership failed"}
 	}
 	if !canEdit(role) {
-		writeError(w, http.StatusNotFound, "not_found", "share not found")
-		return
+		return &apiErr{http.StatusNotFound, "not_found", "share not found"}
 	}
-	if share.RevokedAt.Valid {
-		// Idempotent — already revoked, second DELETE is a no-op 204.
-		if err := tx.Commit(); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-			return
+	if !share.RevokedAt.Valid {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE share_links SET revoked_at = tela_now() WHERE id = $1`, shareID); err != nil {
+			return &apiErr{http.StatusInternalServerError, "internal", "revoke share failed"}
 		}
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE share_links SET revoked_at = tela_now() WHERE id = $1`, shareID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "revoke share failed")
-		return
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
-		return
+		return &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 // publicShareLookup resolves the token from the path, returning the share or

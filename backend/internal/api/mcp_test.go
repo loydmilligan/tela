@@ -512,6 +512,71 @@ func TestMCP_WriteToolReadKeyDenied(t *testing.T) {
 	}
 }
 
+// TestMCP_ShareTools exercises the share-link lifecycle over MCP: share_page
+// mints a short-token public URL, list_shares sees it, revoke_share disables it
+// (idempotently), and a read-scope key is refused at all three.
+func TestMCP_ShareTools(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	space := seedSpace(t, d, "Docs", "docs", alice)
+	page := seedPage(t, d, space, "Public Note")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeWrite))
+
+	// share_page → public URL with a short (11-char) token.
+	var sp sharePageOut
+	mcpCallJSON(t, ctx, sess, "share_page", map[string]any{
+		"page_id": page, "include_descendants": true,
+	}, &sp)
+	if sp.Share.ID == 0 || len(sp.Share.Token) != 11 || sp.Share.URL == "" || !sp.Share.IncludeDescendants {
+		t.Fatalf("share_page: %+v", sp.Share)
+	}
+
+	// list_shares sees the active link.
+	var ls listSharesOut
+	mcpCallJSON(t, ctx, sess, "list_shares", map[string]any{"page_id": page}, &ls)
+	if len(ls.Shares) != 1 || ls.Shares[0].ID != sp.Share.ID {
+		t.Fatalf("list_shares: %+v", ls.Shares)
+	}
+
+	// revoke_share disables it; list_shares (active only) is now empty.
+	var rv okOut
+	mcpCallJSON(t, ctx, sess, "revoke_share", map[string]any{"share_id": sp.Share.ID}, &rv)
+	if !rv.OK {
+		t.Fatalf("revoke_share: %+v", rv)
+	}
+	mcpCallJSON(t, ctx, sess, "list_shares", map[string]any{"page_id": page}, &ls)
+	if len(ls.Shares) != 0 {
+		t.Fatalf("expected no active shares after revoke: %+v", ls.Shares)
+	}
+	// include_revoked surfaces the revoked row.
+	mcpCallJSON(t, ctx, sess, "list_shares", map[string]any{"page_id": page, "include_revoked": true}, &ls)
+	if len(ls.Shares) != 1 || ls.Shares[0].RevokedAt == nil {
+		t.Fatalf("include_revoked: %+v", ls.Shares)
+	}
+	// revoke again → idempotent no-op.
+	mcpCallJSON(t, ctx, sess, "revoke_share", map[string]any{"share_id": sp.Share.ID}, &rv)
+	if !rv.OK {
+		t.Fatalf("idempotent revoke_share: %+v", rv)
+	}
+
+	// A read-scope key is refused at every share tool (tokens are secrets).
+	rsess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeRead))
+	for _, name := range []string{"share_page", "list_shares", "revoke_share"} {
+		res, err := rsess.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any{
+			"page_id": page, "share_id": sp.Share.ID,
+		}})
+		if err != nil {
+			t.Fatalf("call %s: %v", name, err)
+		}
+		if !res.IsError {
+			t.Fatalf("expected read key to be denied at %s", name)
+		}
+	}
+}
+
 // TestMCP_Resources exercises Phase 2: the tela://page/{id} resource template
 // (list + read, with cross-space denial) and resource links in tool results.
 func TestMCP_Resources(t *testing.T) {
