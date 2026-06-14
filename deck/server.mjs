@@ -50,8 +50,8 @@ const PORT = Number(process.env.PORT || 3344)
 const MAX_CONCURRENCY = Number(process.env.DECK_CONCURRENCY || 2)
 
 // Bump when the theme or render pipeline changes so cached decks rerender.
-// r3: visual backbone moved to slidev-theme-tahta (variants), was local placeholders.
-const RENDER_VERSION = 'r3'
+// r4: inject mdc:true (headmatter/cover slide rendered blank without it).
+const RENDER_VERSION = 'r4'
 
 // The look lives entirely in the theme package — tela owns no layouts/styles.
 // Variant catalog + the themeConfig keys come from the theme's own manifests.
