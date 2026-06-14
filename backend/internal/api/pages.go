@@ -494,6 +494,11 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	s.rag.QueueReindex(id)
 	s.summarize.Queue(id)
 	s.agreement.Queue(id)
+	// A new deck (created via UI/MCP/sync): pre-warm its Present build now so the
+	// first present is instant rather than paying the cold slidev build.
+	if isDeckBag(props) {
+		s.deckWarm.schedule(id)
+	}
 	// Notify anyone @-mentioned in the new page's body (post-commit, best-effort).
 	s.notifyPageMentions(ctx, u, id, req.SpaceID, page.Title, page.Body)
 	// The author follows their new page, so they hear about others' edits to it.
@@ -742,6 +747,12 @@ func (s *Server) afterPageWrite(ctx context.Context, existing, p models.Page, bo
 		if err := s.rooms.resetPage(ctx, s.DB, p.ID); err != nil {
 			slog.Error("page collab overlay reset failed", "page_id", p.ID, "err", err)
 		}
+	}
+	// A deck whose source changed: pre-warm its Present build so the next present
+	// is instant. afterPageWrite is the universal save hook — every write path
+	// funnels through it (UI, MCP, WebDAV/rsync, sync) — so all of them warm.
+	if p.Body != existing.Body && isDeckBag(p.Props) {
+		s.deckWarm.schedule(p.ID)
 	}
 }
 

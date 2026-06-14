@@ -9,7 +9,7 @@
 // images in its own simple full-screen viewer. That keeps this service tiny.
 //
 //   GET  /themes                      -> [{ name, label, scheme, description }]  (tahta variants)
-//   GET  /authoring                   -> { rules, themeConfig, layouts, components, variants }  (theme contract, for the MCP deck guide)
+//   GET  /authoring                   -> { guide, variants, themeVersion }  (tahta's AGENTS.md verbatim, for the MCP deck guide)
 //   POST /lint                        body: markdown -> { ok, errors, warnings, issues:[{slide,level,field?,message}] }  (tahta validator)
 //   POST /spa?base&file&variant…      body: markdown -> one file of the built interactive SPA (build-if-needed, cached)
 //   POST /parse                       body: markdown -> { count, slides:[{no,title,layout,note}], features, errors }
@@ -22,8 +22,9 @@
 // @slidev/parser in-process — no Chromium — and powers /parse, theme injection,
 // and a fast preflight on /render + /export. Only pixels go through the CLI.
 //
-// Hardening: cache key folds in RENDER_VERSION + visual config (so a variant/
-// accent/lang change busts stale renders); renders are bounded by a small concurrency gate + a
+// Hardening: cache key folds in RENDER_VERSION + theme version + visual config +
+// the markdown (so a pipeline/theme/variant/source change busts stale renders —
+// see CACHE_EPOCH); renders are bounded by a small concurrency gate + a
 // per-render timeout (Chromium is heavy). Cached by content hash. Runs as a
 // compose sidecar (the gotenberg pattern); tela proxies it. The container is
 // treated as untrusted-code execution (Slidev compiles deck markdown) — isolate
@@ -32,7 +33,7 @@
 import http from 'node:http'
 import { createHash } from 'node:crypto'
 import { writeFile, mkdir, readdir } from 'node:fs/promises'
-import { existsSync, createReadStream, statSync } from 'node:fs'
+import { existsSync, createReadStream, statSync, readFileSync } from 'node:fs'
 import { join, extname, dirname, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -60,22 +61,26 @@ const RENDER_VERSION = 'r7'
 // Variant catalog + the themeConfig keys come from the theme's own manifests.
 const THEME_PKG = 'slidev-theme-tahta'
 const DEFAULT_VARIANT = 'editorial'
+const THEME_DIR = dirname(require.resolve(`${THEME_PKG}/package.json`))
+const THEME_VERSION = require(`${THEME_PKG}/package.json`).version
 const VARIANT_CATALOG = require(`${THEME_PKG}/variants.json`).variants
 const VARIANTS = new Set(VARIANT_CATALOG.map((v) => v.id))
 
-// The full authoring contract straight from the theme package's manifests
-// (layouts + fields + examples + components + rules + variants) — served at
-// /authoring so tela's backend can render the agent deck-authoring guide. tela
-// defines none of this; the theme owns it.
+// The agent authoring contract is OWNED BY THE THEME: tahta ships AGENTS.md
+// (auto-generated from its own layouts.json/variants.json) — the full, current
+// reference (rules, variants, universal fields, every layout + component with
+// fields/props/examples). We serve it VERBATIM so the guide can't drift as tahta
+// grows: a new layout/component/field appears the moment tahta is bumped, with
+// zero tela changes. We pass through only `guide` (that markdown) + `variants`
+// (structured — tela validates the `variant` prop + drives the picker against it).
 const AUTHORING = (() => {
-  const m = require(`${THEME_PKG}/layouts.json`)
-  return {
-    rules: m.rules || [],
-    themeConfig: m.themeConfig || {},
-    layouts: m.layouts || [],
-    components: m.components || [],
-    variants: VARIANT_CATALOG,
+  let guide = ''
+  try {
+    guide = readFileSync(join(THEME_DIR, 'AGENTS.md'), 'utf8')
+  } catch {
+    guide = '' // older theme without AGENTS.md → backend uses its fallback
   }
+  return { guide, variants: VARIANT_CATALOG, themeVersion: THEME_VERSION }
 })()
 
 const SPA = join(CACHE, 'spa') // built interactive SPAs, one dir per buildId
@@ -118,9 +123,15 @@ const SPA_MIME = {
 }
 
 const hash = (s) => createHash('sha256').update(s).digest('hex').slice(0, 16)
+// Every cached render/build is keyed on CACHE_EPOCH so it auto-invalidates when
+// either the pipeline (RENDER_VERSION) OR the installed theme (THEME_VERSION)
+// changes — a tahta bump rebuilds everything with no manual RENDER_VERSION bump.
+// Combined with the markdown being in the key, ANY change to a deck's source
+// (edit/MCP/sync/automation) or its look produces a new id → never serves stale.
+const CACHE_EPOCH = `${RENDER_VERSION}|${THEME_VERSION}`
 // Cache key folds in the full visual config so a variant/accent/lang change rerenders.
 const cfgKey = (c) => `${pickVariant(c.variant)}|${c.accent || ''}|${c.lang || ''}`
-const deckId = (md, cfg) => hash(`${RENDER_VERSION}|${cfgKey(cfg)}|${md}`)
+const deckId = (md, cfg) => hash(`${CACHE_EPOCH}|${cfgKey(cfg)}|${md}`)
 const deckDir = (id) => join(CACHE, 'd', id)
 const pickVariant = (v) => (v && VARIANTS.has(v) ? v : DEFAULT_VARIANT)
 
@@ -302,7 +313,7 @@ function serveStatic(res, id, name) {
 // backend serves it under (so asset URLs resolve); it's folded into the cache key
 // because it's baked into the build output. tela gates access at its own layer.
 
-const spaBuildId = (md, cfg, base) => hash(`${RENDER_VERSION}|${cfgKey(cfg)}|${base}|${md}`)
+const spaBuildId = (md, cfg, base) => hash(`${CACHE_EPOCH}|${cfgKey(cfg)}|${base}|${md}`)
 const spaDir = (id) => join(SPA, id)
 const inflightBuilds = new Map() // buildId -> Promise (dedupe the browser's parallel asset fetches)
 
@@ -368,7 +379,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/themes') {
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(listVariants()))
     } else if (req.method === 'GET' && path === '/authoring') {
-      // The theme's full layout/component/variant contract, for tela's MCP guide.
+      // tahta's own agent guide (AGENTS.md, verbatim) + the variant catalog, for
+      // tela's MCP deck guide. Theme-owned so it never drifts as tahta grows.
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' }).end(JSON.stringify(AUTHORING))
     } else if (req.method === 'POST' && path === '/lint') {
       // tahta's own structural validator (it owns the layout/field semantics).

@@ -223,6 +223,21 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
   // slides (via the deck sidecar) instead of the prose reader.
   const isDeck = page.data.props?.deck === true
 
+  // Pre-warm the deck's Present build when the deck page opens, so clicking
+  // Present opens instantly instead of waiting on the cold ~5s slidev build.
+  // Fire-and-forget + same-origin (cookie carries RBAC); the response is
+  // discarded — we only want the server-side build cached. Covers the "view then
+  // present" path and re-warms decks after a deploy invalidates the build cache
+  // (the server-side warm only fires on writes). Correctness is independent:
+  // builds are content-keyed, so warming an unchanged deck is a cheap cache hit.
+  const deckId = isDeck ? page.data.id : null
+  useEffect(() => {
+    if (deckId == null) return
+    void fetch(`/api/pages/${deckId}/deck/spa/`, { credentials: 'same-origin' }).catch(
+      () => {},
+    )
+  }, [deckId])
+
   // Confluence-style: read view is the default; the editor mounts only on an
   // explicit Edit (?edit=1) or when restoring a draft. This is what keeps
   // reading instant — no editor chunk, no Yjs/collab, no /yjs round-trip — and

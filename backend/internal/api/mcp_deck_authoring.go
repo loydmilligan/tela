@@ -13,34 +13,19 @@ import (
 )
 
 // Agent-facing DECK authoring guide. A tela deck's look comes entirely from the
-// slidev-theme-tahta design system, whose machine-readable contract (layouts +
-// fields + examples + components + rules + variants) is served by the deck
-// sidecar at GET /authoring. We render that into a tela-framed guide so an agent
-// assembles rich decks (stats/chart/compare/timeline/…) from tahta's layouts
-// instead of flat bullets.
+// slidev-theme-tahta design system. tahta ships its OWN agent contract — AGENTS.md,
+// auto-generated from its layouts.json/variants.json — covering every rule, variant,
+// universal field, layout, and component (with fields/props/examples). The deck
+// sidecar serves it verbatim at GET /authoring as `guide`; we wrap it in a short
+// tela preamble (how decks work HERE) and serve the whole thing.
 //
-// Sourced at RUNTIME from the sidecar (the only place the theme is installed), so
-// the guide always matches the deployed theme version — no vendoring or codegen.
+// This is deliberately a pass-through: the theme is the single source of truth, so
+// the guide CANNOT drift as tahta gets richer — a new layout/component/field shows
+// up the moment tahta is bumped, with zero changes here. Sourced at RUNTIME from
+// the sidecar (the only place the theme is installed), so it always matches the
+// deployed theme version — no vendoring, no codegen, no typed field list to update.
 
 const deckAuthoringGuideURI = "tela://deck-authoring-guide"
-
-type deckField struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Required bool   `json:"required"`
-}
-
-type deckLayoutSpec struct {
-	ID      string      `json:"id"`
-	UseFor  string      `json:"useFor"`
-	Fields  []deckField `json:"fields"`
-	Example string      `json:"example"`
-}
-
-type deckComponentSpec struct {
-	Name   string `json:"name"`
-	UseFor string `json:"useFor"`
-}
 
 type deckVariantSpec struct {
 	ID          string `json:"id"`
@@ -50,10 +35,8 @@ type deckVariantSpec struct {
 }
 
 type deckManifestDoc struct {
-	Rules      []string            `json:"rules"`
-	Layouts    []deckLayoutSpec    `json:"layouts"`
-	Components []deckComponentSpec `json:"components"`
-	Variants   []deckVariantSpec   `json:"variants"`
+	Guide    string            `json:"guide"`    // tahta's AGENTS.md, verbatim
+	Variants []deckVariantSpec `json:"variants"` // structured (validation + picker)
 }
 
 var (
@@ -61,8 +44,9 @@ var (
 	deckManifestCache *deckManifestDoc
 )
 
-// deckManifest fetches tahta's contract from the sidecar /authoring. Cached for
-// the process once it succeeds — it only changes on redeploy, which restarts us.
+// deckAuthoringManifest fetches tahta's contract from the sidecar /authoring.
+// Cached for the process once it succeeds — it only changes on redeploy, which
+// restarts us.
 func deckAuthoringManifest(ctx context.Context) (*deckManifestDoc, error) {
 	deckManifestMu.Lock()
 	defer deckManifestMu.Unlock()
@@ -102,67 +86,37 @@ const deckGuideFallback = "# Authoring tela slide decks\n\n" +
 	"Do not put `theme:`/`themeConfig:` in the markdown — tela injects them. " +
 	"_(The full layout/variant reference is temporarily unavailable — the deck service is unreachable.)_\n"
 
-// deckAuthoringGuideMarkdown renders tahta's contract as a tela-framed guide.
-func deckAuthoringGuideMarkdown(m *deckManifestDoc) string {
-	fence := "````"
+// telaDeckPreamble frames tahta's theme-owned guide for tela: how to MAKE a deck
+// here, and the one place tela differs from tahta's stock contract — you set the
+// look via page PROPS (deck/variant), never theme:/themeConfig: in the markdown.
+// It supersedes the "Deck header" section of the appended contract.
+func telaDeckPreamble(m *deckManifestDoc) string {
 	var b strings.Builder
 	b.WriteString("# Authoring tela slide decks\n\n")
-	b.WriteString("Use this whenever someone asks for a **presentation, slides, a slide deck, or a talk** (any wording). A tela **deck** is a page whose body is **Slidev markdown styled by the tahta design system**. You don't write CSS, grids, or layout HTML — pick a **layout** per slide and fill its fields; tela renders it to slides.\n")
-
-	b.WriteString("\n## How decks work in tela\n")
-	b.WriteString("- Make a page a deck by setting the page property `deck: true` (e.g. `create_page` with `props: {\"deck\": true}`).\n")
-	b.WriteString("- Set the visual style with the page property `variant` — **not** a theme in the markdown. Available variants:\n")
+	b.WriteString("Use this whenever someone asks for a **presentation, slides, a slide deck, or a talk** (any wording) — not a prose doc. A tela **deck** is a page whose body is **Slidev markdown styled by the tahta design system**. You don't write CSS, grids, or layout HTML — pick a **layout** per slide and fill its fields; tela renders it to slides.\n")
+	b.WriteString("\n## How decks work in tela (read first — overrides the \"Deck header\" section below)\n")
+	b.WriteString("- Make a page a deck: set the page property `deck: true` (e.g. `create_page` with `props: {\"deck\": true}`).\n")
+	b.WriteString("- Set the visual style with the page property `variant` — **not** in the markdown. Available variants:\n")
 	for _, v := range m.Variants {
 		b.WriteString(fmt.Sprintf("  - `%s` — %s _(%s)_\n", v.ID, v.Description, v.Scheme))
 	}
-	b.WriteString("- **Do NOT** put `theme:` or `themeConfig:` in the markdown — tela injects them from the page props.\n")
+	b.WriteString("  Optionally override the brand color with the `accent` prop and set `lang` (e.g. `tr`) for locale casing.\n")
+	b.WriteString("- **Do NOT** put `theme:`, `themeConfig:`, or a deck-header YAML block in the markdown — tela injects all of it from the page props. Ignore the \"## Deck header\" YAML in the contract below; just write the slides.\n")
 	b.WriteString("- Separate slides with `---` on its own line. Each slide sets `layout:` in its frontmatter and fills that layout's fields.\n")
-
-	if len(m.Rules) > 0 {
-		b.WriteString("\n## Rules\n")
-		for _, r := range m.Rules {
-			b.WriteString("- " + r + "\n")
-		}
-	}
-
-	b.WriteString("\n## Layouts — pick the one that matches the content shape\n")
-	for _, l := range m.Layouts {
-		b.WriteString("\n### `" + l.ID + "`")
-		if l.UseFor != "" {
-			b.WriteString(" — " + l.UseFor)
-		}
-		b.WriteString("\n")
-		if len(l.Fields) > 0 {
-			var fs []string
-			for _, f := range l.Fields {
-				name := f.Name
-				if f.Required {
-					name += "*"
-				}
-				fs = append(fs, name)
-			}
-			b.WriteString("Fields: " + strings.Join(fs, ", ") + "  _(\\* = required)_\n")
-		}
-		if l.Example != "" {
-			b.WriteString(fence + "yaml\n" + l.Example + "\n" + fence + "\n")
-		}
-	}
-
-	if len(m.Components) > 0 {
-		b.WriteString("\n## Components — use inline in `default`/`statement` bodies\n")
-		for _, c := range m.Components {
-			b.WriteString("- `<" + c.Name + ">`")
-			if c.UseFor != "" {
-				b.WriteString(" — " + c.UseFor)
-			}
-			b.WriteString("\n")
-		}
-	}
+	b.WriteString("\nEverything below is tahta's own authoring contract (the full, current layout/component/field reference) — apply it verbatim, except the \"Deck header\" part as noted above.\n\n---\n\n")
 	return b.String()
 }
 
+// deckAuthoringGuideMarkdown = tela preamble + tahta's AGENTS.md verbatim.
+func deckAuthoringGuideMarkdown(m *deckManifestDoc) string {
+	if strings.TrimSpace(m.Guide) == "" {
+		return deckGuideFallback
+	}
+	return telaDeckPreamble(m) + m.Guide
+}
+
 // mcpReadDeckAuthoringGuide serves tela://deck-authoring-guide. Fetches tahta's
-// contract from the sidecar and renders it; falls back to a static note if the
+// contract from the sidecar and frames it; falls back to a static note if the
 // deck service is unreachable.
 func (s *Server) mcpReadDeckAuthoringGuide(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	text := deckGuideFallback

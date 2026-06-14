@@ -33,7 +33,7 @@ the parser-based preflight on `/render` + `/export`.
 
 ```
 GET  /themes                      -> [{ name, label, scheme, description }]  (tahta variants)
-GET  /authoring                   -> { rules, themeConfig, layouts, components, variants }  (MCP deck guide)
+GET  /authoring                   -> { guide, variants, themeVersion }  (tahta's AGENTS.md verbatim — MCP deck guide)
 POST /parse                       body: markdown -> { count, slides:[{no,title,layout,note}], features, errors }
 POST /lint                        body: markdown -> { ok, errors, warnings, issues[] }  (tahta validator)
 POST /spa?base&file&variant…      body: markdown -> one file of the built interactive SPA (build-if-needed, cached, in-flight-locked)

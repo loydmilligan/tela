@@ -96,6 +96,11 @@ type Server struct {
 	// held here; they're built per-request from the org_sso row.
 	sso *ssoRegistry
 
+	// deckWarm pre-builds a deck's interactive SPA after its source changes so the
+	// next "Present" opens instantly. Never nil — built in New(). Best-effort and
+	// correctness-independent (renders are content-keyed); see deck_warm.go.
+	deckWarm *deckWarmer
+
 	// seedWelcome controls whether POST /api/spaces seeds a starter "Welcome"
 	// page into a freshly created space (so a new team doesn't land in an empty
 	// void). On by default; the test package disables it via
@@ -142,6 +147,8 @@ func New(db *sql.DB) *Server {
 	// Agreement shares llm + rag (needs both: a model to judge, embeddings to
 	// find neighbours). Page writes call s.agreement.Queue alongside summarize.
 	s.agreement = agreement.NewService(db, s.llm, s.rag)
+	// Pre-warms a deck's Present build after any source change (all write paths).
+	s.deckWarm = newDeckWarmer(s)
 	// Sweep stale share-rate-limit buckets every shareRateWindow so the
 	// limiter map cannot grow unbounded under adversarial load. Tied to
 	// context.Background() — the goroutine outlives non-graceful tests, which
