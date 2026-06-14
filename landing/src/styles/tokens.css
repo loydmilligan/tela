@@ -87,6 +87,7 @@
   /* ---- COMPONENT (role overrides; reference semantics) ---------------- */
   --nav-bg:        oklch(0.160 0.018 var(--brand-hue) / 0.66);  /* glassy header */
   --nav-border:    var(--border);
+  --scrim:         oklch(0 0 0 / 0.66);  /* modal backdrop */
   --pill-bg:       var(--brand-wash);
   --pill-fg:       var(--brand-strong);
   --pill-border:   oklch(0.560 0.170 var(--brand-hue) / 0.40);
@@ -174,6 +175,7 @@
 
   --nav-bg:    oklch(0.990 0.006 var(--brand-hue) / 0.70);
   --pill-border: oklch(0.510 0.150 var(--brand-hue) / 0.30);
+  --scrim:     oklch(0.255 0.030 var(--brand-hue) / 0.45);  /* modal backdrop */
 
   --shadow-card:
     0 1px 2px oklch(0.255 0.030 var(--brand-hue) / 0.05),
@@ -215,6 +217,7 @@
     --weave-ground: oklch(0.940 0.010 var(--brand-hue));
     --nav-bg:    oklch(0.990 0.006 var(--brand-hue) / 0.70);
     --pill-border: oklch(0.510 0.150 var(--brand-hue) / 0.30);
+    --scrim:     oklch(0.255 0.030 var(--brand-hue) / 0.45);
     --shadow-card:
       0 1px 2px oklch(0.255 0.030 var(--brand-hue) / 0.05),
       0 8px 24px oklch(0.255 0.030 var(--brand-hue) / 0.08);

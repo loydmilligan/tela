@@ -13,6 +13,12 @@ const includes = [
   'Plain markdown you own — export anytime',
 ];
 
+// action drives the CTA wiring (no self-serve billing yet):
+//  'app'     → straight to the hosted instance (free signup)
+//  'trial'   → opens the early-access dialog (start free now, upgrade by email)
+//  'contact' → mailto for sales / enterprise
+const CONTACT_EMAIL = 'tela@cagdas.io';
+
 const personal = [
   {
     name: 'Free',
@@ -22,6 +28,7 @@ const personal = [
     specs: ['3 spaces', '100 pages / space', '100 MB storage', '50 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io',
+    action: 'app',
     featured: false,
   },
   {
@@ -32,6 +39,7 @@ const personal = [
     specs: ['25 spaces', '1,000 pages / space', '5 GB storage', '1,000 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io',
+    action: 'trial',
     featured: false,
   },
 ];
@@ -45,6 +53,7 @@ const org = [
     specs: ['10 spaces', '500 pages / space', '1 GB storage', '5 members', '50 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io',
+    action: 'app',
     featured: false,
   },
   {
@@ -55,6 +64,7 @@ const org = [
     specs: ['100 spaces', 'Unlimited pages', '50 GB storage', '50 members', '2,000 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io',
+    action: 'trial',
     featured: true,
   },
   {
@@ -64,7 +74,8 @@ const org = [
     blurb: 'SSO, audit, and scale for a big team.',
     specs: ['Unlimited spaces', 'Unlimited pages', 'Unlimited storage', 'Unlimited members', 'Unlimited AI'],
     cta: 'Get in touch',
-    href: 'https://tela.cagdas.io',
+    href: `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('tela Enterprise')}`,
+    action: 'contact',
     featured: false,
   },
 ];
@@ -98,7 +109,17 @@ const org = [
           <ul class="price-specs">
             {p.specs.map((s) => <li>{s}</li>)}
           </ul>
-          <a href={p.href} class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'} target="_blank" rel="noopener">{p.cta}</a>
+          {p.action === 'contact' ? (
+            <a href={p.href} class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'}>{p.cta}</a>
+          ) : (
+            <a
+              href={p.href}
+              class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'}
+              target="_blank"
+              rel="noopener"
+              data-plan-cta={p.action === 'trial' ? p.name : undefined}
+            >{p.cta}</a>
+          )}
         </article>
       ))}
     </div>
@@ -118,7 +139,17 @@ const org = [
           <ul class="price-specs">
             {p.specs.map((s) => <li>{s}</li>)}
           </ul>
-          <a href={p.href} class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'} target="_blank" rel="noopener">{p.cta}</a>
+          {p.action === 'contact' ? (
+            <a href={p.href} class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'}>{p.cta}</a>
+          ) : (
+            <a
+              href={p.href}
+              class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'}
+              target="_blank"
+              rel="noopener"
+              data-plan-cta={p.action === 'trial' ? p.name : undefined}
+            >{p.cta}</a>
+          )}
         </article>
       ))}
     </div>
@@ -148,7 +179,55 @@ const org = [
       Self-host it <span class="arr" aria-hidden="true">→</span>
     </a>
   </div>
+
+  {/* Paid-plan CTA dialog — there's no self-serve checkout yet, so a paid CTA
+      explains the honest path (start free now, upgrade by email) instead of
+      silently dropping you into a free signup. Progressive enhancement: the
+      CTAs are real <a href> links to the app, intercepted only when <dialog>
+      is supported — JS off / unsupported still reaches the hosted instance. */}
+  <dialog id="trial-dialog" class="trial-dialog" aria-labelledby="trial-dialog-title">
+    <div class="trial-dialog-inner">
+      <button type="button" class="trial-dialog-close" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <p class="kicker"><span class="kicker-dot"></span><span data-plan-label>Plus</span> plan</p>
+      <h3 id="trial-dialog-title" class="trial-dialog-title">Start free, upgrade when you're ready</h3>
+      <p class="trial-dialog-body">
+        Self-serve billing isn't live during early access. Every new account starts on a
+        <strong>30-day Plus trial</strong> — full AI limits, no card — so you can get going right
+        now. When you're ready to move to a paid plan, drop us a line and we'll set it up.
+      </p>
+      <div class="trial-dialog-actions">
+        <a href="https://tela.cagdas.io" class="price-cta price-cta--primary" target="_blank" rel="noopener">Start free →</a>
+        <a href="mailto:tela@cagdas.io?subject=tela%20paid%20plan" class="price-cta">Email us</a>
+      </div>
+    </div>
+  </dialog>
 </section>
+
+<script is:inline>
+  (function () {
+    var dlg = document.getElementById('trial-dialog');
+    // No native <dialog> → leave the CTAs as plain links to the hosted instance.
+    if (!dlg || typeof dlg.showModal !== 'function') return;
+    var labels = dlg.querySelectorAll('[data-plan-label]');
+    document.querySelectorAll('[data-plan-cta]').forEach(function (cta) {
+      cta.addEventListener('click', function (e) {
+        e.preventDefault();
+        var name = cta.getAttribute('data-plan-cta') || 'Plus';
+        labels.forEach(function (el) { el.textContent = name; });
+        dlg.showModal();
+      });
+    });
+    dlg.querySelectorAll('[data-close]').forEach(function (el) {
+      el.addEventListener('click', function () { dlg.close(); });
+    });
+    // Click the backdrop (outside the inner card) to dismiss.
+    dlg.addEventListener('click', function (e) {
+      if (e.target === dlg) dlg.close();
+    });
+  })();
+</script>
 
 <style>
   .trial-note {
@@ -306,6 +385,74 @@ const org = [
     color: var(--cta-fg);
   }
   .price-cta--primary:hover { background: var(--cta-bg-hover); }
+
+  /* Paid-plan dialog */
+  .trial-dialog {
+    /* Tailwind preflight zeroes dialog margin (kills UA centering) — re-center. */
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    height: fit-content;
+    width: min(30rem, calc(100vw - 2 * var(--space-gutter)));
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-pop);
+  }
+  .trial-dialog::backdrop {
+    background: var(--scrim);
+    backdrop-filter: blur(2px);
+  }
+  .trial-dialog-inner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 1.75rem;
+  }
+  .trial-dialog .kicker { margin: 0; }
+  .trial-dialog-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    color: var(--fg);
+  }
+  .trial-dialog-body {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    color: var(--fg-soft);
+  }
+  .trial-dialog-body strong { color: var(--fg); font-weight: 600; }
+  .trial-dialog-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 0.35rem;
+  }
+  .trial-dialog-actions .price-cta { margin-top: 0; }
+  .trial-dialog-close {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--fg-faint);
+    cursor: pointer;
+    transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  }
+  .trial-dialog-close:hover { color: var(--fg); border-color: var(--border-strong); }
 
   .includes {
     margin-top: 2.5rem;
