@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import {
   Bot,
   Clock,
+  Compass,
   FileClock,
   FilePlus,
   FileText,
@@ -22,6 +23,7 @@ import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { emitOpenPalette } from '../../lib/paletteEvent'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
+import { DOCS } from '../../lib/docs'
 
 // Home dashboard — the app's landing surface (mounted at `/`). A launchpad plus
 // lenses on the wiki: what changed, what your agents changed, what you starred /
@@ -100,6 +102,12 @@ export function HomeRoute() {
               <Network width={14} height={14} />
               <span>Graph</span>
             </Link>
+          </Button>
+          <Button asChild variant="secondary" size="sm">
+            <a href={DOCS.tour} target="_blank" rel="noreferrer">
+              <Compass width={14} height={14} />
+              <span>Take the tour</span>
+            </a>
           </Button>
         </div>
 
@@ -310,10 +318,18 @@ function FirstRunEmptyState() {
         A space is a tree of markdown pages your team writes together. Create one,
         and we’ll drop in a short Welcome page to get you going.
       </p>
-      <Button variant="primary" size="sm" onClick={() => void navigate({ to: '/n' })}>
-        <PencilLine width={14} height={14} />
-        <span>Start a quick note</span>
-      </Button>
+      <div className="flex flex-wrap gap-[var(--space-2)]">
+        <Button variant="primary" size="sm" onClick={() => void navigate({ to: '/n' })}>
+          <PencilLine width={14} height={14} />
+          <span>Start a quick note</span>
+        </Button>
+        <Button asChild variant="secondary" size="sm">
+          <a href={DOCS.tour} target="_blank" rel="noreferrer">
+            <Compass width={14} height={14} />
+            <span>Take the tour</span>
+          </a>
+        </Button>
+      </div>
     </section>
   )
 }

@@ -25,6 +25,7 @@ import { Select } from '../ui/select'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle'
 import { cn } from '../../lib/utils'
 import { normaliseExpiryInput } from './ShareManagerSheet-utils'
+import { DOCS } from '../../lib/docs'
 
 const NAME_MAX_LEN = 64
 const ALL_SPACES_VALUE = '__all__'
@@ -53,6 +54,16 @@ export function SettingsApiKeysTab() {
             Authorization: Bearer tela_pat_…
           </code>
           . Tokens are shown once on creation — store them somewhere safe.
+        </p>
+        <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          <a
+            href={DOCS.mcp}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--accent)] underline underline-offset-2"
+          >
+            Connect an agent — MCP setup guide →
+          </a>
         </p>
       </header>
 
