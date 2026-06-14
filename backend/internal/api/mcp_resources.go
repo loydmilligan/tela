@@ -36,8 +36,8 @@ func (s *Server) registerMCPResources(server *mcp.Server) {
 	// tela-framed, so an agent assembles rich slide decks instead of flat bullets.
 	server.AddResource(&mcp.Resource{
 		Name:        "deck-authoring-guide",
-		Title:       "Tela deck (slides) authoring guide",
-		Description: "How to write a tela slide deck: the tahta layouts (cover/stats/chart/compare/timeline/…), their fields with examples, components, and the visual variants.",
+		Title:       "Tela presentation / slides / deck authoring guide",
+		Description: "How to make a presentation, slides, or a slide deck in tela: the tahta layouts (cover/stats/chart/compare/timeline/…), their fields with examples, components, and the visual variants. Read this for any 'presentation', 'slides', 'deck', or 'talk' request.",
 		URI:         deckAuthoringGuideURI,
 		MIMEType:    "text/markdown",
 	}, s.mcpReadDeckAuthoringGuide)

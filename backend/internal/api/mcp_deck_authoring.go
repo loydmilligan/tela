@@ -93,11 +93,11 @@ func deckAuthoringManifest(ctx context.Context) (*deckManifestDoc, error) {
 // (static — no sidecar dependency at call time). It tells the agent decks exist,
 // how to make one, and where the full layout/variant reference lives.
 func deckAuthoringToolHint() string {
-	return " To make a slide deck instead of a doc, set the page property deck=true (and optionally variant=<style>), then write the body as tahta-layout slides separated by `---` — read the tela://deck-authoring-guide resource for the layouts, fields, components, and variants."
+	return " When asked for a presentation, slides, a slide deck, or a talk (any phrasing) — not a prose doc — set the page property deck=true (and optionally variant=<style>) and write the body as slides separated by `---` using the tahta layouts; read the tela://deck-authoring-guide resource for the layouts, fields, components, and variants."
 }
 
 const deckGuideFallback = "# Authoring tela slide decks\n\n" +
-	"A tela deck is a page with property `deck: true` whose body is Slidev markdown styled by the tahta design system. " +
+	"Use this for any presentation / slides / slide deck / talk request. A tela deck is a page with property `deck: true` whose body is Slidev markdown styled by the tahta design system. " +
 	"Set the style with the page property `variant`. Separate slides with `---`; each slide picks a `layout:` and fills its fields. " +
 	"Do not put `theme:`/`themeConfig:` in the markdown — tela injects them. " +
 	"_(The full layout/variant reference is temporarily unavailable — the deck service is unreachable.)_\n"
@@ -107,7 +107,7 @@ func deckAuthoringGuideMarkdown(m *deckManifestDoc) string {
 	fence := "````"
 	var b strings.Builder
 	b.WriteString("# Authoring tela slide decks\n\n")
-	b.WriteString("A tela **deck** is a page whose body is **Slidev markdown styled by the tahta design system**. You don't write CSS, grids, or layout HTML — pick a **layout** per slide and fill its fields; tela renders it to slides.\n")
+	b.WriteString("Use this whenever someone asks for a **presentation, slides, a slide deck, or a talk** (any wording). A tela **deck** is a page whose body is **Slidev markdown styled by the tahta design system**. You don't write CSS, grids, or layout HTML — pick a **layout** per slide and fill its fields; tela renders it to slides.\n")
 
 	b.WriteString("\n## How decks work in tela\n")
 	b.WriteString("- Make a page a deck by setting the page property `deck: true` (e.g. `create_page` with `props: {\"deck\": true}`).\n")
