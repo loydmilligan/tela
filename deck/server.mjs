@@ -51,8 +51,8 @@ const PORT = Number(process.env.PORT || 3344)
 const MAX_CONCURRENCY = Number(process.env.DECK_CONCURRENCY || 2)
 
 // Bump when the theme or render pipeline changes so cached decks re-render/re-build.
-// r5: inject routerMode:hash (clean static SPA serving) + live SPA build path.
-const RENDER_VERSION = 'r5'
+// r6: history-mode SPA + index.html fallback (hash mode broke routes under the base).
+const RENDER_VERSION = 'r6'
 
 // The look lives entirely in the theme package — tela owns no layouts/styles.
 // Variant catalog + the themeConfig keys come from the theme's own manifests.
@@ -171,15 +171,12 @@ function withTheme(data, cfg) {
     // tahta is MDC-authored (its layouts read frontmatter via MDC; the headmatter
     // slide renders blank without it). Default it on unless the deck set it.
     if (head.frontmatterDoc.get('mdc') === undefined) head.frontmatterDoc.set('mdc', true)
-    // Hash routing so the built SPA's routes (#/presenter, #/2, …) are client-side
-    // — only real files hit the server, which is what makes static serving clean.
-    if (head.frontmatterDoc.get('routerMode') === undefined) head.frontmatterDoc.set('routerMode', 'hash')
     prettifySlide(head) // rebuild head.raw from the mutated YAML doc (stringify reads raw)
     return stringify(data)
   }
   // No headmatter block to edit — prepend one.
   const tc = tahtaThemeConfig(cfg)
-  const lines = [`theme: ${THEME_PKG}`, 'mdc: true', 'routerMode: hash', 'themeConfig:', `  variant: ${tc.variant}`]
+  const lines = [`theme: ${THEME_PKG}`, 'mdc: true', 'themeConfig:', `  variant: ${tc.variant}`]
   if (tc.accent) lines.push(`  accent: ${JSON.stringify(tc.accent)}`)
   if (tc.lang) lines.push(`  lang: ${tc.lang}`)
   return `---\n${lines.join('\n')}\n---\n\n${data.raw}`
@@ -309,9 +306,17 @@ async function buildSPA(md, cfg, base) {
 
 function serveSPA(res, id, name) {
   const dir = spaDir(id)
-  const file = normalize(join(dir, name || 'index.html'))
+  const rel = name || 'index.html'
+  let file = normalize(join(dir, rel))
   if (file !== dir && !file.startsWith(dir + '/')) return void res.writeHead(404).end() // traversal guard
-  if (!existsSync(file) || statSync(file).isDirectory()) return void res.writeHead(404).end()
+  if (!existsSync(file) || statSync(file).isDirectory()) {
+    // History-mode SPA fallback: a client route (no file extension — e.g. "2",
+    // "presenter", "presenter/1") serves index.html so the router can resolve it.
+    // A missing real asset (has an extension) is a genuine 404.
+    if (extname(rel) !== '') return void res.writeHead(404).end()
+    file = join(dir, 'index.html')
+    if (!existsSync(file)) return void res.writeHead(404).end()
+  }
   const isIndex = file.endsWith('/index.html')
   res.writeHead(200, {
     'content-type': SPA_MIME[extname(file)] || 'application/octet-stream',

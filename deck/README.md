@@ -19,11 +19,12 @@ same parse + theme-injection core:
 
 The stored markdown never references the theme — the service injects
 `theme: slidev-theme-tahta` + a per-deck `themeConfig` (`variant`/`accent`/`lang`)
-+ `mdc: true` (tahta is MDC-authored) + `routerMode: hash` (so the built SPA's
-routes are client-side `#/…` and static serving is clean), via the parser
-(`parse` → set on the first-slide YAML doc → `prettifySlide` → `stringify`),
-overriding any user values for those keys. The variant catalog comes from the
-theme's own `variants.json`; tela hardcodes nothing visual.
++ `mdc: true` (tahta is MDC-authored), via the parser (`parse` → set on the
+first-slide YAML doc → `prettifySlide` → `stringify`), overriding any user values
+for those keys. The variant catalog comes from the theme's own `variants.json`;
+tela hardcodes nothing visual. The built SPA uses history routing; `/spa` serves
+`index.html` as a fallback for client routes (slide N, presenter) so deep links
+and refreshes resolve.
 
 `@slidev/parser` also powers `/parse` (structure, no render — editor outline) and
 the parser-based preflight on `/render` + `/export`.
