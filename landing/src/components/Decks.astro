@@ -17,7 +17,10 @@ const feats = [
   'Export to PDF, PPTX or PNG',
   'Plain markdown you own underneath',
 ];
-// Real slides rendered from a tela deck (the cover leads the viewer).
+// Real slides rendered from a tela deck. The viewer opens on a content slide
+// (the "What is tela?" define slide reads better than the cover); the filmstrip
+// keeps natural order 1–9.
+const DEFAULT_SLIDE = 2;
 const slides = [
   { src: '/decks/slide-001.webp', label: 'Stop pasting docs into chat' },
   { src: '/decks/slide-002.webp', label: 'Every task starts from zero' },
@@ -58,10 +61,10 @@ const slides = [
         <img
           class="deck-main"
           data-deck-main
-          src={slides[0].src}
+          src={slides[DEFAULT_SLIDE].src}
           width="1960"
           height="1104"
-          alt={`A tela presentation slide: ${slides[0].label}. Made with the built-in deck theme.`}
+          alt={`A tela presentation slide: ${slides[DEFAULT_SLIDE].label}. Made with the built-in deck theme.`}
           loading="lazy"
           decoding="async"
         />
@@ -71,12 +74,12 @@ const slides = [
             <li>
               <button
                 type="button"
-                class={`deck-thumb${i === 0 ? ' is-current' : ''}`}
+                class={`deck-thumb${i === DEFAULT_SLIDE ? ' is-current' : ''}`}
                 data-deck-thumb
                 data-src={s.src}
                 data-label={s.label}
                 aria-label={`Show slide ${i + 1}: ${s.label}`}
-                aria-pressed={i === 0 ? 'true' : 'false'}
+                aria-pressed={i === DEFAULT_SLIDE ? 'true' : 'false'}
               >
                 <img src={s.src} width="1960" height="1104" alt="" loading="lazy" decoding="async" />
               </button>
