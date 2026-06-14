@@ -32,7 +32,7 @@
 
 import http from 'node:http'
 import { createHash } from 'node:crypto'
-import { writeFile, mkdir, readdir } from 'node:fs/promises'
+import { writeFile, mkdir, readdir, rm } from 'node:fs/promises'
 import { existsSync, createReadStream, statSync, readFileSync } from 'node:fs'
 import { join, extname, dirname, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -132,8 +132,86 @@ const CACHE_EPOCH = `${RENDER_VERSION}|${THEME_VERSION}`
 // Cache key folds in the full visual config so a variant/accent/lang change rerenders.
 const cfgKey = (c) => `${pickVariant(c.variant)}|${c.accent || ''}|${c.lang || ''}`
 const deckId = (md, cfg) => hash(`${CACHE_EPOCH}|${cfgKey(cfg)}|${md}`)
-const deckDir = (id) => join(CACHE, 'd', id)
+const RENDER = join(CACHE, 'd') // rendered frames/exports, one dir per deckId
+const deckDir = (id) => join(RENDER, id)
 const pickVariant = (v) => (v && VARIANTS.has(v) ? v : DEFAULT_VARIANT)
+
+// ── cache GC ─────────────────────────────────────────────────────────────────
+// Built SPAs (CACHE/spa) and rendered frames (CACHE/d) are content-addressed and
+// never overwritten, so every deck edit OR theme bump orphans a dir; build-entry
+// markdown piles up in WORK too. Left alone the cache grows unbounded. Cap the
+// total (spa + d) size and evict the least-recently-served dirs. Correctness-safe:
+// an evicted deck simply rebuilds on its next request (everything is recomputable).
+const CACHE_MAX_MB = Number(process.env.DECK_CACHE_MAX_MB || 512)
+const GC_INTERVAL_MS = Number(process.env.DECK_GC_INTERVAL_MS || 30 * 60_000)
+const GC_MIN_AGE_MS = 5 * 60_000 // never reap a dir/entry younger than this (in-flight/just-built)
+
+const lastUsed = new Map() // dir id -> ms of last serve (LRU signal; falls back to mtime)
+const touch = (id) => { if (id) lastUsed.set(id, Date.now()) }
+
+async function dirSize(p) {
+  let total = 0
+  let ents
+  try { ents = await readdir(p, { withFileTypes: true }) } catch { return 0 }
+  for (const e of ents) {
+    const f = join(p, e.name)
+    if (e.isDirectory()) total += await dirSize(f)
+    else { try { total += statSync(f).size } catch {} }
+  }
+  return total
+}
+
+let gcRunning = false
+async function gcSweep() {
+  if (gcRunning) return
+  gcRunning = true
+  try {
+    const now = Date.now()
+    // 1) Reap stale build-entry markdown in WORK (one per build, never reused).
+    //    Skip the setup/ dir (the shared router-guard) — only loose *.md files.
+    try {
+      for (const name of await readdir(WORK)) {
+        if (!name.endsWith('.md')) continue
+        const p = join(WORK, name)
+        try { if (now - statSync(p).mtimeMs > GC_MIN_AGE_MS) await rm(p, { force: true }) } catch {}
+      }
+    } catch {}
+    // 2) Cap total (spa + d) size, evicting least-recently-served dirs first.
+    const entries = []
+    let total = 0
+    for (const root of [SPA, RENDER]) {
+      if (!existsSync(root)) continue
+      let names
+      try { names = await readdir(root) } catch { continue }
+      for (const name of names) {
+        const p = join(root, name)
+        let st
+        try { st = statSync(p) } catch { continue }
+        if (!st.isDirectory()) continue
+        const size = await dirSize(p)
+        entries.push({ p, id: name, size, mtimeMs: st.mtimeMs, used: lastUsed.get(name) ?? st.mtimeMs })
+        total += size
+      }
+    }
+    const cap = CACHE_MAX_MB * 1024 * 1024
+    if (total <= cap) return
+    entries.sort((a, b) => a.used - b.used) // least-recently-used first
+    let freed = 0
+    for (const e of entries) {
+      if (total <= cap) break
+      if (now - e.mtimeMs < GC_MIN_AGE_MS) continue // don't reap a fresh/in-flight build
+      try {
+        await rm(e.p, { recursive: true, force: true })
+        lastUsed.delete(e.id)
+        total -= e.size
+        freed += e.size
+      } catch {}
+    }
+    if (freed > 0) console.log(`deck cache gc: freed ${(freed / 1048576).toFixed(0)}MB, now ${(total / 1048576).toFixed(0)}MB (cap ${CACHE_MAX_MB}MB)`)
+  } finally {
+    gcRunning = false
+  }
+}
 
 // The deck render config tela controls per-deck — the only inputs to the theme.
 const reqConfig = (params) => ({
@@ -303,6 +381,7 @@ function serveStatic(res, id, name) {
   const dir = deckDir(id)
   const file = normalize(join(dir, name))
   if (!file.startsWith(dir) || !existsSync(file) || statSync(file).isDirectory()) return void res.writeHead(404).end()
+  touch(id)
   res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', 'cache-control': 'public, max-age=31536000, immutable' })
   createReadStream(file).pipe(res)
 }
@@ -343,6 +422,7 @@ async function buildSPA(md, cfg, base) {
 }
 
 function serveSPA(res, id, name) {
+  touch(id)
   const dir = spaDir(id)
   const rel = name || 'index.html'
   let file = normalize(join(dir, rel))
@@ -442,4 +522,9 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, () => console.log(`tela deck sidecar on :${PORT} — ${THEME_PKG} variants: [${[...VARIANTS]}], concurrency ${MAX_CONCURRENCY}`))
+server.listen(PORT, () => console.log(`tela deck sidecar on :${PORT} — ${THEME_PKG} variants: [${[...VARIANTS]}], concurrency ${MAX_CONCURRENCY}, cache cap ${CACHE_MAX_MB}MB`))
+
+// Cache GC: a sweep shortly after boot (reaps last run's orphans, e.g. after a
+// theme bump) and then periodically. Best-effort; never blocks request serving.
+setTimeout(() => { void gcSweep() }, 60_000)
+setInterval(() => { void gcSweep() }, GC_INTERVAL_MS)

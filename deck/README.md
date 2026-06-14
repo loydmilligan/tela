@@ -53,6 +53,12 @@ markdown), so re-rendering an unchanged deck is instant; `/parse` is cheap enoug
 to skip caching. `DECK_CACHE` (default `./cache`, `/data` in the image) holds the
 rendered output. The variant catalog is read from `slidev-theme-tahta/variants.json`.
 
+Cached builds/renders are content-addressed and never overwritten, so edits and
+theme bumps orphan dirs. A periodic GC caps the total cache (`spa/` + `d/`) by
+size, evicting the least-recently-served dirs (an evicted deck just rebuilds on
+next request); it also reaps stale build-entry markdown in `work/`. Tune with
+`DECK_CACHE_MAX_MB` (default `512`) and `DECK_GC_INTERVAL_MS` (default 30 min).
+
 ## Run
 
 ```bash
