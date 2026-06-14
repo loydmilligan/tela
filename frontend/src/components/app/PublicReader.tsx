@@ -248,8 +248,8 @@ function PublicDeckView({
   spaceName: string
   pageId: number
   pageTitle: string
-  summary?: string
-  telaHome: string
+  summary?: string | null
+  telaHome: string | null
 }) {
   const presentPath = `/api/public/spaces/${spaceId}/pages/${pageId}/deck/spa/`
   const coverPath = `/api/public/spaces/${spaceId}/pages/${pageId}/deck/cover`
@@ -259,7 +259,7 @@ function PublicDeckView({
       <header className="flex items-center justify-between gap-[var(--space-2)] border-b border-[var(--border-subtle)] px-[var(--space-4)] py-[var(--space-3)]">
         <span className="flex min-w-0 items-center gap-[var(--space-2)]">
           <a
-            href={telaHome}
+            href={telaHome ?? '/'}
             aria-label="tela home"
             className="font-[family-name:var(--font-sans)] text-[length:var(--text-base)] font-medium text-[var(--text-primary)] no-underline hover:opacity-70"
           >
