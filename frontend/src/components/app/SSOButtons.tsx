@@ -14,7 +14,17 @@ const PROVIDER_ORDER = ['google', 'microsoft', 'github']
 // browser hits the server's OAuth redirect, not the SPA router. Org SSO is a
 // by-domain affordance: the user enters their work email and we bounce to the
 // org connection resolved from its domain.
-export function SSOButtons({ next }: { next: string }) {
+// mainEmail, when present, is the login form's own "Email or username" field —
+// SSO reuses it instead of showing a second, competing email box (the cause of
+// people typing into the wrong field). Absent only when password sign-in is off
+// (no main field), where SSO collects the email itself.
+export function SSOButtons({
+  next,
+  mainEmail,
+}: {
+  next: string
+  mainEmail?: { value: string; focus: () => void }
+}) {
   const { data } = useSSOProviders()
   const orgSSO = data?.org_sso ?? false
   const host = useHostContext().data
@@ -69,7 +79,7 @@ export function SSOButtons({ next }: { next: string }) {
         </Button>
       ))}
 
-      {showOrgSSOPrompt ? <OrgSSO next={next} /> : null}
+      {showOrgSSOPrompt ? <OrgSSO next={next} mainEmail={mainEmail} /> : null}
     </div>
   )
 }
@@ -96,12 +106,62 @@ function OrgSSODirect({ next, orgName }: { next: string; orgName: string | null 
   )
 }
 
-// OrgSSO collects a work email and bounces to the org connection mapped to its
-// domain. The backend 404s a domain with no SSO; we surface that inline.
-function OrgSSO({ next }: { next: string }) {
+// OrgSSO bounces to the org connection mapped to a work email's domain. The
+// backend 404s a domain with no SSO; we surface that inline.
+function OrgSSO({
+  next,
+  mainEmail,
+}: {
+  next: string
+  mainEmail?: { value: string; focus: () => void }
+}) {
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
+  const [hint, setHint] = useState<string | null>(null)
 
+  const go = (value: string) => {
+    const v = value.trim()
+    if (!v) return
+    window.location.assign(
+      `/api/auth/sso/org/start?email=${encodeURIComponent(v)}&next=${encodeURIComponent(next)}`,
+    )
+  }
+
+  // Password sign-in ON: there's already an "Email or username" field above, so
+  // SSO reuses it — one click, no second email box. Empty/non-email → nudge the
+  // user up to that field instead of opening a competing one.
+  if (mainEmail) {
+    return (
+      <div className="flex flex-col gap-[var(--space-2)]">
+        <Button
+          type="button"
+          variant="secondary"
+          size="lg"
+          onClick={() => {
+            const v = mainEmail.value.trim()
+            if (v.includes('@')) {
+              setHint(null)
+              go(v)
+            } else {
+              setHint('Enter your work email in the field above, then click here.')
+              mainEmail.focus()
+            }
+          }}
+          className="font-medium hover:shadow-[var(--shadow-sm)]"
+        >
+          <Building2 size={18} aria-hidden />
+          Single sign-on (SSO)
+        </Button>
+        {hint ? (
+          <p role="status" className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            {hint}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  // Password sign-in OFF: no field above, so collect the email here.
   if (!open) {
     return (
       <Button
@@ -114,14 +174,6 @@ function OrgSSO({ next }: { next: string }) {
         <Building2 size={18} aria-hidden />
         Single sign-on (SSO)
       </Button>
-    )
-  }
-
-  const go = () => {
-    const value = email.trim()
-    if (!value) return
-    window.location.assign(
-      `/api/auth/sso/org/start?email=${encodeURIComponent(value)}&next=${encodeURIComponent(next)}`,
     )
   }
 
@@ -138,7 +190,7 @@ function OrgSSO({ next }: { next: string }) {
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
-            go()
+            go(email)
           }
         }}
       />
@@ -146,7 +198,7 @@ function OrgSSO({ next }: { next: string }) {
         type="button"
         variant="secondary"
         size="lg"
-        onClick={go}
+        onClick={() => go(email)}
         className="font-medium hover:shadow-[var(--shadow-sm)]"
       >
         Continue with SSO

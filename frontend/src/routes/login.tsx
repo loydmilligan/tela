@@ -218,7 +218,18 @@ export function LoginPage() {
               ) : null}
             </div>
           )}
-          <SSOButtons next={nextPath} />
+          <SSOButtons
+            next={nextPath}
+            mainEmail={
+              passwordEnabled
+                ? {
+                    value: identifier,
+                    focus: () =>
+                      document.getElementById('login-identifier')?.focus(),
+                  }
+                : undefined
+            }
+          />
           <AuthFooterLink>
             New to tela?{' '}
             <Link
