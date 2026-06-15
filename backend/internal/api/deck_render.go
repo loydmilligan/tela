@@ -222,6 +222,11 @@ func (s *Server) serveDeckCover(w http.ResponseWriter, r *http.Request, p models
 		writeError(w, http.StatusBadGateway, "deck_unavailable", "deck cover unavailable")
 		return
 	}
+	// The redirect target is content-addressed + immutable, but the redirect
+	// itself is keyed only by page — cache it briefly so a warm cover isn't
+	// re-resolved through the sidecar on every view. Short enough that an edit's
+	// new render is picked up promptly.
+	w.Header().Set("Cache-Control", "private, max-age=60")
 	http.Redirect(w, r, "/api/deck"+cov.URL, http.StatusFound)
 }
 

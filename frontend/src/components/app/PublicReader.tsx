@@ -20,6 +20,7 @@ import {
   SheetTrigger,
 } from '../ui/sheet'
 import { ChildGallery } from './blog/ChildGallery'
+import { DeckCoverImage } from './deck-cover-image'
 import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
 import { pageSummary } from './SummaryHint'
@@ -312,7 +313,7 @@ function PublicDeckView({
           aria-label={`Present ${pageTitle || 'deck'}`}
           className="group relative block aspect-video w-full overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border-subtle)] bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
         >
-          <img
+          <DeckCoverImage
             src={coverPath}
             alt={pageTitle || 'Deck cover'}
             className="h-full w-full object-cover"

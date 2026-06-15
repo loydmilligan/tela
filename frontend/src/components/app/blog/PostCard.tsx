@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Play } from 'lucide-react'
+import { DeckCoverImage } from '../deck-cover-image'
 import { coverBackground, monogram } from '../../../lib/blog'
 import { pageSlug } from '../../../lib/slug'
 import { postDateFromSqlite } from '../../../lib/relativeTime'
@@ -126,6 +128,7 @@ function Cover({
   featured: boolean
   isDeck?: boolean
 }) {
+  const [coverFailed, setCoverFailed] = useState(false)
   const box = featured
     ? 'md:w-[44%] md:self-stretch aspect-[16/9] md:aspect-auto md:min-h-[14rem]'
     : 'aspect-[16/9]'
@@ -135,15 +138,18 @@ function Cover({
       <Play width={13} height={13} />
     </span>
   ) : null
-  if (cover) {
+  if (cover && !(isDeck && coverFailed)) {
+    const imgClass =
+      'size-full object-cover transition-transform duration-[var(--duration-base)] group-hover:scale-[1.03]'
     return (
       <div className={`relative shrink-0 overflow-hidden bg-[var(--surface-2)] ${box}`}>
-        <img
-          src={cover}
-          alt=""
-          loading="lazy"
-          className="size-full object-cover transition-transform duration-[var(--duration-base)] group-hover:scale-[1.03]"
-        />
+        {/* A deck cover is rendered on demand server-side, so retry a cold render
+            before falling through to the gradient; author covers are static. */}
+        {isDeck ? (
+          <DeckCoverImage src={cover} loading="lazy" onGiveUp={() => setCoverFailed(true)} className={imgClass} />
+        ) : (
+          <img src={cover} alt="" loading="lazy" className={imgClass} />
+        )}
         {deckBadge}
       </div>
     )

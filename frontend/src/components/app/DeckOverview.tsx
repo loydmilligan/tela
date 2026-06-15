@@ -4,6 +4,7 @@ import { Check, Download, Palette, Play, Presentation } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useUpdatePage } from '../../lib/queries/pages'
 import type { Page } from '../../lib/types'
+import { DeckCoverImage } from './deck-cover-image'
 import { Button } from '../ui/button'
 import {
   DropdownMenu,
@@ -154,8 +155,9 @@ export function DeckOverview({ page }: { page: Page }) {
 }
 
 // The deck's first-slide cover, clickable to present. Renders lazily server-side
-// (the gated cover route renders-if-needed); hides itself if that fails so a
-// broken image never shows. Remounted (keyed) per variant by the caller.
+// (the gated cover route renders-if-needed); DeckCoverImage shows a skeleton and
+// retries a cold/queued render before hiding so a transient miss never strands a
+// cover that's actually ready. Remounted (keyed) per variant by the caller.
 function DeckCover({
   pageId,
   variant,
@@ -174,11 +176,10 @@ function DeckCover({
       aria-label="Present"
       className="group relative block aspect-video w-full max-w-2xl overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
     >
-      <img
+      <DeckCoverImage
         src={`/api/pages/${pageId}/deck/cover?v=${encodeURIComponent(variant)}`}
-        alt=""
         loading="lazy"
-        onError={() => setOk(false)}
+        onGiveUp={() => setOk(false)}
         className="size-full object-cover"
       />
       <span className="absolute inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--text-primary)_40%,transparent)] opacity-0 transition-opacity duration-[var(--duration-fast)] group-hover:opacity-100">
