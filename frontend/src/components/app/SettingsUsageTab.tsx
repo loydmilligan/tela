@@ -1,7 +1,24 @@
+import { useState } from 'react'
+import { ApiError } from '../../lib/api'
 import { useAdminUsage } from '../../lib/queries/admin-usage'
+import { useSpaces } from '../../lib/queries/spaces'
+import { useCreatePage } from '../../lib/queries/pages'
+import { navigateToPage } from '../../lib/pageHitItem'
 import { formatBytes } from '../../lib/format'
 import type { AdminAccountUsage, AdminUsage, KnowledgeGap } from '../../lib/types'
 import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { Input } from '../ui/input'
+import { Select } from '../ui/select'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog'
 import { cn } from '../../lib/utils'
 
 // Instance-admin global usage overview: instance-wide totals, the top AI consumers
@@ -119,14 +136,103 @@ function ConsumerRow({ a }: { a: AdminAccountUsage }) {
 }
 
 function GapRow({ g }: { g: KnowledgeGap }) {
+  const [open, setOpen] = useState(false)
   return (
     <li className={rowCn}>
       <span className="flex-1 min-w-0 truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">
         {g.question}
       </span>
-      <span className="text-[length:var(--text-xs)] text-[var(--text-muted)] tabular-nums">
+      <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)] tabular-nums">
         asked {g.asks}× · {g.answered}/{g.asks} answered
       </span>
+      <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setOpen(true)}>
+        Draft page
+      </Button>
+      <DraftGapDialog question={g.question} open={open} onOpenChange={setOpen} />
     </li>
+  )
+}
+
+const GAP_STUB =
+  '> [!NOTE]\n> Drafted to answer a question the docs kept failing to cover. Replace this note with the answer.\n'
+
+// Turn an unanswered question into a page: pick a space, tweak the title, create,
+// and jump straight into the new page to write the answer.
+function DraftGapDialog({
+  question,
+  open,
+  onOpenChange,
+}: {
+  question: string
+  open: boolean
+  onOpenChange: (next: boolean) => void
+}) {
+  const spaces = useSpaces()
+  const create = useCreatePage()
+  const [title, setTitle] = useState(question)
+  const [spaceId, setSpaceId] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const opts = spaces.data ?? []
+  const effective = spaceId || (opts[0] ? String(opts[0].id) : '')
+
+  async function handleCreate() {
+    const sid = Number(effective)
+    if (!sid) {
+      setError('Pick a space.')
+      return
+    }
+    setError(null)
+    try {
+      const page = await create.mutateAsync({ space_id: sid, title: title.trim() || question, body: GAP_STUB })
+      onOpenChange(false)
+      navigateToPage(sid, page.id)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Failed to create page.')
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Draft a page</DialogTitle>
+          <DialogDescription>
+            Create a page to answer this question — it opens in the editor so you can write the answer.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-[var(--space-3)]">
+          <div className="flex flex-col gap-[var(--space-1)]">
+            <label className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)]">Title</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Page title" />
+          </div>
+          <div className="flex flex-col gap-[var(--space-1)]">
+            <label className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)]">Space</label>
+            <Select value={effective} onChange={(e) => setSpaceId(e.target.value)} aria-label="Space">
+              {opts.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {error ? (
+            <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="button" onClick={() => void handleCreate()} disabled={create.isPending || opts.length === 0}>
+            {create.isPending ? 'Creating…' : 'Create page'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
