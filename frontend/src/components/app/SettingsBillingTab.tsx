@@ -120,7 +120,7 @@ function UsageCard({
           />
           <Metric
             icon={<HardDrive width={15} height={15} />}
-            label="Storage"
+            label="Attachments"
             used={usage.usage.storage_bytes}
             max={usage.plan.max_storage_bytes}
             format={formatBytes}
@@ -164,7 +164,7 @@ function planSpecs(p: Plan): string[] {
   const specs = [
     `${formatCount(p.max_spaces)} spaces`,
     `${p.max_pages_per_space == null ? INFINITY : p.max_pages_per_space} pages / space`,
-    `${formatStorageLimit(p.max_storage_bytes)} storage`,
+    `${formatStorageLimit(p.max_storage_bytes)} attachments`,
     `${formatCount(p.max_llm_calls_per_month)} AI calls / mo`,
   ]
   if (p.account_kind === 'org') specs.push(`${formatCount(p.max_members)} members`)

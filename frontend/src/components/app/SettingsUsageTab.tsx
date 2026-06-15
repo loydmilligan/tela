@@ -34,7 +34,7 @@ export function SettingsUsageTab() {
         <Stat label="Orgs" value={d.totals.orgs} />
         <Stat label="Spaces" value={d.totals.spaces} />
         <Stat label="Pages" value={d.totals.pages} />
-        <Stat label="Storage" value={formatBytes(d.totals.storage_bytes)} />
+        <Stat label="Attachments" value={formatBytes(d.totals.storage_bytes)} />
         <Stat label="AI calls / mo" value={d.totals.llm_calls} />
         <Stat label="Asks / mo" value={d.totals.asks} />
         <Stat label="Answer rate" value={answerRate == null ? '—' : `${answerRate}%`} />

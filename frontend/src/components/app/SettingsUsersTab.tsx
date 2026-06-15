@@ -379,7 +379,7 @@ function UserActivitySheet({
                       : 'Not set up'
               }
             />
-            <DetailStat label="Storage" value={u ? formatBytes(u.storage_bytes) : '—'} />
+            <DetailStat label="Attachments" value={u ? formatBytes(u.storage_bytes) : '—'} />
             <DetailStat
               label="Last active"
               value={user.last_active_at ? relativeTimeFromSqlite(user.last_active_at) : 'Never'}
