@@ -1,4 +1,4 @@
-import { Check, HardDrive, Layers, Users } from 'lucide-react'
+import { Check, HardDrive, Layers, Sparkles, Users } from 'lucide-react'
 import { useMe } from '../../lib/queries/auth'
 import { useOrgs } from '../../lib/queries/orgs'
 import { useMyUsage, useOrgUsage, usePlans } from '../../lib/queries/billing'
@@ -133,6 +133,12 @@ function UsageCard({
               max={usage.plan.max_members}
             />
           ) : null}
+          <Metric
+            icon={<Sparkles width={15} height={15} />}
+            label="AI calls / mo"
+            used={usage.usage.llm_calls}
+            max={usage.plan.max_llm_calls_per_month}
+          />
         </div>
       )}
 
@@ -159,6 +165,7 @@ function planSpecs(p: Plan): string[] {
     `${formatCount(p.max_spaces)} spaces`,
     `${p.max_pages_per_space == null ? INFINITY : p.max_pages_per_space} pages / space`,
     `${formatStorageLimit(p.max_storage_bytes)} storage`,
+    `${formatCount(p.max_llm_calls_per_month)} AI calls / mo`,
   ]
   if (p.account_kind === 'org') specs.push(`${formatCount(p.max_members)} members`)
   return specs

@@ -22,6 +22,7 @@ type usageOut struct {
 		Spaces       int64  `json:"spaces"`
 		StorageBytes int64  `json:"storage_bytes"`
 		Members      *int64 `json:"members,omitempty"`
+		LLMCalls     int64  `json:"llm_calls"` // managed AI calls this calendar month
 	} `json:"usage"`
 }
 
@@ -48,6 +49,14 @@ func (s *Server) buildUsage(ctx context.Context, acct account) (usageOut, error)
 			return usageOut{}, err
 		}
 		out.Usage.Members = &n
+	}
+	// AI calls used this calendar month (the same period cloud_usage is keyed by).
+	if err = s.DB.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(llm_calls),0) FROM cloud_usage
+		  WHERE account_kind=$1 AND account_id=$2
+		    AND period = to_char((now() AT TIME ZONE 'UTC'),'YYYY-MM')`,
+		acct.Kind, acct.ID).Scan(&out.Usage.LLMCalls); err != nil {
+		return usageOut{}, err
 	}
 	return out, nil
 }

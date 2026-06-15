@@ -169,6 +169,7 @@ export interface Plan {
   max_pages_per_space: number | null
   max_storage_bytes: number | null
   max_members: number | null
+  max_llm_calls_per_month: number | null
   // false = an internal/comp tier kept out of the public catalog (still
   // admin-assignable). The plan-comparison UI shows only listed tiers.
   listed: boolean
@@ -186,6 +187,7 @@ export interface Usage {
     spaces: number
     storage_bytes: number
     members?: number
+    llm_calls: number
   }
 }
 
