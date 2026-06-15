@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { MoreHorizontal, UserPlus } from 'lucide-react'
+import { Boxes, MoreHorizontal, Plug, Search, Sparkles, UserPlus } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useMe } from '../../lib/queries/auth'
 import {
@@ -48,10 +48,36 @@ import { cn } from '../../lib/utils'
 
 const MIN_PASSWORD_LEN = 8
 
+type RoleFilter = 'all' | 'admin'
+type StatusFilter = 'all' | 'active' | 'inactive'
+type McpFilter = 'all' | 'yes'
+
 export function SettingsUsersTab() {
   const me = useMe()
   const users = useAdminUsers()
   const [createOpen, setCreateOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [role, setRole] = useState<RoleFilter>('all')
+  const [status, setStatus] = useState<StatusFilter>('all')
+  const [mcp, setMcp] = useState<McpFilter>('all')
+
+  const all = useMemo(() => users.data ?? [], [users.data])
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return all.filter((u) => {
+      if (role === 'admin' && !u.is_instance_admin) return false
+      if (status === 'active' && !u.is_active) return false
+      if (status === 'inactive' && u.is_active) return false
+      if (mcp === 'yes' && !(u.used_mcp || u.has_api_key)) return false
+      if (needle) {
+        const hay = `${u.username} ${u.display_name ?? ''} ${u.email ?? ''}`.toLowerCase()
+        if (!hay.includes(needle)) return false
+      }
+      return true
+    })
+  }, [all, q, role, status, mcp])
+
+  const hasFilters = q.trim() !== '' || role !== 'all' || status !== 'all' || mcp !== 'all'
 
   return (
     <section
@@ -61,7 +87,7 @@ export function SettingsUsersTab() {
       <header className="flex items-start justify-between gap-[var(--space-3)]">
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
           Manage every account on this instance. Reset passwords, deactivate
-          sign-ins, or grant instance-admin access.
+          sign-ins, grant instance-admin, or see who's connected an agent (MCP).
         </p>
         <Button
           type="button"
@@ -73,6 +99,50 @@ export function SettingsUsersTab() {
         </Button>
       </header>
 
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+        <div className="relative flex-1 min-w-[12rem]">
+          <Search
+            width={14}
+            height={14}
+            aria-hidden
+            className="pointer-events-none absolute left-[var(--space-2)] top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+          />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name or email…"
+            aria-label="Search users"
+            className="pl-[var(--space-6)]"
+          />
+        </div>
+        <FilterPills<RoleFilter>
+          value={role}
+          onChange={setRole}
+          options={[
+            ['all', 'All'],
+            ['admin', 'Admins'],
+          ]}
+        />
+        <FilterPills<StatusFilter>
+          value={status}
+          onChange={setStatus}
+          options={[
+            ['all', 'Any status'],
+            ['active', 'Active'],
+            ['inactive', 'Inactive'],
+          ]}
+        />
+        <FilterPills<McpFilter>
+          value={mcp}
+          onChange={setMcp}
+          options={[
+            ['all', 'Any MCP'],
+            ['yes', 'MCP set up'],
+          ]}
+        />
+      </div>
+
       {users.isLoading ? (
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
           Loading users…
@@ -81,24 +151,58 @@ export function SettingsUsersTab() {
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
           Couldn't load users.
         </p>
-      ) : users.data && users.data.length > 0 ? (
-        <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
-          {users.data.map((u) => (
-            <UserRow
-              key={u.id}
-              row={u}
-              isSelf={me.data?.id === u.id}
-            />
-          ))}
-        </ul>
+      ) : filtered.length > 0 ? (
+        <>
+          <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)] tabular-nums">
+            {filtered.length} of {all.length} {all.length === 1 ? 'user' : 'users'}
+          </p>
+          <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
+            {filtered.map((u) => (
+              <UserRow key={u.id} row={u} isSelf={me.data?.id === u.id} />
+            ))}
+          </ul>
+        </>
       ) : (
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          No users found.
+          {hasFilters ? 'No users match these filters.' : 'No users found.'}
         </p>
       )}
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
     </section>
+  )
+}
+
+// A small segmented control of mutually-exclusive filter values.
+function FilterPills<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T
+  onChange: (next: T) => void
+  options: [T, string][]
+}) {
+  return (
+    <div className="inline-flex items-center gap-[1px] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] p-[2px]">
+      {options.map(([val, label]) => (
+        <button
+          key={val}
+          type="button"
+          onClick={() => onChange(val)}
+          aria-pressed={value === val}
+          className={cn(
+            'rounded-[var(--radius-xs)] px-[var(--space-2)] py-[2px] text-[length:var(--text-xs)] font-medium',
+            'outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+            value === val
+              ? 'bg-[var(--surface-3)] text-[var(--text-primary)]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -138,22 +242,25 @@ function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
         'border border-[var(--border-subtle)] bg-[var(--surface-1)]',
       )}
     >
-      <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
+      <button
+        type="button"
+        onClick={() => setActivityOpen(true)}
+        className="flex-1 min-w-0 flex flex-col gap-[2px] text-left bg-transparent border-0 cursor-pointer rounded-[var(--radius-xs)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        aria-label={`Details for ${row.username}`}
+      >
         <div className="flex items-center gap-[var(--space-2)] min-w-0 flex-wrap">
           <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)] font-medium font-[family-name:var(--font-sans)]">
-            {row.username}
+            {row.display_name || row.username}
           </span>
-          {row.is_instance_admin ? (
-            <Badge variant="accent">Instance admin</Badge>
-          ) : (
-            <Badge variant="muted">—</Badge>
-          )}
-          {row.is_active ? (
-            <Badge variant="muted">Active</Badge>
-          ) : (
-            <Badge variant="muted">Deactivated</Badge>
-          )}
+          {row.display_name ? (
+            <span className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              @{row.username}
+            </span>
+          ) : null}
+          {row.is_instance_admin ? <Badge variant="accent">Instance admin</Badge> : null}
+          {!row.is_active ? <Badge variant="muted">Deactivated</Badge> : null}
           {isSelf ? <Badge variant="muted">You</Badge> : null}
+          <McpBadge row={row} />
         </div>
         <span className="text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
           {row.email ? `${row.email} · ` : ''}Created{' '}
@@ -167,7 +274,7 @@ function UserRow({ row, isSelf }: { row: AdminUserRow; isSelf: boolean }) {
             {rowError}
           </span>
         ) : null}
-      </div>
+      </button>
       <UsageCell row={row} />
       <PlanTierSelect
         accountKind="user"
@@ -242,16 +349,37 @@ function UserActivitySheet({
   onOpenChange: (next: boolean) => void
 }) {
   const activity = useAdminUserActivity(user.id, open)
+  const u = user.usage
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(28rem,100vw)]">
         <SheetHeader>
-          <SheetTitle>Activity — {user.username}</SheetTitle>
+          <SheetTitle>{user.display_name || user.username}</SheetTitle>
           <SheetDescription>
-            Most recently edited pages, across every space.
+            @{user.username}
+            {user.email ? ` · ${user.email}${user.email_verified ? ' ✓' : ' (unverified)'}` : ''}
           </SheetDescription>
         </SheetHeader>
         <SheetBody>
+          {/* Stat grid — everything the list row can't fit. */}
+          <div className="mb-[var(--space-4)] grid grid-cols-2 gap-[var(--space-2)]">
+            <DetailStat icon={<Boxes width={14} height={14} />} label="Spaces" value={u ? String(u.spaces) : '—'} />
+            <DetailStat icon={<Boxes width={14} height={14} />} label="Orgs" value={String(user.orgs ?? 0)} />
+            <DetailStat icon={<Sparkles width={14} height={14} />} label="AI calls / mo" value={String(user.llm_calls ?? 0)} />
+            <DetailStat
+              icon={<Plug width={14} height={14} />}
+              label="MCP"
+              value={user.used_mcp ? 'Connected' : user.has_api_key ? 'Key, no use' : 'Not set up'}
+            />
+            <DetailStat label="Storage" value={u ? formatBytes(u.storage_bytes) : '—'} />
+            <DetailStat
+              label="Last active"
+              value={user.last_active_at ? relativeTimeFromSqlite(user.last_active_at) : 'Never'}
+            />
+          </div>
+          <p className="m-0 mb-[var(--space-2)] text-[length:var(--text-xs)] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+            Recent edits
+          </p>
           {activity.isLoading ? (
             <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Loading…
@@ -308,26 +436,57 @@ function isOverLimit(u: AdminUserUsage): boolean {
   )
 }
 
+// The MCP-setup signal: an accent "MCP" badge once the user has actually hit
+// /api/mcp; a quieter "API key" mark if they have a PAT but no MCP traffic yet;
+// nothing otherwise. (OAuth/cowork connections leave no DB trace, so a green
+// badge can under-report — never over-report.)
+function McpBadge({ row }: { row: AdminUserRow }) {
+  if (row.used_mcp) return <Badge variant="accent">MCP</Badge>
+  if (row.has_api_key) return <Badge variant="muted">API key</Badge>
+  return null
+}
+
+// One labeled stat in the user detail sheet's grid.
+function DetailStat({
+  icon,
+  label,
+  value,
+}: {
+  icon?: React.ReactNode
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex flex-col gap-[2px] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-1)] px-[var(--space-3)] py-[var(--space-2)]">
+      <span className="inline-flex items-center gap-[var(--space-1)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        {icon}
+        {label}
+      </span>
+      <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+        {value}
+      </span>
+    </div>
+  )
+}
+
 // Compact usage + last-active readout, right-aligned before the plan selector.
 // Hidden on narrow widths where the row would otherwise wrap awkwardly.
 function UsageCell({ row }: { row: AdminUserRow }) {
   const u = row.usage
+  const orgs = row.orgs ?? 0
+  const llm = row.llm_calls ?? 0
   return (
     <div className="hidden sm:flex flex-col items-end gap-[2px] shrink-0 w-[11rem] text-[length:var(--text-xs)] font-[family-name:var(--font-sans)]">
       {u ? (
         <span
           className={cn(
             'tabular-nums',
-            isOverLimit(u)
-              ? 'text-[var(--danger)] font-medium'
-              : 'text-[var(--text-muted)]',
+            isOverLimit(u) ? 'text-[var(--danger)] font-medium' : 'text-[var(--text-muted)]',
           )}
         >
-          {u.spaces} {u.spaces === 1 ? 'space' : 'spaces'} ·{' '}
-          {formatBytes(u.storage_bytes)}
-          {u.max_storage_bytes != null
-            ? ` / ${formatBytes(u.max_storage_bytes)}`
-            : ''}
+          {u.spaces} {u.spaces === 1 ? 'space' : 'spaces'}
+          {orgs > 0 ? ` · ${orgs} ${orgs === 1 ? 'org' : 'orgs'}` : ''}
+          {llm > 0 ? ` · ${llm} AI` : ''}
         </span>
       ) : null}
       <span className="text-[var(--text-muted)]">

@@ -255,6 +255,8 @@ export interface SpaceMember {
 export interface AdminUserRow {
   id: number
   username: string
+  // Human-readable name; '' when unset (fall back to username).
+  display_name: string
   email: string | null
   email_verified: boolean
   is_instance_admin: boolean
@@ -267,6 +269,11 @@ export interface AdminUserRow {
   last_active_at: string | null
   // Usage vs the account's plan limits. null when the snapshot couldn't be built.
   usage: AdminUserUsage | null
+  // List-only enrichments (absent ⇒ zero/false).
+  orgs?: number // org memberships
+  llm_calls?: number // AI calls this calendar month
+  has_api_key?: boolean // ≥1 non-revoked PAT
+  used_mcp?: boolean // has hit /api/mcp with a key
 }
 
 // Per-user resource snapshot in the admin list — current usage beside the plan

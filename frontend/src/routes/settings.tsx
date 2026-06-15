@@ -26,6 +26,12 @@ interface SettingsTab {
   render: () => React.ReactNode
 }
 
+// A labeled cluster of tabs in the left nav — the label says why you can see them.
+interface SettingsGroup {
+  label: string
+  tabs: SettingsTab[]
+}
+
 const PROFILE_TAB: SettingsTab = {
   id: 'profile',
   label: 'Profile',
@@ -149,15 +155,26 @@ export function SettingsPage() {
   const isOrgAdmin =
     !me.data?.is_instance_admin &&
     (orgs.data?.some((o) => o.my_role === 'admin') ?? false)
-  const tabs = useMemo<SettingsTab[]>(() => {
+  // Grouped so it's clear WHY each section is visible: "Account" is everyone's,
+  // "Organization" appears because you administer an org, "Instance admin" because
+  // you're an instance admin.
+  const groups = useMemo<SettingsGroup[]>(() => {
+    const account = [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, INSTANCE_TAB, USAGE_TAB, FEEDBACK_TAB, EVENTS_TAB, AUDIT_TAB]
+      return [
+        { label: 'Account', tabs: account },
+        { label: 'Instance admin', tabs: [USERS_TAB, ORGS_TAB, API_KEYS_TAB, USAGE_TAB, FEEDBACK_TAB, EVENTS_TAB, AUDIT_TAB, INSTANCE_TAB] },
+      ]
     }
     if (isOrgAdmin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB, ORG_ADMIN_TAB]
+      return [
+        { label: 'Account', tabs: account },
+        { label: 'Organization', tabs: [ORG_ADMIN_TAB] },
+      ]
     }
-    return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
+    return [{ label: 'Account', tabs: account }]
   }, [me.data?.is_instance_admin, isOrgAdmin])
+  const tabs = useMemo<SettingsTab[]>(() => groups.flatMap((g) => g.tabs), [groups])
   // `?tab=` (set by the per-org page's back link) picks the initial section;
   // once a tab actually exists for it, the `active` lookup resolves it.
   const { tab: initialTab } = useSearch({ from: '/_app/settings' })
@@ -168,28 +185,35 @@ export function SettingsPage() {
     <div className="flex-1 flex min-h-0">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 w-[var(--space-8)] sm:w-[14rem] border-r border-[var(--border-subtle)] bg-[var(--surface-2)] py-[var(--space-4)] px-[var(--space-3)] flex flex-col gap-[var(--space-1)]"
+        className="shrink-0 w-[var(--space-8)] sm:w-[14rem] border-r border-[var(--border-subtle)] bg-[var(--surface-2)] py-[var(--space-4)] px-[var(--space-3)] flex flex-col gap-[var(--space-4)]"
       >
-        {tabs.map((tab) => {
-          const isActive = tab.id === active.id
-          return (
-            <Button
-              key={tab.id}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'w-full justify-start',
-                isActive &&
-                  'bg-[var(--surface-3)] text-[var(--text-primary)] font-medium',
-              )}
-              aria-current={isActive ? 'page' : undefined}
-              onClick={() => setActiveId(tab.id)}
-            >
-              {tab.label}
-            </Button>
-          )
-        })}
+        {groups.map((group) => (
+          <div key={group.label} className="flex flex-col gap-[var(--space-1)]">
+            <span className="hidden sm:block px-[var(--space-2)] pb-[var(--space-1)] text-[length:var(--text-xs)] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              {group.label}
+            </span>
+            {group.tabs.map((tab) => {
+              const isActive = tab.id === active.id
+              return (
+                <Button
+                  key={tab.id}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'w-full justify-start',
+                    isActive &&
+                      'bg-[var(--surface-3)] text-[var(--text-primary)] font-medium',
+                  )}
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => setActiveId(tab.id)}
+                >
+                  {tab.label}
+                </Button>
+              )
+            })}
+          </div>
+        ))}
       </nav>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[48rem] w-full mx-auto p-[var(--space-7)] flex flex-col gap-[var(--space-6)]">
