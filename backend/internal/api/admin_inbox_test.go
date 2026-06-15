@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -136,6 +137,30 @@ func TestFeedbackUnseenBadge(t *testing.T) {
 	}
 	if got := unseen(); got != 0 {
 		t.Fatalf("unseen after mark-seen = %d, want 0", got)
+	}
+}
+
+// feedbackAdminRecipients = instance admins with an email, minus the submitter.
+func TestFeedbackAdminRecipients(t *testing.T) {
+	d := newAPITestDB(t)
+	s := New(d)
+	sub := seedUser(t, d, "subadmin", "testpass123", true)   // submitter (excluded)
+	a2 := seedUser(t, d, "admin2", "testpass123", true)       // admin with email (included)
+	a3 := seedUser(t, d, "admin3", "testpass123", true)       // admin, NO email (excluded)
+	mem := seedUser(t, d, "member1", "testpass123", false)    // non-admin with email (excluded)
+	for id, email := range map[int64]string{sub: "sub@x.test", a2: "a2@x.test", mem: "m@x.test"} {
+		if _, err := d.Exec(`UPDATE users SET email=$1 WHERE id=$2`, email, id); err != nil {
+			t.Fatalf("set email: %v", err)
+		}
+	}
+	_ = a3
+
+	got, err := s.feedbackAdminRecipients(context.Background(), sub)
+	if err != nil {
+		t.Fatalf("recipients: %v", err)
+	}
+	if len(got) != 1 || got[0] != "a2@x.test" {
+		t.Fatalf("recipients = %v, want [a2@x.test] (admins w/ email, minus submitter & non-admins)", got)
 	}
 }
 

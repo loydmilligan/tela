@@ -50,6 +50,24 @@ func ResetPassword(to, username, resetURL string) Message {
 	}
 }
 
+// FeedbackNotice tells an instance admin that new feedback landed. `who` is the
+// submitter label, `subject`/`body` the feedback, and inboxURL the deep link to
+// the admin Feedback tab. Body is truncated to keep the email sane.
+func FeedbackNotice(to, who, subject, body, inboxURL string) Message {
+	b := strings.TrimSpace(body)
+	if len(b) > 600 {
+		b = b[:600] + "…"
+	}
+	intro := fmt.Sprintf("%s submitted feedback — “%s”: %s", who, subject, b)
+	footer := "You're receiving this because you're a tela instance admin."
+	return Message{
+		To:      to,
+		Subject: "New tela feedback: " + subject,
+		HTML:    layoutHTML("New feedback", intro, "Open feedback inbox", inboxURL, footer),
+		Text:    layoutText(intro, "Open feedback inbox", inboxURL, footer),
+	}
+}
+
 // layoutHTML renders the shared dark, indigo-accented card used by every
 // transactional email: tela wordmark, heading, one paragraph, a single CTA
 // button, the raw URL as a copy-paste fallback, and a footer note.

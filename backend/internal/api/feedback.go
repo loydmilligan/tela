@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/mailer"
 )
 
 // M17.A.1 Feedback. Meta-feedback channel for Tela + tela-mcp themselves —
@@ -101,7 +103,54 @@ func (s *Server) feedbackCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	if err != nil {
 		return feedbackDTO{}, &apiErr{http.StatusInternalServerError, "internal", "fetch created feedback failed"}
 	}
+	s.notifyNewFeedback(ctx, u, subject, body)
 	return dto, nil
+}
+
+// notifyNewFeedback emails the instance admins (except the submitter) that new
+// feedback arrived — the email companion to the in-app unread badge. Best-effort:
+// the recipient lookup is synchronous (ctx is still live) but the SMTP sends run
+// detached so relay latency never slows the submit, and any failure is logged,
+// never surfaced. A missing relay (LogMailer) just logs.
+func (s *Server) notifyNewFeedback(ctx context.Context, submitter *auth.User, subject, body string) {
+	emails, err := s.feedbackAdminRecipients(ctx, submitter.ID)
+	if err != nil {
+		slog.Error("feedback: admin lookup failed", "err", err)
+		return
+	}
+	if len(emails) == 0 {
+		return
+	}
+	who := submitter.Username
+	inbox := canonicalBaseURL() + "/settings?tab=feedback"
+	go func() {
+		for _, e := range emails {
+			if err := s.Mailer.Send(context.Background(), mailer.FeedbackNotice(e, who, subject, body, inbox)); err != nil {
+				slog.Error("feedback: notify send failed", "to", e, "err", err)
+			}
+		}
+	}()
+}
+
+// feedbackAdminRecipients returns the emails to notify of new feedback: every
+// instance admin with a non-empty email, excluding the submitter (no self-ping).
+func (s *Server) feedbackAdminRecipients(ctx context.Context, submitterID int64) ([]string, error) {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT email FROM users
+		  WHERE is_instance_admin = 1 AND email IS NOT NULL AND email <> '' AND id <> $1
+		  ORDER BY email`, submitterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var emails []string
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err == nil {
+			emails = append(emails, e)
+		}
+	}
+	return emails, rows.Err()
 }
 
 // feedbackAdminEntry is the read shape for the instance-admin inbox: the row plus
