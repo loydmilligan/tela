@@ -159,11 +159,11 @@ export function SettingsPage() {
   // "Organization" appears because you administer an org, "Instance admin" because
   // you're an instance admin.
   const groups = useMemo<SettingsGroup[]>(() => {
-    const account = [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
+    const account = [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, API_KEYS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
     if (me.data?.is_instance_admin) {
       return [
         { label: 'Account', tabs: account },
-        { label: 'Instance admin', tabs: [USERS_TAB, ORGS_TAB, API_KEYS_TAB, USAGE_TAB, FEEDBACK_TAB, EVENTS_TAB, AUDIT_TAB, INSTANCE_TAB] },
+        { label: 'Instance admin', tabs: [USERS_TAB, ORGS_TAB, USAGE_TAB, FEEDBACK_TAB, EVENTS_TAB, AUDIT_TAB, INSTANCE_TAB] },
       ]
     }
     if (isOrgAdmin) {

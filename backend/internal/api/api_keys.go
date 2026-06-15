@@ -47,26 +47,19 @@ type apiKeyCreateRequest struct {
 	ExpiresAt *string `json:"expires_at"`
 }
 
-// requireAPIKeyAdmin gates the /api/api_keys CRUD surface. The caller must
-// either be on a cookie session that belongs to an instance-admin, OR be on
-// a bearer token whose scope is admin. Bearer tokens with read/write scope
-// 403 here even if the underlying user is an instance-admin — the scope is a
-// ceiling, not a floor.
-func requireAPIKeyAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, bool) {
+// requireKeyManager gates the api-key management surface to a user managing their
+// OWN keys (self-serve). A cookie session passes; a bearer (PAT) caller must hold
+// admin scope — a read/write key can't mint or list keys (the scope is a ceiling,
+// not a floor). Ownership and scope-escalation are enforced per-handler: list is
+// filtered to the caller, delete/audit are owner-or-admin, and only instance
+// admins may create an admin-scoped key.
+func requireKeyManager(w http.ResponseWriter, r *http.Request) (*auth.User, bool) {
 	u, ok := requireUser(w, r)
 	if !ok {
 		return nil, false
 	}
-	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer {
-		if k.Scope != auth.ScopeAdmin {
-			writeError(w, http.StatusForbidden, "api_key_scope", "admin scope required")
-			return nil, false
-		}
-	}
-	if !u.IsInstanceAdmin {
-		// Non-admin users can still manage their OWN keys via /api/users/me/
-		// keys later; the global /api/api_keys surface is admin-only for v0.
-		writeError(w, http.StatusForbidden, "forbidden", "instance admin required")
+	if k, isBearer := auth.APIKeyFromContext(r.Context()); isBearer && k.Scope != auth.ScopeAdmin {
+		writeError(w, http.StatusForbidden, "api_key_scope", "admin scope required")
 		return nil, false
 	}
 	return u, true
@@ -76,7 +69,7 @@ func requireAPIKeyAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, boo
 // stores its HMAC + prefix, and returns the raw key ONCE. Subsequent reads
 // never re-expose the secret.
 func (s *Server) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	u, ok := requireAPIKeyAdmin(w, r)
+	u, ok := requireKeyManager(w, r)
 	if !ok {
 		return
 	}
@@ -93,6 +86,13 @@ func (s *Server) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	scope := strings.TrimSpace(req.Scope)
 	if scope != auth.ScopeRead && scope != auth.ScopeWrite && scope != auth.ScopeAdmin {
 		writeError(w, http.StatusBadRequest, "bad_request", "scope must be one of read, write, admin")
+		return
+	}
+	// An admin-scoped key carries full instance-admin powers, so only an instance
+	// admin may mint one — a regular user self-serving a key is capped at their
+	// own access (read/write), and the key can never exceed it.
+	if scope == auth.ScopeAdmin && !u.IsInstanceAdmin {
+		writeError(w, http.StatusForbidden, "forbidden", "only instance admins can create admin-scoped keys")
 		return
 	}
 
@@ -165,15 +165,15 @@ func (s *Server) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"api_key": dto})
 }
 
-// ListAPIKeys — GET /api/api_keys. Instance-admin only: returns every key
-// (revoked rows included so the audit trail is visible). Never includes the
-// raw token or HMAC.
+// ListAPIKeys — GET /api/api_keys. Returns the CALLER'S OWN keys (revoked rows
+// included so they can see their history). Never includes the raw token or HMAC.
 func (s *Server) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAPIKeyAdmin(w, r); !ok {
+	u, ok := requireKeyManager(w, r)
+	if !ok {
 		return
 	}
 	ctx := r.Context()
-	rows, err := s.DB.QueryContext(ctx, apiKeySelectColumns+` ORDER BY id DESC`)
+	rows, err := s.DB.QueryContext(ctx, apiKeySelectColumns+` WHERE user_id = $1 ORDER BY id DESC`, u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list api keys failed")
 		return

@@ -8,6 +8,7 @@ import {
   type CreateApiKeyInput,
 } from '../../lib/queries/api-keys'
 import { useSpaces } from '../../lib/queries/spaces'
+import { useMe } from '../../lib/queries/auth'
 import { localDateFromSqlite, relativeTimeFromSqlite } from '../../lib/relativeTime'
 import type { ApiKeyRow, ApiKeyScope } from '../../lib/types'
 import { Badge } from '../ui/badge'
@@ -91,6 +92,7 @@ interface CreateApiKeyFormProps {
 
 function CreateApiKeyForm({ onCreated }: CreateApiKeyFormProps) {
   const spaces = useSpaces()
+  const me = useMe()
   const create = useCreateApiKey()
   const [name, setName] = useState('')
   const [scope, setScope] = useState<ApiKeyScope>('read')
@@ -196,7 +198,11 @@ function CreateApiKeyForm({ onCreated }: CreateApiKeyFormProps) {
           >
             <ToggleGroupItem value="read">Read</ToggleGroupItem>
             <ToggleGroupItem value="write">Write</ToggleGroupItem>
-            <ToggleGroupItem value="admin">Admin</ToggleGroupItem>
+            {/* Admin scope = full instance-admin powers; only offered to instance
+                admins (the backend rejects it for anyone else). */}
+            {me.data?.is_instance_admin ? (
+              <ToggleGroupItem value="admin">Admin</ToggleGroupItem>
+            ) : null}
           </ToggleGroup>
           <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
             {SCOPE_DESCRIPTIONS[scope]}

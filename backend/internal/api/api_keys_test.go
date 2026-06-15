@@ -264,24 +264,58 @@ func TestAPIKeys_BearerSpaceRestrictionGatesPageAccess(t *testing.T) {
 
 // TestAPIKeys_NonAdminCookieRejected ensures a logged-in non-admin can't
 // create / list keys.
-func TestAPIKeys_NonAdminCookieRejected(t *testing.T) {
+// TestAPIKeys_SelfServeForNonAdmin — a regular user manages their OWN keys:
+// they can create a read/write key and list it, but CANNOT mint an admin-scoped
+// key (that stays instance-admin-only), and ListAPIKeys is scoped to their own.
+func TestAPIKeys_SelfServeForNonAdmin(t *testing.T) {
 	t.Setenv("TELA_API_KEY_SECRET", "deadbeef00112233445566778899aabbccddeeff00112233445566778899aabb")
 	auth.ResetAPIKeySecretCache()
-	ts, d := newWiredServer(t)
+	ts, d := newWiredServerOnDisk(t)
+	seedUser(t, d, "admin", "adminpw12", true)
 	seedUser(t, d, "bob", "bobpw1234", false)
-	c := loginClient(t, ts, "bob", "bobpw1234")
+	adminC := loginClient(t, ts, "admin", "adminpw12")
+	bobC := loginClient(t, ts, "bob", "bobpw1234")
 
-	r, _ := c.Post(ts.URL+"/api/api_keys", "application/json",
-		strings.NewReader(`{"name":"x","scope":"read"}`))
-	if r.StatusCode != http.StatusForbidden {
-		t.Fatalf("non-admin POST status=%d want 403", r.StatusCode)
+	// Admin mints a key for themselves — bob must never see it.
+	if r, _ := adminC.Post(ts.URL+"/api/api_keys", "application/json",
+		strings.NewReader(`{"name":"admin-key","scope":"admin"}`)); r.StatusCode != http.StatusCreated {
+		t.Fatalf("admin create status=%d want 201", r.StatusCode)
+	} else {
+		r.Body.Close()
+	}
+
+	// Bob self-creates a write key — now allowed.
+	r, _ := bobC.Post(ts.URL+"/api/api_keys", "application/json",
+		strings.NewReader(`{"name":"bobs-laptop","scope":"write"}`))
+	if r.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(r.Body)
+		t.Fatalf("bob create status=%d want 201 (%s)", r.StatusCode, b)
 	}
 	r.Body.Close()
-	r, _ = c.Get(ts.URL + "/api/api_keys")
+
+	// Bob cannot mint an admin-scoped key.
+	r, _ = bobC.Post(ts.URL+"/api/api_keys", "application/json",
+		strings.NewReader(`{"name":"escalate","scope":"admin"}`))
 	if r.StatusCode != http.StatusForbidden {
-		t.Fatalf("non-admin GET status=%d want 403", r.StatusCode)
+		t.Fatalf("bob admin-scope create status=%d want 403", r.StatusCode)
 	}
 	r.Body.Close()
+
+	// Bob's list shows only his own key, not the admin's.
+	r, _ = bobC.Get(ts.URL + "/api/api_keys")
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("bob list status=%d want 200", r.StatusCode)
+	}
+	var out struct {
+		APIKeys []apiKeyDTO `json:"api_keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	r.Body.Close()
+	if len(out.APIKeys) != 1 || out.APIKeys[0].Name != "bobs-laptop" {
+		t.Fatalf("bob list = %+v, want only his own key", out.APIKeys)
+	}
 }
 
 // TestAPIKeys_CreateValidatesPayload — happy-path validation: bad scope,
