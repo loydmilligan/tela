@@ -273,7 +273,8 @@ export interface AdminUserRow {
   orgs?: number // org memberships
   llm_calls?: number // AI calls this calendar month
   has_api_key?: boolean // ≥1 non-revoked PAT
-  used_mcp?: boolean // has hit /api/mcp with a key
+  used_mcp?: boolean // connected MCP (any credential, incl. OAuth)
+  mcp_last_seen_at?: string | null // last authenticated MCP request
 }
 
 // Per-user resource snapshot in the admin list — current usage beside the plan

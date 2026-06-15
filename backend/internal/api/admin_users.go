@@ -34,10 +34,11 @@ type adminUserDTO struct {
 	// Populated only by the list endpoint (omitted on create/patch responses).
 	LastActiveAt *string         `json:"last_active_at,omitempty"`
 	Usage        *adminUserUsage `json:"usage,omitempty"`
-	Orgs         int             `json:"orgs,omitempty"`        // org memberships
-	LLMCalls     int64           `json:"llm_calls,omitempty"`   // AI calls this calendar month
-	HasAPIKey    bool            `json:"has_api_key,omitempty"` // ≥1 non-revoked PAT
-	UsedMCP      bool            `json:"used_mcp,omitempty"`    // has hit /api/mcp via a key
+	Orgs         int             `json:"orgs,omitempty"`             // org memberships
+	LLMCalls     int64           `json:"llm_calls,omitempty"`        // AI calls this calendar month
+	HasAPIKey    bool            `json:"has_api_key,omitempty"`      // ≥1 non-revoked PAT
+	UsedMCP      bool            `json:"used_mcp,omitempty"`         // connected MCP (PAT-via-/api/mcp OR any MCP request, incl. OAuth)
+	McpLastSeen  *string         `json:"mcp_last_seen_at,omitempty"` // last authenticated MCP request, any credential
 }
 
 // adminUserUsage is the per-user resource snapshot the admin list shows: current
@@ -71,7 +72,7 @@ func (s *Server) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT id, username, display_name, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at
+		SELECT id, username, display_name, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at, mcp_last_seen_at
 		  FROM users
 		 ORDER BY username ASC`)
 	if err != nil {
@@ -145,7 +146,7 @@ func (s *Server) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 		users[i].Orgs = int(orgCount[id])
 		users[i].LLMCalls = llm[id]
 		users[i].HasAPIKey = hasKey[id]
-		users[i].UsedMCP = usedMCP[id]
+		users[i].UsedMCP = users[i].UsedMCP || usedMCP[id] // scan set it from mcp_last_seen_at (covers OAuth)
 		u, err := s.buildUsage(ctx, account{Kind: accountUser, ID: id})
 		if err != nil {
 			continue // usage stays nil for this row; the rest of the list still renders
@@ -449,15 +450,20 @@ func scanAdminUserRow(s adminUserScanner) (adminUserDTO, error) {
 	var (
 		dto             adminUserDTO
 		email, verified sql.NullString
+		mcpSeen         sql.NullString
 		isAdmin, active int
 	)
-	if err := s.Scan(&dto.ID, &dto.Username, &dto.DisplayName, &email, &verified, &isAdmin, &active, &dto.PlanKey, &dto.CreatedAt, &dto.UpdatedAt); err != nil {
+	if err := s.Scan(&dto.ID, &dto.Username, &dto.DisplayName, &email, &verified, &isAdmin, &active, &dto.PlanKey, &dto.CreatedAt, &dto.UpdatedAt, &mcpSeen); err != nil {
 		return adminUserDTO{}, err
 	}
 	dto.Email = nullableString(email)
 	dto.EmailVerified = verified.Valid
 	dto.IsInstanceAdmin = isAdmin == 1
 	dto.IsActive = active == 1
+	dto.McpLastSeen = nullableString(mcpSeen)
+	if mcpSeen.Valid {
+		dto.UsedMCP = true // any MCP request (PAT or OAuth) counts as connected
+	}
 	return dto, nil
 }
 
@@ -482,14 +488,14 @@ func scanInt64Map(ctx context.Context, d *sql.DB, query string, args ...any) map
 
 func selectAdminUserByID(ctx context.Context, d *sql.DB, id int64) (adminUserDTO, error) {
 	row := d.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at
+		SELECT id, username, display_name, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at, mcp_last_seen_at
 		  FROM users WHERE id = $1`, id)
 	return scanAdminUserRow(row)
 }
 
 func selectAdminUserByIDTx(ctx context.Context, tx *sql.Tx, id int64) (adminUserDTO, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, username, display_name, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at
+		SELECT id, username, display_name, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at, mcp_last_seen_at
 		  FROM users WHERE id = $1`, id)
 	return scanAdminUserRow(row)
 }

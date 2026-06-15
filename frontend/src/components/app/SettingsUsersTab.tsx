@@ -369,7 +369,15 @@ function UserActivitySheet({
             <DetailStat
               icon={<Plug width={14} height={14} />}
               label="MCP"
-              value={user.used_mcp ? 'Connected' : user.has_api_key ? 'Key, no use' : 'Not set up'}
+              value={
+                user.mcp_last_seen_at
+                  ? `Connected · ${relativeTimeFromSqlite(user.mcp_last_seen_at)}`
+                  : user.used_mcp
+                    ? 'Connected'
+                    : user.has_api_key
+                      ? 'Key, no use'
+                      : 'Not set up'
+              }
             />
             <DetailStat label="Storage" value={u ? formatBytes(u.storage_bytes) : '—'} />
             <DetailStat

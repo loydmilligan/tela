@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -96,13 +97,48 @@ func (s *Server) newMCPServer() *mcp.Server {
 // when OAuth is configured). Both resolve to a TokenInfo carrying the tela
 // *User + *APIKey, so the tool layer is identical for either credential.
 func (s *Server) mcpVerifier(ctx context.Context, token string, _ *http.Request) (*sdkauth.TokenInfo, error) {
-	if strings.HasPrefix(token, auth.TokenPrefix) {
-		return s.verifyPAT(ctx, token)
+	var (
+		ti  *sdkauth.TokenInfo
+		err error
+	)
+	switch {
+	case strings.HasPrefix(token, auth.TokenPrefix):
+		ti, err = s.verifyPAT(ctx, token)
+	case s.oauth != nil:
+		ti, err = s.verifyWorkOSToken(ctx, token)
+	default:
+		return nil, sdkauth.ErrInvalidToken
 	}
-	if s.oauth != nil {
-		return s.verifyWorkOSToken(ctx, token)
+	// Stamp MCP-last-seen for the resolved user — this is the one place that sees
+	// BOTH PAT and OAuth requests, so it's how an OAuth/cowork connection (which
+	// leaves no api_keys row) becomes detectable.
+	if err == nil && ti != nil {
+		if u, ok := ti.Extra[tokenExtraUser].(*auth.User); ok && u != nil {
+			s.touchMCPSeen(u.ID)
+		}
 	}
-	return nil, sdkauth.ErrInvalidToken
+	return ti, err
+}
+
+// mcpSeenThrottle skips re-stamping a user more than once per window (per process),
+// so a chatty MCP session doesn't write on every tool call.
+var mcpSeenThrottle sync.Map // userID(int64) -> time.Time
+
+// touchMCPSeen records that userID used MCP "now" — throttled in memory and
+// written async/best-effort, so it never adds latency to the request path. The
+// stamp only needs to flip from NULL to non-NULL to make the connection visible.
+func (s *Server) touchMCPSeen(userID int64) {
+	now := time.Now()
+	if last, ok := mcpSeenThrottle.Load(userID); ok {
+		if now.Sub(last.(time.Time)) < 30*time.Minute {
+			return
+		}
+	}
+	mcpSeenThrottle.Store(userID, now)
+	go func() {
+		_, _ = s.DB.ExecContext(context.Background(),
+			`UPDATE users SET mcp_last_seen_at = tela_now() WHERE id = $1`, userID)
+	}()
 }
 
 // verifyPAT resolves a tela PAT to a TokenInfo. UserID is set so the SDK's
