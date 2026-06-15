@@ -5,6 +5,8 @@ import { SettingsApiKeysTab } from '../components/app/SettingsApiKeysTab'
 import { SettingsBillingTab } from '../components/app/SettingsBillingTab'
 import { SettingsAuditTab } from '../components/app/SettingsAuditTab'
 import { SettingsEventsTab } from '../components/app/SettingsEventsTab'
+import { SettingsUsageTab } from '../components/app/SettingsUsageTab'
+import { SettingsFeedbackTab } from '../components/app/SettingsFeedbackTab'
 import { SettingsNotificationsTab } from '../components/app/SettingsNotificationsTab'
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
@@ -82,6 +84,22 @@ const EVENTS_TAB: SettingsTab = {
   render: () => <SettingsEventsTab />,
 }
 
+// Instance-wide usage overview — totals, top AI consumers, knowledge gaps.
+// Instance-admin only.
+const USAGE_TAB: SettingsTab = {
+  id: 'usage',
+  label: 'Usage',
+  render: () => <SettingsUsageTab />,
+}
+
+// Inbox for feedback submitted via the in-app form / MCP submit_feedback tool.
+// Instance-admin only.
+const FEEDBACK_TAB: SettingsTab = {
+  id: 'feedback',
+  label: 'Feedback',
+  render: () => <SettingsFeedbackTab />,
+}
+
 // Instance-wide runtime config (settings substrate) — instance-admin only.
 const INSTANCE_TAB: SettingsTab = {
   id: 'instance',
@@ -133,7 +151,7 @@ export function SettingsPage() {
     (orgs.data?.some((o) => o.my_role === 'admin') ?? false)
   const tabs = useMemo<SettingsTab[]>(() => {
     if (me.data?.is_instance_admin) {
-      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, INSTANCE_TAB, EVENTS_TAB, AUDIT_TAB]
+      return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB, API_KEYS_TAB, USERS_TAB, ORGS_TAB, INSTANCE_TAB, USAGE_TAB, FEEDBACK_TAB, EVENTS_TAB, AUDIT_TAB]
     }
     if (isOrgAdmin) {
       return [PROFILE_TAB, NOTIFICATIONS_TAB, BILLING_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB, ORG_ADMIN_TAB]

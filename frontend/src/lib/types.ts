@@ -470,6 +470,51 @@ export interface EventEntry {
   created_at: string
 }
 
+// One submitted feedback row, instance-admin read (GET /api/admin/feedback).
+export interface FeedbackEntry {
+  id: number
+  created_at: string
+  subject: string
+  body: string
+  user_id: number | null
+  username: string | null
+  via_api_key: boolean
+}
+
+// Instance-wide usage overview (GET /api/admin/usage), instance-admin only.
+export interface AdminUsageTotals {
+  users: number
+  orgs: number
+  spaces: number
+  pages: number
+  storage_bytes: number
+  llm_calls: number
+  asks: number
+  asks_answered: number
+}
+export interface AdminAccountUsage {
+  kind: 'user' | 'org'
+  id: number
+  label: string
+  plan_key: string
+  plan_name: string
+  llm_calls: number
+  llm_cap: number | null
+}
+export interface KnowledgeGap {
+  question: string
+  asks: number
+  answered: number
+  avg_hits: number
+  last_asked: string
+}
+export interface AdminUsage {
+  period: string
+  totals: AdminUsageTotals
+  top: AdminAccountUsage[]
+  gaps: KnowledgeGap[]
+}
+
 // Three-rung scope ceiling on a personal access token. See
 // backend/internal/auth/api_key.go — `admin` implies write+read, `write`
 // implies read.

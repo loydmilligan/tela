@@ -104,6 +104,64 @@ func (s *Server) feedbackCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	return dto, nil
 }
 
+// feedbackAdminEntry is the read shape for the instance-admin inbox: the row plus
+// the submitter's username (joined; nil for a deleted/anonymous user) and a flag
+// for whether it came through an API key / agent.
+type feedbackAdminEntry struct {
+	ID        int64   `json:"id"`
+	CreatedAt string  `json:"created_at"`
+	Subject   string  `json:"subject"`
+	Body      string  `json:"body"`
+	UserID    *int64  `json:"user_id"`
+	Username  *string `json:"username"`
+	ViaAPIKey bool    `json:"via_api_key"`
+}
+
+// ListFeedback returns the most recent feedback across the instance, newest first.
+// Instance-admin only — feedback is global (about tela itself), not org-scoped.
+func (s *Server) ListFeedback(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireInstanceAdmin(w, r); !ok {
+		return
+	}
+	limit := clampLimit(r.URL.Query().Get("limit"), 100, 200)
+	rows, err := s.DB.QueryContext(r.Context(), `
+		SELECT f.id, f.created_at, f.subject, f.body, f.created_by_user_id, u.username,
+		       CASE WHEN f.created_by_api_key_id IS NOT NULL THEN 1 ELSE 0 END
+		  FROM feedback f
+		  LEFT JOIN users u ON u.id = f.created_by_user_id
+		 ORDER BY f.id DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "list feedback failed")
+		return
+	}
+	defer rows.Close()
+	entries := []feedbackAdminEntry{}
+	for rows.Next() {
+		var (
+			e        feedbackAdminEntry
+			userID   sql.NullInt64
+			username sql.NullString
+			viaKey   int
+		)
+		if err := rows.Scan(&e.ID, &e.CreatedAt, &e.Subject, &e.Body, &userID, &username, &viaKey); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "scan feedback row failed")
+			return
+		}
+		if userID.Valid {
+			e.UserID = &userID.Int64
+		}
+		e.Username = nullableString(username)
+		e.ViaAPIKey = viaKey == 1
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "iterate feedback failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"feedback": entries})
+}
+
 func selectFeedbackByID(ctx context.Context, q *sql.DB, id int64) (feedbackDTO, error) {
 	row := q.QueryRowContext(ctx, `
 		SELECT id, created_at, created_by_user_id, created_by_api_key_id, subject, body
