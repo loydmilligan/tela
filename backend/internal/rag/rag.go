@@ -84,7 +84,19 @@ type Service struct {
 	attempts     map[int64]int
 	pendingFiles map[int64]time.Time
 	fileAttempts map[int64]int
+
+	// paused, when set and true, halts background semantic backfilling (the
+	// auto-reindex worker + stale sweep). Wired to the admin AI kill-switch so
+	// indexing doesn't hammer the embedder while it's under maintenance; the
+	// corpus is the source of truth, so the sweep backfills once it clears.
+	paused func() bool
 }
+
+// SetPaused installs the predicate the background indexer consults each tick.
+// Call before StartAutoReindex.
+func (s *Service) SetPaused(fn func() bool) { s.paused = fn }
+
+func (s *Service) isPaused() bool { return s.paused != nil && s.paused() }
 
 // NewService builds the service from config. It never fails: with no EmbedURL
 // the service is constructed disabled so api.Server can hold a non-nil handle

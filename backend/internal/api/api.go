@@ -158,7 +158,13 @@ func New(db *sql.DB) *Server {
 	go s.cloudLimiter.sweepLoop(context.Background())
 	go s.davDeletes.sweepLoop(context.Background())
 	// Background auto-reindex worker (no-op when the embedder is unconfigured).
-	// Page writes call s.rag.QueueReindex; this drains the debounced queue.
+	// Page writes call s.rag.QueueReindex; this drains the debounced queue. The
+	// admin AI kill-switch (ai.disabled) pauses backfilling so it doesn't hammer
+	// the embedder while it's under maintenance.
+	s.rag.SetPaused(func() bool {
+		v, _ := s.settings.Get("ai.disabled")
+		return v == "1"
+	})
 	s.rag.StartAutoReindex(context.Background())
 	// Background auto-summarize worker, the generation sibling (no-op when the
 	// LLM is unconfigured). Page writes call s.summarize.Queue.

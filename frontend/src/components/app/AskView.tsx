@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   ArrowUpRight,
+  Wrench,
 } from 'lucide-react'
 import { Card, CardBody } from '../ui/card'
 import { Button } from '../ui/button'
@@ -21,6 +22,7 @@ import {
 } from '../ui/dropdown-menu'
 import { EmptyState } from '../ui/empty-state'
 import { useSpaces } from '../../lib/queries/spaces'
+import { useHostContext } from '../../lib/queries/host-context'
 import type { Space } from '../../lib/types'
 import { useAskDocsStream } from '../../lib/queries/ask'
 import { navigateToPage } from '../../lib/pageHitItem'
@@ -85,6 +87,11 @@ export function AskRoute() {
   const [question, setQuestion] = useState('')
   const ask = useAskDocsStream()
   const preview = usePageHoverPreview()
+  // AI off (admin kill-switch or embedder unconfigured) → don't let the user fire
+  // a request that just 503s; show a clear notice instead.
+  const host = useHostContext().data
+  const aiPaused = host ? !host.ai_available : false
+  const maintenanceNote = host?.maintenance?.notice?.trim()
 
   // Dedupe chunk-level sources to one row per page (hits arrive score-ordered,
   // so the first chunk per page is its strongest citation).
@@ -174,11 +181,11 @@ export function AskRoute() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything about your pages…"
+            placeholder={aiPaused ? 'Ask is paused for maintenance…' : 'Ask anything about your pages…'}
             aria-label="Question"
             rows={2}
             autoFocus
-            disabled={ask.isPending}
+            disabled={ask.isPending || aiPaused}
             className="border-0 bg-transparent resize-none px-0 py-[var(--space-1)] text-[length:var(--text-base)] min-h-[calc(var(--space-8)*1.75)] placeholder:text-[var(--text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-transparent"
           />
           <div className="flex items-center gap-[var(--space-2)]">
@@ -197,7 +204,7 @@ export function AskRoute() {
               size="sm"
               onClick={submit}
               aria-label="Ask"
-              disabled={question.trim().length === 0 || ask.isPending}
+              disabled={question.trim().length === 0 || ask.isPending || aiPaused}
               className="size-[var(--space-8)] shrink-0 rounded-full p-0"
             >
               {ask.isPending ? (
@@ -211,7 +218,16 @@ export function AskRoute() {
       </Card>
 
       <section aria-label="Answer" aria-live="polite" className="min-h-0">
-        {unavailable ? (
+        {aiPaused ? (
+          <EmptyState
+            icon={Wrench}
+            title="AI is paused for maintenance"
+            description={
+              maintenanceNote ||
+              'An admin has temporarily paused AI features (ask & semantic search). Full-text search still works — give it a moment and try again later.'
+            }
+          />
+        ) : unavailable ? (
           <EmptyState
             icon={Sparkles}
             title="Ask your docs isn't available yet"

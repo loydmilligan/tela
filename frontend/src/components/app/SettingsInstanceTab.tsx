@@ -71,9 +71,10 @@ export function SettingsInstanceTab() {
                   Pause AI features
                 </span>
                 <span className="text-[length:var(--text-xs)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-                  Stops “ask your docs” and semantic search from calling the AI backend —
-                  use while that service is under maintenance so it fails calmly, not loudly.
-                  Pair it with a banner below.
+                  Pauses everything that calls the AI backend — “ask your docs”, semantic
+                  search, and background semantic indexing (backfilling). Ask shows a calm
+                  “paused for maintenance” notice; full-text search keeps working. Pair it
+                  with a banner below.
                 </span>
               </span>
             </label>

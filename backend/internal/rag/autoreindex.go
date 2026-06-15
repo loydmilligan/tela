@@ -108,6 +108,11 @@ func (s *Service) reindexLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			// Admin AI kill-switch: skip the tick entirely (don't drain the queue)
+			// so backfilling resumes where it left off once AI is re-enabled.
+			if s.isPaused() {
+				continue
+			}
 			for _, id := range s.dueReindexes() {
 				rctx, cancel := context.WithTimeout(ctx, reindexTimeout)
 				_, err := s.ReindexPage(rctx, id)
@@ -249,6 +254,9 @@ func (s *Service) staleSweepLoop(ctx context.Context) {
 // sweepStale enqueues up to staleSweepBatch stale/unindexed pages and logs a
 // health line. Best-effort: query errors are logged, never fatal.
 func (s *Service) sweepStale(ctx context.Context) {
+	if s.isPaused() {
+		return // AI kill-switch on — don't backfill while the embedder is paused
+	}
 	h, err := s.IndexHealth(ctx)
 	if err != nil {
 		slog.Error("rag: index-health query", "err", err)
