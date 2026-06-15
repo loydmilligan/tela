@@ -25,7 +25,7 @@ func (s *Server) RAGSearch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
 		return
 	}
@@ -66,7 +66,7 @@ func (s *Server) RAGReadChunk(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
 		return
 	}
@@ -115,7 +115,7 @@ func (s *Server) RAGFreshness(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal", "freshness query failed")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"enabled": s.rag.Enabled(), "space_id": spaceID, "pages": pages})
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": s.aiEnabled(), "space_id": spaceID, "pages": pages})
 		return
 	}
 
@@ -124,7 +124,7 @@ func (s *Server) RAGFreshness(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "freshness query failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": s.rag.Enabled(), "spaces": spaces})
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": s.aiEnabled(), "spaces": spaces})
 }
 
 // RAGReindex handles POST /api/rag/reindex?space_id=
@@ -134,7 +134,7 @@ func (s *Server) RAGReindex(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
 		return
 	}
@@ -179,7 +179,7 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
 		return
 	}
@@ -411,7 +411,7 @@ func (s *Server) RAGSuggestLinks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic features are not configured")
 		return
 	}

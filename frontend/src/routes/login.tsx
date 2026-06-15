@@ -18,6 +18,7 @@ import {
 import { Input } from '../components/ui/input'
 import { AuthShell, AuthField, AuthFooterLink } from '../components/app/AuthShell'
 import { SSOButtons } from '../components/app/SSOButtons'
+import { MaintenanceBanner } from '../components/app/MaintenanceBanner'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -93,6 +94,9 @@ export function LoginPage() {
 
   return (
     <AuthShell>
+      <div className="w-full max-w-[24rem] empty:hidden">
+        <MaintenanceBanner />
+      </div>
       <Card className="tela-auth-card w-full bg-[var(--surface-1)] shadow-[var(--shadow-lg)]">
         <CardHeader className="gap-[var(--space-2)] px-[var(--space-7)] pt-[var(--space-7)] pb-[var(--space-2)]">
           <CardTitle className="text-[length:var(--text-2xl)] font-semibold tracking-[-0.01em]">

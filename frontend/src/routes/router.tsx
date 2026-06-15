@@ -22,6 +22,7 @@ import { OrgManageView } from '../components/app/OrgManageView'
 import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
 import { TrialBanner } from '../components/app/TrialBanner'
+import { MaintenanceBanner } from '../components/app/MaintenanceBanner'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
 import { Button } from '../components/ui/button'
 import {
@@ -181,6 +182,7 @@ const appLayoutRoute = createRoute({
               <ThemeSwitcher />
             </div>
           </header>
+          <MaintenanceBanner />
           <TrialBanner />
           <main
             data-page-scroll

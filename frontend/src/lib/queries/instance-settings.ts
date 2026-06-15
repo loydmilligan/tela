@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
+import { hostContextKeys } from './host-context'
 
 // Instance-level runtime settings (the instance_settings substrate). Read/write
 // is instance-admin only; secret-prefixed keys are never returned by the API.
@@ -31,6 +32,9 @@ export function useUpdateInstanceSettings() {
       }),
     onSuccess: ({ settings }) => {
       qc.setQueryData(instanceSettingsKeys.all, settings)
+      // The maintenance banner / AI availability ride host-context — refresh it so
+      // an admin sees their own change immediately, not after the staleTime.
+      void qc.invalidateQueries({ queryKey: hostContextKeys.all })
     },
   })
 }

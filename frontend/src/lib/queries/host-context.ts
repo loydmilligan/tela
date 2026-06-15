@@ -12,6 +12,9 @@ const DEFAULT_HOST_CONTEXT: HostContext = {
     social_enabled: true,
     org_sso_available: false,
   },
+  maintenance: null,
+  // Default to available so a transient host-context failure never falsely hides AI.
+  ai_available: true,
 }
 
 // GET /api/host-context — PUBLIC, host-derived. Raw fetch (not api()) since
@@ -37,9 +40,11 @@ export async function fetchHostContext(): Promise<HostContext> {
 // and white-labeling (branding + login-method gating) would never apply on a
 // custom domain. placeholderData fills `.data` during the in-flight fetch
 // without short-circuiting it.
+export const hostContextKeys = { all: ['host-context'] as const }
+
 export function useHostContext() {
   return useQuery({
-    queryKey: ['host-context'],
+    queryKey: hostContextKeys.all,
     queryFn: fetchHostContext,
     staleTime: Infinity,
     retry: false,

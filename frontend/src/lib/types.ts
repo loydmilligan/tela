@@ -412,6 +412,10 @@ export interface HostContext {
     social_enabled: boolean
     org_sso_available: boolean
   }
+  // Admin-set maintenance notice for the app-wide banner; null/absent = none.
+  maintenance?: { notice: string; level: 'info' | 'warning' } | null
+  // Whether managed AI (ask / semantic search) is serving right now.
+  ai_available: boolean
 }
 
 // GET/PUT /api/orgs/{id}/branding — an org's white-label overrides. Both '' to

@@ -336,7 +336,7 @@ func (s *Server) askComputeOK(w http.ResponseWriter, r *http.Request, u *auth.Us
 // askGuards is the shared precondition for every generative endpoint: embedder +
 // LLM configured. Returns false (and writes the 503) when unavailable.
 func (s *Server) askGuards(w http.ResponseWriter) bool {
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
 		return false
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
 )
@@ -46,6 +47,13 @@ type hostLoginDTO struct {
 	OrgSSOAvailable bool `json:"org_sso_available"`
 }
 
+// maintenanceDTO is an admin-set instance notice (e.g. "AI is paused for
+// maintenance"). nil when no notice is set. Level drives the banner styling.
+type maintenanceDTO struct {
+	Notice string `json:"notice"`
+	Level  string `json:"level"` // "info" | "warning"
+}
+
 type hostContextDTO struct {
 	Org   *hostOrgDTO  `json:"org"`
 	Login hostLoginDTO `json:"login"`
@@ -53,6 +61,36 @@ type hostContextDTO struct {
 	// domain the SPA points tela-brand links here instead of the current host
 	// (a relative "/" would land on the org domain's root). '' in dev.
 	CanonicalBase string `json:"canonical_base"`
+	// Maintenance notice for the app-wide banner; nil = none.
+	Maintenance *maintenanceDTO `json:"maintenance,omitempty"`
+	// Whether managed AI (ask / semantic search) is serving — false when the
+	// embedder is unconfigured OR an admin flipped the ai.disabled kill-switch.
+	AIAvailable bool `json:"ai_available"`
+}
+
+// aiEnabled reports whether managed AI should serve. False when the embedder/LLM
+// is unconfigured, OR an instance admin has set the ai.disabled kill-switch
+// (pause AI while its backing service is under maintenance without erroring
+// loudly). The user-facing AI endpoints + host-context gate on this.
+func (s *Server) aiEnabled() bool {
+	if v, ok := s.settings.Get("ai.disabled"); ok && v == "1" {
+		return false
+	}
+	return s.rag != nil && s.rag.Enabled()
+}
+
+// maintenanceNotice returns the active admin notice, or nil when unset.
+func (s *Server) maintenanceNotice() *maintenanceDTO {
+	notice, _ := s.settings.Get("maintenance.notice")
+	notice = strings.TrimSpace(notice)
+	if notice == "" {
+		return nil
+	}
+	level, _ := s.settings.Get("maintenance.level")
+	if level != "warning" {
+		level = "info"
+	}
+	return &maintenanceDTO{Notice: notice, Level: level}
 }
 
 // HostContext — GET /api/host-context. Public (host-derived, pre-login). The
@@ -65,6 +103,8 @@ func (s *Server) HostContext(w http.ResponseWriter, r *http.Request) {
 	out := hostContextDTO{
 		Login:         hostLoginDTO{PasswordEnabled: true, SocialEnabled: true},
 		CanonicalBase: canonicalBaseURL(),
+		Maintenance:   s.maintenanceNotice(),
+		AIAvailable:   s.aiEnabled(),
 	}
 
 	oc, ok := auth.OrgContextFromContext(ctx)

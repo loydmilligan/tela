@@ -632,7 +632,7 @@ func (s *Server) mcpSemanticSearch(ctx context.Context, req *mcp.CallToolRequest
 	if u == nil {
 		return mcpUnauthErr(), semanticSearchOut{}, nil
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		return mcpErr(&apiErr{503, "rag_disabled", "semantic search is not configured"}), semanticSearchOut{}, nil
 	}
 	// A space-pinned bearer key may only ever see its one space.
@@ -664,7 +664,7 @@ func (s *Server) mcpReadChunk(ctx context.Context, req *mcp.CallToolRequest, in 
 	if u == nil {
 		return mcpUnauthErr(), readChunkOut{}, nil
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		return mcpErr(&apiErr{503, "rag_disabled", "semantic search is not configured"}), readChunkOut{}, nil
 	}
 	var spaceID *int64
@@ -730,7 +730,7 @@ func (s *Server) mcpSuggestLinks(ctx context.Context, req *mcp.CallToolRequest, 
 	if u == nil {
 		return mcpUnauthErr(), suggestLinksOut{}, nil
 	}
-	if !s.rag.Enabled() {
+	if !s.aiEnabled() {
 		return mcpErr(&apiErr{503, "rag_disabled", "semantic features are not configured"}), suggestLinksOut{}, nil
 	}
 	spaceID := in.SpaceID

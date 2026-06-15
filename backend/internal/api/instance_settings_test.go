@@ -1,10 +1,50 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+// The ai.disabled kill-switch + maintenance banner flow through instance settings
+// and surface on the public host-context.
+func TestMaintenance_KillSwitchAndBanner(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	adminID := seedUser(t, d, "admin", "adminpw123", true)
+
+	// No notice by default.
+	hc0 := recordHandler(srv.HostContext, userRequest(http.MethodGet, "/api/host-context", "", authUser(adminID, "admin", true)))
+	var out0 hostContextDTO
+	_ = json.Unmarshal(hc0.Body.Bytes(), &out0)
+	if out0.Maintenance != nil {
+		t.Fatalf("maintenance should be nil by default, got %+v", out0.Maintenance)
+	}
+
+	patch := userRequest(http.MethodPatch, "/api/admin/settings",
+		`{"settings":{"ai.disabled":"1","maintenance.notice":"AI is down for maintenance","maintenance.level":"warning"}}`,
+		authUser(adminID, "admin", true))
+	if rec := recordHandler(srv.PatchInstanceSettings, patch); rec.Code != http.StatusOK {
+		t.Fatalf("patch: status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	if srv.aiEnabled() {
+		t.Fatalf("aiEnabled() must be false once ai.disabled=1")
+	}
+
+	hc := recordHandler(srv.HostContext, userRequest(http.MethodGet, "/api/host-context", "", authUser(adminID, "admin", true)))
+	var out hostContextDTO
+	if err := json.Unmarshal(hc.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode host-context: %v", err)
+	}
+	if out.AIAvailable {
+		t.Fatalf("ai_available must be false when ai.disabled=1")
+	}
+	if out.Maintenance == nil || out.Maintenance.Notice != "AI is down for maintenance" || out.Maintenance.Level != "warning" {
+		t.Fatalf("maintenance notice not surfaced: %+v", out.Maintenance)
+	}
+}
 
 func TestInstanceSettings_PatchThenGet(t *testing.T) {
 	d := newAPITestDB(t)
