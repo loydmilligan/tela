@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import 'katex/dist/katex.min.css'
 import './styles/index.css'
 import { subscribeToAuthRequired } from './lib/api'
+import { installGlobalErrorReporting } from './lib/client-errors'
 import { initTheme } from './lib/theme'
 import { authKeys } from './lib/queries/auth'
 import { queryClient } from './lib/queryClient'
@@ -10,6 +11,11 @@ import { router } from './routes/router'
 import App from './App.tsx'
 
 initTheme()
+
+// Capture uncaught exceptions + unhandled promise rejections globally and beacon
+// them to the backend so client-side crashes are visible (admin Events feed +
+// Prometheus). Installed before render so an error during startup is caught.
+installGlobalErrorReporting()
 
 // Stale-chunk recovery. After a frontend redeploy the hashed lazy-chunk
 // filenames change; a tab still running the old bundle 404s when it tries to

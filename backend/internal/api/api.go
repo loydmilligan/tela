@@ -44,6 +44,11 @@ type Server struct {
 	// LLM/embedder compute into an unbounded bill or DoS the shared clients.
 	cloudLimiter *authRateLimiter
 
+	// clientErrorLimiter throttles the browser error-report beacon
+	// (/api/client-errors) per user so a tab stuck in an error loop can't flood
+	// the events table. Reuses the same sliding-window machinery.
+	clientErrorLimiter *authRateLimiter
+
 	// davDeletes is the WebDAV mass-delete brake (sync §6): a per-(api_key,space)
 	// sliding window that refuses a sync client's delete once an anomalous
 	// fraction of the space has already vanished, so a runaway client can't wipe a
@@ -126,21 +131,22 @@ func New(db *sql.DB) *Server {
 		os.Exit(1)
 	}
 	s := &Server{
-		DB:           db,
-		settings:     st,
-		rooms:        newRoomRegistry(),
-		shareSecret:  resolveShareSecret(ctx, st),
-		shareLimiter: newShareRateLimiter(),
-		auditWriter:  auth.NewAuditWriter(db),
-		Mailer:       mailer.FromEnv(),
-		authLimiter:  newAuthRateLimiter(authRateWindow, authRateLimit),
-		cloudLimiter: newAuthRateLimiter(cloudRateWindow, cloudRateLimit),
-		davDeletes:   newDavDeleteGuard(),
-		rag:          rag.NewService(db, rag.ConfigFromEnv()),
-		llm:          llm.NewService(llm.ConfigFromEnv()),
-		oauth:        loadMCPOAuth(context.Background()),
-		sso:          loadSSOProviders(context.Background()),
-		seedWelcome:  os.Getenv("TELA_DISABLE_WELCOME_SEED") == "",
+		DB:                 db,
+		settings:           st,
+		rooms:              newRoomRegistry(),
+		shareSecret:        resolveShareSecret(ctx, st),
+		shareLimiter:       newShareRateLimiter(),
+		auditWriter:        auth.NewAuditWriter(db),
+		Mailer:             mailer.FromEnv(),
+		authLimiter:        newAuthRateLimiter(authRateWindow, authRateLimit),
+		cloudLimiter:       newAuthRateLimiter(cloudRateWindow, cloudRateLimit),
+		clientErrorLimiter: newAuthRateLimiter(clientErrorRateWindow, clientErrorRateLimit),
+		davDeletes:         newDavDeleteGuard(),
+		rag:                rag.NewService(db, rag.ConfigFromEnv()),
+		llm:                llm.NewService(llm.ConfigFromEnv()),
+		oauth:              loadMCPOAuth(context.Background()),
+		sso:                loadSSOProviders(context.Background()),
+		seedWelcome:        os.Getenv("TELA_DISABLE_WELCOME_SEED") == "",
 	}
 	// Built after the literal so it can share the llm handle (same enablement).
 	s.summarize = summarize.NewService(db, s.llm)
@@ -156,6 +162,7 @@ func New(db *sql.DB) *Server {
 	go s.shareLimiter.sweepLoop(context.Background())
 	go s.authLimiter.sweepLoop(context.Background())
 	go s.cloudLimiter.sweepLoop(context.Background())
+	go s.clientErrorLimiter.sweepLoop(context.Background())
 	go s.davDeletes.sweepLoop(context.Background())
 	// Admin AI kill-switch (ai.disabled): pause EVERY background AI worker so a
 	// maintenance window on the AI backend isn't hammered by indexing, summaries,

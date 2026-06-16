@@ -109,8 +109,29 @@ $COMPOSE logs -f --tail=100 backend    # one service
 
 Each request emits a structured access-log line (`http method=… path=… status=…
 dur_ms=…` via `slog`; the `/api/health` probe is skipped). `/api/health` also
-reports `rag: enabled|disabled`. A Prometheus `/metrics` endpoint is still on the
-roadmap.
+reports `rag: enabled|disabled`.
+
+## Metrics
+
+A Prometheus exposition is served at **`GET /metrics`** (`internal/api/metrics.go`).
+It is **instance-admin gated** — a scraper authenticates with an admin-scoped PAT
+(`Authorization: Bearer tela_pat_<key>`). Exported series include
+`tela_http_requests_total{method,route,status}`,
+`tela_http_request_duration_seconds{method,route}`,
+`tela_client_errors_total{kind}` (see below), and the standard Go runtime +
+process collectors.
+
+## Client-side errors
+
+Crashes in a user's browser (uncaught exceptions, unhandled promise rejections,
+React render errors) are beaconed to **`POST /api/client-errors`** and recorded
+as `client.error` rows in the activity feed — visible in **Settings → Events**
+under the **Errors** filter, with the full message + stack inline. The same
+report bumps `tela_client_errors_total{kind}` (kinds: `error`,
+`unhandledrejection`, `react`, `collab`), so a spike is alertable from
+`/metrics`. The endpoint is authed (session/bearer) and per-user rate-limited;
+pre-login crashes on the login screen are not captured. Frontend wiring:
+`frontend/src/lib/client-errors.ts` + the top-level `ErrorBoundary`.
 
 ## Search-engine indexing (SEO)
 

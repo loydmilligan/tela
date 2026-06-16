@@ -39,12 +39,26 @@ var (
 		},
 		[]string{"method", "route"},
 	)
+
+	// clientErrors counts browser-side error reports beaconed to
+	// /api/client-errors, by kind (error | unhandledrejection | react | collab).
+	// The kind label is bounded by the client + the clientErrMaxKind truncation,
+	// so cardinality stays low; this is the alertable signal for "users are
+	// hitting crashes we never see server-side".
+	clientErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tela_client_errors_total",
+			Help: "Total browser-side error reports by kind.",
+		},
+		[]string{"kind"},
+	)
 )
 
 func init() {
 	metricsRegistry.MustRegister(
 		httpRequests,
 		httpDuration,
+		clientErrors,
 		// Go runtime + process collectors (goroutines, GC, memory, open FDs,
 		// CPU, etc.).
 		collectors.NewGoCollector(),

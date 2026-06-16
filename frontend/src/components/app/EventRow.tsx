@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import {
   AlertTriangle,
+  Bug,
   Eye,
   FilePlus,
   LogIn,
@@ -47,6 +48,8 @@ function describe(type: string): Descriptor {
       return { Icon: Sparkles, group: 'ask', tone: 'accent', verb: 'asked' }
     case 'api.request':
       return { Icon: Terminal, group: 'api', tone: 'muted', verb: 'API request' }
+    case 'client.error':
+      return { Icon: Bug, group: 'error', tone: 'danger', verb: 'hit a client error' }
     default:
       if (type.startsWith('access.')) {
         // 'access.org_member.add' → 'org member add'
@@ -98,12 +101,19 @@ export function EventRow({ event }: { event: EventEntry }) {
               </>
             ) : null}
           </span>
-          {event.detail && d.group !== 'access' ? (
+          {event.detail && d.group !== 'access' && d.group !== 'error' ? (
             <span className="truncate max-w-full text-[length:var(--text-xs)] text-[var(--text-muted)]">
               {event.detail}
             </span>
           ) : null}
         </div>
+        {/* Client errors carry a multi-line message + stack; show it in full
+            (the row truncation would hide the stack that makes it useful). */}
+        {event.detail && d.group === 'error' ? (
+          <pre className="m-0 mt-[var(--space-1)] max-h-[12rem] overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-sm)] bg-[var(--surface-2)] p-[var(--space-2)] text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-mono)]">
+            {event.detail}
+          </pre>
+        ) : null}
         <span className="text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
           {relativeTimeFromSqlite(event.created_at)}
           {event.ip ? ` · ${event.ip}` : ''}

@@ -265,6 +265,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// list/get/patch/delete surface.
 	mux.HandleFunc("POST /api/feedback", srv.CreateFeedback)
 
+	// Browser-side error beacon (client_errors.go). The frontend's global error
+	// reporter + React error boundary POST crashes here so they land in the
+	// events feed + a Prometheus counter instead of dying silently in the user's
+	// console. Session/bearer-authed (NOT public) — see the handler doc.
+	mux.HandleFunc("POST /api/client-errors", srv.CreateClientError)
+
 	mux.HandleFunc("GET /api/search", srv.Search)
 
 	// M16.A.5 server-side body-fuzzy search. Powers the MCP `search_bodies`

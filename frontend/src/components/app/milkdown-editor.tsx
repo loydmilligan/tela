@@ -49,6 +49,7 @@ import {
   yUndoPlugin,
 } from 'y-prosemirror'
 import { cn } from '../../lib/utils'
+import { setErrorReportPageId } from '../../lib/client-errors'
 import { configureRefractor } from '../../lib/milkdown/refractor-config'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
 import { TelaProvider, type TelaProviderStatus } from '../../lib/collab/tela-provider'
@@ -411,6 +412,15 @@ function MilkdownEditorInner({
       setCollabStatus(s)
     })
   }, [])
+
+  // Tag global error reports with the page being edited, so a crash here lands
+  // in the events feed pointing at the right page (collab is the hotspot we're
+  // chasing). Cleared on unmount / page change.
+  useEffect(() => {
+    if (collabPageId == null) return
+    setErrorReportPageId(collabPageId)
+    return () => setErrorReportPageId(undefined)
+  }, [collabPageId])
 
   // M7.4 — hand the provider up to PageView so the header presence avatars and
   // user-awareness seeding can share this exact instance. Fired once per

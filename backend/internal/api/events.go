@@ -29,6 +29,7 @@ const (
 	evtPageEdit        = "page.edit"
 	evtAsk             = "ask"
 	evtAPIRequest      = "api.request"
+	evtClientError     = "client.error"
 )
 
 // eventInput is one row to append. Pointers are NULL when absent (anonymous
