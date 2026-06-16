@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // client-errors.ts holds module-level dedup/cap state, so each test re-imports a
 // fresh copy (vi.resetModules) after stubbing the browser globals it touches
