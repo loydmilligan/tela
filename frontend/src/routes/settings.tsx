@@ -6,6 +6,7 @@ import { SettingsBillingTab } from '../components/app/SettingsBillingTab'
 import { SettingsAuditTab } from '../components/app/SettingsAuditTab'
 import { SettingsEventsTab } from '../components/app/SettingsEventsTab'
 import { SettingsErrorsTab } from '../components/app/SettingsErrorsTab'
+import { SettingsInsightsTab } from '../components/app/SettingsInsightsTab'
 import { SettingsUsageTab } from '../components/app/SettingsUsageTab'
 import { SettingsFeedbackTab } from '../components/app/SettingsFeedbackTab'
 import { SettingsNotificationsTab } from '../components/app/SettingsNotificationsTab'
@@ -96,6 +97,15 @@ const EVENTS_TAB: SettingsTab = {
   render: () => <SettingsEventsTab />,
 }
 
+// Instance-analytics dashboard — activity trends, growth, leaderboards, AI +
+// error pulse, knowledge health. Instance-admin only. The visual overview that
+// sits above the focused Usage / Events / Errors tabs.
+const INSIGHTS_TAB: SettingsTab = {
+  id: 'insights',
+  label: 'Insights',
+  render: () => <SettingsInsightsTab />,
+}
+
 // Instance-wide usage overview — totals, top AI consumers, knowledge gaps.
 // Instance-admin only.
 const USAGE_TAB: SettingsTab = {
@@ -180,7 +190,7 @@ export function SettingsPage() {
     if (me.data?.is_instance_admin) {
       return [
         { label: 'Account', tabs: account },
-        { label: 'Instance admin', tabs: [USERS_TAB, ORGS_TAB, USAGE_TAB, { ...FEEDBACK_TAB, badge: feedbackUnseen }, EVENTS_TAB, ERRORS_TAB, AUDIT_TAB, INSTANCE_TAB] },
+        { label: 'Instance admin', tabs: [INSIGHTS_TAB, USERS_TAB, ORGS_TAB, USAGE_TAB, { ...FEEDBACK_TAB, badge: feedbackUnseen }, EVENTS_TAB, ERRORS_TAB, AUDIT_TAB, INSTANCE_TAB] },
       ]
     }
     if (isOrgAdmin) {

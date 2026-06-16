@@ -111,6 +111,25 @@ Each request emits a structured access-log line (`http method=… path=… statu
 dur_ms=…` via `slog`; the `/api/health` probe is skipped). `/api/health` also
 reports `rag: enabled|disabled`.
 
+## Insights dashboard
+
+**Settings → Insights** (instance-admin) is the instance-analytics overview,
+aggregated server-side from existing tables (`GET /api/admin/stats`,
+`internal/api/admin_stats.go`) — no new instrumentation:
+
+- **Activity** — 30-day daily sparklines for page views, edits, sign-ins, asks,
+  and client errors, sourced from the `events` log.
+- **Active users** — rolling DAU / WAU / MAU (distinct event actors).
+- **Growth** — cumulative users + pages over the window.
+- **Leaderboards** — most-viewed pages, top contributors (by edits), most-active
+  spaces (30d).
+- **AI, errors & health** — ask volume + answer rate (`ask_log`), client errors
+  by kind, and knowledge health: stale pages (90d+ untouched), orphans (no
+  inbound `page_links`), and agreement contradictions.
+
+It's an admin screen, not a hot path (~12 aggregations over a 30-day window); at
+larger event volumes the scans want a nightly rollup table — the scale follow-up.
+
 ## Metrics
 
 A Prometheus exposition is served at **`GET /metrics`** (`internal/api/metrics.go`).

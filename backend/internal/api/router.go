@@ -314,6 +314,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/client-errors", srv.ListClientErrorGroups)
 	mux.HandleFunc("GET /api/admin/client-errors/{fingerprint}", srv.ListClientErrorOccurrences)
 	mux.HandleFunc("GET /api/admin/usage", srv.AdminUsage)
+	// Instance-analytics dashboard (admin_stats.go): activity time-series, growth,
+	// leaderboards, AI + error pulse, knowledge health — aggregated from events.
+	mux.HandleFunc("GET /api/admin/stats", srv.AdminStats)
 	mux.HandleFunc("GET /api/admin/feedback", srv.ListFeedback)
 	mux.HandleFunc("POST /api/admin/feedback/seen", srv.MarkFeedbackSeen)
 	mux.HandleFunc("GET /api/admin/settings", srv.GetInstanceSettings)
