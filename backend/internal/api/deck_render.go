@@ -44,23 +44,58 @@ func deckBaseURL() string {
 
 // deckConfig is tela's per-deck visual config — the only inputs to the theme.
 // The whole look lives in the slidev-theme-tahta package; tela just declares
-// which variant (and optional accent/lang).
+// which variant (and optional accent/lang/logo).
 type deckConfig struct {
-	Variant string
-	Accent  string
-	Lang    string
+	Variant    string
+	Accent     string
+	Lang       string
+	Logo       string // tahta themeConfig.logo — brand mark (hero on openers, footer mark)
+	LogoInvert bool   // tahta themeConfig.logoInvert — flip a monochrome mark for the scheme
 }
 
-// deckThemeConfig reads the per-deck visual config from page props (the editor's
-// selector writes them). Empty values → the sidecar applies tahta defaults.
-func deckThemeConfig(p models.Page) deckConfig {
-	s := func(k string) string {
+// deckThemeConfig reads the per-deck visual config: explicit page props first
+// (the editor's selector / an agent write them), then the page's owning org's
+// branding fills any unset variant/accent/logo — so every deck in an org space
+// comes out on-brand without per-deck setup. Empty after both → the sidecar
+// applies tahta defaults.
+func (s *Server) deckThemeConfig(ctx context.Context, p models.Page) deckConfig {
+	str := func(k string) string {
 		if v, ok := p.Props[k].(string); ok {
 			return v
 		}
 		return ""
 	}
-	return deckConfig{Variant: s("variant"), Accent: s("accent"), Lang: s("lang")}
+	cfg := deckConfig{Variant: str("variant"), Accent: str("accent"), Lang: str("lang"), Logo: str("logo")}
+	if v, ok := p.Props["logoInvert"].(bool); ok {
+		cfg.LogoInvert = v
+	}
+	// Inherit unset brand fields from the owning org (white-label branding the
+	// org already set for its custom-domain surface — reused as the deck brand).
+	if cfg.Accent == "" || cfg.Logo == "" || cfg.Variant == "" {
+		logo, accent, variant := s.deckOrgBrand(ctx, p.SpaceID)
+		if cfg.Variant == "" {
+			cfg.Variant = variant
+		}
+		if cfg.Accent == "" {
+			cfg.Accent = accent
+		}
+		if cfg.Logo == "" {
+			cfg.Logo = logo
+		}
+	}
+	return cfg
+}
+
+// deckOrgBrand resolves a space's owning org's branding (logo/accent/preferred
+// deck variant) in one lookup. All empty for a personal space (org_id NULL) or
+// an org with no branding row — the caller then falls back to tahta defaults.
+func (s *Server) deckOrgBrand(ctx context.Context, spaceID int64) (logo, accent, variant string) {
+	_ = s.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(ob.logo_url, ''), COALESCE(ob.accent, ''), COALESCE(ob.deck_variant, '')
+		  FROM spaces s
+		  LEFT JOIN org_branding ob ON ob.org_id = s.org_id
+		 WHERE s.id = $1`, spaceID).Scan(&logo, &accent, &variant)
+	return
 }
 
 // deckManifest is the sidecar /render result — static frames for export + the MCP
@@ -117,7 +152,7 @@ func (s *Server) ServePageDeckSPA(w http.ResponseWriter, r *http.Request) {
 // gate the caller applied and the base path the SPA is served under.
 func (s *Server) streamDeckSPA(w http.ResponseWriter, r *http.Request, p models.Page, base string) {
 	file := r.PathValue("path") // "" → the sidecar serves index.html
-	resp, err := deckSPA(r.Context(), p.Body, deckThemeConfig(p), base, file)
+	resp, err := deckSPA(r.Context(), p.Body, s.deckThemeConfig(r.Context(), p), base, file)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_unavailable", "deck service unavailable")
 		return
@@ -178,10 +213,10 @@ func deckCover(ctx context.Context, body string, cfg deckConfig) (deckCoverResul
 // which proxies bytes rather than redirecting — crawlers don't always follow 302s).
 // Time-bounded so a cold render can't hang a crawler; returns ok=false to let the
 // caller fall back. cfg is built from page props directly (no models.Page needed).
-func (s *Server) deckCoverPNG(ctx context.Context, body string, props map[string]any) ([]byte, string, bool) {
+func (s *Server) deckCoverPNG(ctx context.Context, body string, props map[string]any, spaceID int64) ([]byte, string, bool) {
 	cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
-	cfg := deckConfig{Variant: propString(props, "variant"), Accent: propString(props, "accent"), Lang: propString(props, "lang")}
+	cfg := s.deckThemeConfig(cctx, models.Page{Props: props, SpaceID: spaceID})
 	cov, err := deckCover(cctx, body, cfg)
 	if err != nil || cov.URL == "" {
 		return nil, "", false
@@ -217,7 +252,7 @@ func (s *Server) serveDeckCover(w http.ResponseWriter, r *http.Request, p models
 		writeError(w, http.StatusNotFound, "not_found", "not a deck")
 		return
 	}
-	cov, err := deckCover(r.Context(), p.Body, deckThemeConfig(p))
+	cov, err := deckCover(r.Context(), p.Body, s.deckThemeConfig(r.Context(), p))
 	if err != nil || cov.URL == "" {
 		writeError(w, http.StatusBadGateway, "deck_unavailable", "deck cover unavailable")
 		return
@@ -290,7 +325,7 @@ func (s *Server) ExportPageDeckPDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pdf, err := deckExport(r.Context(), p.Body, deckThemeConfig(p), "pdf")
+	pdf, err := deckExport(r.Context(), p.Body, s.deckThemeConfig(r.Context(), p), "pdf")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_render_failed", "could not export deck")
 		return
@@ -310,7 +345,7 @@ func (s *Server) ExportPageDeckPPTX(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pptx, err := deckExport(r.Context(), p.Body, deckThemeConfig(p), "pptx")
+	pptx, err := deckExport(r.Context(), p.Body, s.deckThemeConfig(r.Context(), p), "pptx")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_render_failed", "could not export deck")
 		return
@@ -455,6 +490,12 @@ func deckQuery(cfg deckConfig) url.Values {
 	}
 	if cfg.Lang != "" {
 		q.Set("lang", cfg.Lang)
+	}
+	if cfg.Logo != "" {
+		q.Set("logo", cfg.Logo)
+	}
+	if cfg.LogoInvert {
+		q.Set("logoInvert", "1")
 	}
 	return q
 }

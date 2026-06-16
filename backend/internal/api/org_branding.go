@@ -20,8 +20,9 @@ import (
 var accentPattern = regexp.MustCompile(`^(#[0-9a-fA-F]{3,8}|(oklch|rgb|rgba)\([0-9a-zA-Z%.,/\s-]+\))$`)
 
 type orgBrandingDTO struct {
-	LogoURL string `json:"logo_url"`
-	Accent  string `json:"accent"`
+	LogoURL     string `json:"logo_url"`
+	Accent      string `json:"accent"`
+	DeckVariant string `json:"deck_variant"` // tahta variant id used as the default for the org's decks
 }
 
 // orgBranding returns an org's stored logo URL + accent (empty strings when
@@ -41,8 +42,11 @@ func (s *Server) GetOrgBranding(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOrgAdmin(w, r, orgID) {
 		return
 	}
-	logoURL, accent := s.orgBranding(r.Context(), orgID)
-	writeJSON(w, http.StatusOK, orgBrandingDTO{LogoURL: logoURL, Accent: accent})
+	var dto orgBrandingDTO
+	_ = s.DB.QueryRowContext(r.Context(),
+		`SELECT logo_url, accent, deck_variant FROM org_branding WHERE org_id = $1`, orgID).
+		Scan(&dto.LogoURL, &dto.Accent, &dto.DeckVariant)
+	writeJSON(w, http.StatusOK, dto)
 }
 
 // PutOrgBranding — PUT /api/orgs/{id}/branding. Org-admin. Empty fields clear
@@ -62,6 +66,7 @@ func (s *Server) PutOrgBranding(w http.ResponseWriter, r *http.Request) {
 	}
 	req.LogoURL = strings.TrimSpace(req.LogoURL)
 	req.Accent = strings.TrimSpace(req.Accent)
+	req.DeckVariant = strings.TrimSpace(req.DeckVariant)
 	if req.LogoURL != "" {
 		u, err := url.Parse(req.LogoURL)
 		if err != nil || u.Scheme != "https" || u.Host == "" {
@@ -74,11 +79,12 @@ func (s *Server) PutOrgBranding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.DB.ExecContext(r.Context(), `
-		INSERT INTO org_branding (org_id, logo_url, accent)
-		VALUES ($1, $2, $3)
+		INSERT INTO org_branding (org_id, logo_url, accent, deck_variant)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (org_id) DO UPDATE
-		   SET logo_url = EXCLUDED.logo_url, accent = EXCLUDED.accent, updated_at = tela_now()`,
-		orgID, req.LogoURL, req.Accent); err != nil {
+		   SET logo_url = EXCLUDED.logo_url, accent = EXCLUDED.accent,
+		       deck_variant = EXCLUDED.deck_variant, updated_at = tela_now()`,
+		orgID, req.LogoURL, req.Accent, req.DeckVariant); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "save branding failed")
 		return
 	}

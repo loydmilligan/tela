@@ -100,7 +100,7 @@ func telaDeckPreamble(m *deckManifestDoc) string {
 	for _, v := range m.Variants {
 		b.WriteString(fmt.Sprintf("  - `%s` — %s _(%s)_\n", v.ID, v.Description, v.Scheme))
 	}
-	b.WriteString("  Optionally override the brand color with the `accent` prop and set `lang` (e.g. `tr`) for locale casing.\n")
+	b.WriteString("  Optionally override the brand color with the `accent` prop (hue-matched, not the exact hex — it's normalized into the variant so it stays legible), set a brand `logo` (an image URL — hero on openers + footer mark), and set `lang` (e.g. `tr`) for locale casing.\n")
 	b.WriteString("- **Do NOT** put `theme:`, `themeConfig:`, or a deck-header YAML block in the markdown — tela injects all of it from the page props. Ignore the \"## Deck header\" YAML in the contract below; just write the slides.\n")
 	b.WriteString("- Separate slides with `---` on its own line. Each slide sets `layout:` in its frontmatter and fills that layout's fields.\n")
 	b.WriteString("\nEverything below is tahta's own authoring contract (the full, current layout/component/field reference) — apply it verbatim, except the \"Deck header\" part as noted above.\n\n---\n\n")

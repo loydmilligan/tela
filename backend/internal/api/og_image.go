@@ -88,13 +88,14 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 		updatedAt string
 		body      string
 		propsRaw  []byte
+		spaceID   int64
 	)
 	err = s.DB.QueryRowContext(r.Context(),
-		`SELECT p.title, sp.name, p.updated_at, p.body, p.props
+		`SELECT p.title, sp.name, p.updated_at, p.body, p.props, p.space_id
 		   FROM pages p
 		   JOIN spaces sp ON sp.id = p.space_id
 		  WHERE p.id = $1 AND p.deleted_at IS NULL`, pageID,
-	).Scan(&title, &spaceName, &updatedAt, &body, &propsRaw)
+	).Scan(&title, &spaceName, &updatedAt, &body, &propsRaw, &spaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)
 		return
@@ -125,7 +126,7 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 	// AND private decks. Best-effort + time-bounded — fall back to the generic card
 	// if the cover render is slow or unavailable so crawlers always get something.
 	if isDeckBag(decodeProps(propsRaw)) {
-		if png, ct, ok := s.deckCoverPNG(r.Context(), body, decodeProps(propsRaw)); ok {
+		if png, ct, ok := s.deckCoverPNG(r.Context(), body, decodeProps(propsRaw), spaceID); ok {
 			w.Header().Set("Content-Type", ct)
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			w.Header().Set("ETag", etag)

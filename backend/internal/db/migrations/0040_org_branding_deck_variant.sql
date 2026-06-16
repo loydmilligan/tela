@@ -1,0 +1,11 @@
+-- 0040_org_branding_deck_variant.sql — an org's preferred deck (tahta) variant.
+--
+-- org_branding (0027) already holds the org's logo_url + accent for the white-label
+-- surface; both are reused as the brand for decks authored in the org's spaces
+-- (deckThemeConfig inherits them when a deck sets no per-deck override). The variant
+-- is the biggest brand lever in tahta (it carries typeface/shape/texture/scheme), so
+-- an org can pin the on-brand one here and every org deck defaults to it. Empty ⇒
+-- decks fall back to tahta's default variant. The value is a tahta variant id; it's
+-- validated against the live theme catalog at render time (the sidecar owns it), so
+-- this column stays loose on purpose — a bad/renamed id just falls back.
+ALTER TABLE org_branding ADD COLUMN deck_variant TEXT NOT NULL DEFAULT '';

@@ -74,7 +74,7 @@ func (w *deckWarmer) run(pageID int64) {
 	if err != nil || !isDeckBag(p.Props) {
 		return
 	}
-	cfg := deckThemeConfig(p)
+	cfg := w.s.deckThemeConfig(ctx, p)
 	// Warm the first-slide cover too (index card, public reader hero, OG share
 	// image) so those hit a cached render instead of triggering a cold one.
 	if _, err := deckCover(ctx, p.Body, cfg); err != nil {

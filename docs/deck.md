@@ -71,11 +71,22 @@ true`), or the API/MCP setting `deck: true`.
 ## Theme injection (shared by both paths)
 
 The stored markdown never references the theme. The sidecar injects `theme:
-slidev-theme-tahta` + a per-deck `themeConfig` (`variant`/`accent`/`lang`) +
-`mdc: true` (tahta is MDC-authored), via the parser (`parse` → set keys on the
-first-slide YAML → `prettifySlide` → `stringify`), overriding any user values for
-those keys. Variant catalog comes from the theme's own `variants.json`; tela
-hardcodes nothing visual.
+slidev-theme-tahta` + a per-deck `themeConfig` (`variant`/`accent`/`lang`/`logo`/
+`logoInvert`) + `mdc: true` (tahta is MDC-authored), via the parser (`parse` → set
+keys on the first-slide YAML → `prettifySlide` → `stringify`), overriding any user
+values for those keys. Variant catalog comes from the theme's own `variants.json`;
+tela hardcodes nothing visual. (`accent` is hue-only as of tahta 0.11.0 — the
+variant clamps L/C into its envelope, so a raw brand hex stays legible/on-style.)
+
+**Org-brand inheritance.** A deck's `variant`/`accent`/`logo` come from page props
+first; any left unset inherit from the page's **owning org's branding** —
+`org_branding` (logo_url + accent + deck_variant), the same white-label brand an org
+sets for its custom-domain login/app shell (`deckThemeConfig`/`deckOrgBrand` in
+`deck_render.go`, one `spaces ⋈ org_branding` lookup). So every deck in an org space
+comes out on-brand with zero per-deck setup; a personal space (no `org_id`) inherits
+nothing and falls back to tahta defaults. `logo` is an image URL (a tela attachment
+or external https); tahta renders it as the hero on openers + a small footer mark on
+content slides (`logoInvert` flips a monochrome mark for the variant's scheme).
 
 **Deck body is stored verbatim** — the one exception to tela's "frontmatter never
 lives in `pages.body`" invariant. A deck's leading `---…---` is Slidev headmatter /

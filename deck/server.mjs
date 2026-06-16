@@ -131,7 +131,7 @@ const hash = (s) => createHash('sha256').update(s).digest('hex').slice(0, 16)
 // (edit/MCP/sync/automation) or its look produces a new id → never serves stale.
 const CACHE_EPOCH = `${RENDER_VERSION}|${THEME_VERSION}`
 // Cache key folds in the full visual config so a variant/accent/lang change rerenders.
-const cfgKey = (c) => `${pickVariant(c.variant)}|${c.accent || ''}|${c.lang || ''}`
+const cfgKey = (c) => `${pickVariant(c.variant)}|${c.accent || ''}|${c.lang || ''}|${c.logo || ''}|${c.logoInvert ? 1 : 0}`
 const deckId = (md, cfg) => hash(`${CACHE_EPOCH}|${cfgKey(cfg)}|${md}`)
 const RENDER = join(CACHE, 'd') // rendered frames/exports, one dir per deckId
 const deckDir = (id) => join(RENDER, id)
@@ -219,6 +219,8 @@ const reqConfig = (params) => ({
   variant: params.get('variant') || '',
   accent: params.get('accent') || '',
   lang: params.get('lang') || '',
+  logo: params.get('logo') || '',
+  logoInvert: params.get('logoInvert') === '1',
 })
 
 // Parse deck markdown once via @slidev/parser (in-process — no Chromium, so
@@ -276,6 +278,8 @@ function tahtaThemeConfig(cfg, existing) {
   const tc = { ...(existing || {}), variant: pickVariant(cfg.variant) }
   if (cfg.accent) tc.accent = cfg.accent
   if (cfg.lang) tc.lang = cfg.lang
+  if (cfg.logo) tc.logo = cfg.logo
+  if (cfg.logoInvert) tc.logoInvert = true
   return tc
 }
 
@@ -296,6 +300,8 @@ function withTheme(data, cfg) {
   const lines = [`theme: ${THEME_PKG}`, 'mdc: true', 'themeConfig:', `  variant: ${tc.variant}`]
   if (tc.accent) lines.push(`  accent: ${JSON.stringify(tc.accent)}`)
   if (tc.lang) lines.push(`  lang: ${tc.lang}`)
+  if (tc.logo) lines.push(`  logo: ${JSON.stringify(tc.logo)}`)
+  if (tc.logoInvert) lines.push(`  logoInvert: true`)
   return `---\n${lines.join('\n')}\n---\n\n${data.raw}`
 }
 

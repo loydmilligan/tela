@@ -13,7 +13,8 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react'
-import { ApiError } from '../../lib/api'
+import { useQuery } from '@tanstack/react-query'
+import { ApiError, api } from '../../lib/api'
 import { useMe } from '../../lib/queries/auth'
 import { useOrgUsage } from '../../lib/queries/billing'
 import { formatBytes } from '../../lib/format'
@@ -1220,8 +1221,17 @@ function HealthChips({
 function BrandingSection({ orgId }: { orgId: number }) {
   const branding = useOrgBranding(orgId)
   const put = usePutOrgBranding(orgId)
+  // Deck variants come from the theme package (slidev-theme-tahta) — same catalog
+  // the deck variant picker uses; tela hardcodes none.
+  const { data: deckVariants } = useQuery({
+    queryKey: ['deck-variants'],
+    queryFn: () => api<{ name: string; label: string }[]>('/api/deck/themes'),
+    staleTime: Infinity,
+    retry: false,
+  })
   const [logoUrl, setLogoUrl] = useState('')
   const [accent, setAccent] = useState('')
+  const [deckVariant, setDeckVariant] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   // Prefill from the loaded branding once.
@@ -1229,6 +1239,7 @@ function BrandingSection({ orgId }: { orgId: number }) {
   if (branding.data && hydratedFor !== orgId) {
     setLogoUrl(branding.data.logo_url)
     setAccent(branding.data.accent)
+    setDeckVariant(branding.data.deck_variant)
     setHydratedFor(orgId)
   }
 
@@ -1237,7 +1248,7 @@ function BrandingSection({ orgId }: { orgId: number }) {
     setError(null)
     setSaved(false)
     try {
-      await put.mutateAsync({ logo_url: logoUrl.trim(), accent: accent.trim() })
+      await put.mutateAsync({ logo_url: logoUrl.trim(), accent: accent.trim(), deck_variant: deckVariant })
       setSaved(true)
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
@@ -1260,7 +1271,8 @@ function BrandingSection({ orgId }: { orgId: number }) {
         </h2>
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
           White-label your custom-domain sign-in screen with your logo and accent
-          color. Leave a field blank to use the tela default.
+          color. The same logo, accent, and deck style are applied to slide decks
+          authored in this org's spaces. Leave a field blank to use the tela default.
         </p>
       </header>
 
@@ -1323,6 +1335,27 @@ function BrandingSection({ orgId }: { orgId: number }) {
               />
             ) : null}
           </div>
+        </div>
+
+        <div className="flex flex-col gap-[var(--space-1)]">
+          <label
+            htmlFor={`org-deck-variant-${orgId}`}
+            className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
+          >
+            Default deck style
+          </label>
+          <Select
+            id={`org-deck-variant-${orgId}`}
+            value={deckVariant}
+            onChange={(e) => setDeckVariant(e.target.value)}
+          >
+            <option value="">tela default</option>
+            {(deckVariants ?? []).map((v) => (
+              <option key={v.name} value={v.name}>
+                {v.label}
+              </option>
+            ))}
+          </Select>
         </div>
 
         {error ? (

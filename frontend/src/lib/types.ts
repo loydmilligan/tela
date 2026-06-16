@@ -424,6 +424,8 @@ export interface HostContext {
 export interface OrgBranding {
   logo_url: string
   accent: string
+  /** tahta variant id used as the default for the org's decks ('' → tahta default). */
+  deck_variant: string
 }
 
 // GET /api/orgs/{id}/hostnames/{hostname}/health — a live probe of a custom

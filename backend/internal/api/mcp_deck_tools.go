@@ -83,7 +83,7 @@ func (s *Server) mcpPreviewDeck(ctx context.Context, req *mcp.CallToolRequest, i
 	if ae != nil {
 		return mcpErr(ae), nil, nil
 	}
-	m, err := deckRender(ctx, p.Body, deckThemeConfig(p))
+	m, err := deckRender(ctx, p.Body, s.deckThemeConfig(ctx, p))
 	if err != nil {
 		return mcpErr(&apiErr{http.StatusBadGateway, "deck_render_failed", "could not render deck"}), nil, nil
 	}
