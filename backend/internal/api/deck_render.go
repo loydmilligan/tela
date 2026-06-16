@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -511,6 +512,36 @@ func deckPost(ctx context.Context, path, body string, cfg deckConfig) (*http.Res
 	}
 	req.Header.Set("Content-Type", "text/markdown")
 	return (&http.Client{Timeout: deckRenderTO}).Do(req)
+}
+
+// deckTreat runs raw image bytes through the sidecar's tahta-imagine treat step
+// (crop → scheme-aware duotone/none → grain → optional scrim) for the variant,
+// returning the treated JPEG. Deterministic + local to the sidecar — no model.
+func deckTreat(ctx context.Context, img []byte, variant, mode, scrim string) ([]byte, error) {
+	q := url.Values{}
+	if variant != "" {
+		q.Set("variant", variant)
+	}
+	if mode != "" {
+		q.Set("mode", mode)
+	}
+	if scrim != "" {
+		q.Set("scrim", scrim)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, deckBaseURL()+"/treat?"+q.Encode(), bytes.NewReader(img))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := (&http.Client{Timeout: deckRenderTO}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, deckErr(resp)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 }
 
 func deckErr(resp *http.Response) error {

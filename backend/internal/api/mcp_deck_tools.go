@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -99,6 +102,93 @@ func (s *Server) mcpPreviewDeck(ctx context.Context, req *mcp.CallToolRequest, i
 		content = append(content, &mcp.ImageContent{Data: png, MIMEType: "image/png"})
 	}
 	return &mcp.CallToolResult{Content: content}, nil, nil
+}
+
+// ── treat_deck_image ─────────────────────────────────────────────────────────
+
+type treatImageIn struct {
+	ID           int64  `json:"id" jsonschema:"id of the deck page the source image is attached to (the treated result is attached here too)"`
+	AttachmentID int64  `json:"attachment_id" jsonschema:"id of an existing attachment ON THIS PAGE to treat (upload the source first with upload_attachment)"`
+	Mode         string `json:"mode,omitempty" jsonschema:"duotone (palette-lock to the variant, default) or none (crop+grain only, keep the image raw)"`
+	Scrim        string `json:"scrim,omitempty" jsonschema:"optional contrast scrim: left or bottom (for text over the image); omit for none"`
+	Variant      string `json:"variant,omitempty" jsonschema:"tahta variant to treat for; omit to use the deck's own variant"`
+}
+type treatImageOut struct {
+	URL      string `json:"url"`      // serve URL of the treated image attachment
+	Markdown string `json:"markdown"` // ready-to-place embed snippet
+	Variant  string `json:"variant"`  // variant the image was treated for
+	Note     string `json:"note"`
+}
+
+// mcpTreatDeckImage runs an existing page attachment through tahta's deterministic
+// treat step (tahta-imagine) for a variant and saves the result as a new attachment
+// on the same page. Local + model-free — it makes an off-palette/reused image look
+// tahta-grade; per the imagery module it's a FALLBACK (prefer rich on-palette images
+// raw), never used on a real-colour focal subject.
+func (s *Server) mcpTreatDeckImage(ctx context.Context, req *mcp.CallToolRequest, in treatImageIn) (*mcp.CallToolResult, treatImageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), treatImageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), treatImageOut{}, nil
+	}
+	p, ae := s.getPageCore(ctx, u, k, in.ID)
+	if ae != nil {
+		return mcpErr(ae), treatImageOut{}, nil
+	}
+	// Source must be an attachment on THIS page — no arbitrary URLs (no SSRF surface).
+	var data []byte
+	var srcName string
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT data, name FROM space_files WHERE id = $1 AND parent_page_id = $2 AND deleted_at IS NULL`,
+		in.AttachmentID, p.ID).Scan(&data, &srcName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mcpErr(&apiErr{http.StatusNotFound, "not_found", "no such attachment on this page — upload it first with upload_attachment"}), treatImageOut{}, nil
+	}
+	if err != nil {
+		return mcpErr(&apiErr{http.StatusInternalServerError, "internal", "read attachment failed"}), treatImageOut{}, nil
+	}
+	mode := "duotone"
+	if in.Mode == "none" {
+		mode = "none"
+	}
+	scrim := ""
+	if in.Scrim == "left" || in.Scrim == "bottom" {
+		scrim = in.Scrim
+	}
+	variant := in.Variant
+	if variant == "" {
+		variant = s.deckThemeConfig(ctx, p).Variant
+	}
+	out, err := deckTreat(ctx, data, variant, mode, scrim)
+	if err != nil {
+		return mcpErr(&apiErr{http.StatusBadGateway, "deck_treat_failed", "could not treat image: " + err.Error()}), treatImageOut{}, nil
+	}
+	name := treatedName(srcName, variant)
+	att, ae := s.uploadPageAttachmentCore(ctx, u, k, p.ID, name, out)
+	if ae != nil {
+		return mcpErr(ae), treatImageOut{}, nil
+	}
+	return nil, treatImageOut{
+		URL:      att.URL,
+		Markdown: fmt.Sprintf("![](%s)", att.URL),
+		Variant:  variant,
+		Note:     "Treated for the " + variant + " variant. Place it as a bg:/image: source; treatment is a fallback — prefer rich on-palette images raw, and never duotone a real-colour focal subject.",
+	}, nil
+}
+
+// treatedName derives the treated attachment's filename from the source — strips
+// the old extension, tags the variant, lands on .jpg (treat always emits JPEG).
+func treatedName(src, variant string) string {
+	base := src
+	if i := strings.LastIndexByte(base, '.'); i > 0 {
+		base = base[:i]
+	}
+	if base == "" {
+		base = "image"
+	}
+	return fmt.Sprintf("%s-%s.jpg", base, variant)
 }
 
 // pickPreviewFrames resolves the requested 1-based frames (clamped, deduped,

@@ -42,6 +42,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { parse, stringify, prettifySlide, detectFeatures } from '@slidev/parser/core'
 import { lint as tahtaLint } from 'slidev-theme-tahta/lint.mjs'
+import { treat as tahtaTreat } from 'slidev-theme-tahta/imagine.mjs'
 
 const exec = promisify(execFile)
 const require = createRequire(import.meta.url)
@@ -496,9 +497,13 @@ function serveSPA(res, id, name) {
 }
 
 async function readBody(req) {
+  return (await readBodyBuf(req)).toString('utf8')
+}
+
+async function readBodyBuf(req) {
   const chunks = []
   for await (const c of req) chunks.push(c)
-  return Buffer.concat(chunks).toString('utf8')
+  return Buffer.concat(chunks)
 }
 
 const server = http.createServer(async (req, res) => {
@@ -523,6 +528,25 @@ const server = http.createServer(async (req, res) => {
       const r = await tahtaLint(md)
       const issues = (r.issues || []).map((it) => ({ ...it, slide: (it.slide ?? 0) + 1 }))
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...r, issues }))
+    } else if (req.method === 'POST' && path === '/treat') {
+      // tahta's deterministic image TREAT step (tahta-imagine): crop to 16:9 →
+      // scheme-aware duotone (palette-lock) → grain → optional scrim, reading the
+      // variant's palette from the theme. No network, no model — the operating
+      // agent generates/uploads the source; this only makes it tahta-grade for the
+      // variant. Body = raw image bytes; returns a treated JPEG. Needs `sharp`.
+      const buf = await readBodyBuf(req)
+      const mode = url.searchParams.get('mode') === 'none' ? 'none' : 'duotone'
+      const scrim = ['left', 'bottom'].includes(url.searchParams.get('scrim')) ? url.searchParams.get('scrim') : null
+      const grain = url.searchParams.get('grain') !== '0'
+      try {
+        const out = await tahtaTreat(buf, pickVariant(cfg.variant), { mode, scrim, grain })
+        res.writeHead(200, { 'content-type': 'image/jpeg' }).end(out)
+      } catch (e) {
+        // sharp is an optional dep; a missing native lib (or a non-image body) lands here.
+        const missing = /sharp/i.test(e?.message || '')
+        res.writeHead(missing ? 501 : 400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: e?.message || 'treat failed' }))
+      }
     } else if (req.method === 'POST' && path === '/parse') {
       // Cheap structure + features, no render. Powers the editor outline + preflight.
       const md = await readBody(req)

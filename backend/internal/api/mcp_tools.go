@@ -266,6 +266,13 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpUploadAttachment)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "treat_deck_image",
+		Title:       "Treat deck image",
+		Description: "Make an image tahta-grade for a deck's variant (editor+): crop to 16:9, apply a scheme-aware duotone (palette-lock), grain, and an optional contrast scrim. Upload the source with upload_attachment first, then pass its attachment_id; the treated JPEG is saved as a new attachment and returned with a ready-to-place ![](…) snippet for a bg:/image: slot. This is the tahta-imagine treat step — a FALLBACK for off-palette or reused images; prefer rich on-palette images raw, and never duotone (mode=duotone) a real-colour focal subject — use mode=none for those. See the imagery capability module (deck_authoring_guide module=\"imagery\").",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpTreatDeckImage)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_attachment",
 		Title:       "Delete attachment",
 		Description: "Detach a file from a page by attachment id (editor+; ids come from list_attachments). Soft-delete. It does NOT edit the page body, so remove any inline embed separately with update_page/patch_page.",

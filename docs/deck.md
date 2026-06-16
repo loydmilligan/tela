@@ -168,6 +168,25 @@ Agent loop tools: `lint_deck` (tahta's structural validator) and `preview_deck`
 (renders frames to images so the agent can *see* its output and iterate). The
 agent self-corrects via discover-guide → create → lint → preview → fix.
 
+**Capability modules.** tahta 0.11.0 ships optional *capability modules*
+(`modules/modules.json` + `branding.md`/`imagery.md`) — prompt fragments meant to
+be appended only when relevant, so the always-served core guide stays lean. The
+sidecar returns them in `/authoring`; the backend advertises each (id + `when` +
+`adds`) at the bottom of the framed guide and serves the fragment on demand via
+`deck_authoring_guide` with `module:"<id>"` (`mcp_deck_authoring.go`). Theme-owned
+→ the module set grows with tahta, no tela change.
+
+**Imagery — treat step.** tahta's posture is *it never generates images; the
+operating agent does* — it ships only the recipe (`imagery.md`) + a deterministic
+**treat** step (`tahta-imagine`): crop → scheme-aware duotone → grain → optional
+scrim, reading the variant's palette. tela exposes it as the `treat_deck_image` MCP
+tool (`mcp_deck_tools.go` → sidecar `POST /treat`, `sharp`): source must be an
+existing **page attachment** (no arbitrary-URL fetch → no SSRF), the treated JPEG is
+saved as a new attachment for a `bg:`/`image:` slot. Treatment is a *fallback*
+(prefer rich on-palette images raw; never duotone a real-colour focal subject).
+*Generation* (the agent bringing pixels) is out of scope here — tela hosts no image
+model; an agent uploads/sources the image, this only makes it tahta-grade.
+
 ## First slide = the deck's visual identity (cover / reader / OG)
 
 A deck has no prose to excerpt or render, so the **first slide is its cover**
