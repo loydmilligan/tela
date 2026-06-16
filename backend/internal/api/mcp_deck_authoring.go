@@ -34,9 +34,20 @@ type deckVariantSpec struct {
 	Description string `json:"description"`
 }
 
+// deckModule is one of tahta's optional capability modules (branding, imagery, …)
+// — a prompt fragment the agent pulls only when that capability is in play, so the
+// always-served core guide stays lean.
+type deckModule struct {
+	ID   string `json:"id"`
+	When string `json:"when"` // the condition under which to apply it
+	Adds string `json:"adds"` // one-line summary of what it teaches
+	Text string `json:"text"` // the fragment markdown
+}
+
 type deckManifestDoc struct {
 	Guide    string            `json:"guide"`    // tahta's AGENTS.md, verbatim
 	Variants []deckVariantSpec `json:"variants"` // structured (validation + picker)
+	Modules  []deckModule      `json:"modules"`  // optional capability modules (pulled on demand)
 }
 
 var (
@@ -103,8 +114,26 @@ func telaDeckPreamble(m *deckManifestDoc) string {
 	b.WriteString("  Optionally override the brand color with the `accent` prop (hue-matched, not the exact hex — it's normalized into the variant so it stays legible), set a brand `logo` (an image URL — hero on openers + footer mark), and set `lang` (e.g. `tr`) for locale casing.\n")
 	b.WriteString("- **Do NOT** put `theme:`, `themeConfig:`, or a deck-header YAML block in the markdown — tela injects all of it from the page props. Ignore the \"## Deck header\" YAML in the contract below; just write the slides.\n")
 	b.WriteString("- Separate slides with `---` on its own line. Each slide sets `layout:` in its frontmatter and fills that layout's fields.\n")
+	if len(m.Modules) > 0 {
+		b.WriteString("\n## Capability modules (pull on demand)\n")
+		b.WriteString("Extra authoring guidance that applies only in specific situations. When a condition below holds, call this same `deck_authoring_guide` tool again with `module: \"<id>\"` to get that guidance, then apply it:\n")
+		for _, mod := range m.Modules {
+			b.WriteString(fmt.Sprintf("- `%s` — when %s. Adds: %s\n", mod.ID, mod.When, mod.Adds))
+		}
+	}
 	b.WriteString("\nEverything below is tahta's own authoring contract (the full, current layout/component/field reference) — apply it verbatim, except the \"Deck header\" part as noted above.\n\n---\n\n")
 	return b.String()
+}
+
+// deckModuleText returns a single capability module's fragment (framed with a
+// short header), or "" if no module with that id exists.
+func deckModuleText(m *deckManifestDoc, id string) string {
+	for _, mod := range m.Modules {
+		if mod.ID == id {
+			return fmt.Sprintf("# tahta capability module: %s\n\n_Apply when: %s_\n\n%s", mod.ID, mod.When, mod.Text)
+		}
+	}
+	return ""
 }
 
 // deckAuthoringGuideMarkdown = tela preamble + tahta's AGENTS.md verbatim.
@@ -137,7 +166,11 @@ func (s *Server) mcpReadDeckAuthoringGuide(ctx context.Context, req *mcp.ReadRes
 	}, nil
 }
 
-type deckGuideIn struct{}
+type deckGuideIn struct {
+	// Module optionally requests one of the capability modules listed in the core
+	// guide (e.g. "branding", "imagery") instead of the core guide itself.
+	Module string `json:"module,omitempty" jsonschema:"Optional capability module id (e.g. branding, imagery) to fetch instead of the core guide."`
+}
 
 type deckGuideOut struct {
 	Guide string `json:"guide"` // markdown: tahta layouts, fields, components, variants
@@ -147,9 +180,19 @@ type deckGuideOut struct {
 // Code, claude.ai/cowork) can call tools but not read `tela://` resources, so the
 // guide that create_page/update_page point at was referenced-everywhere-yet-
 // reachable-nowhere for them. This exposes the exact same content as a plain tool.
-func (s *Server) mcpDeckAuthoringGuide(ctx context.Context, req *mcp.CallToolRequest, _ deckGuideIn) (*mcp.CallToolResult, deckGuideOut, error) {
+// With `module` set it returns that capability module (branding/imagery) instead.
+func (s *Server) mcpDeckAuthoringGuide(ctx context.Context, req *mcp.CallToolRequest, in deckGuideIn) (*mcp.CallToolResult, deckGuideOut, error) {
 	if u, _ := mcpIdentity(req); u == nil {
 		return mcpUnauthErr(), deckGuideOut{}, nil
+	}
+	if id := strings.TrimSpace(in.Module); id != "" {
+		if m, err := deckAuthoringManifest(ctx); err == nil {
+			if text := deckModuleText(m, id); text != "" {
+				return nil, deckGuideOut{Guide: text}, nil
+			}
+			return mcpErr(&apiErr{http.StatusNotFound, "unknown_module", "no such capability module: " + id}), deckGuideOut{}, nil
+		}
+		return mcpErr(&apiErr{http.StatusBadGateway, "deck_unavailable", "deck service unreachable"}), deckGuideOut{}, nil
 	}
 	return nil, deckGuideOut{Guide: deckAuthoringGuideText(ctx)}, nil
 }

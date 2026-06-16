@@ -74,6 +74,12 @@ const VARIANTS = new Set(VARIANT_CATALOG.map((v) => v.id))
 // grows: a new layout/component/field appears the moment tahta is bumped, with
 // zero tela changes. We pass through only `guide` (that markdown) + `variants`
 // (structured — tela validates the `variant` prop + drives the picker against it).
+// tahta also ships OPTIONAL capability modules (modules/modules.json + the .md
+// fragments) — prompt addenda a consumer appends to the core guide ONLY when that
+// capability is in play (a brand to honor / an image tool available), so the
+// always-served core stays lean. We pass them through verbatim (id/when/adds +
+// the fragment text); the backend decides when to surface each. Theme-owned, so
+// the set grows with tahta and can't drift.
 const AUTHORING = (() => {
   let guide = ''
   try {
@@ -81,7 +87,19 @@ const AUTHORING = (() => {
   } catch {
     guide = '' // older theme without AGENTS.md → backend uses its fallback
   }
-  return { guide, variants: VARIANT_CATALOG, themeVersion: THEME_VERSION }
+  let modules = []
+  try {
+    const manifest = require(`${THEME_PKG}/modules/modules.json`)
+    modules = (manifest.modules || []).map((m) => ({
+      id: m.id,
+      when: m.when,
+      adds: m.adds,
+      text: readFileSync(join(THEME_DIR, m.file), 'utf8'),
+    }))
+  } catch {
+    modules = [] // older theme without capability modules → backend omits them
+  }
+  return { guide, variants: VARIANT_CATALOG, modules, themeVersion: THEME_VERSION }
 })()
 
 const SPA = join(CACHE, 'spa') // built interactive SPAs, one dir per buildId

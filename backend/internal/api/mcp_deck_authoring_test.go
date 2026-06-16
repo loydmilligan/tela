@@ -19,6 +19,9 @@ func sampleDeckManifest() *deckManifestDoc {
 			{ID: "editorial", Label: "Editorial", Scheme: "dark", Description: "serif"},
 			{ID: "brutalist", Label: "Brutalist", Scheme: "dark", Description: "mono"},
 		},
+		Modules: []deckModule{
+			{ID: "branding", When: "the deck has a brand", Adds: "map a brand brief to a deck", Text: "# branding\nPick the variant that fits.\n"},
+		},
 	}
 }
 
@@ -41,6 +44,30 @@ func TestDeckAuthoringGuideMarkdown(t *testing.T) {
 	// tahta's stock "Deck header" instruction.
 	if !strings.Contains(g, "Do NOT") {
 		t.Error("deck guide should warn against theme/themeConfig in markdown")
+	}
+	// Capability modules are advertised in the core guide (pull-on-demand), not
+	// inlined — keeps the core lean.
+	for _, want := range []string{"Capability modules", "`branding`", `module: "<id>"`} {
+		if !strings.Contains(g, want) {
+			t.Errorf("deck guide missing module advertisement %q", want)
+		}
+	}
+	if strings.Contains(g, "Pick the variant that fits.") {
+		t.Error("module body should NOT be inlined into the core guide")
+	}
+}
+
+// deckModuleText returns a single module's fragment (framed), or "" for unknown.
+func TestDeckModuleText(t *testing.T) {
+	m := sampleDeckManifest()
+	got := deckModuleText(m, "branding")
+	for _, want := range []string{"capability module: branding", "the deck has a brand", "Pick the variant that fits."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("module text missing %q; got %q", want, got)
+		}
+	}
+	if deckModuleText(m, "nope") != "" {
+		t.Error("unknown module id should return empty string")
 	}
 }
 

@@ -154,7 +154,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "deck_authoring_guide",
 		Title:       "Deck authoring guide",
-		Description: "Return the full tela deck authoring guide as markdown — every tahta layout with its required/optional fields, the components, and the style variants. Read this FIRST when creating or editing a deck (a deck=true page) so you don't guess at layouts/fields. No arguments.",
+		Description: "Return the full tela deck authoring guide as markdown — every tahta layout with its required/optional fields, the components, and the style variants. Read this FIRST when creating or editing a deck (a deck=true page) so you don't guess at layouts/fields. The guide lists optional capability modules (e.g. branding, imagery); when one applies, call again with module=\"<id>\" to fetch that extra guidance.",
 		Annotations: readOnly,
 	}, s.mcpDeckAuthoringGuide)
 
