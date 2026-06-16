@@ -1,9 +1,12 @@
 package api
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -107,8 +110,9 @@ func (s *Server) CreateClientError(w http.ResponseWriter, r *http.Request) {
 	}
 
 	e := eventInput{
-		Type:   evtClientError,
-		Detail: b.String(),
+		Type:        evtClientError,
+		Detail:      b.String(),
+		Fingerprint: clientErrorFingerprint(kind, message, stack),
 	}
 	if req.PageID != nil {
 		e.TargetKind = "page"
@@ -117,6 +121,32 @@ func (s *Server) CreateClientError(w http.ResponseWriter, r *http.Request) {
 	s.recordRequestEvent(r, e)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// fpNoise matches the variable bits of an error message/stack that would
+// otherwise split one logical error into many groups: long hex/uuid runs and
+// any digit run (ids, line:col numbers, timestamps, ports). Both collapse to a
+// placeholder before hashing.
+var fpHex = regexp.MustCompile(`[0-9a-fA-F]{8,}`)
+var fpNum = regexp.MustCompile(`\d+`)
+
+// clientErrorFingerprint is the stable grouping key for the Issues view: a hash
+// of the kind, the normalized message, and the first stack frame. Normalizing
+// out ids/numbers means "page 123 not found" and "page 456 not found" — or the
+// same crash at slightly different line numbers across builds — fold into one
+// issue instead of a long tail of near-duplicates.
+func clientErrorFingerprint(kind, message, stack string) string {
+	firstFrame := ""
+	if lines := strings.Split(stack, "\n"); len(lines) > 1 {
+		firstFrame = strings.TrimSpace(lines[1]) // [0] is the message echo
+	}
+	norm := func(s string) string {
+		s = fpHex.ReplaceAllString(s, "#")
+		s = fpNum.ReplaceAllString(s, "#")
+		return strings.TrimSpace(s)
+	}
+	sum := sha1.Sum([]byte(kind + "\n" + norm(message) + "\n" + norm(firstFrame)))
+	return hex.EncodeToString(sum[:])
 }
 
 // truncate clamps s to at most n bytes, appending an ellipsis marker when it had

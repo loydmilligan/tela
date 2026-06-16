@@ -44,6 +44,9 @@ type eventInput struct {
 	Detail      string
 	IP          string
 	UserAgent   string
+	// Fingerprint groups like events for aggregation (client-error "Issues"
+	// view). Empty for every event type that isn't grouped → stored NULL.
+	Fingerprint string
 }
 
 // recordEvent appends one row. Best-effort: errors are logged, never returned —
@@ -54,9 +57,9 @@ func recordEvent(ctx context.Context, ex emailTokenExec, e eventInput) {
 	// label still wins (e.g. the attempted identifier on a failed login, where no
 	// user row exists).
 	if _, err := ex.ExecContext(ctx, `
-		INSERT INTO events (type, actor_user_id, actor_label, target_kind, target_id, target_label, detail, ip, user_agent)
-		VALUES ($1, $2, COALESCE(NULLIF($3, ''), (SELECT username FROM users WHERE id = $2), ''), $4, $5, $6, $7, $8, $9)`,
-		e.Type, e.ActorUserID, e.ActorLabel, e.TargetKind, e.TargetID, e.TargetLabel, e.Detail, e.IP, e.UserAgent,
+		INSERT INTO events (type, actor_user_id, actor_label, target_kind, target_id, target_label, detail, ip, user_agent, fingerprint)
+		VALUES ($1, $2, COALESCE(NULLIF($3, ''), (SELECT username FROM users WHERE id = $2), ''), $4, $5, $6, $7, $8, $9, NULLIF($10, ''))`,
+		e.Type, e.ActorUserID, e.ActorLabel, e.TargetKind, e.TargetID, e.TargetLabel, e.Detail, e.IP, e.UserAgent, e.Fingerprint,
 	); err != nil {
 		slog.Error("event write failed", "type", e.Type, "err", err)
 	}

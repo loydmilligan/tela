@@ -5,6 +5,7 @@ import { SettingsApiKeysTab } from '../components/app/SettingsApiKeysTab'
 import { SettingsBillingTab } from '../components/app/SettingsBillingTab'
 import { SettingsAuditTab } from '../components/app/SettingsAuditTab'
 import { SettingsEventsTab } from '../components/app/SettingsEventsTab'
+import { SettingsErrorsTab } from '../components/app/SettingsErrorsTab'
 import { SettingsUsageTab } from '../components/app/SettingsUsageTab'
 import { SettingsFeedbackTab } from '../components/app/SettingsFeedbackTab'
 import { SettingsNotificationsTab } from '../components/app/SettingsNotificationsTab'
@@ -103,6 +104,14 @@ const USAGE_TAB: SettingsTab = {
   render: () => <SettingsUsageTab />,
 }
 
+// Grouped browser-error "Issues" view — client.error reports collapsed by
+// fingerprint. Instance-admin only. The triage companion to the raw Events feed.
+const ERRORS_TAB: SettingsTab = {
+  id: 'errors',
+  label: 'Errors',
+  render: () => <SettingsErrorsTab />,
+}
+
 // Inbox for feedback submitted via the in-app form / MCP submit_feedback tool.
 // Instance-admin only.
 const FEEDBACK_TAB: SettingsTab = {
@@ -171,7 +180,7 @@ export function SettingsPage() {
     if (me.data?.is_instance_admin) {
       return [
         { label: 'Account', tabs: account },
-        { label: 'Instance admin', tabs: [USERS_TAB, ORGS_TAB, USAGE_TAB, { ...FEEDBACK_TAB, badge: feedbackUnseen }, EVENTS_TAB, AUDIT_TAB, INSTANCE_TAB] },
+        { label: 'Instance admin', tabs: [USERS_TAB, ORGS_TAB, USAGE_TAB, { ...FEEDBACK_TAB, badge: feedbackUnseen }, EVENTS_TAB, ERRORS_TAB, AUDIT_TAB, INSTANCE_TAB] },
       ]
     }
     if (isOrgAdmin) {

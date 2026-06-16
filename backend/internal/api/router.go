@@ -309,6 +309,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/users/{id}", srv.DeleteAdminUser)
 	mux.HandleFunc("GET /api/admin/users/{id}/activity", srv.ListUserActivity)
 	mux.HandleFunc("GET /api/admin/events", srv.ListEvents)
+	// Client-error "Issues" view: browser error reports grouped by fingerprint
+	// (admin_client_errors.go), plus per-issue recent occurrences.
+	mux.HandleFunc("GET /api/admin/client-errors", srv.ListClientErrorGroups)
+	mux.HandleFunc("GET /api/admin/client-errors/{fingerprint}", srv.ListClientErrorOccurrences)
 	mux.HandleFunc("GET /api/admin/usage", srv.AdminUsage)
 	mux.HandleFunc("GET /api/admin/feedback", srv.ListFeedback)
 	mux.HandleFunc("POST /api/admin/feedback/seen", srv.MarkFeedbackSeen)

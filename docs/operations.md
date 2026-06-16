@@ -143,6 +143,14 @@ Reports are de-duped + capped per session client-side and rate-limited per user
 server-side. The endpoint is authed (session/bearer); pre-login crashes on the
 login screen are not captured. Frontend wiring: `frontend/src/lib/client-errors.ts`.
 
+For triage, **Settings → Errors** (instance-admin) is a grouped "Issues" view:
+client errors are collapsed by a server-computed fingerprint (kind + normalized
+message + first stack frame, so ids/line-numbers don't fragment a group) into
+one row per distinct error with a count, affected-user count, first/last seen,
+and an expandable sample stack + recent occurrences. The raw chronological feed
+stays under **Events → Errors**. Backend: `internal/api/admin_client_errors.go`
++ the `events.fingerprint` column (migration `0043`).
+
 ## Search-engine indexing (SEO)
 
 Indexability is enforced **at the proxy** (`deploy/proxy/Caddyfile`), not the app
