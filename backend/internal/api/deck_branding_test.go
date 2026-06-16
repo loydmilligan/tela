@@ -7,9 +7,9 @@ import (
 	"github.com/zcag/tela/backend/internal/models"
 )
 
-// A deck in an org space with no per-deck brand props inherits the org's
-// branding (logo/accent/preferred variant). Explicit props override it; a
-// personal space (no org) inherits nothing.
+// A deck in an org space inherits the org's brand IDENTITY (logo + accent) when
+// unset — but NEVER the variant: the variant is a conscious per-deck choice, not a
+// default. Explicit props always win; a personal space inherits nothing.
 func TestDeckThemeConfig_OrgBrandInheritance(t *testing.T) {
 	_, d, srv := newWiredServerOnDiskWithSrv(t)
 	ctx := context.Background()
@@ -22,10 +22,14 @@ func TestDeckThemeConfig_OrgBrandInheritance(t *testing.T) {
 	}
 	orgSpace := seedOrgSpace(t, d, "Brand", "brand", org)
 
-	// No props → fully inherited.
+	// No props → logo + accent inherited, but variant stays UNSET (never defaulted
+	// from the org's deck_variant, even though one is stored).
 	cfg := srv.deckThemeConfig(ctx, models.Page{SpaceID: orgSpace})
-	if cfg.Logo != "https://acme.example/logo.svg" || cfg.Accent != "#0A5FBD" || cfg.Variant != "brutalist" {
-		t.Fatalf("inherited cfg = %+v, want org brand", cfg)
+	if cfg.Logo != "https://acme.example/logo.svg" || cfg.Accent != "#0A5FBD" {
+		t.Fatalf("cfg = %+v, want inherited logo + accent", cfg)
+	}
+	if cfg.Variant != "" {
+		t.Fatalf("variant = %q, want empty — the org variant must NOT be applied as a default", cfg.Variant)
 	}
 
 	// Explicit props win over the org brand; logoInvert read as bool.
@@ -37,10 +41,10 @@ func TestDeckThemeConfig_OrgBrandInheritance(t *testing.T) {
 		t.Fatalf("override cfg = %+v, want per-deck props", cfg)
 	}
 
-	// Partial props: keep the prop, inherit the rest.
-	cfg = srv.deckThemeConfig(ctx, models.Page{SpaceID: orgSpace, Props: map[string]any{"accent": "#00FF00"}})
-	if cfg.Accent != "#00FF00" || cfg.Logo != "https://acme.example/logo.svg" || cfg.Variant != "brutalist" {
-		t.Fatalf("partial cfg = %+v, want accent override + inherited logo/variant", cfg)
+	// Partial props: a chosen variant + accent override stand; logo still inherited.
+	cfg = srv.deckThemeConfig(ctx, models.Page{SpaceID: orgSpace, Props: map[string]any{"variant": "soft", "accent": "#00FF00"}})
+	if cfg.Variant != "soft" || cfg.Accent != "#00FF00" || cfg.Logo != "https://acme.example/logo.svg" {
+		t.Fatalf("partial cfg = %+v, want chosen variant + accent override + inherited logo", cfg)
 	}
 
 	// Personal space (no org) inherits nothing.

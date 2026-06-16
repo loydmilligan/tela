@@ -57,9 +57,16 @@ type deckConfig struct {
 
 // deckThemeConfig reads the per-deck visual config: explicit page props first
 // (the editor's selector / an agent write them), then the page's owning org's
-// branding fills any unset variant/accent/logo — so every deck in an org space
-// comes out on-brand without per-deck setup. Empty after both → the sidecar
-// applies tahta defaults.
+// brand IDENTITY (logo + accent) fills any unset values — so org decks carry the
+// brand mark + color automatically.
+//
+// The VARIANT is deliberately NOT inherited or defaulted here. The variant is the
+// biggest visual decision (typeface/scheme/texture) and must be a conscious
+// per-deck choice, never a silent default that lets the author (human or agent)
+// coast — the org's preferred variant is only a non-binding UI recommendation, not
+// an applied value. An unset variant falls back to the theme's own default at
+// render time (in the sidecar) purely as a don't-crash safety net, not a choice we
+// make for the deck.
 func (s *Server) deckThemeConfig(ctx context.Context, p models.Page) deckConfig {
 	str := func(k string) string {
 		if v, ok := p.Props[k].(string); ok {
@@ -71,13 +78,9 @@ func (s *Server) deckThemeConfig(ctx context.Context, p models.Page) deckConfig 
 	if v, ok := p.Props["logoInvert"].(bool); ok {
 		cfg.LogoInvert = v
 	}
-	// Inherit unset brand fields from the owning org (white-label branding the
-	// org already set for its custom-domain surface — reused as the deck brand).
-	if cfg.Accent == "" || cfg.Logo == "" || cfg.Variant == "" {
-		logo, accent, variant := s.deckOrgBrand(ctx, p.SpaceID)
-		if cfg.Variant == "" {
-			cfg.Variant = variant
-		}
+	// Inherit brand identity (logo + accent only — NOT variant) from the owning org.
+	if cfg.Accent == "" || cfg.Logo == "" {
+		logo, accent := s.deckOrgBrand(ctx, p.SpaceID)
 		if cfg.Accent == "" {
 			cfg.Accent = accent
 		}
@@ -91,15 +94,16 @@ func (s *Server) deckThemeConfig(ctx context.Context, p models.Page) deckConfig 
 	return cfg
 }
 
-// deckOrgBrand resolves a space's owning org's branding (logo/accent/preferred
-// deck variant) in one lookup. All empty for a personal space (org_id NULL) or
-// an org with no branding row — the caller then falls back to tahta defaults.
-func (s *Server) deckOrgBrand(ctx context.Context, spaceID int64) (logo, accent, variant string) {
+// deckOrgBrand resolves a space's owning org's brand identity (logo + accent) in
+// one lookup. Both empty for a personal space (org_id NULL) or an org with no
+// branding row. The org's preferred deck VARIANT is intentionally not read here —
+// it's a UI recommendation only, never applied as a default (see deckThemeConfig).
+func (s *Server) deckOrgBrand(ctx context.Context, spaceID int64) (logo, accent string) {
 	_ = s.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(ob.logo_url, ''), COALESCE(ob.accent, ''), COALESCE(ob.deck_variant, '')
+		SELECT COALESCE(ob.logo_url, ''), COALESCE(ob.accent, '')
 		  FROM spaces s
 		  LEFT JOIN org_branding ob ON ob.org_id = s.org_id
-		 WHERE s.id = $1`, spaceID).Scan(&logo, &accent, &variant)
+		 WHERE s.id = $1`, spaceID).Scan(&logo, &accent)
 	return
 }
 

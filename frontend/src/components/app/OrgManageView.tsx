@@ -1271,8 +1271,10 @@ function BrandingSection({ orgId }: { orgId: number }) {
         </h2>
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
           White-label your custom-domain sign-in screen with your logo and accent
-          color. The same logo, accent, and deck style are applied to slide decks
-          authored in this org's spaces. Leave a field blank to use the tela default.
+          color. The same logo and accent are applied automatically to slide decks
+          authored in this org's spaces; the deck style below is a recommendation,
+          not applied — the variant is always a deliberate per-deck choice. Leave a
+          field blank to use the tela default.
         </p>
       </header>
 
@@ -1342,7 +1344,7 @@ function BrandingSection({ orgId }: { orgId: number }) {
             htmlFor={`org-deck-variant-${orgId}`}
             className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
           >
-            Default deck style
+            Recommended deck style
           </label>
           <Select
             id={`org-deck-variant-${orgId}`}

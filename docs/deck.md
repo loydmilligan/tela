@@ -78,15 +78,25 @@ values for those keys. Variant catalog comes from the theme's own `variants.json
 tela hardcodes nothing visual. (`accent` is hue-only as of tahta 0.11.0 — the
 variant clamps L/C into its envelope, so a raw brand hex stays legible/on-style.)
 
-**Org-brand inheritance.** A deck's `variant`/`accent`/`logo` come from page props
-first; any left unset inherit from the page's **owning org's branding** —
-`org_branding` (logo_url + accent + deck_variant), the same white-label brand an org
-sets for its custom-domain login/app shell (`deckThemeConfig`/`deckOrgBrand` in
-`deck_render.go`, one `spaces ⋈ org_branding` lookup). So every deck in an org space
-comes out on-brand with zero per-deck setup; a personal space (no `org_id`) inherits
-nothing and falls back to tahta defaults. `logo` is an image URL (a tela attachment
-or external https); tahta renders it as the hero on openers + a small footer mark on
-content slides (`logoInvert` flips a monochrome mark for the variant's scheme).
+**Org-brand inheritance — identity only, never the variant.** A deck's `accent`/
+`logo` come from page props first; if unset they inherit the page's **owning org's
+brand identity** — `org_branding` (logo_url + accent), the same white-label brand an
+org sets for its custom-domain login/app shell (`deckThemeConfig`/`deckOrgBrand` in
+`deck_render.go`, one `spaces ⋈ org_branding` lookup). So org decks carry the brand
+mark + color with zero setup; a personal space (no `org_id`) inherits nothing.
+`logo` is an image URL (a tela attachment or external https); tahta renders it as
+the hero on openers + a footer mark on content slides (`logoInvert` flips a
+monochrome mark for the scheme).
+
+The **`variant` is deliberately NOT inherited or defaulted** — it's the biggest
+visual decision (typeface/scheme/texture) and must be a conscious per-deck choice,
+so the author (human or agent) can't coast. `org_branding.deck_variant` is stored
+only as a non-binding **recommendation** surfaced in the org settings UI; it is
+never applied at render time. An unset variant falls back to tahta's own default in
+the sidecar purely as a don't-crash safety net (public/OG decks must render) — not a
+choice tela makes. The MCP authoring guide marks the variant a required, deliberate
+pick; the in-app `DeckOverview` shows a "Choose a style" prompt instead of a
+defaulted cover.
 
 **Deck body is stored verbatim** — the one exception to tela's "frontmatter never
 lives in `pages.body`" invariant. A deck's leading `---…---` is Slidev headmatter /

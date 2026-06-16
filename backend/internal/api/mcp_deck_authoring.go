@@ -107,11 +107,11 @@ func telaDeckPreamble(m *deckManifestDoc) string {
 	b.WriteString("Use this whenever someone asks for a **presentation, slides, a slide deck, or a talk** (any wording) — not a prose doc. A tela **deck** is a page whose body is **Slidev markdown styled by the tahta design system**. You don't write CSS, grids, or layout HTML — pick a **layout** per slide and fill its fields; tela renders it to slides.\n")
 	b.WriteString("\n## How decks work in tela (read first — overrides the \"Deck header\" section below)\n")
 	b.WriteString("- Make a page a deck: set the page property `deck: true` (e.g. `create_page` with `props: {\"deck\": true}`).\n")
-	b.WriteString("- Set the visual style with the page property `variant` — **not** in the markdown. Available variants:\n")
+	b.WriteString("- **Choose a `variant` deliberately for THIS deck** (page property, not in the markdown). It's the single biggest visual decision — it carries the typeface, scheme, texture, and density. Pick the one whose feel fits the deck's topic, tone, and audience; **do NOT skip it to coast on a default** (there is no default — an unset variant is an unfinished deck). Available variants:\n")
 	for _, v := range m.Variants {
 		b.WriteString(fmt.Sprintf("  - `%s` — %s _(%s)_\n", v.ID, v.Description, v.Scheme))
 	}
-	b.WriteString("  Optionally override the brand color with the `accent` prop (hue-matched, not the exact hex — it's normalized into the variant so it stays legible), set a brand `logo` (an image URL — hero on openers + footer mark), and set `lang` (e.g. `tr`) for locale casing.\n")
+	b.WriteString("  Set the brand color with the `accent` prop (hue-matched, not the exact hex — it's normalized into the variant so it stays legible), set a brand `logo` (an image URL — hero on openers + footer mark), and set `lang` (e.g. `tr`) for locale casing. (In an org space, the org's logo + accent are applied automatically if you omit them — but the variant is always yours to choose.)\n")
 	b.WriteString("- **Do NOT** put `theme:`, `themeConfig:`, or a deck-header YAML block in the markdown — tela injects all of it from the page props. Ignore the \"## Deck header\" YAML in the contract below; just write the slides.\n")
 	b.WriteString("- Separate slides with `---` on its own line. Each slide sets `layout:` in its frontmatter and fills that layout's fields.\n")
 	if len(m.Modules) > 0 {

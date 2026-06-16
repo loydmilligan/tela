@@ -63,8 +63,10 @@ export function DeckOverview({ page }: { page: Page }) {
     staleTime: Infinity,
     retry: false,
   })
-  const currentVariant = (page.props?.variant as string) || 'editorial'
-  const currentLabel = variants?.find((v) => v.name === currentVariant)?.label || 'Editorial'
+  // The variant is a deliberate choice, not a default — an unset deck shows
+  // "Choose a style", never a silent Editorial masquerading as chosen.
+  const chosenVariant = (page.props?.variant as string) || ''
+  const chosenLabel = variants?.find((v) => v.name === chosenVariant)?.label
   const setVariant = (name: string) =>
     void updatePage.mutateAsync({ id: pageId, props: { ...(page.props ?? {}), variant: name } })
 
@@ -79,8 +81,19 @@ export function DeckOverview({ page }: { page: Page }) {
   return (
     <div className="flex flex-col gap-[var(--space-4)]">
       {/* First-slide cover — keyed by variant so switching restyle re-fetches and
-          resets the error state. Hides itself if the cover can't render. */}
-      <DeckCover key={currentVariant} pageId={pageId} variant={currentVariant} onPresent={present} />
+          resets the error state. Until a style is chosen, prompt for the decision
+          instead of previewing a default the author never picked. */}
+      {chosenVariant ? (
+        <DeckCover key={chosenVariant} pageId={pageId} variant={chosenVariant} onPresent={present} />
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-[var(--space-2)] rounded-[var(--radius-md)] border border-dashed border-[var(--border-default)] bg-[var(--surface-2)] px-[var(--space-4)] py-[var(--space-7)] text-center">
+          <Palette width={20} height={20} className="text-[var(--text-muted)]" />
+          <div className="font-medium text-[var(--text-primary)]">Choose a style</div>
+          <div className="max-w-sm text-[var(--text-sm)] text-[var(--text-muted)]">
+            Pick the variant that fits this deck — it sets the typeface, color scheme, and texture. There's no default; it's a deliberate choice.
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface-2)] p-[var(--space-4)]">
         <Presentation width={20} height={20} className="text-[var(--text-muted)]" />
         <div className="mr-auto">
@@ -92,8 +105,8 @@ export function DeckOverview({ page }: { page: Page }) {
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm">
-              <Palette width={16} height={16} /> {currentLabel}
+            <Button variant={chosenVariant ? 'ghost' : 'secondary'} size="sm">
+              <Palette width={16} height={16} /> {chosenLabel ?? 'Choose a style'}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -102,7 +115,7 @@ export function DeckOverview({ page }: { page: Page }) {
                 <Check
                   width={14}
                   height={14}
-                  className={v.name === currentVariant ? 'opacity-100' : 'opacity-0'}
+                  className={v.name === chosenVariant ? 'opacity-100' : 'opacity-0'}
                 />
                 <span className="ml-[var(--space-1)]">{v.label}</span>
                 <span className="ml-auto pl-[var(--space-3)] text-[var(--text-xs)] text-[var(--text-muted)]">{v.scheme}</span>
