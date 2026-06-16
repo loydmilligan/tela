@@ -13,6 +13,9 @@ export type ClientErrorKind =
   | 'unhandledrejection'
   | 'react'
   | 'collab'
+  | 'resource'
+  | 'query'
+  | 'mutation'
 
 export interface ClientErrorReport {
   kind: ClientErrorKind
@@ -108,4 +111,23 @@ export function installGlobalErrorReporting(): void {
     const { message, stack } = extract(e.reason)
     reportClientError({ kind: 'unhandledrejection', message, stack })
   })
+
+  // Failed resource loads (a broken <script>/<link>/<img> — e.g. a stale lazy
+  // chunk or a dead image URL). These fire 'error' on the element and do NOT
+  // bubble, so they're only reachable in the capture phase, and they carry no
+  // .error (the bubble-phase handler above filters them out). e.target is the
+  // element here; for a genuine JS error it's window, which we skip.
+  window.addEventListener(
+    'error',
+    (e: Event) => {
+      const t = e.target as (HTMLElement & { src?: string; href?: string }) | null
+      if (!t || !t.tagName) return
+      const url = t.src || t.href || ''
+      reportClientError({
+        kind: 'resource',
+        message: `failed to load ${t.tagName.toLowerCase()}${url ? `: ${url}` : ''}`,
+      })
+    },
+    true,
+  )
 }

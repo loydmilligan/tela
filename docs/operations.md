@@ -123,15 +123,25 @@ process collectors.
 
 ## Client-side errors
 
-Crashes in a user's browser (uncaught exceptions, unhandled promise rejections,
-React render errors) are beaconed to **`POST /api/client-errors`** and recorded
+Browser-side failures are beaconed to **`POST /api/client-errors`** and recorded
 as `client.error` rows in the activity feed — visible in **Settings → Events**
-under the **Errors** filter, with the full message + stack inline. The same
-report bumps `tela_client_errors_total{kind}` (kinds: `error`,
-`unhandledrejection`, `react`, `collab`), so a spike is alertable from
-`/metrics`. The endpoint is authed (session/bearer) and per-user rate-limited;
-pre-login crashes on the login screen are not captured. Frontend wiring:
-`frontend/src/lib/client-errors.ts` + the top-level `ErrorBoundary`.
+under the **Errors** filter, with the full message + stack inline. Each report
+bumps `tela_client_errors_total{kind}`, so a spike is alertable from `/metrics`.
+The net spans both *uncaught* and *handled* failures, bucketed by `kind`:
+
+- `error` / `unhandledrejection` — uncaught exceptions + rejected promises.
+- `react` — a render-phase crash caught by the top-level `ErrorBoundary`.
+- `query` / `mutation` — a failed data fetch/write, captured globally via
+  TanStack Query's `QueryCache`/`MutationCache` (`lib/queryClient.ts`). Filtered
+  to genuine breakage — network failures (status 0) and `5xx`; expected/handled
+  cases (401 session-expiry, other 4xx, the rag/llm "disabled" 503 sentinels)
+  are skipped so the feed stays signal.
+- `resource` — a failed asset/chunk/image load.
+- `collab` — reserved for live-collab failure reporting.
+
+Reports are de-duped + capped per session client-side and rate-limited per user
+server-side. The endpoint is authed (session/bearer); pre-login crashes on the
+login screen are not captured. Frontend wiring: `frontend/src/lib/client-errors.ts`.
 
 ## Search-engine indexing (SEO)
 
