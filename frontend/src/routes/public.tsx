@@ -213,6 +213,8 @@ export function PublicReaderRoute() {
       pageProps={pageQuery.data.page.props}
       createdAt={pageQuery.data.page.created_at}
       updatedAt={pageQuery.data.page.updated_at}
+      author={pageQuery.data.page.author}
+      editor={pageQuery.data.page.editor}
     />
   )
 }

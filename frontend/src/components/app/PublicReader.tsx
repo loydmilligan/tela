@@ -34,6 +34,10 @@ interface PublicReaderViewProps {
   pageProps?: Record<string, unknown>
   createdAt: string
   updatedAt: string
+  // Page byline: original author + last editor (usernames; editor shown only
+  // when it differs). Falls back to the space owner when absent.
+  author?: string
+  editor?: string
 }
 
 // A no-login reader for a page in a PUBLIC space — the blog surface. Same
@@ -49,6 +53,8 @@ export function PublicReaderView({
   pageProps,
   createdAt,
   updatedAt,
+  author,
+  editor,
 }: PublicReaderViewProps) {
   const navigate = useNavigate()
   const telaHome = useTelaHomeHref()
@@ -105,17 +111,26 @@ export function PublicReaderView({
         ? pageProps.image.trim()
         : undefined
 
-  // Byline → the space owner's author home.
-  const byline = space.owner_handle ? (
+  // Byline → the page's own author (linked to their /u/{username} home), with
+  // the last editor appended when a different person touched it last. Falls back
+  // to the space owner for legacy pages with no recorded author.
+  const authorLink = (name: string) => (
+    <Link
+      to="/u/$username"
+      params={{ username: name }}
+      className="reader-meta-link"
+    >
+      {name}
+    </Link>
+  )
+  const byline = author ? (
     <>
-      by{' '}
-      <Link
-        to="/u/$username"
-        params={{ username: space.owner_handle }}
-        className="reader-meta-link"
-      >
-        @{space.owner_handle}
-      </Link>
+      by {authorLink(author)}
+      {editor && editor !== author ? <> · edited by {authorLink(editor)}</> : null}
+    </>
+  ) : space.owner_handle ? (
+    <>
+      by {authorLink(space.owner_handle)}
     </>
   ) : undefined
 

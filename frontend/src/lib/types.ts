@@ -127,6 +127,9 @@ export interface PageProvenance {
   source: 'human' | 'agent' | 'sync'
   raw_source?: string
   editor?: string
+  // Original author (first revision); the byline shows this, appending the
+  // editor only when it differs.
+  author?: string
   edited_at: string
 }
 

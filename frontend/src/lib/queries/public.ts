@@ -47,6 +47,10 @@ export interface PublicPagePayload {
   deck?: { present_path: string; cover_path: string }
   created_at: string
   updated_at: string
+  // Byline: original author + last editor (usernames; editor shown only when it
+  // differs). Blank for legacy pages with no revision trail.
+  author?: string
+  editor?: string
 }
 
 export interface PublicPageNode extends BlogCardMeta {

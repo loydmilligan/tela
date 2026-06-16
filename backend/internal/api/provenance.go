@@ -1,12 +1,28 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
 )
+
+// pageAuthorAndEditor returns the original author (first page_revision) and the
+// last editor (latest revision) usernames for a page; each blank when unknown
+// (a legacy page with no revision trail, or a sync/system row with no author).
+// Shared by the in-app trust strip (PageProvenance) and the public reader byline.
+func pageAuthorAndEditor(ctx context.Context, db *sql.DB, pageID int64) (author, editor string) {
+	var a, e sql.NullString
+	_ = db.QueryRowContext(ctx, `
+		SELECT
+		  (SELECT us.username FROM page_revisions r LEFT JOIN users us ON us.id = r.author_id
+		     WHERE r.page_id = $1 ORDER BY r.id ASC  LIMIT 1),
+		  (SELECT us.username FROM page_revisions r LEFT JOIN users us ON us.id = r.author_id
+		     WHERE r.page_id = $1 ORDER BY r.id DESC LIMIT 1)`, pageID).Scan(&a, &e)
+	return a.String, e.String
+}
 
 // Page provenance — the "who/what last touched this" half of the epistemic read.
 // Everything else the reader needs (age, review cadence, corroboration) it already
@@ -24,6 +40,9 @@ type pageProvenance struct {
 	RawSource string `json:"raw_source,omitempty"`
 	// Username of the last editor, when known (blank for sync/legacy/system rows).
 	Editor string `json:"editor,omitempty"`
+	// Username of the original author (first revision), when known. The trust
+	// strip shows this as the byline, with Editor appended only when it differs.
+	Author string `json:"author,omitempty"`
 	// Timestamp of that last revision (falls back to the page's updated_at).
 	EditedAt string `json:"edited_at"`
 }
@@ -79,10 +98,12 @@ func (s *Server) PageProvenance(w http.ResponseWriter, r *http.Request) {
 	if when == "" {
 		when = p.UpdatedAt
 	}
+	author, _ := pageAuthorAndEditor(r.Context(), s.DB, id)
 	writeJSON(w, http.StatusOK, pageProvenance{
 		Source:    classifyProvenance(rawSource.String),
 		RawSource: rawSource.String,
 		Editor:    editor.String,
+		Author:    author,
 		EditedAt:  when,
 	})
 }

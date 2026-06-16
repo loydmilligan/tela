@@ -50,6 +50,10 @@ type publicPageDTO struct {
 	Deck      *publicDeckInfo `json:"deck,omitempty"`
 	CreatedAt string          `json:"created_at"`
 	UpdatedAt string          `json:"updated_at"`
+	// Byline: the page's original author, and the last editor when it differs.
+	// Both are usernames (blank when unknown); the reader links them to /u/{username}.
+	Author string `json:"author,omitempty"`
+	Editor string `json:"editor,omitempty"`
 }
 
 // publicDeckInfo gives the public reader the URLs to present a deck (the live SPA)
@@ -202,6 +206,7 @@ func (s *Server) GetPublicSpacePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	author, editor := pageAuthorAndEditor(r.Context(), s.DB, page.ID)
 	dto := publicPageDTO{
 		ID:        page.ID,
 		Title:     page.Title,
@@ -209,6 +214,8 @@ func (s *Server) GetPublicSpacePage(w http.ResponseWriter, r *http.Request) {
 		Props:     page.Props,
 		CreatedAt: page.CreatedAt,
 		UpdatedAt: page.UpdatedAt,
+		Author:    author,
+		Editor:    editor,
 	}
 	if isDeckBag(page.Props) {
 		dto.Deck = &publicDeckInfo{

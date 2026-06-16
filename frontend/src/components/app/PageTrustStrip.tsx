@@ -59,6 +59,17 @@ export function PageTrustStrip({
   const stale = overdue || ageDays > STALE_DAYS
   const source = prov.data?.source
   const editor = prov.data?.editor
+  const author = prov.data?.author
+  // Byline: the original author, with the last editor appended only when it's a
+  // different person. Falls back to whichever single name we know.
+  const byline =
+    author && editor && editor !== author
+      ? `by ${author} · edited by ${editor}`
+      : author
+        ? `by ${author}`
+        : editor
+          ? `by ${editor}`
+          : null
   const ag = agree.data?.computed ? agree.data : null
 
   return (
@@ -91,9 +102,9 @@ export function PageTrustStrip({
         <span className="inline-flex items-center gap-[var(--space-1)]">
           <RefreshCw width={12} height={12} aria-hidden /> Synced
         </span>
-      ) : source === 'human' && editor ? (
+      ) : source === 'human' && byline ? (
         <span className="inline-flex items-center gap-[var(--space-1)]">
-          <User width={12} height={12} aria-hidden /> by {editor}
+          <User width={12} height={12} aria-hidden /> {byline}
         </span>
       ) : null}
 
