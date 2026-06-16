@@ -1,4 +1,38 @@
 @layer components {
+  /* Upload placeholder (milkdown-upload-placeholder.ts) — an inline pill shown
+     at the insert point while an attachment uploads, swapped for the real node
+     on success. */
+  .tela-upload-placeholder {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    user-select: none;
+  }
+  .tela-upload-placeholder::before {
+    content: '';
+    width: var(--space-3);
+    height: var(--space-3);
+    border-radius: 50%;
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--text-muted);
+    animation: tela-upload-spin 0.7s linear infinite;
+  }
+  @keyframes tela-upload-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tela-upload-placeholder::before {
+      animation: none;
+    }
+  }
+
   /* Editor host — minimal functional layout. Content theming (headings,
      lists, code, etc.) is intentionally left to a later pass. */
   .tela-milkdown {

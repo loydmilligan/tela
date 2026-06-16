@@ -4,6 +4,12 @@ import { DOMParser } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { uploadAttachment } from '../../lib/queries/attachments'
 import { insertFileNode } from './milkdown-file'
+import { toast } from '../ui/toast'
+import {
+  addUploadPlaceholder,
+  findUploadPlaceholder,
+  removeUploadPlaceholder,
+} from './milkdown-upload-placeholder'
 
 // Drop / paste upload UX. Any file dropped or pasted into the editor is uploaded
 // to POST /api/pages/{pageId}/attachments (the unified space_files store) and
@@ -144,6 +150,15 @@ function insertTable(view: EditorView, rows: string[][], pos?: number) {
   view.dispatch(tr.replaceSelection(slice).scrollIntoView())
 }
 
+function insertImageAt(view: EditorView, at: number, url: string, alt: string) {
+  const imageType = view.state.schema.nodes.image
+  if (!imageType) return
+  const node = imageType.create({ src: url, alt })
+  const pos = Math.min(at, view.state.doc.content.size)
+  const sel = Selection.near(view.state.doc.resolve(pos))
+  view.dispatch(view.state.tr.setSelection(sel).replaceSelectionWith(node, false).scrollIntoView())
+}
+
 async function uploadAndInsert(
   view: EditorView,
   pageId: number,
@@ -151,26 +166,30 @@ async function uploadAndInsert(
   pos: number,
 ) {
   for (const file of files) {
+    // A placeholder marks the insert point while the upload runs; its position
+    // maps through any edits the user makes meanwhile, and we insert the real
+    // node wherever it ends up.
+    const id = {}
+    addUploadPlaceholder(view, id, pos, file.name)
     try {
       const a = await uploadAttachment(pageId, file)
+      const at = findUploadPlaceholder(view, id) ?? pos
+      removeUploadPlaceholder(view, id)
       if (isImage(file)) {
-        const imageType = view.state.schema.nodes.image
-        if (!imageType) continue
-        const alt = file.name.replace(/\.[^.]+$/, '')
-        const node = imageType.create({ src: a.url, alt })
-        const at = Math.min(pos, view.state.doc.content.size)
-        const sel = Selection.near(view.state.doc.resolve(at))
-        view.dispatch(
-          view.state.tr.setSelection(sel).replaceSelectionWith(node, false).scrollIntoView(),
-        )
+        insertImageAt(view, at, a.url, file.name.replace(/\.[^.]+$/, ''))
       } else {
-        insertFileNode(view, { url: a.url, name: a.name, size: a.byte_size }, pos)
+        insertFileNode(view, { url: a.url, name: a.name, size: a.byte_size }, at)
       }
       window.dispatchEvent(
         new CustomEvent('tela:attachments-changed', { detail: { pageId } }),
       )
     } catch {
-      // Best-effort: a failed upload just doesn't insert. The user can retry.
+      removeUploadPlaceholder(view, id)
+      toast({
+        variant: 'destructive',
+        title: 'Upload failed',
+        description: `Couldn't upload ${file.name}. Please try again.`,
+      })
     }
   }
 }

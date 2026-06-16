@@ -144,6 +144,7 @@ import {
   type WikilinkNavigateHandler,
 } from './milkdown-modifier-click'
 import { createAttachmentDropPlugin } from './milkdown-image-upload'
+import { uploadPlaceholderPlugin } from './milkdown-upload-placeholder'
 import { fileSchema } from './milkdown-file'
 import { createUrlUnfurlPlugin } from './milkdown-url-unfurl'
 import { createTableEdgeSelectPlugin } from './milkdown-table-select'
@@ -677,7 +678,11 @@ function MilkdownEditorInner({
         // so ordering against the URL hook above is immaterial.
         if (imageUploadEnabled) {
           const attachmentDrop = createAttachmentDropPlugin(pageId)
-          ctx.update(prosePluginsCtx, (existing) => [attachmentDrop, ...existing])
+          ctx.update(prosePluginsCtx, (existing) => [
+            attachmentDrop,
+            uploadPlaceholderPlugin,
+            ...existing,
+          ])
         }
 
         // M7.2: bind y-prosemirror's sync + undo plugins when collab is

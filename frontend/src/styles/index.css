@@ -158,6 +158,86 @@
     animation: tela-dialog-out var(--duration-fast) var(--ease-out);
   }
 
+  /* Toast layer (src/components/ui/toast.tsx). Bottom-right stack, above
+     dialogs (z 50). The viewport ignores pointer events so it never blocks the
+     UI behind it; individual toasts re-enable them. */
+  .tela-toast-viewport {
+    position: fixed;
+    bottom: var(--space-4);
+    right: var(--space-4);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: min(24rem, calc(100vw - var(--space-7)));
+    pointer-events: none;
+  }
+  .tela-toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: var(--space-3) var(--space-4);
+    animation: tela-toast-in var(--duration-base) var(--ease-out);
+  }
+  .tela-toast-success {
+    border-color: var(--success);
+  }
+  .tela-toast-destructive {
+    border-color: var(--danger);
+  }
+  .tela-toast-destructive .tela-toast-title {
+    color: var(--danger);
+  }
+  .tela-toast-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .tela-toast-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+  }
+  .tela-toast-description {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    line-height: var(--leading-normal);
+    overflow-wrap: anywhere;
+  }
+  .tela-toast-close {
+    flex-shrink: 0;
+    display: inline-flex;
+    color: var(--text-muted);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+  .tela-toast-close:hover {
+    color: var(--text-primary);
+  }
+  .tela-toast-close-icon {
+    width: var(--space-4);
+    height: var(--space-4);
+  }
+  @keyframes tela-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--space-2));
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   @keyframes tela-sheet-in-right {
     from {
       transform: translateX(100%);
