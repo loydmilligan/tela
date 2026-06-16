@@ -145,6 +145,7 @@ import {
 import { createAttachmentDropPlugin } from './milkdown-image-upload'
 import { fileSchema } from './milkdown-file'
 import { createUrlUnfurlPlugin } from './milkdown-url-unfurl'
+import { createTableEdgeSelectPlugin } from './milkdown-table-select'
 import { useQueryClient } from '@tanstack/react-query'
 import { pageKeys } from '../../lib/queries/pages'
 import { navigateToPage } from '../../lib/pageHitItem'
@@ -649,6 +650,15 @@ function MilkdownEditorInner({
         if (wikilinkMode !== 'share' && !readOnly) {
           const urlUnfurl = createUrlUnfurlPlugin()
           ctx.update(prosePluginsCtx, (existing) => [urlUnfurl, ...existing])
+        }
+
+        // Table edge-selection guard. Prepended so its handleKeyDown runs ahead
+        // of prosemirror-tables: at a table edge a Shift+Arrow would otherwise
+        // collapse the whole CellSelection to a caret (the highlight vanishes).
+        // Editable, non-share.
+        if (wikilinkMode !== 'share' && !readOnly) {
+          const tableEdgeSelect = createTableEdgeSelectPlugin()
+          ctx.update(prosePluginsCtx, (existing) => [tableEdgeSelect, ...existing])
         }
 
         // Image paste/drop → upload → ![](url). Prepended so it intercepts
