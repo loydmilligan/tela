@@ -12,13 +12,14 @@ import { insertFileNode } from './milkdown-file'
 // non-share, page-known mode (see milkdown-editor.tsx). URL pastes / rich HTML
 // fall through to the existing handlers (only file payloads are intercepted).
 //
-// Spreadsheet exception: Excel / Numbers / LibreOffice Calc put a *rendered
-// image* of the copied range on the clipboard alongside the real table (as
-// text/html and tab-separated text/plain). Left alone, the image-upload branch
-// wins and pastes a picture of the table. So when a paste/drop carries an image
-// file AND extractable table data, we build a proper GFM table instead. A single
-// `view.dispatch` does this — collab's ySync observes the transaction, so the
-// same path works in single and collaborative mode with no second implementation.
+// Table exception (see pastedTable): Excel / Numbers / Calc put a *rendered
+// image* of the copied range on the clipboard alongside the real table; left
+// alone, the image-upload branch wins and pastes a picture. Google Sheets and
+// many web tables instead ship an all-<td> HTML table the default GFM parser
+// can't header — it builds a broken table. In both cases we build a proper GFM
+// table ourselves. A single `view.dispatch` does this — collab's ySync observes
+// the transaction, so the same path works in single and collaborative mode with
+// no second implementation.
 //
 // After each upload a `tela:attachments-changed` event fires so the page's
 // AttachmentStrip refetches (the new file is now parented to the page).
@@ -38,7 +39,11 @@ function cellText(el: Element): string {
 
 // Structurally unambiguous: rows are <tr>, cells are <th>/<td>. Scoped queries
 // keep a nested table inside a cell from contaminating the outer row/cell list.
-function tableFromHtml(html: string): string[][] | null {
+// `hasHeader` distinguishes tables the default GFM clipboard parser can handle
+// (a real <th> / data-is-header first row) from all-<td> tables (Google Sheets,
+// many web tables) that it turns into a broken/headerless mess — the latter we
+// rebuild ourselves with an explicit header row.
+function htmlTable(html: string): { rows: string[][]; hasHeader: boolean } | null {
   if (!/<table[\s>]/i.test(html)) return null
   const doc = new window.DOMParser().parseFromString(html, 'text/html')
   const table = doc.querySelector('table')
@@ -49,7 +54,11 @@ function tableFromHtml(html: string): string[][] | null {
     const cells = Array.from(tr.querySelectorAll(':scope > th, :scope > td')).map(cellText)
     if (cells.length) rows.push(cells)
   })
-  return rows.length ? rows : null
+  if (!rows.length) return null
+  const firstRow = table.querySelector('tr')
+  const hasHeader =
+    !!firstRow && (firstRow.matches('[data-is-header]') || firstRow.querySelector('th') != null)
+  return { rows, hasHeader }
 }
 
 // Fallback for sources that ship TSV but no table HTML. Excel separates rows
@@ -78,11 +87,21 @@ function normalizeTable(rows: string[][]): string[][] | null {
   })
 }
 
-function extractTable(dt: DataTransfer | null): string[][] | null {
+// Decide whether a paste/drop should become a GFM table, and return its rows.
+// We take over when either:
+//  (a) an image file rides along — spreadsheets (Excel/Numbers/Calc) put a
+//      rendered picture of the range on the clipboard next to the real table; or
+//  (b) the clipboard has an HTML <table> with no header row the GFM parser can
+//      use (all-<td>, e.g. Google Sheets) — the default would build it broken.
+// A proper-header HTML table (real <th>) is left to the default handler, which
+// preserves rich inline cell content (links, bold) our text rebuild would flatten.
+function pastedTable(dt: DataTransfer | null): string[][] | null {
   if (!dt) return null
   const html = dt.getData('text/html')
-  const fromHtml = html ? tableFromHtml(html) : null
-  const rows = fromHtml ?? tableFromTsv(dt.getData('text/plain'))
+  const ht = html ? htmlTable(html) : null
+  const takeover = filesFrom(dt).some(isImage) || (ht != null && !ht.hasHeader)
+  if (!takeover) return null
+  const rows = ht?.rows ?? tableFromTsv(dt.getData('text/plain'))
   return rows ? normalizeTable(rows) : null
 }
 
@@ -161,16 +180,14 @@ export function createAttachmentDropPlugin(pageId: number): Plugin {
     props: {
       handlePaste: (view, event) => {
         const dt = event.clipboardData
-        const files = filesFrom(dt)
-        // Spreadsheet paste: prefer the table over its rendered image.
-        if (files.some(isImage)) {
-          const rows = extractTable(dt)
-          if (rows) {
-            event.preventDefault()
-            insertTable(view, rows)
-            return true
-          }
+        // Spreadsheet / headerless-HTML table → real GFM table.
+        const rows = pastedTable(dt)
+        if (rows) {
+          event.preventDefault()
+          insertTable(view, rows)
+          return true
         }
+        const files = filesFrom(dt)
         if (files.length === 0) return false
         event.preventDefault()
         void uploadAndInsert(view, pageId, files, view.state.selection.from)
@@ -179,19 +196,17 @@ export function createAttachmentDropPlugin(pageId: number): Plugin {
       handleDOMEvents: {
         drop: (view, event) => {
           const dt = event.dataTransfer
-          const files = filesFrom(dt)
           const dropPos = () => {
             const d = view.posAtCoords({ left: event.clientX, top: event.clientY })
             return d?.pos ?? view.state.selection.from
           }
-          if (files.some(isImage)) {
-            const rows = extractTable(dt)
-            if (rows) {
-              event.preventDefault()
-              insertTable(view, rows, dropPos())
-              return true
-            }
+          const rows = pastedTable(dt)
+          if (rows) {
+            event.preventDefault()
+            insertTable(view, rows, dropPos())
+            return true
           }
+          const files = filesFrom(dt)
           if (files.length === 0) return false
           event.preventDefault()
           void uploadAndInsert(view, pageId, files, dropPos())
