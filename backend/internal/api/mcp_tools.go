@@ -273,6 +273,13 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpTreatDeckImage)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "generate_deck_image",
+		Title:       "Generate deck image",
+		Description: "Generate an image from a prompt and attach it to a deck page (editor+), ready for a bg:/image: slot. Returns the serve URL + a ![](…) snippet; reference it by path (don't regenerate on re-render). Read the imagery module first (deck_authoring_guide module=\"imagery\"): most slides need NO image — use it for atmosphere/concept/focal only, reuse ONE background, write rich on-palette prompts, and prefer images raw. May be unavailable (503) if the instance hasn't configured image generation or AI is paused; generation can take from ~20s to a few minutes depending on the model.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpGenerateDeckImage)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_attachment",
 		Title:       "Delete attachment",
 		Description: "Detach a file from a page by attachment id (editor+; ids come from list_attachments). Soft-delete. It does NOT edit the page body, so remove any inline embed separately with update_page/patch_page.",

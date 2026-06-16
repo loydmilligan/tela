@@ -191,6 +191,66 @@ func treatedName(src, variant string) string {
 	return fmt.Sprintf("%s-%s.jpg", base, variant)
 }
 
+// ── generate_deck_image ──────────────────────────────────────────────────────
+
+type genImageIn struct {
+	ID     int64  `json:"id" jsonschema:"id of the deck page to attach the generated image to"`
+	Prompt string `json:"prompt" jsonschema:"the image prompt — rich and specific (scene, light, texture, on-variant colours). For FLUX models append 'no text, no letters, no words' or it invents garbled type; OMIT that only when you deliberately want legible in-image text"`
+	Size   string `json:"size,omitempty" jsonschema:"WxH, default 1280x720 (16:9 — the cover/bg/bleed slot aspect)"`
+	Steps  int    `json:"steps,omitempty" jsonschema:"sampling steps; ~10 for hero/cover, ~4 for incidental texture (more ≈ linearly slower). Omit for the model default"`
+	Seed   int    `json:"seed,omitempty" jsonschema:"optional seed for reproducibility"`
+	Model  string `json:"model,omitempty" jsonschema:"optional model override (else the endpoint default)"`
+	Name   string `json:"name,omitempty" jsonschema:"optional attachment filename (default deck-image-<n>.png)"`
+}
+type genImageOut struct {
+	URL      string `json:"url"`      // serve URL of the generated image attachment
+	Markdown string `json:"markdown"` // ready-to-place embed snippet
+	Note     string `json:"note"`
+}
+
+// mcpGenerateDeckImage generates an image from a prompt via the configured
+// image endpoint (e.g. mflux/FLUX) and saves it as a new attachment on the deck
+// page, ready for a bg:/image: slot. Env-gated (TELA_IMAGE_GEN_URL) + honours the
+// ai.disabled kill-switch. Per the imagery recipe: most slides need NO image —
+// use it for atmosphere/concept/focal only, reuse one background, prefer rich
+// on-palette images raw.
+func (s *Server) mcpGenerateDeckImage(ctx context.Context, req *mcp.CallToolRequest, in genImageIn) (*mcp.CallToolResult, genImageOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), genImageOut{}, nil
+	}
+	if ae := mcpRequireWrite(k); ae != nil {
+		return mcpErr(ae), genImageOut{}, nil
+	}
+	if !s.imageGenEnabled() {
+		return mcpErr(&apiErr{http.StatusServiceUnavailable, "image_gen_unavailable", "image generation isn't configured on this instance (TELA_IMAGE_GEN_URL unset) or AI is paused"}), genImageOut{}, nil
+	}
+	if strings.TrimSpace(in.Prompt) == "" {
+		return mcpErr(&apiErr{http.StatusBadRequest, "bad_request", "prompt is required"}), genImageOut{}, nil
+	}
+	p, ae := s.getPageCore(ctx, u, k, in.ID)
+	if ae != nil {
+		return mcpErr(ae), genImageOut{}, nil
+	}
+	img, err := newImageGen().generate(ctx, in.Prompt, in.Size, in.Model, in.Steps, in.Seed)
+	if err != nil {
+		return mcpErr(&apiErr{http.StatusBadGateway, "image_gen_failed", "could not generate image: " + err.Error()}), genImageOut{}, nil
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		name = "deck-image.png"
+	}
+	att, ae := s.uploadPageAttachmentCore(ctx, u, k, p.ID, name, img)
+	if ae != nil {
+		return mcpErr(ae), genImageOut{}, nil
+	}
+	return nil, genImageOut{
+		URL:      att.URL,
+		Markdown: fmt.Sprintf("![](%s)", att.URL),
+		Note:     "Saved as an attachment — reference it by path in a bg:/image: slot and don't regenerate on re-render. Look at the result (preview_deck); a flat slide means the prompt was too thin. Off-palette or reusing across variants? Run treat_deck_image. Never duotone a real-colour focal subject.",
+	}, nil
+}
+
 // pickPreviewFrames resolves the requested 1-based frames (clamped, deduped,
 // capped) or the first previewDeckMax when none requested.
 func pickPreviewFrames(want []int, count int) []int {

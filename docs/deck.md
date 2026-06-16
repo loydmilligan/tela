@@ -194,8 +194,18 @@ tool (`mcp_deck_tools.go` → sidecar `POST /treat`, `sharp`): source must be an
 existing **page attachment** (no arbitrary-URL fetch → no SSRF), the treated JPEG is
 saved as a new attachment for a `bg:`/`image:` slot. Treatment is a *fallback*
 (prefer rich on-palette images raw; never duotone a real-colour focal subject).
-*Generation* (the agent bringing pixels) is out of scope here — tela hosts no image
-model; an agent uploads/sources the image, this only makes it tahta-grade.
+
+**Imagery — generation.** tahta's posture is "you bring the image model"; tela
+supplies it via the **`generate_deck_image`** MCP tool (`mcp_deck_tools.go` +
+`imagegen.go`). It POSTs an OpenAI-compatible Images request (`{url}/images/
+generations` → `{data:[{b64_json}]}`) to an env-configured endpoint
+(`TELA_IMAGE_GEN_URL`, e.g. an mflux/FLUX box) and saves the result as a page
+attachment with a ready `![](…)` snippet. **Env-gated** (unset → 503) and honours
+the **`ai.disabled` kill-switch** — same posture as RAG/LLM (`TELA_LLM_URL`); from a
+Docker backend reach a private-overlay box by IP, not name. Generation and treatment
+are separate steps: generate raw on-palette imagery, reach for `treat_deck_image`
+only as a fallback. The imagery capability module (surfaced via `deck_authoring_
+guide module="imagery"`) governs *what* to make and *where*.
 
 ## First slide = the deck's visual identity (cover / reader / OG)
 

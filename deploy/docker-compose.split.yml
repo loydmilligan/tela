@@ -67,6 +67,11 @@ services:
       TELA_LLM_URL:    ${TELA_LLM_URL:-}
       TELA_LLM_MODEL:  ${TELA_LLM_MODEL:-}
       TELA_LLM_TOKEN:  ${TELA_LLM_TOKEN:-}
+      # Deck image generation (MCP generate_deck_image) — OpenAI-compatible Images
+      # endpoint incl. /v1. Unset → 503. Use the overlay IP from Docker, not a name.
+      TELA_IMAGE_GEN_URL:    ${TELA_IMAGE_GEN_URL:-}
+      TELA_IMAGE_GEN_MODEL:  ${TELA_IMAGE_GEN_MODEL:-}
+      TELA_IMAGE_GEN_KEY:    ${TELA_IMAGE_GEN_KEY:-}
       TELA_WORKOS_ISSUER:    ${TELA_WORKOS_ISSUER:-}
       TELA_MCP_RESOURCE:     ${TELA_MCP_RESOURCE:-}
       WORKOS_API_KEY:        ${WORKOS_API_KEY:-}

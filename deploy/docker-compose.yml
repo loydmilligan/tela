@@ -61,6 +61,12 @@ services:
       TELA_LLM_URL:    ${TELA_LLM_URL:-}
       TELA_LLM_MODEL:  ${TELA_LLM_MODEL:-}
       TELA_LLM_TOKEN:  ${TELA_LLM_TOKEN:-}
+      # Deck image generation (MCP generate_deck_image). OpenAI-compatible Images
+      # endpoint incl. /v1 (e.g. an mflux/FLUX box). Unset → the tool 503s. From a
+      # Docker backend use the host's overlay IP, not its name (RAG-embed gotcha).
+      TELA_IMAGE_GEN_URL:    ${TELA_IMAGE_GEN_URL:-}
+      TELA_IMAGE_GEN_MODEL:  ${TELA_IMAGE_GEN_MODEL:-}
+      TELA_IMAGE_GEN_KEY:    ${TELA_IMAGE_GEN_KEY:-}
       # MCP OAuth (Phase 5). Unset → /api/mcp stays PAT-only and OAuth is dark
       # (Protected Resource Metadata 404s). Set TELA_WORKOS_ISSUER to enable the
       # Claude.ai/ChatGPT Connect flow via WorkOS AuthKit. See .env.example.
