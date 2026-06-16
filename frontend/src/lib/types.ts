@@ -422,9 +422,12 @@ export interface HostContext {
 // clear. PUT validates: logo_url must be https://; accent must be a hex
 // (#rrggbb) or an oklch()/rgb()/rgba() color (400 bad_request otherwise).
 export interface OrgBranding {
+  /** Effective logo URL — a tela serve route when a logo is stored, else ''. */
   logo_url: string
+  /** A logo is stored in tela (vs. unset). */
+  has_logo: boolean
   accent: string
-  /** tahta variant id used as the default for the org's decks ('' → tahta default). */
+  /** tahta variant id recommended for the org's decks ('' → none). */
   deck_variant: string
 }
 

@@ -10,6 +10,7 @@ import {
   Palette,
   Sparkles,
   Trash2,
+  Upload,
   UserPlus,
   Users,
 } from 'lucide-react'
@@ -49,6 +50,8 @@ import {
 import {
   useOrgBranding,
   usePutOrgBranding,
+  useUploadOrgLogo,
+  useDeleteOrgLogo,
 } from '../../lib/queries/org-branding'
 import {
   useOrgLoginSettings,
@@ -144,6 +147,7 @@ function OrgManageBody({ org, isInstance }: { org: Org; isInstance: boolean }) {
       { id: 'members', label: 'Members', render: () => <MembersPanel org={org} /> },
       { id: 'groups', label: 'Groups', render: () => <GroupsPanel org={org} /> },
     ]
+    s.push({ id: 'branding', label: 'Branding', render: () => <BrandingSection orgId={org.id} /> })
     if (isInstance) s.push({ id: 'sso', label: 'Single sign-on', render: () => <SSOPanel org={org} /> })
     s.push({ id: 'domains', label: 'Custom domains', render: () => <CustomDomainsPanel org={org} /> })
     s.push({ id: 'activity', label: 'Activity', render: () => <OrgActivityPanel orgId={org.id} /> })
@@ -924,8 +928,6 @@ function CustomDomainsPanel({ org }: { org: Org }) {
         <AddHostnameForm orgId={orgId} />
       </div>
 
-      <BrandingSection orgId={orgId} />
-
       <LoginMethodsSection orgId={orgId} />
     </div>
   )
@@ -1221,6 +1223,9 @@ function HealthChips({
 function BrandingSection({ orgId }: { orgId: number }) {
   const branding = useOrgBranding(orgId)
   const put = usePutOrgBranding(orgId)
+  const uploadLogo = useUploadOrgLogo(orgId)
+  const deleteLogo = useDeleteOrgLogo(orgId)
+  const fileRef = useRef<HTMLInputElement>(null)
   // Deck variants come from the theme package (slidev-theme-tahta) — same catalog
   // the deck variant picker uses; tela hardcodes none.
   const { data: deckVariants } = useQuery({
@@ -1229,87 +1234,147 @@ function BrandingSection({ orgId }: { orgId: number }) {
     staleTime: Infinity,
     retry: false,
   })
-  const [logoUrl, setLogoUrl] = useState('')
   const [accent, setAccent] = useState('')
   const [deckVariant, setDeckVariant] = useState('')
+  const [importUrl, setImportUrl] = useState('')
+  const [showImport, setShowImport] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
-  // Prefill from the loaded branding once.
+  // Prefill the editable color/style fields from the loaded branding once.
   const [hydratedFor, setHydratedFor] = useState<number | null>(null)
   if (branding.data && hydratedFor !== orgId) {
-    setLogoUrl(branding.data.logo_url)
     setAccent(branding.data.accent)
     setDeckVariant(branding.data.deck_variant)
     setHydratedFor(orgId)
   }
 
+  const hasLogo = branding.data?.has_logo ?? false
+  const logoUrl = branding.data?.logo_url ?? ''
+
+  // Accent + recommended style are saved together (the form). The logo is its own
+  // immediate action (upload / import / remove), each storing to tela + refetching.
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setSaved(false)
     try {
-      await put.mutateAsync({ logo_url: logoUrl.trim(), accent: accent.trim(), deck_variant: deckVariant })
+      await put.mutateAsync({ accent: accent.trim(), deck_variant: deckVariant })
       setSaved(true)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 400) {
-        // The backend validates both fields; map by which one is non-empty/bad.
-        setError(brandingValidationMessage(logoUrl.trim(), accent.trim(), err))
-      } else if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        setError('Failed to save branding.')
-      }
+      setError(err instanceof ApiError ? err.message : 'Failed to save branding.')
+    }
+  }
+
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    setError(null)
+    try {
+      await uploadLogo.mutateAsync(file)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Logo upload failed.')
+    }
+  }
+
+  async function doImport() {
+    if (!importUrl.trim()) return
+    setError(null)
+    try {
+      await put.mutateAsync({ accent: accent.trim(), deck_variant: deckVariant, logo_import_url: importUrl.trim() })
+      setImportUrl('')
+      setShowImport(false)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Logo import failed.')
+    }
+  }
+
+  async function removeLogo() {
+    setError(null)
+    try {
+      await deleteLogo.mutateAsync()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not remove the logo.')
     }
   }
 
   return (
-    <section className="flex flex-col gap-[var(--space-3)] pt-[var(--space-5)] border-t border-[var(--border-subtle)]">
-      <header className="flex flex-col gap-[var(--space-1)]">
-        <h2 className="m-0 flex items-center gap-[var(--space-2)] font-[family-name:var(--font-sans)] text-[length:var(--text-base)] text-[var(--text-primary)]">
-          <Palette width={14} height={14} />
-          Branding
-        </h2>
-        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-          White-label your custom-domain sign-in screen with your logo and accent
-          color. The same logo and accent are applied automatically to slide decks
-          authored in this org's spaces; the deck style below is a recommendation,
-          not applied — the variant is always a deliberate per-deck choice. Leave a
-          field blank to use the tela default.
-        </p>
-      </header>
+    <div className="flex flex-col gap-[var(--space-5)] max-w-[40rem]">
+      <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+        Your logo and accent color theme your custom-domain sign-in screen and are
+        applied automatically to slide decks created in this org's spaces. The deck
+        style is a recommendation only — the variant is always a deliberate per-deck
+        choice. Leave a field blank to use the tela default.
+      </p>
 
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-[var(--space-3)]">
-        <div className="flex flex-col gap-[var(--space-1)]">
-          <label
-            htmlFor={`org-logo-${orgId}`}
-            className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
-          >
-            Logo URL
-          </label>
-          <div className="flex items-center gap-[var(--space-2)]">
-            <div className="flex-1 min-w-0">
-              <Input
-                id={`org-logo-${orgId}`}
-                type="url"
-                inputMode="url"
-                autoComplete="off"
-                placeholder="https://example.com/logo.svg"
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-              />
-            </div>
-            {logoUrl.trim() ? (
-              // Live preview of the entered logo — runtime data, broken/empty
-              // URLs simply don't render.
-              <img
-                src={logoUrl.trim()}
-                alt="Logo preview"
-                className="block max-h-[var(--space-7)] w-auto rounded-[var(--radius-xs)] border border-[var(--border-subtle)]"
-              />
+      {/* Logo — stored in tela (so it renders everywhere, incl. exported decks). */}
+      <div className="flex flex-col gap-[var(--space-2)]">
+        <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+          Logo
+        </span>
+        <div className="flex items-center gap-[var(--space-3)]">
+          {hasLogo ? (
+            <img
+              src={logoUrl}
+              alt="Organization logo"
+              className="block max-h-[var(--space-8)] w-auto max-w-[12rem] rounded-[var(--radius-xs)] border border-[var(--border-subtle)] bg-[var(--surface-2)] p-[var(--space-1)]"
+            />
+          ) : (
+            <span className="flex h-[var(--space-8)] w-[var(--space-8)] shrink-0 items-center justify-center rounded-[var(--radius-xs)] border border-dashed border-[var(--border-default)] text-[var(--text-muted)]">
+              <Palette width={16} height={16} />
+            </span>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={onPickFile}
+          />
+          <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={uploadLogo.isPending}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload width={14} height={14} />
+              {uploadLogo.isPending ? 'Uploading…' : hasLogo ? 'Replace' : 'Upload'}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowImport((v) => !v)}>
+              <Globe width={14} height={14} /> Import from URL
+            </Button>
+            {hasLogo ? (
+              <Button type="button" variant="ghost" size="sm" disabled={deleteLogo.isPending} onClick={removeLogo}>
+                <Trash2 width={14} height={14} /> Remove
+              </Button>
             ) : null}
           </div>
         </div>
+        {showImport ? (
+          <div className="flex items-center gap-[var(--space-2)]">
+            <div className="flex-1 min-w-0">
+              <Input
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                placeholder="https://example.com/logo.png"
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+              />
+            </div>
+            <Button type="button" variant="secondary" size="sm" disabled={put.isPending || !importUrl.trim()} onClick={doImport}>
+              {put.isPending ? 'Importing…' : 'Import'}
+            </Button>
+          </div>
+        ) : null}
+        <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          PNG, JPEG, WebP or GIF, up to 2 MB. tela stores and serves it, so it renders everywhere — including exported decks.
+        </p>
+      </div>
 
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-[var(--space-3)]">
         <div className="flex flex-col gap-[var(--space-1)]">
           <label
             htmlFor={`org-accent-${orgId}`}
@@ -1370,29 +1435,12 @@ function BrandingSection({ orgId }: { orgId: number }) {
 
         <div>
           <Button type="submit" variant="secondary" size="sm" disabled={put.isPending}>
-            {put.isPending ? 'Saving…' : 'Save branding'}
+            {put.isPending ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </form>
-    </section>
+    </div>
   )
-}
-
-// Pick the right validation message for a 400 from PUT /branding. The backend
-// returns one error code; we tailor the copy by which field is non-empty
-// (an empty field can't be the offender — '' clears the override).
-function brandingValidationMessage(
-  logoUrl: string,
-  accent: string,
-  err: ApiError,
-): string {
-  if (logoUrl && !/^https:\/\//i.test(logoUrl)) {
-    return 'Logo URL must start with https://'
-  }
-  if (accent) {
-    return 'Accent must be a hex (#rrggbb) or an oklch()/rgb() color.'
-  }
-  return err.message
 }
 
 function AddHostnameForm({ orgId }: { orgId: number }) {

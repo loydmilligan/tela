@@ -414,6 +414,12 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/orgs/{id}/login-settings", srv.PutOrgLoginSettings)
 	mux.HandleFunc("GET /api/orgs/{id}/branding", srv.GetOrgBranding)
 	mux.HandleFunc("PUT /api/orgs/{id}/branding", srv.PutOrgBranding)
+	mux.HandleFunc("POST /api/orgs/{id}/branding/logo", srv.UploadOrgLogo)
+	mux.HandleFunc("DELETE /api/orgs/{id}/branding/logo", srv.DeleteOrgLogo)
+	// The org logo is served from tela's own origin (PUBLIC — shown pre-auth on the
+	// white-label login screen, and fetched by the server-side deck renderer). Under
+	// /api/public/ so it's on IsPublicPath; content-addressed (?v=<hash>), GET-only.
+	mux.HandleFunc("GET /api/public/orgs/{id}/logo", srv.ServeOrgLogo)
 	// Host context: org branding + enabled sign-in methods for the request's
 	// host. Public (host-derived, pre-login) — see IsPublicPath.
 	mux.HandleFunc("GET /api/host-context", srv.HostContext)

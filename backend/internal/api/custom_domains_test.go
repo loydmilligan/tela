@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -255,17 +256,35 @@ func TestOrgBranding(t *testing.T) {
 	admin := loginClient(t, ts, "admin", "adminpass1")
 	base := ts.URL + "/api/orgs/" + itoa(org) + "/branding"
 
-	// Reject a CSS-injection-shaped accent and a non-https logo.
-	cdPut(t, admin, base, `{"logo_url":"https://acme.example/logo.png","accent":"red;}body{}"}`, http.StatusBadRequest)
-	cdPut(t, admin, base, `{"logo_url":"ftp://acme.example/logo.png","accent":"#ff0000"}`, http.StatusBadRequest)
+	// Reject a CSS-injection-shaped accent and a non-http(s) logo import URL.
+	cdPut(t, admin, base, `{"accent":"red;}body{}"}`, http.StatusBadRequest)
+	cdPut(t, admin, base, `{"logo_import_url":"ftp://acme.example/logo.png","accent":"#ff0000"}`, http.StatusBadRequest)
 
-	// Accept a clean logo + accent, and surface them via host-context.
-	cdPut(t, admin, base, `{"logo_url":"https://acme.example/logo.png","accent":"oklch(0.7 0.1 250)"}`, http.StatusOK)
+	// Set the accent via PUT (the logo is uploaded separately, below).
+	cdPut(t, admin, base, `{"accent":"oklch(0.7 0.1 250)"}`, http.StatusOK)
+
+	// Upload a logo — stored IN tela; host-context exposes a tela serve route, not
+	// an external URL, so the deck renderer can always reach it.
+	req, _ := http.NewRequest(http.MethodPost, base+"/logo", bytes.NewReader(tinyPNG))
+	req.Header.Set("Content-Type", "image/png")
+	resp, err := admin.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("upload logo: err=%v status=%d", err, resp.StatusCode)
+	}
+	resp.Body.Close()
+
 	var hc hostContextDTO
 	getHost(t, http.DefaultClient, ts.URL+"/api/host-context", "wiki.example.com", http.StatusOK, &hc)
-	if hc.Org == nil || hc.Org.LogoURL != "https://acme.example/logo.png" || hc.Org.Accent != "oklch(0.7 0.1 250)" {
-		t.Fatalf("host-context branding = %+v", hc.Org)
+	wantPrefix := "/api/public/orgs/" + itoa(org) + "/logo"
+	if hc.Org == nil || !strings.HasPrefix(hc.Org.LogoURL, wantPrefix) || hc.Org.Accent != "oklch(0.7 0.1 250)" {
+		t.Fatalf("host-context branding = %+v (want logo prefix %q)", hc.Org, wantPrefix)
 	}
+	// The advertised route serves the logo bytes publicly.
+	lr, err := http.Get(ts.URL + hc.Org.LogoURL)
+	if err != nil || lr.StatusCode != http.StatusOK || lr.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("serve logo: err=%v status=%d type=%q", err, lr.StatusCode, lr.Header.Get("Content-Type"))
+	}
+	lr.Body.Close()
 }
 
 // The health probe is gated to the org's own hostnames (no DNS call on the 404
