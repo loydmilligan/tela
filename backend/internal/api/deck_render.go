@@ -168,7 +168,7 @@ func (s *Server) streamDeckSPA(w http.ResponseWriter, r *http.Request, p models.
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		writeError(w, http.StatusNotFound, "not_found", "not found")
+		writeDeckSPAError(w, resp.StatusCode)
 		return
 	}
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
@@ -178,6 +178,23 @@ func (s *Server) streamDeckSPA(w http.ResponseWriter, r *http.Request, p models.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// writeDeckSPAError turns a non-200 from the sidecar's SPA build into a
+// meaningful client error instead of a bare 404 (which read as "page missing"
+// and hid the real cause — a structurally broken deck that the build choked on).
+// A sidecar 404 is a genuinely missing asset file; a 400 is a deck it couldn't
+// parse; anything else is a build failure. Both deck cases point the author at
+// lint_deck — the structural error is exactly what it reports.
+func writeDeckSPAError(w http.ResponseWriter, sidecarStatus int) {
+	switch sidecarStatus {
+	case http.StatusNotFound:
+		writeError(w, http.StatusNotFound, "not_found", "not found")
+	case http.StatusBadRequest:
+		writeError(w, http.StatusUnprocessableEntity, "deck_invalid", "this deck couldn't be parsed — it has a structural error (run lint_deck to find it)")
+	default:
+		writeError(w, http.StatusBadGateway, "deck_build_failed", "this deck failed to build — it likely has a structural error (run lint_deck to find it)")
+	}
 }
 
 // ServePublicDeckSPA (GET /api/public/spaces/{id}/pages/{page_id}/deck/spa/{path...}):

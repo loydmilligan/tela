@@ -48,17 +48,9 @@ func (s *Server) mcpLintDeck(ctx context.Context, req *mcp.CallToolRequest, in l
 	if ae != nil {
 		return mcpErr(ae), lintDeckOut{}, nil
 	}
-	resp, err := deckPost(ctx, "/lint", p.Body, deckConfig{})
+	out, err := s.deckLint(ctx, p.Body)
 	if err != nil {
 		return mcpErr(&apiErr{http.StatusBadGateway, "deck_unavailable", "deck service unavailable"}), lintDeckOut{}, nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return mcpErr(&apiErr{http.StatusBadGateway, "deck_lint_failed", "could not lint deck"}), lintDeckOut{}, nil
-	}
-	var out lintDeckOut
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return mcpErr(&apiErr{http.StatusInternalServerError, "internal", "bad lint response"}), lintDeckOut{}, nil
 	}
 	// lint reports what's wrong, not what's valid — so on any issue, point the agent
 	// at the authoritative layout/field reference instead of leaving it to guess.
@@ -66,6 +58,65 @@ func (s *Server) mcpLintDeck(ctx context.Context, req *mcp.CallToolRequest, in l
 		out.Hint = "Call deck_authoring_guide for the full list of valid layouts and each layout's fields."
 	}
 	return nil, out, nil
+}
+
+// deckLint runs the sidecar's structural validator (tahta-lint) over a deck body
+// and returns the parsed report. The single lint path shared by the lint_deck
+// tool and the agent-write gate — no second implementation to drift.
+func (s *Server) deckLint(ctx context.Context, body string) (lintDeckOut, error) {
+	resp, err := deckPost(ctx, "/lint", body, deckConfig{})
+	if err != nil {
+		return lintDeckOut{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return lintDeckOut{}, fmt.Errorf("deck lint: sidecar status %d", resp.StatusCode)
+	}
+	var out lintDeckOut
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return lintDeckOut{}, err
+	}
+	return out, nil
+}
+
+// deckWriteGate validates an AGENT-authored deck body before it's persisted and
+// rejects a structurally broken one (the kind that builds nothing and 404s on
+// Present) with the issues, so the agent fixes it now instead of shipping a dead
+// deck. Agents can't be relied on to call lint_deck themselves; the FE editor —
+// a human autosaving keystroke-by-keystroke through transiently-broken states —
+// is deliberately NOT gated, only deliberate agent writes are. Fails OPEN: a
+// deck-service outage must never block authoring, and warnings never block.
+func (s *Server) deckWriteGate(ctx context.Context, body string) *apiErr {
+	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	out, err := s.deckLint(cctx, body)
+	if err != nil {
+		return nil // fail open — sidecar down/slow shouldn't block the write
+	}
+	if out.Errors == 0 {
+		return nil // warnings don't block
+	}
+	return &apiErr{http.StatusUnprocessableEntity, "deck_invalid", deckLintMessage(out)}
+}
+
+// deckLintMessage renders a deck's blocking lint errors into one actionable
+// message (capped), pointing the agent at lint_deck + the authoring guide.
+func deckLintMessage(out lintDeckOut) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "deck has %d structural error(s) — fix these and retry (call lint_deck for the full report, deck_authoring_guide for layouts/fields):", out.Errors)
+	shown := 0
+	for _, it := range out.Issues {
+		if it.Level != "error" {
+			continue
+		}
+		if shown >= 12 {
+			b.WriteString("\n  - …more (run lint_deck)")
+			break
+		}
+		fmt.Fprintf(&b, "\n  - slide %d: %s", it.Slide, it.Message)
+		shown++
+	}
+	return b.String()
 }
 
 // ── preview_deck ─────────────────────────────────────────────────────────────

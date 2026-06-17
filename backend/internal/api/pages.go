@@ -411,6 +411,16 @@ func (s *Server) createPageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		return models.Page{}, &apiErr{http.StatusForbidden, "forbidden", "editor or owner role required"}
 	}
 
+	// Agent-authored decks are lint-gated so a structurally broken deck (one that
+	// 404s on Present) can't be saved silently — the agent gets the issues back to
+	// fix. Humans editing in the FE autosave through transient states and are not
+	// gated; fail-open on a sidecar outage (see deckWriteGate).
+	if isAgentWrite(ctx) && isDeckBag(props) {
+		if ae := s.deckWriteGate(ctx, body); ae != nil {
+			return models.Page{}, ae
+		}
+	}
+
 	if err := verifySpaceExistsTx(ctx, tx, req.SpaceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.Page{}, &apiErr{http.StatusBadRequest, "space_not_found", "space does not exist"}
@@ -779,6 +789,13 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	}
 	if ae := s.requireEditTx(ctx, tx, u, k, existing.SpaceID); ae != nil {
 		return models.Page{}, ae
+	}
+	// Lint-gate agent rewrites of a deck body (see createPageCore). A deck stores
+	// its body verbatim, so *req.Body is exactly what would be persisted.
+	if agentWrite && req.Body != nil && (isDeckBag(existing.Props) || isDeckBag(req.Props)) {
+		if ae := s.deckWriteGate(ctx, *req.Body); ae != nil {
+			return models.Page{}, ae
+		}
 	}
 	p, ae := applyUpdateTx(ctx, tx, id, req)
 	if ae != nil {
