@@ -22,6 +22,7 @@ import {
 } from '../../lib/queries/spaces'
 import { usePinnedSpaces, useTogglePinSpace } from '../../lib/queries/pinned-spaces'
 import type { Space } from '../../lib/types'
+import { spaceOwnership } from '../../lib/space-owner'
 import { Button } from '../ui/button'
 import { Card, CardBody, CardFooter } from '../ui/card'
 import {
@@ -60,26 +61,29 @@ interface SpacesListProps {
 const COLLAPSE_THRESHOLD = 6
 
 // Cluster the flat list by owning org so same-source spaces sit adjacent: your
-// own spaces first (no owner_org), then each org alphabetically. Order within a
-// group is the alphabetical order useSpaces() already gives us. Purely visual —
-// a hairline separates the clusters (rendered by the caller); we recognise our
-// own spaces by name, so the groups need no labels. Empty groups are dropped.
-function groupByOrg(spaces: Space[]): Space[][] {
+// own spaces first, then each org alphabetically. Order within a group is the
+// alphabetical order useSpaces() already gives us. Grouping uses the same
+// spaceOwnership() resolver that drives the "Owned by …" label — so a space
+// shown as org-owned (incl. the sole-org-share heuristic) clusters under that
+// org rather than landing in your personal group. Keyed by org name (the
+// principals fallback carries no id). Empty groups are dropped.
+function groupByOrg(spaces: Space[]): { org: string | null; spaces: Space[] }[] {
   const own: Space[] = []
-  const byOrg = new Map<number, { name: string; spaces: Space[] }>()
+  const byOrg = new Map<string, Space[]>()
   for (const s of spaces) {
-    if (s.owner_org) {
-      const g = byOrg.get(s.owner_org.id) ?? { name: s.owner_org.name, spaces: [] }
-      g.spaces.push(s)
-      byOrg.set(s.owner_org.id, g)
+    const owner = spaceOwnership(s)
+    if (owner.kind === 'org' && owner.org) {
+      const g = byOrg.get(owner.org) ?? []
+      g.push(s)
+      byOrg.set(owner.org, g)
     } else {
       own.push(s)
     }
   }
-  const orgGroups = [...byOrg.values()]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((g) => g.spaces)
-  return [own, ...orgGroups].filter((g) => g.length > 0)
+  const orgGroups = [...byOrg.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([org, spaces]) => ({ org, spaces }))
+  return [{ org: null, spaces: own }, ...orgGroups].filter((g) => g.spaces.length > 0)
 }
 
 export function SpacesList({ activeSpaceId }: SpacesListProps) {
@@ -130,18 +134,17 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
   // hairline — the org name at the left, the rule filling the rest. Your own
   // spaces (no owner_org, always the first group) lead bare, no label or rule.
   const renderGrouped = (list: Space[]) =>
-    groupByOrg(list).map((group) => {
-      const org = group[0].owner_org
+    groupByOrg(list).map(({ org, spaces: group }) => {
       return (
-        <Fragment key={org?.id ?? 'own'}>
+        <Fragment key={org ?? 'own'}>
           {org ? (
             <div
               role="separator"
-              aria-label={org.name}
+              aria-label={org}
               className="flex items-center gap-[var(--space-2)] mx-[var(--space-2)] my-[var(--space-1)]"
             >
               <span className="min-w-0 truncate text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
-                {org.name}
+                {org}
               </span>
               <span
                 aria-hidden
