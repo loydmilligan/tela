@@ -126,21 +126,33 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
     />
   )
 
-  // Render the list clustered by org with a hairline between groups (no rule
-  // before the first group or after the last).
+  // Render the list clustered by org. Each org group is introduced by a labelled
+  // hairline — the org name at the left, the rule filling the rest. Your own
+  // spaces (no owner_org, always the first group) lead bare, no label or rule.
   const renderGrouped = (list: Space[]) =>
-    groupByOrg(list).map((group, i) => (
-      <Fragment key={group[0].owner_org?.id ?? 'own'}>
-        {i > 0 ? (
-          <div
-            role="separator"
-            aria-hidden
-            className="my-[var(--space-1)] mx-[var(--space-2)] border-t border-[var(--border-subtle)]"
-          />
-        ) : null}
-        {group.map(renderRow)}
-      </Fragment>
-    ))
+    groupByOrg(list).map((group) => {
+      const org = group[0].owner_org
+      return (
+        <Fragment key={org?.id ?? 'own'}>
+          {org ? (
+            <div
+              role="separator"
+              aria-label={org.name}
+              className="flex items-center gap-[var(--space-2)] mx-[var(--space-2)] my-[var(--space-1)]"
+            >
+              <span className="min-w-0 truncate text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+                {org.name}
+              </span>
+              <span
+                aria-hidden
+                className="flex-1 min-w-[var(--space-4)] border-t border-[var(--border-subtle)]"
+              />
+            </div>
+          ) : null}
+          {group.map(renderRow)}
+        </Fragment>
+      )
+    })
 
   // Fold the rest once it's long, or once anything is pinned. Below that, the
   // classic always-open flat list. The active space stays visible even when the
