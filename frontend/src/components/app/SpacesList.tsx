@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Building2,
@@ -59,6 +59,29 @@ interface SpacesListProps {
 // triggers the fold (you've signalled which spaces you want kept up top).
 const COLLAPSE_THRESHOLD = 6
 
+// Cluster the flat list by owning org so same-source spaces sit adjacent: your
+// own spaces first (no owner_org), then each org alphabetically. Order within a
+// group is the alphabetical order useSpaces() already gives us. Purely visual —
+// a hairline separates the clusters (rendered by the caller); we recognise our
+// own spaces by name, so the groups need no labels. Empty groups are dropped.
+function groupByOrg(spaces: Space[]): Space[][] {
+  const own: Space[] = []
+  const byOrg = new Map<number, { name: string; spaces: Space[] }>()
+  for (const s of spaces) {
+    if (s.owner_org) {
+      const g = byOrg.get(s.owner_org.id) ?? { name: s.owner_org.name, spaces: [] }
+      g.spaces.push(s)
+      byOrg.set(s.owner_org.id, g)
+    } else {
+      own.push(s)
+    }
+  }
+  const orgGroups = [...byOrg.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((g) => g.spaces)
+  return [own, ...orgGroups].filter((g) => g.length > 0)
+}
+
 export function SpacesList({ activeSpaceId }: SpacesListProps) {
   const navigate = useNavigate()
   const spaces = useSpaces()
@@ -102,6 +125,22 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
       }
     />
   )
+
+  // Render the list clustered by org with a hairline between groups (no rule
+  // before the first group or after the last).
+  const renderGrouped = (list: Space[]) =>
+    groupByOrg(list).map((group, i) => (
+      <Fragment key={group[0].owner_org?.id ?? 'own'}>
+        {i > 0 ? (
+          <div
+            role="separator"
+            aria-hidden
+            className="my-[var(--space-1)] mx-[var(--space-2)] border-t border-[var(--border-subtle)]"
+          />
+        ) : null}
+        {group.map(renderRow)}
+      </Fragment>
+    ))
 
   // Fold the rest once it's long, or once anything is pinned. Below that, the
   // classic always-open flat list. The active space stays visible even when the
@@ -200,7 +239,7 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
         {/* Keep your current space visible even when the fold is closed. */}
         {folded && !allOpen && activeInRest ? renderRow(activeInRest) : null}
 
-        {folded ? (allOpen ? rest.map(renderRow) : null) : rest.map(renderRow)}
+        {folded ? (allOpen ? renderGrouped(rest) : null) : renderGrouped(rest)}
 
         <NewSpaceDialog open={newOpen} onOpenChange={setNewOpen} />
       </section>
