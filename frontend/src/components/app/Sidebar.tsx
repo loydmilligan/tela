@@ -1,8 +1,7 @@
 import { Link, useParams } from '@tanstack/react-router'
 import { BookOpen, FilePlus, Home, Search, Share2, Sparkles } from 'lucide-react'
 import { DOCS } from '../../lib/docs'
-import { PagesTree } from './PagesTree'
-import { SpacesList } from './SpacesList'
+import { SpaceTree } from './SpaceTree'
 import { FavoritesSidebarSection } from './FavoritesSidebarSection'
 import { UserMenu } from './UserMenu'
 import { BrandLogo } from '../BrandLogo'
@@ -123,12 +122,7 @@ export function Sidebar({ open = false }: { open?: boolean }) {
         </Button>
       </div>
       <FavoritesSidebarSection activePageId={activePageId} />
-      <SpacesList activeSpaceId={activeSpaceId} />
-      {activeSpaceId != null ? (
-        <PagesTree spaceId={activeSpaceId} activePageId={activePageId} />
-      ) : (
-        <div className="flex-1" />
-      )}
+      <SpaceTree activeSpaceId={activeSpaceId} activePageId={activePageId} />
       <UserMenu />
       {/* Discreet product credit on org custom domains (renders nothing on the
           canonical host). */}

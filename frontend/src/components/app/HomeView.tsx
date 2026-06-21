@@ -7,6 +7,7 @@ import {
   FileClock,
   FilePlus,
   FileText,
+  FolderPlus,
   Network,
   PencilLine,
   Search,
@@ -20,6 +21,7 @@ import { useSpaces } from '../../lib/queries/spaces'
 import { readRecentPages } from '../../lib/recentPages'
 import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
+import { emitOpenNewSpace } from '../../lib/newSpaceEvent'
 import { emitOpenPalette } from '../../lib/paletteEvent'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
@@ -254,9 +256,14 @@ function SpacesGrid() {
   if (!spaces.data || spaces.data.length === 0) return null
   return (
     <section className="flex flex-col gap-[var(--space-3)]">
-      <h2 className="m-0 flex items-center gap-[var(--space-2)] text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
-        Your spaces
-      </h2>
+      <div className="flex items-center justify-between gap-[var(--space-2)]">
+        <h2 className="m-0 flex items-center gap-[var(--space-2)] text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
+          Your spaces
+        </h2>
+        <Button variant="ghost" size="sm" onClick={() => emitOpenNewSpace()}>
+          <FolderPlus width={14} height={14} /> New space
+        </Button>
+      </div>
       <ul className="m-0 p-0 list-none grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[var(--space-2)]">
         {spaces.data.map((s, i) => (
           <li key={s.id}>

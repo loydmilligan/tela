@@ -1,14 +1,13 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Building2,
+  ChevronDown,
   ChevronRight,
   FileDown,
   Globe,
   Lock,
   MoreHorizontal,
-  Pin,
-  PinOff,
   Plus,
   RotateCw,
   Users,
@@ -20,7 +19,6 @@ import {
   useSpaces,
   useUpdateSpace,
 } from '../../lib/queries/spaces'
-import { usePinnedSpaces, useTogglePinSpace } from '../../lib/queries/pinned-spaces'
 import type { Space } from '../../lib/types'
 import { spaceOwnership } from '../../lib/space-owner'
 import { Button } from '../ui/button'
@@ -46,19 +44,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useSpaceAccess } from '../../lib/queries/space-grants'
 import { useFreshness } from '../../lib/queries/freshness'
 import { cn } from '../../lib/utils'
-import { NewSpaceDialog } from './NewSpaceDialog'
+import { emitOpenNewSpace } from '../../lib/newSpaceEvent'
 import { useFileDownload } from './use-file-download'
 import { ShareSpaceDialog } from './ShareSpaceDialog'
 import { StalenessDot } from './StalenessDot'
+import { SpacePages } from './SpacePages'
 
-interface SpacesListProps {
+interface SpaceTreeProps {
   activeSpaceId: number | null
+  activePageId: number | null
 }
 
-// Past this many non-pinned spaces the list folds behind an "All spaces"
-// disclosure so the sidebar stops growing without bound. Pinning anything also
-// triggers the fold (you've signalled which spaces you want kept up top).
-const COLLAPSE_THRESHOLD = 6
+// Sentinel key for the (label-less) personal cluster in the collapsed-orgs set.
+const OWN_KEY = '\0own'
 
 // Cluster the flat list by owning org so same-source spaces sit adjacent: your
 // own spaces first, then each org alphabetically. Order within a group is the
@@ -86,13 +84,22 @@ function groupByOrg(spaces: Space[]): { org: string | null; spaces: Space[] }[] 
   return [{ org: null, spaces: own }, ...orgGroups].filter((g) => g.spaces.length > 0)
 }
 
-export function SpacesList({ activeSpaceId }: SpacesListProps) {
+export function SpaceTree({ activeSpaceId, activePageId }: SpaceTreeProps) {
   const navigate = useNavigate()
   const spaces = useSpaces()
-  const pinned = usePinnedSpaces()
-  const togglePin = useTogglePinSpace()
-  const [newOpen, setNewOpen] = useState(false)
-  const [allOpen, setAllOpen] = useLocalStorageBool('tela.sidebar.allSpacesOpen', false)
+
+  // Three independent, persisted collapse levels. Spaces collapse by default
+  // (the set holds the *open* ones); orgs are open by default (the set holds the
+  // *collapsed* ones, so a fresh user sees everything).
+  const expandedSpaces = usePersistentSet('tela.sidebar.expandedSpaces')
+  const collapsedOrgs = usePersistentSet('tela.sidebar.collapsedOrgs')
+
+  // Auto-expand the space you're in so its pages are always there without a
+  // click. The active-page ancestor reveal lives inside SpacePages.
+  const addSpace = expandedSpaces.add
+  useEffect(() => {
+    if (activeSpaceId != null) addSpace(String(activeSpaceId))
+  }, [activeSpaceId, addSpace])
 
   // Per-space stale-page counts for the sidebar dots. Only when the embedder is
   // enabled (else everything reads unindexed — noise on a dark instance).
@@ -104,124 +111,64 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
     }
   }
 
-  // Partition into the Pinned group (in pin-recency order) and the rest (the
-  // alphabetical order useSpaces() already gives us).
+  // Alphabetical order useSpaces() already gives us, clustered by org below.
   const all = spaces.data ?? []
-  const pinnedIds = new Set(pinned.data ?? [])
-  const byId = new Map(all.map((s) => [s.id, s]))
-  const pinnedSpaces = (pinned.data ?? [])
-    .map((id) => byId.get(id))
-    .filter((s): s is Space => s != null)
-  const rest = all.filter((s) => !pinnedIds.has(s.id))
 
   const renderRow = (space: Space) => (
     <SpaceRow
       key={space.id}
       space={space}
       active={space.id === activeSpaceId}
+      activePageId={activePageId}
       stalePages={staleBySpace.get(space.id) ?? 0}
-      pinned={pinnedIds.has(space.id)}
-      onTogglePin={() =>
-        togglePin.mutate({ spaceId: space.id, isPinned: pinnedIds.has(space.id) })
-      }
+      expanded={expandedSpaces.set.has(String(space.id))}
+      onToggleExpand={() => expandedSpaces.toggle(String(space.id))}
       onSelect={() =>
         void navigate({ to: '/spaces/$spaceId', params: { spaceId: space.id } })
       }
     />
   )
 
-  // Render the list clustered by org. Each org group is introduced by a labelled
-  // hairline — the org name at the left, the rule filling the rest. Your own
-  // spaces (no owner_org, always the first group) lead bare, no label or rule.
-  const renderGrouped = (list: Space[]) =>
-    groupByOrg(list).map(({ org, spaces: group }) => {
+  // Render the rest, clustered by org. Each cluster is a collapsible section
+  // header (uppercase label + hairline) — collapsing it tucks away its spaces
+  // without indenting anything. The personal cluster only gets a header once at
+  // least one org cluster exists (solo users keep a bare, flat list).
+  const renderGrouped = (list: Space[]) => {
+    const groups = groupByOrg(list)
+    const hasOrgGroups = groups.some((g) => g.org != null)
+    return groups.map(({ org, spaces: group }) => {
+      const key = org ?? OWN_KEY
+      const labelled = org != null || hasOrgGroups
+      const collapsed = collapsedOrgs.set.has(key)
       return (
-        <Fragment key={org ?? 'own'}>
-          {org ? (
-            <div
-              role="separator"
-              aria-label={org}
-              className="flex items-center gap-[var(--space-2)] mx-[var(--space-2)] my-[var(--space-1)]"
-            >
-              <span className="min-w-0 truncate text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
-                {org}
-              </span>
-              <span
-                aria-hidden
-                className="flex-1 min-w-[var(--space-4)] border-t border-[var(--border-subtle)]"
-              />
-            </div>
+        <Fragment key={key}>
+          {labelled ? (
+            <ClusterHeader
+              label={org ?? 'My spaces'}
+              collapsed={collapsed}
+              onToggle={() => collapsedOrgs.toggle(key)}
+            />
           ) : null}
-          {group.map(renderRow)}
+          {collapsed ? null : <ul className="m-0 p-0 list-none flex flex-col gap-[1px]">{group.map(renderRow)}</ul>}
         </Fragment>
       )
     })
-
-  // Fold the rest once it's long, or once anything is pinned. Below that, the
-  // classic always-open flat list. The active space stays visible even when the
-  // fold is closed (rendered above the disclosure).
-  const folded = rest.length > COLLAPSE_THRESHOLD || pinnedSpaces.length > 0
-  const activeInRest = rest.find((s) => s.id === activeSpaceId)
+  }
 
   return (
-    <>
-      {pinnedSpaces.length > 0 ? (
-        <section
-          className="flex flex-col gap-[var(--space-1)] px-[var(--space-3)] pt-[var(--space-4)]"
-          aria-labelledby="sidebar-pinned-heading"
-        >
-          <h2
-            id="sidebar-pinned-heading"
-            className="m-0 pl-[var(--space-2)] text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
-          >
-            Pinned
-          </h2>
-          {pinnedSpaces.map(renderRow)}
-        </section>
-      ) : null}
-
+    <div
+      // Roving target for the j/k keyboard layer (see lib/keys); the engine
+      // walks the visible data-keynav-item rows (space names + page titles).
+      data-keynav-region="nav"
+      className="flex-1 min-h-0 overflow-y-auto flex flex-col pb-[var(--space-3)] mt-[var(--space-2)] border-t border-[var(--border-subtle)] pt-[var(--space-3)]"
+    >
+      {/* No section title or chrome — the org/personal cluster headers carry the
+          labelling, and "New space" lives in the command palette + home
+          dashboard. The tree is purely navigation. */}
       <section
-        className="flex flex-col gap-[var(--space-1)] px-[var(--space-3)] pt-[var(--space-4)]"
-        aria-labelledby="sidebar-spaces-heading"
+        className="flex flex-col gap-[1px] px-[var(--space-3)]"
+        aria-label="Spaces"
       >
-        <div className="flex items-center justify-between pl-[var(--space-2)] pr-[var(--space-1)]">
-          {folded ? (
-            <button
-              type="button"
-              onClick={() => setAllOpen(!allOpen)}
-              aria-expanded={allOpen}
-              className="group flex items-center gap-[var(--space-1)] bg-transparent border-0 p-0 cursor-pointer outline-none text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)] font-[family-name:var(--font-sans)]"
-            >
-              <ChevronRight
-                width={12}
-                height={12}
-                aria-hidden
-                className={cn('transition-transform', allOpen && 'rotate-90')}
-              />
-              <span>All spaces</span>
-              <span className="tabular-nums normal-case tracking-normal">
-                ({rest.length})
-              </span>
-            </button>
-          ) : (
-            <h2
-              id="sidebar-spaces-heading"
-              className="m-0 text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
-            >
-              Spaces
-            </h2>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="New space"
-            onClick={() => setNewOpen(true)}
-            className="h-[var(--space-6)] w-[var(--space-6)] p-0"
-          >
-            <Plus width={14} height={14} />
-          </Button>
-        </div>
-
         {spaces.isLoading ? <SpacesSkeleton /> : null}
 
         {spaces.isError ? (
@@ -243,7 +190,7 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
                 variant="primary"
                 size="sm"
                 className="w-full"
-                onClick={() => setNewOpen(true)}
+                onClick={() => emitOpenNewSpace()}
               >
                 <Plus width={14} height={14} /> New space
               </Button>
@@ -251,39 +198,94 @@ export function SpacesList({ activeSpaceId }: SpacesListProps) {
           </Card>
         ) : null}
 
-        {/* Keep your current space visible even when the fold is closed. */}
-        {folded && !allOpen && activeInRest ? renderRow(activeInRest) : null}
-
-        {folded ? (allOpen ? renderGrouped(rest) : null) : renderGrouped(rest)}
-
-        <NewSpaceDialog open={newOpen} onOpenChange={setNewOpen} />
+        {renderGrouped(all)}
       </section>
-    </>
+    </div>
   )
 }
 
-// localStorage-backed boolean, mirroring useExpandedNodes' read/write guards.
-// Collapsing on reload (private mode / quota) is acceptable, so failures fall
-// back to the default.
-function useLocalStorageBool(key: string, fallback: boolean) {
-  const [value, setValue] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return fallback
+// ClusterHeader — a collapsible org/personal section divider. The chevron is
+// always shown (the cluster is the disclosure), the label leads, a hairline
+// fills the rest.
+function ClusterHeader({
+  label,
+  collapsed,
+  onToggle,
+}: {
+  label: string
+  collapsed: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      aria-label={label}
+      className="group flex w-full items-center gap-[var(--space-1)] bg-transparent border-0 px-[var(--space-1)] py-[var(--space-1)] cursor-pointer outline-none"
+    >
+      <ChevronRight
+        width={12}
+        height={12}
+        aria-hidden
+        className={cn(
+          'shrink-0 text-[var(--text-muted)] transition-transform',
+          !collapsed && 'rotate-90',
+        )}
+      />
+      <span className="min-w-0 truncate text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] group-hover:text-[var(--text-primary)] font-[family-name:var(--font-sans)]">
+        {label}
+      </span>
+      <span
+        aria-hidden
+        className="flex-1 min-w-[var(--space-4)] border-t border-[var(--border-subtle)]"
+      />
+    </button>
+  )
+}
+
+// usePersistentSet — a localStorage-backed Set<string>, mirroring
+// useExpandedNodes' read/write guards. Collapsing on reload (private mode /
+// quota) is acceptable, so failures fall back to empty.
+function usePersistentSet(key: string) {
+  const [set, setSet] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
     try {
       const raw = window.localStorage.getItem(key)
-      return raw == null ? fallback : raw === '1'
+      const parsed: unknown = raw ? JSON.parse(raw) : []
+      if (!Array.isArray(parsed)) return new Set()
+      return new Set(parsed.filter((v): v is string => typeof v === 'string'))
     } catch {
-      return fallback
+      return new Set()
     }
   })
-  const set = (next: boolean) => {
-    setValue(next)
-    try {
-      window.localStorage.setItem(key, next ? '1' : '0')
-    } catch {
-      // ignore
-    }
-  }
-  return [value, set] as const
+  const toggle = useCallback((k: string) => {
+    setSet((prev) => {
+      const next = new Set(prev)
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
+      try {
+        window.localStorage.setItem(key, JSON.stringify([...next]))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [key])
+  const add = useCallback((k: string) => {
+    setSet((prev) => {
+      if (prev.has(k)) return prev
+      const next = new Set(prev)
+      next.add(k)
+      try {
+        window.localStorage.setItem(key, JSON.stringify([...next]))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [key])
+  return { set, toggle, add }
 }
 
 function SpacesSkeleton() {
@@ -316,18 +318,20 @@ function SpacesError({ onRetry }: { onRetry: () => void }) {
 interface SpaceRowProps {
   space: Space
   active: boolean
+  activePageId: number | null
   stalePages: number
-  pinned: boolean
-  onTogglePin: () => void
+  expanded: boolean
+  onToggleExpand: () => void
   onSelect: () => void
 }
 
 function SpaceRow({
   space,
   active,
+  activePageId,
   stalePages,
-  pinned,
-  onTogglePin,
+  expanded,
+  onToggleExpand,
   onSelect,
 }: SpaceRowProps) {
   const [renameOpen, setRenameOpen] = useState(false)
@@ -339,101 +343,123 @@ function SpaceRow({
   )
 
   return (
-    <div
-      className={cn(
-        'group relative flex items-center gap-[var(--space-1)] pl-[var(--space-2)] pr-[var(--space-1)] rounded-[var(--radius-sm)]',
-        'hover:bg-[var(--sidebar-item-hover)]',
-        active &&
-          'bg-[var(--sidebar-item-active)] shadow-[inset_2px_0_0_0_var(--sidebar-item-active-bar)]',
-      )}
-    >
-      <button
-        type="button"
-        onClick={onSelect}
+    <li className="m-0 p-0 list-none">
+      <div
         className={cn(
-          'flex-1 min-w-0 text-left truncate py-[var(--space-2)]',
-          'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
-          'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
-          active && 'text-[var(--accent)] font-medium',
+          'group relative flex items-center gap-[var(--space-1)] pl-[var(--space-1)] pr-[var(--space-1)] rounded-[var(--radius-sm)]',
+          'hover:bg-[var(--sidebar-item-hover)]',
+          active &&
+            'bg-[var(--sidebar-item-active)] shadow-[inset_2px_0_0_0_var(--sidebar-item-active-bar)]',
         )}
       >
-        {space.name || (
-          <span className="text-[var(--text-muted)]">Untitled space</span>
-        )}
-      </button>
+        <button
+          type="button"
+          aria-label={expanded ? 'Collapse' : 'Expand'}
+          aria-expanded={expanded}
+          onClick={onToggleExpand}
+          className="inline-flex items-center justify-center h-[var(--space-6)] w-[var(--space-4)] shrink-0 rounded-[var(--radius-xs)] bg-transparent border-0 cursor-pointer text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        >
+          {expanded ? (
+            <ChevronDown width={13} height={13} />
+          ) : (
+            <ChevronRight width={13} height={13} />
+          )}
+        </button>
 
-      {stalePages > 0 ? (
-        <StalenessDot
-          label={`${stalePages} ${stalePages === 1 ? 'page needs' : 'pages need'} indexing`}
-        />
+        <button
+          type="button"
+          data-keynav-item
+          onClick={onSelect}
+          className={cn(
+            'flex-1 min-w-0 text-left truncate py-[var(--space-2)]',
+            'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
+            'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
+            active && 'text-[var(--accent)] font-medium',
+          )}
+        >
+          {space.name || (
+            <span className="text-[var(--text-muted)]">Untitled space</span>
+          )}
+        </button>
+
+        {/* Resting state stays calm: only a published space flags itself, plus a
+            staleness rollup. Both yield to the access cluster + ⋯ on hover. */}
+        {space.visibility === 'public' ? (
+          <Globe
+            width={13}
+            height={13}
+            aria-label="Public on the web"
+            className="shrink-0 text-[var(--text-muted)] group-hover:hidden"
+          />
+        ) : null}
+
+        {stalePages > 0 ? (
+          <span className="shrink-0 inline-flex items-center group-hover:hidden">
+            <StalenessDot
+              label={`${stalePages} ${stalePages === 1 ? 'page needs' : 'pages need'} indexing`}
+            />
+          </span>
+        ) : null}
+
+        {/* Access cluster + actions — revealed on hover (or on the active row for
+            no-hover devices), so the row reads as just a name at rest. Click the
+            cluster to manage; hover it for the full who/what peek. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${accessAriaLabel(space)} — manage access`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setShareOpen(true)
+              }}
+              className={cn(
+                'shrink-0 inline-flex items-center bg-transparent border-0 p-[var(--space-1)] cursor-pointer outline-none rounded-[var(--radius-xs)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+                'hidden group-hover:inline-flex focus-visible:inline-flex',
+                active && '[@media(hover:none)]:inline-flex',
+              )}
+            >
+              <AccessCluster space={space} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <SpaceAccessPeek space={space} />
+          </TooltipContent>
+        </Tooltip>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Actions for ${space.name || 'space'}`}
+              className={cn(
+                'shrink-0 h-[var(--space-6)] w-[var(--space-6)] p-0 hidden group-hover:inline-flex data-[state=open]:inline-flex focus-visible:inline-flex',
+                active && '[@media(hover:none)]:inline-flex',
+              )}
+            >
+              <MoreHorizontal width={14} height={14} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShareOpen(true)}>
+              <UsersRound width={14} height={14} /> Share
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void downloadZip()}>
+              <FileDown width={14} height={14} /> Export Markdown (.zip)
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem destructive onSelect={() => setDeleteOpen(true)}>
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {expanded ? (
+        <SpacePages spaceId={space.id} activePageId={activePageId} />
       ) : null}
-
-      {/* Compact access cluster: a lock for solo spaces, else people-count +
-          org/group kind icons. Click → manage; hover → full who/what peek.
-          The hover query fires lazily (only when the tooltip opens). Stays
-          visible on row hover so its peek tooltip is reachable; the ⋯ menu
-          appears alongside it rather than replacing it. */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label={`${accessAriaLabel(space)} — manage access`}
-            onClick={(e) => {
-              e.stopPropagation()
-              setShareOpen(true)
-            }}
-            className="shrink-0 inline-flex items-center bg-transparent border-0 p-[var(--space-1)] cursor-pointer outline-none rounded-[var(--radius-xs)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-          >
-            <AccessCluster space={space} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          <SpaceAccessPeek space={space} />
-        </TooltipContent>
-      </Tooltip>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Actions for ${space.name || 'space'}`}
-            className={cn(
-              'shrink-0 h-[var(--space-6)] w-[var(--space-6)] p-0 hidden group-hover:inline-flex data-[state=open]:inline-flex focus-visible:inline-flex',
-              // No-hover devices (touch/iPad) can't reveal-on-hover, so surface
-              // the menu on the active space only — keeps every other row clean.
-              active && '[@media(hover:none)]:inline-flex',
-            )}
-          >
-            <MoreHorizontal width={14} height={14} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onTogglePin}>
-            {pinned ? (
-              <>
-                <PinOff width={14} height={14} /> Unpin
-              </>
-            ) : (
-              <>
-                <Pin width={14} height={14} /> Pin
-              </>
-            )}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setShareOpen(true)}>
-            <UsersRound width={14} height={14} /> Share
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void downloadZip()}>
-            <FileDown width={14} height={14} /> Export Markdown (.zip)
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem destructive onSelect={() => setDeleteOpen(true)}>
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
 
       <RenameSpaceDialog
         space={space}
@@ -450,7 +476,7 @@ function SpaceRow({
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
       />
-    </div>
+    </li>
   )
 }
 
@@ -472,16 +498,13 @@ function accessAriaLabel(space: Space): string {
   return `${people} ${people === 1 ? 'person' : 'people'}${shared ? `, shared with ${shared}` : ''}`
 }
 
-// AccessCluster — the compact, single-line access signal: a lock for solo
-// spaces, else the effective people count plus one icon per principal *kind*
-// present (org / group). Names + roles live in the hover peek, keeping the row
-// calm. Quiet by default; brightens on row hover.
+// AccessCluster — the compact access signal shown on row hover: a lock for solo
+// spaces, a globe for public, else the effective people count plus a group icon
+// when shared with a group. The owning org is conveyed by the cluster header,
+// so it's no longer repeated here; the full who/what lives in the hover peek.
 function AccessCluster({ space }: { space: Space }) {
-  const tone =
-    'text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'
+  const tone = 'text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'
 
-  // Public-on-the-web is the dominant read-visibility signal — show it even when
-  // you're the only member (a published blog/docs space is exactly that case).
   if (space.visibility === 'public') {
     return <Globe width={13} height={13} aria-hidden className={tone} />
   }
@@ -490,7 +513,6 @@ function AccessCluster({ space }: { space: Space }) {
   }
 
   const principals = space.principals ?? []
-  const hasOrg = principals.some((p) => p.kind === 'org')
   const hasGroup = principals.some((p) => p.kind === 'group')
 
   return (
@@ -502,7 +524,6 @@ function AccessCluster({ space }: { space: Space }) {
     >
       <UsersRound width={13} height={13} aria-hidden />
       <span>{space.member_count ?? 0}</span>
-      {hasOrg ? <Building2 width={12} height={12} aria-hidden /> : null}
       {hasGroup ? <Users width={12} height={12} aria-hidden /> : null}
     </span>
   )

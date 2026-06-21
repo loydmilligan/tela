@@ -28,8 +28,10 @@ import {
 import '../../lib/commands/starters'
 import { readLastPage } from '../../lib/lastPage'
 import { subscribeToOpenNewPage } from '../../lib/newPageEvent'
+import { subscribeToOpenNewSpace } from '../../lib/newSpaceEvent'
 import { subscribeToOpenPalette } from '../../lib/paletteEvent'
 import { NewPageDialog } from './NewPageDialog'
+import { NewSpaceDialog } from './NewSpaceDialog'
 import { readRecentPages, type RecentPage } from '../../lib/recentPages'
 import { useTier1TitleHits } from '../../lib/useTier1TitleHits'
 import { useTier2SearchResults } from '../../lib/useTier2SearchResults'
@@ -123,6 +125,7 @@ export function AppCommandHost() {
     parentId: number | null
     title: string
   }>({ spaceId: null, parentId: null, title: '' })
+  const [newSpaceOpen, setNewSpaceOpen] = useState(false)
 
   const currentTheme = useThemeName()
   const spacesQuery = useSpaces()
@@ -177,6 +180,10 @@ export function AppCommandHost() {
     () => subscribeToOpenNewPage((opts) => openNewPage(opts)),
     [openNewPage],
   )
+
+  // "New space" command (palette), the home dashboard, and the sidebar empty
+  // state all dispatch tela:open-new-space to open the single global dialog.
+  useEffect(() => subscribeToOpenNewSpace(() => setNewSpaceOpen(true)), [])
 
   // Visible "Search" button (sidebar) → open the palette, same as ⌘K.
   useEffect(() => subscribeToOpenPalette((mode) => openWith(mode)), [openWith])
@@ -410,6 +417,7 @@ export function AppCommandHost() {
         defaultParentId={newPageDefaults.parentId}
         defaultTitle={newPageDefaults.title}
       />
+      <NewSpaceDialog open={newSpaceOpen} onOpenChange={setNewSpaceOpen} />
     </>
   )
 }

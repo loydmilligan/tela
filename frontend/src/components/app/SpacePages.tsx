@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
-  Building2,
   ChevronDown,
   ChevronRight,
-  FilePlus,
   MoreHorizontal,
   RotateCw,
 } from 'lucide-react'
@@ -17,15 +15,11 @@ import {
   usePages,
   useUpdatePage,
 } from '../../lib/queries/pages'
-import { useSpaces } from '../../lib/queries/spaces'
 import { useSpaceFreshness } from '../../lib/queries/freshness'
-import { spaceOwnership } from '../../lib/space-owner'
 import type { PageTreeNode } from '../../lib/types'
 import { useExpandedNodes } from '../../lib/useExpandedNodes'
 import { StalenessDot } from './StalenessDot'
 import { Button } from '../ui/button'
-import { Card, CardBody, CardFooter } from '../ui/card'
-import { emitOpenNewPage } from '../../lib/newPageEvent'
 import {
   Dialog,
   DialogClose,
@@ -62,24 +56,19 @@ function findAncestors(nodes: PageTreeNode[], targetId: number): number[] | null
   return null
 }
 
-interface PagesTreeProps {
+interface SpacePagesProps {
   spaceId: number
   activePageId: number | null
 }
 
-export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
-  const navigate = useNavigate()
+// SpacePages — the page tree for a single space, rendered inline under its
+// (expanded) space row in the unified sidebar tree. Mounts lazily: it only
+// renders when its space is expanded, so usePages() fires on demand rather than
+// for every space at once. The owning space row carries the name + chevron;
+// this is just the nested pages, set off by a guide rail.
+export function SpacePages({ spaceId, activePageId }: SpacePagesProps) {
   const tree = usePages({ spaceId, tree: true })
-  const createPage = useCreatePage()
   const { expanded, toggle, expand, expandMany } = useExpandedNodes(spaceId)
-  const spaces = useSpaces()
-  const space = spaces.data?.find((s) => s.id === spaceId)
-  const spaceName = space?.name
-  // Surface org ownership as a quiet chip next to the name — a transferred
-  // space otherwise looks identical to a personal one in the shell.
-  const ownerOrg = space && spaceOwnership(space).kind === 'org'
-    ? spaceOwnership(space).org
-    : undefined
 
   const treeData = tree.data as PageTreeNode[] | undefined
   const nodes = treeData ?? []
@@ -109,125 +98,48 @@ export function PagesTree({ spaceId, activePageId }: PagesTreeProps) {
     if (chain && chain.length > 0) expandMany(chain)
   }, [activePageId, treeData, expandMany])
 
-  async function handleCreate(parentId: number | null) {
-    if (parentId != null) expand(parentId)
-    try {
-      const created = await createPage.mutateAsync({
-        space_id: spaceId,
-        parent_id: parentId,
-        title: UNTITLED_TITLE,
-      })
-      void navigate({
-        to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
-        params: { spaceId, pageId: created.id, slug: undefined },
-      })
-    } catch {
-      // Surface via tree refetch on next interaction; in v0 swallowing the toast.
-    }
+  if (tree.isLoading) return <PagesSkeleton />
+  if (tree.isError) return <PagesError onRetry={() => void tree.refetch()} />
+  if (tree.data && nodes.length === 0) {
+    return (
+      <p className="m-0 py-[var(--space-1)] pl-[var(--space-6)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        No pages yet
+      </p>
+    )
   }
 
   return (
-    <section
-      // Roving target for the j/k keyboard layer (see lib/keys). Page rows are
-      // marked data-keynav-item below; the engine walks the visible ones.
-      data-keynav-region="nav"
-      className="flex flex-col gap-[var(--space-1)] px-[var(--space-3)] pt-[var(--space-4)] pb-[var(--space-3)] mt-[var(--space-2)] flex-1 min-h-0 overflow-y-auto border-t border-[var(--border-subtle)]"
-      aria-labelledby="sidebar-pages-heading"
-    >
-      <div className="flex items-center justify-between gap-[var(--space-2)] pl-[var(--space-2)] pr-[var(--space-1)]">
-        {/* The tree always shows the active space's pages — name the space here
-            so the section reads as "<Space> · its pages", not a stray list.
-            When an org owns the space, a quiet chip trails the name so the
-            shell makes ownership visible (a transferred space otherwise looks
-            personal). */}
-        <h2
-          id="sidebar-pages-heading"
-          className="m-0 min-w-0 flex items-baseline gap-[var(--space-2)] font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] font-medium leading-[var(--leading-tight)] text-[var(--text-primary)]"
-          title={
-            ownerOrg
-              ? `${spaceName ?? 'Pages'} · owned by ${ownerOrg}`
-              : (spaceName ?? 'Pages')
-          }
-        >
-          <span className="truncate">{spaceName ?? 'Pages'}</span>
-          {ownerOrg ? (
-            <span className="shrink-0 inline-flex items-center gap-[3px] text-[length:var(--text-xs)] font-normal text-[var(--text-muted)]">
-              <Building2 width={11} height={11} aria-hidden />
-              <span className="max-w-[7rem] truncate">{ownerOrg}</span>
-            </span>
-          ) : null}
-        </h2>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="New top-level page"
-          className="h-[var(--space-6)] w-[var(--space-6)] p-0"
-          onClick={() => void handleCreate(null)}
-          disabled={createPage.isPending}
-        >
-          <FilePlus width={14} height={14} />
-        </Button>
-      </div>
-
-      {tree.isLoading ? <PagesSkeleton /> : null}
-
-      {tree.isError ? (
-        <PagesError onRetry={() => void tree.refetch()} />
-      ) : null}
-
-      {tree.data && nodes.length === 0 ? (
-        <Card className="bg-[var(--surface-1)]">
-          <CardBody className="px-[var(--space-4)] py-[var(--space-3)] gap-[var(--space-1)]">
-            <p className="m-0 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
-              No pages yet
-            </p>
-            <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-              Add a page to start writing.
-            </p>
-          </CardBody>
-          <CardFooter className="px-[var(--space-4)] pt-0 pb-[var(--space-3)]">
-            <Button
-              variant="primary"
-              size="sm"
-              className="w-full"
-              onClick={() => emitOpenNewPage()}
-            >
-              <FilePlus width={14} height={14} /> New page
-            </Button>
-          </CardFooter>
-        </Card>
-      ) : null}
-
-      <ul className="m-0 p-0 list-none flex flex-col gap-[1px]">
-        {nodes.map((node) => (
-          <PageNode
-            key={node.id}
-            node={node}
-            depth={0}
-            spaceId={spaceId}
-            activePageId={activePageId}
-            expanded={expanded}
-            onToggle={toggle}
-            onExpand={expand}
-            allNodes={nodes}
-            staleStatus={staleStatus}
-          />
-        ))}
-      </ul>
-    </section>
+    // Guide rail: a hairline carries the nesting so the page step can stay
+    // small, keeping titles wide. Aligned to sit under the space row's chevron.
+    <ul className="m-0 p-0 list-none flex flex-col gap-[1px] ml-[calc(var(--space-2)+var(--space-2))] border-l border-[var(--border-subtle)]">
+      {nodes.map((node) => (
+        <PageNode
+          key={node.id}
+          node={node}
+          depth={0}
+          spaceId={spaceId}
+          activePageId={activePageId}
+          expanded={expanded}
+          onToggle={toggle}
+          onExpand={expand}
+          allNodes={nodes}
+          staleStatus={staleStatus}
+        />
+      ))}
+    </ul>
   )
 }
 
 function PagesSkeleton() {
   return (
     <div
-      className="flex flex-col gap-[var(--space-1)] px-[var(--space-2)]"
+      className="flex flex-col gap-[var(--space-1)] pl-[var(--space-6)]"
       aria-hidden="true"
     >
-      {[0, 1, 2, 3].map((i) => (
+      {[0, 1].map((i) => (
         <div
           key={i}
-          className="h-[var(--space-7)] rounded-[var(--radius-sm)] bg-[var(--surface-2)]"
+          className="h-[var(--space-6)] rounded-[var(--radius-sm)] bg-[var(--surface-2)]"
         />
       ))}
     </div>
@@ -236,7 +148,7 @@ function PagesSkeleton() {
 
 function PagesError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-2)] rounded-[var(--radius-sm)] bg-[var(--surface-2)] text-[length:var(--text-sm)] text-[var(--danger)]">
+    <div className="flex items-center justify-between gap-[var(--space-2)] ml-[var(--space-4)] px-[var(--space-2)] py-[var(--space-2)] rounded-[var(--radius-sm)] bg-[var(--surface-2)] text-[length:var(--text-sm)] text-[var(--danger)]">
       <span>Couldn't load pages.</span>
       <Button variant="ghost" size="sm" onClick={onRetry} aria-label="Retry">
         <RotateCw width={14} height={14} />
@@ -319,7 +231,7 @@ function PageNode({
             'bg-[var(--sidebar-item-active)] shadow-[inset_2px_0_0_0_var(--sidebar-item-active-bar)]',
         )}
         style={{
-          paddingLeft: `calc(var(--sidebar-indent) * ${depth} + var(--space-2))`,
+          paddingLeft: `calc(var(--sidebar-indent) * ${depth} + var(--space-1))`,
         }}
       >
         {hasChildren ? (
