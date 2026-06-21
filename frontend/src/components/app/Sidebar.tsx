@@ -1,5 +1,14 @@
 import { Link, useParams } from '@tanstack/react-router'
-import { BookOpen, FilePlus, Home, Search, Share2, Sparkles } from 'lucide-react'
+import {
+  BookOpen,
+  FilePlus,
+  FolderPlus,
+  Home,
+  Plus,
+  Search,
+  Share2,
+  Sparkles,
+} from 'lucide-react'
 import { DOCS } from '../../lib/docs'
 import { SpaceTree } from './SpaceTree'
 import { FavoritesSidebarSection } from './FavoritesSidebarSection'
@@ -7,7 +16,14 @@ import { UserMenu } from './UserMenu'
 import { BrandLogo } from '../BrandLogo'
 import { PoweredByTela } from '../PoweredByTela'
 import { Button } from '../ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
+import { emitOpenNewSpace } from '../../lib/newSpaceEvent'
 import { emitOpenPalette } from '../../lib/paletteEvent'
 import { IS_MAC } from '../../lib/useGlobalShortcut'
 import { cn } from '../../lib/utils'
@@ -79,23 +95,39 @@ export function Sidebar({ open = false }: { open?: boolean }) {
             <span className="flex-1 text-left">Ask</span>
           </Link>
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start"
-          onClick={() => emitOpenNewPage()}
-          aria-label={`New page (${newPageShortcut})`}
-          title={`New page (${newPageShortcut})`}
-        >
-          <FilePlus width={14} height={14} />
-          <span className="flex-1 text-left">New page</span>
-          <kbd
-            aria-hidden
-            className="text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
-          >
-            {newPageShortcut}
-          </kbd>
-        </Button>
+        {/* New page (one of the two most-used actions) keeps its ⌘N global
+            shortcut; the menu just folds New space in beside it so the nav
+            carries a single create affordance. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              aria-label="Create new"
+              title="Create new"
+            >
+              <Plus width={14} height={14} />
+              <span className="flex-1 text-left">New…</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[12rem]">
+            <DropdownMenuItem onSelect={() => emitOpenNewPage()}>
+              <FilePlus width={14} height={14} />
+              <span className="flex-1">Page</span>
+              <kbd
+                aria-hidden
+                className="text-[length:var(--text-xs)] text-[var(--text-muted)] font-[family-name:var(--font-sans)]"
+              >
+                {newPageShortcut}
+              </kbd>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => emitOpenNewSpace()}>
+              <FolderPlus width={14} height={14} />
+              <span className="flex-1">Space</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button asChild variant="ghost" size="sm" className="w-full justify-start">
           <Link to="/" aria-label="Home" title="Home">
             <Home width={14} height={14} />
