@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Building2,
@@ -43,6 +43,8 @@ import { Input } from '../ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useSpaceAccess } from '../../lib/queries/space-grants'
 import { useFreshness } from '../../lib/queries/freshness'
+import { useSummaries } from '../../lib/queries/summaries'
+import { spaceStaleLabel } from './staleness'
 import { cn } from '../../lib/utils'
 import { emitOpenNewSpace } from '../../lib/newSpaceEvent'
 import { useFileDownload } from './use-file-download'
@@ -101,15 +103,33 @@ export function SpaceTree({ activeSpaceId, activePageId }: SpaceTreeProps) {
     if (activeSpaceId != null) addSpace(String(activeSpaceId))
   }, [activeSpaceId, addSpace])
 
-  // Per-space stale-page counts for the sidebar dots. Only when the embedder is
-  // enabled (else everything reads unindexed — noise on a dark instance).
+  // Per-space backfill backlog for the sidebar dots: the union of pending RAG
+  // indexing and pending summaries. Each subsystem is gated by its own enabled
+  // flag (else everything reads behind — noise on an instance that isn't running
+  // it). Failed summaries are excluded (see staleness.ts) so the dot stays a
+  // "catching up" signal, not a stuck error.
   const freshness = useFreshness()
-  const staleBySpace = new Map<number, number>()
-  if (freshness.data?.enabled) {
-    for (const f of freshness.data.spaces) {
-      if (f.stale_pages > 0) staleBySpace.set(f.space_id, f.stale_pages)
+  const summaries = useSummaries()
+  const staleLabelBySpace = useMemo(() => {
+    const indexing = new Map<number, number>()
+    if (freshness.data?.enabled) {
+      for (const f of freshness.data.spaces) {
+        if (f.stale_pages > 0) indexing.set(f.space_id, f.stale_pages)
+      }
     }
-  }
+    const summarizing = new Map<number, number>()
+    if (summaries.data?.enabled) {
+      for (const f of summaries.data.spaces) {
+        if (f.stale > 0) summarizing.set(f.space_id, f.stale)
+      }
+    }
+    const labels = new Map<number, string>()
+    for (const id of new Set([...indexing.keys(), ...summarizing.keys()])) {
+      const label = spaceStaleLabel(indexing.get(id) ?? 0, summarizing.get(id) ?? 0)
+      if (label) labels.set(id, label)
+    }
+    return labels
+  }, [freshness.data, summaries.data])
 
   // Alphabetical order useSpaces() already gives us, clustered by org below.
   const all = spaces.data ?? []
@@ -120,7 +140,7 @@ export function SpaceTree({ activeSpaceId, activePageId }: SpaceTreeProps) {
       space={space}
       active={space.id === activeSpaceId}
       activePageId={activePageId}
-      stalePages={staleBySpace.get(space.id) ?? 0}
+      staleLabel={staleLabelBySpace.get(space.id) ?? null}
       expanded={expandedSpaces.set.has(String(space.id))}
       onToggleExpand={() => expandedSpaces.toggle(String(space.id))}
       onSelect={() =>
@@ -319,7 +339,7 @@ interface SpaceRowProps {
   space: Space
   active: boolean
   activePageId: number | null
-  stalePages: number
+  staleLabel: string | null
   expanded: boolean
   onToggleExpand: () => void
   onSelect: () => void
@@ -329,7 +349,7 @@ function SpaceRow({
   space,
   active,
   activePageId,
-  stalePages,
+  staleLabel,
   expanded,
   onToggleExpand,
   onSelect,
@@ -393,11 +413,9 @@ function SpaceRow({
           />
         ) : null}
 
-        {stalePages > 0 ? (
+        {staleLabel ? (
           <span className="shrink-0 inline-flex items-center group-hover:hidden">
-            <StalenessDot
-              label={`${stalePages} ${stalePages === 1 ? 'page needs' : 'pages need'} indexing`}
-            />
+            <StalenessDot label={staleLabel} />
           </span>
         ) : null}
 

@@ -16,6 +16,8 @@ import {
   useUpdatePage,
 } from '../../lib/queries/pages'
 import { useSpaceFreshness } from '../../lib/queries/freshness'
+import { useSpaceSummaries } from '../../lib/queries/summaries'
+import { pageStaleLabel } from './staleness'
 import type { PageTreeNode } from '../../lib/types'
 import { useExpandedNodes } from '../../lib/useExpandedNodes'
 import { StalenessDot } from './StalenessDot'
@@ -73,18 +75,35 @@ export function SpacePages({ spaceId, activePageId }: SpacePagesProps) {
   const treeData = tree.data as PageTreeNode[] | undefined
   const nodes = treeData ?? []
 
-  // Per-page index staleness for the dots. Only when the embedder is enabled
-  // (otherwise every page reads as "unindexed", which is noise on a dark
-  // instance). Map page id → 'stale' | 'unindexed'; absent = fresh/empty.
+  // Per-page backfill backlog for the dots: the union of pending RAG indexing
+  // and pending summaries, each gated by its own enabled flag (else every page
+  // reads behind — noise on an instance not running that subsystem). Failed
+  // summaries are excluded (see staleness.ts) so the dot stays a "catching up"
+  // signal. Map page id → composed tooltip; absent = nothing outstanding.
   const freshness = useSpaceFreshness(spaceId)
-  const staleStatus = useMemo(() => {
-    const m = new Map<number, 'stale' | 'unindexed'>()
-    if (!freshness.data?.enabled) return m
-    for (const p of freshness.data.pages) {
-      if (p.status === 'stale' || p.status === 'unindexed') m.set(p.page_id, p.status)
+  const summaries = useSpaceSummaries(spaceId)
+  const staleLabels = useMemo(() => {
+    const indexing = new Map<number, 'stale' | 'unindexed'>()
+    if (freshness.data?.enabled) {
+      for (const p of freshness.data.pages) {
+        if (p.status === 'stale' || p.status === 'unindexed')
+          indexing.set(p.page_id, p.status)
+      }
+    }
+    const summarizing = new Map<number, 'stale' | 'missing'>()
+    if (summaries.data?.enabled) {
+      for (const p of summaries.data.pages) {
+        if (p.status === 'stale' || p.status === 'missing')
+          summarizing.set(p.page_id, p.status)
+      }
+    }
+    const m = new Map<number, string>()
+    for (const id of new Set([...indexing.keys(), ...summarizing.keys()])) {
+      const label = pageStaleLabel(indexing.get(id) ?? null, summarizing.get(id) ?? null)
+      if (label) m.set(id, label)
     }
     return m
-  }, [freshness.data])
+  }, [freshness.data, summaries.data])
 
   // Auto-reveal the active page when navigation lands on it from outside the
   // sidebar (backlink click, command-palette result, [[wikilink]], direct URL,
@@ -123,7 +142,7 @@ export function SpacePages({ spaceId, activePageId }: SpacePagesProps) {
           onToggle={toggle}
           onExpand={expand}
           allNodes={nodes}
-          staleStatus={staleStatus}
+          staleLabels={staleLabels}
         />
       ))}
     </ul>
@@ -166,7 +185,7 @@ interface PageNodeProps {
   onToggle: (id: number) => void
   onExpand: (id: number) => void
   allNodes: PageTreeNode[]
-  staleStatus: Map<number, 'stale' | 'unindexed'>
+  staleLabels: Map<number, string>
 }
 
 function PageNode({
@@ -178,7 +197,7 @@ function PageNode({
   onToggle,
   onExpand,
   allNodes,
-  staleStatus,
+  staleLabels,
 }: PageNodeProps) {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -281,17 +300,12 @@ function PageNode({
           )}
         </button>
 
-        {/* Staleness marker — trailing, only when this page's index is out of
-            date. Hides on row hover to make room for the ⋯ menu. */}
-        {staleStatus.has(node.id) ? (
+        {/* Staleness marker — trailing, only when this page has background
+            backfill outstanding (indexing and/or summaries). Hides on row hover
+            to make room for the ⋯ menu. */}
+        {staleLabels.has(node.id) ? (
           <span className="shrink-0 inline-flex items-center group-hover:hidden">
-            <StalenessDot
-              label={
-                staleStatus.get(node.id) === 'stale'
-                  ? 'Edited since last indexed'
-                  : 'Not indexed yet'
-              }
-            />
+            <StalenessDot label={staleLabels.get(node.id)!} />
           </span>
         ) : null}
 
@@ -354,7 +368,7 @@ function PageNode({
               onToggle={onToggle}
               onExpand={onExpand}
               allNodes={allNodes}
-              staleStatus={staleStatus}
+              staleLabels={staleLabels}
             />
           ))}
         </ul>
