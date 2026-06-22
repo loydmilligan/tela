@@ -25,11 +25,25 @@ type PageFreshness struct {
 	LastIndexed string `json:"last_indexed"` // "" if never indexed
 }
 
+// excalidrawStripSQL is StripExcalidrawFences (chunk.go) expressed in SQL: a
+// page's body with every ```excalidraw drawing fence removed. The indexer
+// strips these before chunking, so a drawing-only page yields ZERO chunks even
+// though its raw body is large — measuring "has content" against the raw body
+// then makes such a page read as perpetually stale (no chunks, never catches
+// up). Keep the pattern in sync with excalidrawFenceRE in chunk.go.
+const excalidrawStripSQL = "regexp_replace(p.body, '```excalidraw([ \\t]+[^\\n]*)?\\n.*?\\n?```', '', 'g')"
+
+// hasIndexableBody is true when a page has any non-whitespace content AFTER the
+// excalidraw strip — i.e. content the indexer would actually chunk. This is the
+// predicate's notion of "non-empty", aligned with what the indexer does so a
+// drawing-only page reads as empty (nothing to index), not stale.
+const hasIndexableBody = excalidrawStripSQL + ` ~ '[^[:space:]]'`
+
 // staleExpr is the SQL predicate for "this page's index is out of date": the
-// page has real content AND (it has no chunks OR it was edited after its chunks
-// were last written). Datetimes are lexically comparable TEXT. Shared so the
-// space rollup and the per-page status agree exactly.
-const staleExpr = `length(btrim(p.body)) > 0 AND (pc.cnt IS NULL OR p.updated_at > pc.idx)`
+// page has indexable content AND (it has no chunks OR it was edited after its
+// chunks were last written). Datetimes are lexically comparable TEXT. Shared so
+// the space rollup and the per-page status agree exactly.
+const staleExpr = hasIndexableBody + ` AND (pc.cnt IS NULL OR p.updated_at > pc.idx)`
 
 // chunkAggCTE aggregates page_chunks to (page_id, chunk count, last-indexed).
 const chunkAggCTE = `pc AS (SELECT page_id, count(*) AS cnt, max(updated_at) AS idx FROM page_chunks GROUP BY page_id)`
@@ -53,7 +67,7 @@ func (s *Service) IndexHealth(ctx context.Context) (IndexHealth, error) {
 	if err := s.db.QueryRowContext(ctx, `
 		WITH `+chunkAggCTE+`
 		SELECT
-		  count(p.id) FILTER (WHERE length(btrim(p.body)) > 0) AS content_pages,
+		  count(p.id) FILTER (WHERE `+hasIndexableBody+`)      AS content_pages,
 		  count(p.id) FILTER (WHERE pc.cnt IS NOT NULL)        AS indexed_pages,
 		  count(p.id) FILTER (WHERE `+staleExpr+`)             AS stale_pages
 		  FROM pages p
@@ -144,7 +158,7 @@ func (s *Service) SpacePageFreshness(ctx context.Context, userID, spaceID int64)
 		SELECT p.id, p.title, coalesce(pc.cnt, 0) AS chunk_count,
 		       p.updated_at, coalesce(pc.idx, '') AS last_indexed,
 		       CASE
-		         WHEN length(btrim(p.body)) = 0 THEN 'empty'
+		         WHEN NOT (`+hasIndexableBody+`) THEN 'empty'
 		         WHEN pc.cnt IS NULL THEN 'unindexed'
 		         WHEN p.updated_at > pc.idx THEN 'stale'
 		         ELSE 'fresh'

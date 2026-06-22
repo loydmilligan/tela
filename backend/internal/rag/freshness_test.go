@@ -18,15 +18,25 @@ func TestFreshness_StatusesAndRollup(t *testing.T) {
 	empty := newPage(t, d, sp, "Empty", "   ")
 	unindexed := newPage(t, d, sp, "Unindexed", "## B\nnever indexed content")
 	stale := newPage(t, d, sp, "Stale", "## C\noriginal content")
+	// A drawing-only page: large raw body, but the excalidraw strip leaves
+	// nothing to chunk, so the indexer writes zero chunks. It must read 'empty'
+	// (nothing indexable), NOT 'unindexed'/'stale' forever.
+	drawing := newPage(t, d, sp, "Drawing", "```excalidraw\n{\"elements\":[{\"id\":\"x\",\"type\":\"rectangle\"}],\"appState\":{}}\n```")
 
 	svc := NewServiceWithEmbedder(d, &fakeEmbedder{})
 
-	// Index only `indexed` and `stale`.
+	// Index only `indexed` and `stale`. Also run the drawing page through the
+	// indexer: it succeeds but writes zero chunks (strip → empty).
 	if _, err := svc.ReindexPage(ctx, indexed); err != nil {
 		t.Fatalf("index indexed: %v", err)
 	}
 	if _, err := svc.ReindexPage(ctx, stale); err != nil {
 		t.Fatalf("index stale: %v", err)
+	}
+	if n, err := svc.ReindexPage(ctx, drawing); err != nil {
+		t.Fatalf("index drawing: %v", err)
+	} else if n != 0 {
+		t.Fatalf("drawing page produced %d chunks, want 0", n)
 	}
 	// Now edit `stale` so its updated_at moves past its chunks' index time.
 	if _, err := d.Exec(`UPDATE pages SET body = $1, updated_at = $2 WHERE id = $3`,
@@ -43,15 +53,16 @@ func TestFreshness_StatusesAndRollup(t *testing.T) {
 	for _, p := range pages {
 		got[p.PageID] = p.Status
 	}
-	want := map[int64]string{indexed: "fresh", empty: "empty", unindexed: "unindexed", stale: "stale"}
+	want := map[int64]string{indexed: "fresh", empty: "empty", unindexed: "unindexed", stale: "stale", drawing: "empty"}
 	for id, w := range want {
 		if got[id] != w {
 			t.Errorf("page %d status = %q, want %q", id, got[id], w)
 		}
 	}
 
-	// Space rollup: 4 pages, 2 indexed (have chunks), stale_pages counts the
-	// edited-after-index one + the never-indexed one (both non-empty, out of date).
+	// Space rollup: 5 pages, 2 indexed (have chunks), stale_pages counts the
+	// edited-after-index one + the never-indexed one (both non-empty, out of
+	// date). The drawing page is empty-after-strip, so it's neither.
 	spaces, err := svc.Freshness(ctx, u)
 	if err != nil {
 		t.Fatalf("freshness: %v", err)
@@ -60,8 +71,8 @@ func TestFreshness_StatusesAndRollup(t *testing.T) {
 		t.Fatalf("want 1 space, got %d", len(spaces))
 	}
 	f := spaces[0]
-	if f.Pages != 4 {
-		t.Errorf("pages = %d, want 4", f.Pages)
+	if f.Pages != 5 {
+		t.Errorf("pages = %d, want 5", f.Pages)
 	}
 	if f.IndexedPages != 2 {
 		t.Errorf("indexed_pages = %d, want 2", f.IndexedPages)
