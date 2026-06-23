@@ -95,13 +95,21 @@ never slows the request. A missing relay (LogMailer) just logs. Needs
   was already in the prefs matrix.
 - **Recipient** — `users.email`; rows with no email (legacy username-only) are
   skipped.
-- **Content** — branded HTML + plaintext via `mailer.NotificationMessage`. The
-  **actor anchors the email**: a deterministic colored monogram chip + a bold
-  lead in the heading sentence ("**Ada** mentioned you in **Roadmap**"). Mention
-  and comment-reply carry a **snippet** (the mention's surrounding line /
-  the reply body, flattened + truncated). Mention emails also append a **"Related
-  in this wiki"** block from `rag.RelatedPages` (recipient-scoped; empty when the
-  page is unindexed — graceful degrade). Links resolve to the org custom domain
+- **Content** — branded HTML + plaintext via `mailer.NotificationMessage`,
+  rendered through one shared `html/template` layout (accent bar, header with an
+  event badge, workspace breadcrumb, footer panel). The **actor anchors the
+  email**: an identity row (deterministic colored monogram chip + name + muted
+  action), with the **page/space title as the clickable hero**. Mention and
+  comment-reply carry a **snippet** (the mention's surrounding line / the reply
+  body, flattened + truncated). **`page_updated` carries a "what changed" diff**
+  — `changePreview` (`notifications_diff.go`) runs a bounded line-level LCS over
+  the pre/post body (passed straight from the edit, no re-query), rendering up to
+  6 changed lines (green `+`/red `−`) with an additions/deletions stat and an
+  overflow note; oversized bodies fall back to stat-only. The diff is email-only
+  (carried on `notificationInput.ChangeLines`, not persisted to the inbox row).
+  Mention emails also append a **"Related in this wiki"** block from
+  `rag.RelatedPages` (recipient-scoped; empty when the page is unindexed —
+  graceful degrade). Links resolve to the org custom domain
   via `shareOriginForPage`/`shareOrigin`; the footer links to
   `/settings?tab=notifications` to manage.
 - **page_updated throttle** — in-app collapses to one unread per subject; email

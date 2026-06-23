@@ -113,6 +113,19 @@ func (s *Server) userEmail(ctx context.Context, userID int64) string {
 	return strings.TrimSpace(email.String)
 }
 
+// spaceName returns a space's name for the email breadcrumb, "" on miss.
+func (s *Server) spaceName(ctx context.Context, spaceID *int64) string {
+	if spaceID == nil {
+		return ""
+	}
+	var name string
+	if err := s.DB.QueryRowContext(ctx,
+		`SELECT name FROM spaces WHERE id = $1`, *spaceID).Scan(&name); err != nil {
+		return ""
+	}
+	return name
+}
+
 // actorName resolves the actor's display name (falling back to username), cached
 // per dispatch. Falls back to the Data["actor_username"] payload, then "Someone".
 func (s *Server) actorName(ctx context.Context, actorID *int64, data map[string]any, cache map[int64]string) string {
@@ -149,6 +162,7 @@ func (s *Server) buildNotificationEmail(ctx context.Context, in notificationInpu
 		n.Eyebrow = "Mention"
 		n.Action = "mentioned you in"
 		n.Target = title
+		n.Context = s.spaceName(ctx, in.SpaceID)
 		n.Snippet = snippet
 		n.CTALabel = "Open page"
 		n.CTAURL = link
@@ -159,6 +173,7 @@ func (s *Server) buildNotificationEmail(ctx context.Context, in notificationInpu
 		n.Eyebrow = "Reply"
 		n.Action = "replied to your comment on"
 		n.Target = title
+		n.Context = s.spaceName(ctx, in.SpaceID)
 		n.Snippet = snippet
 		n.CTALabel = "View reply"
 		n.CTAURL = s.pageLink(ctx, in)
@@ -177,6 +192,10 @@ func (s *Server) buildNotificationEmail(ctx context.Context, in notificationInpu
 		n.Eyebrow = "Updated"
 		n.Action = "updated"
 		n.Target = title
+		n.Context = s.spaceName(ctx, in.SpaceID)
+		n.Diff = in.ChangeLines
+		n.DiffStat = in.ChangeStat
+		n.DiffMore = in.ChangeMore
 		n.CTALabel = "See changes"
 		n.CTAURL = s.pageLink(ctx, in)
 		n.Footer = "You're receiving this because you follow this page."

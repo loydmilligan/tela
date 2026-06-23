@@ -218,8 +218,41 @@ func TestNotificationEmail_PageUpdatedThrottled(t *testing.T) {
 	}
 
 	// Two edits in quick succession → only ONE email (throttled per page/window).
-	srv.notifyPageUpdate(ctx, authUser(alice, "alice", false), pageID, spaceID, "Roadmap")
+	oldBody := "Intro paragraph.\nStep one: provision.\nStep two: migrate."
+	newBody := "Intro paragraph.\nStep one: provision the cluster.\nStep two: migrate.\nStep three: verify."
+	srv.notifyPageUpdate(ctx, authUser(alice, "alice", false), pageID, spaceID, "Roadmap", oldBody, newBody)
 	waitForEmails(t, cm, 1)
-	srv.notifyPageUpdate(ctx, authUser(alice, "alice", false), pageID, spaceID, "Roadmap")
+	_, content, ok := emailTo(cm, "bob@ngss.io")
+	if !ok {
+		t.Fatalf("no page_updated email to bob")
+	}
+	// The "what changed" preview shows the added line.
+	if !strings.Contains(content, "Step three: verify") {
+		t.Errorf("diff preview missing the added line: %q", content)
+	}
+	srv.notifyPageUpdate(ctx, authUser(alice, "alice", false), pageID, spaceID, "Roadmap", oldBody, newBody)
 	assertNoEmail(t, cm, 1)
+}
+
+func TestChangePreview(t *testing.T) {
+	old := "alpha\nbeta\ngamma"
+	neu := "alpha\nbeta changed\ngamma\ndelta"
+	lines, stat, _ := changePreview(old, neu)
+	if stat == "" {
+		t.Errorf("expected a diff stat")
+	}
+	var adds, dels int
+	for _, l := range lines {
+		if l.Add {
+			adds++
+		} else {
+			dels++
+		}
+	}
+	if adds < 2 || dels < 1 { // "beta changed" + "delta" added; "beta" removed
+		t.Errorf("unexpected diff: %d adds %d dels (%+v)", adds, dels, lines)
+	}
+	if l, _, _ := changePreview("same", "same"); l != nil {
+		t.Errorf("identical bodies should yield no diff, got %+v", l)
+	}
 }

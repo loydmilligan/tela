@@ -818,7 +818,7 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	// its space. Same body/title-changed gate afterPageWrite uses internally.
 	if p.Body != existing.Body || p.Title != existing.Title {
 		s.notifyPageMentions(ctx, u, id, existing.SpaceID, p.Title, p.Body)
-		s.notifyPageUpdate(ctx, u, id, existing.SpaceID, p.Title)
+		s.notifyPageUpdate(ctx, u, id, existing.SpaceID, p.Title, existing.Body, p.Body)
 	}
 	return p, nil
 }

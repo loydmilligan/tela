@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
+	"github.com/zcag/tela/backend/internal/mailer"
 )
 
 // Notifications: "something happened that a specific user should know about."
@@ -77,6 +78,12 @@ type notificationInput struct {
 	Data           map[string]any
 	DedupKey       string
 	CollapseUnread bool
+	// ChangeLines is the page_updated email "what changed" diff preview. It is
+	// email-only — NOT persisted to the in-app row (the inbox doesn't show it),
+	// so it lives here rather than in Data.
+	ChangeLines []mailer.DiffLine
+	ChangeStat  string
+	ChangeMore  string
 }
 
 // inAppEnabled reports whether the user wants in-app notifications of this event
@@ -218,7 +225,8 @@ func (s *Server) notifyPageMentions(ctx context.Context, actor *auth.User, pageI
 // page (directly) or its space — except the editor, and only to users who still
 // have access. CollapseUnread keeps it to one unread "this page changed" per
 // follower until they look, so a flurry of edits doesn't pile up.
-func (s *Server) notifyPageUpdate(ctx context.Context, editor *auth.User, pageID, spaceID int64, title string) {
+func (s *Server) notifyPageUpdate(ctx context.Context, editor *auth.User, pageID, spaceID int64, title, oldBody, newBody string) {
+	changeLines, changeStat, changeMore := changePreview(oldBody, newBody)
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT DISTINCT sub.user_id
 		  FROM subscriptions sub
@@ -256,6 +264,9 @@ func (s *Server) notifyPageUpdate(ctx context.Context, editor *auth.User, pageID
 			SpaceID:        &spaceID,
 			Data:           map[string]any{"page_title": title, "actor_username": editor.Username},
 			CollapseUnread: true,
+			ChangeLines:    changeLines,
+			ChangeStat:     changeStat,
+			ChangeMore:     changeMore,
 		})
 	}
 	s.emitNotifications(ctx, out...)
