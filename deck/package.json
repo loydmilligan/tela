@@ -13,6 +13,6 @@
     "echarts": "^5.5.0",
     "playwright-chromium": "1.60.0",
     "sharp": "^0.33.0",
-    "slidev-theme-tahta": "^0.12.2"
+    "slidev-theme-tahta": "^0.12.3"
   }
 }
