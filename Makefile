@@ -393,6 +393,16 @@ deploy-frontend: registry-up
 	@$(MAKE) _push PUSH_IMAGES="tela-frontend" TELA_COMMIT=$(TELA_COMMIT)
 	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d --no-deps frontend'
 
+# deploy-deck: build + push + recreate ONLY the deck render sidecar. The fast path when
+# only the render pipeline changed — most often a `slidev-theme-tahta` bump in deck/.
+# No health gate (/api/version is the backend). --no-deps for the same reason as the
+# other partials (only the deck image was pushed at this commit). The deck cache key
+# folds in the theme version, so a tahta bump re-renders every deck on next request.
+deploy-deck: registry-up
+	docker build -t $(TELA_REGISTRY)/tela-deck:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-deck:latest deck
+	@$(MAKE) _push PUSH_IMAGES="tela-deck" TELA_COMMIT=$(TELA_COMMIT)
+	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d --no-deps deck'
+
 # deploy-landing: the landing + sites.caddy are static files the EXTERNAL shared
 # edge serves/imports from REMOTE_WEB (not an image). Build, rsync, reload the edge.
 # This is also the target for a sites.caddy change.
