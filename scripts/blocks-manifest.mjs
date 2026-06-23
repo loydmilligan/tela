@@ -35,7 +35,10 @@ const INFRA = new Set([
   'milkdown-image-upload', // upload transport for the `image` block (markdown is plain)
   'milkdown-list-indent', // Tab/Shift-Tab list nest/un-nest keymap (no node)
   'milkdown-modifier-click', // cmd/ctrl-click navigation
+  'milkdown-plain-paste', // Cmd/Ctrl+Shift+V paste-as-plain-text keymap (no node)
   'milkdown-slash', // the slash menu itself
+  'milkdown-table-select', // table cell-selection behavior (no node)
+  'milkdown-upload-placeholder', // transient upload placeholder decoration (no node)
   'milkdown-templates', // composed snippets, not a block type
   'milkdown-excalidraw-presence', // live "editing" badge decoration for the `excalidraw` block (no node)
   'milkdown-typography', // smart-quote/dash/ellipsis input rules (no node)
