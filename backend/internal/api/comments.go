@@ -262,7 +262,7 @@ func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.AP
 	}
 	// Notify the root comment's author that someone replied (best-effort).
 	if isReply {
-		s.notifyCommentReply(ctx, u, pageID, parentAuthorID)
+		s.notifyCommentReply(ctx, u, pageID, parentAuthorID, body)
 	}
 	return c, nil
 }

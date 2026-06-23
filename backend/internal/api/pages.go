@@ -971,6 +971,10 @@ func (s *Server) deletePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 		`DELETE FROM notifications WHERE subject_kind = 'page' AND subject_id = $1`, id); err != nil {
 		return &apiErr{http.StatusInternalServerError, "internal", "delete page notifications failed"}
 	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM notification_email_throttle WHERE subject_id = $1`, id); err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "delete page email throttle failed"}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return &apiErr{http.StatusInternalServerError, "internal", "commit failed"}

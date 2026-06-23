@@ -41,10 +41,12 @@ row is written only to turn something off. `channel ∈ inapp | email`.
 
 One entry point — `Server.emitNotifications(ctx, ...notificationInput)`. It is
 **best-effort** (errors logged, never surfaced; called after the triggering tx
-commits), **preference-gated** (skips a recipient who turned the event type off
-in-app), and recipients are **access-gated** before the call (never notify about,
-or leak the title of, something you can't see). Three emission policies on
-`notificationInput`:
+commits) and recipients are **access-gated** before the call (never notify about,
+or leak the title of, something you can't see). It fans each input out to every
+enabled **channel**, gated **independently**: `insertInApp` writes the inbox row
+when in-app is on, then `dispatchEmails` (see [Email channel](#email-channel))
+sends when email is on — muting one channel never mutes the other. Three
+emission policies on `notificationInput`:
 
 - **`DedupKey`** → one-ever per `(user, key)` via `ON CONFLICT DO NOTHING`. For
   one-shot events: a mention (`mention:page:{id}:{uid}`).
@@ -80,6 +82,36 @@ Frontend: a header **bell** (polled unread badge + inbox panel), a **follow**
 toggle in the page header, and a **Notifications** settings tab (the event ×
 channel matrix).
 
+## Email channel
+
+`dispatchEmails` (`notifications_email.go`) delivers the same four event types
+out of the app, reusing the feedback pattern: recipient/content resolved
+synchronously (ctx live), SMTP fired in a detached goroutine so relay latency
+never slows the request. A missing relay (LogMailer) just logs. Needs
+`TELA_SMTP_*` set (else log-only).
+
+- **Gate** — `emailEnabled` mirrors `inAppEnabled` on the `email` channel of
+  `notification_prefs` (opt-out: no row = enabled). No schema change — the column
+  was already in the prefs matrix.
+- **Recipient** — `users.email`; rows with no email (legacy username-only) are
+  skipped.
+- **Content** — branded HTML + plaintext via `mailer.NotificationMessage`. The
+  **actor anchors the email**: a deterministic colored monogram chip + a bold
+  lead in the heading sentence ("**Ada** mentioned you in **Roadmap**"). Mention
+  and comment-reply carry a **snippet** (the mention's surrounding line /
+  the reply body, flattened + truncated). Mention emails also append a **"Related
+  in this wiki"** block from `rag.RelatedPages` (recipient-scoped; empty when the
+  page is unindexed — graceful degrade). Links resolve to the org custom domain
+  via `shareOriginForPage`/`shareOrigin`; the footer links to
+  `/settings?tab=notifications` to manage.
+- **page_updated throttle** — in-app collapses to one unread per subject; email
+  has no collapse, so `claimPageUpdatedEmail` atomically caps it to **one email
+  per (user, page) per `pageUpdatedEmailWindow`** (4h) via the
+  `notification_email_throttle` table (migration `0046`, swept on page delete).
+  The other three types are one-shot, never throttled.
+- **Slack/Teams later** — add a sibling `dispatch*` off the same loop + a channel
+  value in the prefs `CHECK`; the emit sites don't change.
+
 ## Extension points (additive — no rework)
 
 - **New event type** → add a `notif*` const + emit call + a frontend render case
@@ -88,6 +120,4 @@ channel matrix).
   when the comment composer gains the mention picker.
 - **New page in a followed space** → a `page_created` type emitted to space
   followers on create (deliberately not done yet to keep `page_updated` = edits).
-- **Email channel** → a `deliver()` fan-out in `emitNotifications` reading the
-  `email` prefs already stored. The emit sites don't change.
 - **Realtime** → today the badge polls; swap to SSE/WS behind the same read API.

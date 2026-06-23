@@ -68,14 +68,14 @@ func parseUserMentions(body string) []int64 {
 //     (a followed page changed) so rapid edits don't pile up.
 //   - neither           → always insert.
 type notificationInput struct {
-	UserID        int64
-	Type          string
-	ActorID       *int64
-	SubjectKind   string
-	SubjectID     int64
-	SpaceID       *int64
-	Data          map[string]any
-	DedupKey      string
+	UserID         int64
+	Type           string
+	ActorID        *int64
+	SubjectKind    string
+	SubjectID      int64
+	SpaceID        *int64
+	Data           map[string]any
+	DedupKey       string
 	CollapseUnread bool
 }
 
@@ -97,56 +97,64 @@ func (s *Server) inAppEnabled(ctx context.Context, userID int64, eventType strin
 	return enabled == 1
 }
 
-// emitNotifications writes notifications best-effort, after per-user preference
-// gating. Any error is logged, never surfaced — a notification must never fail
-// the action that triggered it. Call AFTER the triggering tx commits.
+// emitNotifications fans each input out to every enabled channel, best-effort,
+// after per-user preference gating. The in-app and email channels are gated
+// INDEPENDENTLY (a user who muted in-app but kept email still gets the email,
+// and vice versa). Any error is logged, never surfaced — a notification must
+// never fail the action that triggered it. Call AFTER the triggering tx commits.
 func (s *Server) emitNotifications(ctx context.Context, ins ...notificationInput) {
 	for _, in := range ins {
-		if !s.inAppEnabled(ctx, in.UserID, in.Type) {
-			continue
+		if s.inAppEnabled(ctx, in.UserID, in.Type) {
+			s.insertInApp(ctx, in)
 		}
-		data := in.Data
-		if data == nil {
-			data = map[string]any{}
-		}
-		payload, err := json.Marshal(data)
-		if err != nil {
-			slog.Error("notification marshal", "type", in.Type, "err", err)
-			continue
-		}
-		switch {
-		case in.CollapseUnread:
-			// Skip if the recipient already has an unread one for this subject.
-			_, err = s.DB.ExecContext(ctx, `
-				INSERT INTO notifications
-				  (user_id, type, actor_id, subject_kind, subject_id, space_id, data)
-				SELECT $1, $2, $3, $4, $5, $6, $7::jsonb
-				 WHERE NOT EXISTS (
-				   SELECT 1 FROM notifications
-				    WHERE user_id = $1 AND type = $2 AND subject_kind = $4 AND subject_id = $5
-				      AND read_at IS NULL
-				 )`,
-				in.UserID, in.Type, nullableInt64(in.ActorID), in.SubjectKind, in.SubjectID,
-				nullableInt64(in.SpaceID), string(payload))
-		case in.DedupKey != "":
-			_, err = s.DB.ExecContext(ctx, `
-				INSERT INTO notifications
-				  (user_id, type, actor_id, subject_kind, subject_id, space_id, data, dedup_key)
-				VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
-				ON CONFLICT (user_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING`,
-				in.UserID, in.Type, nullableInt64(in.ActorID), in.SubjectKind, in.SubjectID,
-				nullableInt64(in.SpaceID), string(payload), in.DedupKey)
-		default:
-			_, err = s.DB.ExecContext(ctx, `
-				INSERT INTO notifications
-				  (user_id, type, actor_id, subject_kind, subject_id, space_id, data)
-				VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-				in.UserID, in.Type, nullableInt64(in.ActorID), in.SubjectKind, in.SubjectID,
-				nullableInt64(in.SpaceID), string(payload))
-		}
-		if err != nil {
-			slog.Error("emit notification", "type", in.Type, "user_id", in.UserID, "err", err)
-		}
+	}
+	s.dispatchEmails(ctx, ins)
+}
+
+// insertInApp writes the single in-app inbox row for one input, honoring its
+// emission policy (CollapseUnread / DedupKey / plain insert).
+func (s *Server) insertInApp(ctx context.Context, in notificationInput) {
+	data := in.Data
+	if data == nil {
+		data = map[string]any{}
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		slog.Error("notification marshal", "type", in.Type, "err", err)
+		return
+	}
+	switch {
+	case in.CollapseUnread:
+		// Skip if the recipient already has an unread one for this subject.
+		_, err = s.DB.ExecContext(ctx, `
+			INSERT INTO notifications
+			  (user_id, type, actor_id, subject_kind, subject_id, space_id, data)
+			SELECT $1, $2, $3, $4, $5, $6, $7::jsonb
+			 WHERE NOT EXISTS (
+			   SELECT 1 FROM notifications
+			    WHERE user_id = $1 AND type = $2 AND subject_kind = $4 AND subject_id = $5
+			      AND read_at IS NULL
+			 )`,
+			in.UserID, in.Type, nullableInt64(in.ActorID), in.SubjectKind, in.SubjectID,
+			nullableInt64(in.SpaceID), string(payload))
+	case in.DedupKey != "":
+		_, err = s.DB.ExecContext(ctx, `
+			INSERT INTO notifications
+			  (user_id, type, actor_id, subject_kind, subject_id, space_id, data, dedup_key)
+			VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+			ON CONFLICT (user_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING`,
+			in.UserID, in.Type, nullableInt64(in.ActorID), in.SubjectKind, in.SubjectID,
+			nullableInt64(in.SpaceID), string(payload), in.DedupKey)
+	default:
+		_, err = s.DB.ExecContext(ctx, `
+			INSERT INTO notifications
+			  (user_id, type, actor_id, subject_kind, subject_id, space_id, data)
+			VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+			in.UserID, in.Type, nullableInt64(in.ActorID), in.SubjectKind, in.SubjectID,
+			nullableInt64(in.SpaceID), string(payload))
+	}
+	if err != nil {
+		slog.Error("emit notification", "type", in.Type, "user_id", in.UserID, "err", err)
 	}
 }
 
@@ -189,6 +197,7 @@ func (s *Server) notifyPageMentions(ctx context.Context, actor *auth.User, pageI
 		return
 	}
 	actorID := actor.ID
+	snippet := mentionExcerpt(body)
 	out := make([]notificationInput, 0, len(recipients))
 	for _, uid := range recipients {
 		out = append(out, notificationInput{
@@ -198,7 +207,7 @@ func (s *Server) notifyPageMentions(ctx context.Context, actor *auth.User, pageI
 			SubjectKind: "page",
 			SubjectID:   pageID,
 			SpaceID:     &spaceID,
-			Data:        map[string]any{"page_title": title, "actor_username": actor.Username},
+			Data:        map[string]any{"page_title": title, "actor_username": actor.Username, "snippet": snippet},
 			DedupKey:    "mention:page:" + strconv.FormatInt(pageID, 10) + ":" + strconv.FormatInt(uid, 10),
 		})
 	}
@@ -279,7 +288,7 @@ func (s *Server) notifySpaceAdded(ctx context.Context, actor *auth.User, addedUs
 // notifyCommentReply tells the author of a root comment that someone replied.
 // Skips self-replies; re-gates the recipient through space_access (they authored
 // a comment there, but access can be revoked). One notification per reply.
-func (s *Server) notifyCommentReply(ctx context.Context, replier *auth.User, pageID, parentAuthorID int64) {
+func (s *Server) notifyCommentReply(ctx context.Context, replier *auth.User, pageID, parentAuthorID int64, replyBody string) {
 	if parentAuthorID == replier.ID {
 		return
 	}
@@ -305,7 +314,7 @@ func (s *Server) notifyCommentReply(ctx context.Context, replier *auth.User, pag
 		SubjectKind: "page",
 		SubjectID:   pageID,
 		SpaceID:     &spaceID,
-		Data:        map[string]any{"page_title": title, "actor_username": replier.Username},
+		Data:        map[string]any{"page_title": title, "actor_username": replier.Username, "snippet": cleanSnippet(replyBody)},
 	})
 }
 
