@@ -1,0 +1,12 @@
+[
+  {
+    "question": "which message-queue topics does the pipeline use? give a table",
+    "space_id": 0,
+    "expect_all": ["ingest-raw", "ingest-parsed", "enriched-out", "deadletter"]
+  },
+  {
+    "question": "list every report type the loggers can emit",
+    "space_id": 0,
+    "expect_all": ["summary", "detail", "audit", "rejected"]
+  }
+]

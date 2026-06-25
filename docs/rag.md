@@ -130,6 +130,48 @@ admin). Golden set format (`internal/rag/eval.go` → `EvalCase`):
 Run it before and after any chunking/embedding/fusion change. Keep the golden set
 in version control and grow it whenever a bad retrieval is reported.
 
+## Measuring the *answer* — `tela ask-eval`
+
+`rag-eval` scores **retrieval**. It is structurally blind to a different failure:
+the right pages are retrieved, yet the generated **answer drops an item the model
+was shown**. The live example: *"which topics are used in UDN, give a table"* —
+the page that enumerates every topic is retrieved and expanded to full body, but
+the small local generator (a 30B-A3B 4-bit coder model) omits `ufdr-nat`, which
+the source mentions only in prose (*"…outputs to the `ufdr-nat` topic"*). Naming
+`ufdr-nat` in the question "fixes" it — proof the gap is **generation recall**,
+not retrieval. `rag-eval` would score that case 100% and hide the bug.
+
+`ask-eval` runs the **real ask pipeline** (`askContext` → `askSystemPrompt` /
+`askUserPrompt` → `llm.Complete`) and checks the answer contains every expected
+item, splitting each miss into the two kinds that need different fixes:
+
+```
+tela ask-eval --set golden.json [--user <id>] [--answers]
+```
+
+- **generation drop** — the item *was* in the assembled grounding but is absent
+  from the answer. The model's fault; what the `enumerationDirective` in
+  `askUserPrompt` (the exhaustiveness instruction added for list/table/"which/all"
+  questions) targets.
+- **retrieval gap** — the item never reached the grounding. Retrieval's fault — a
+  `rag-eval`/chunking concern, not generation.
+
+Needs a live embedder **and** LLM (so it exercises the deployed model). Golden set
+format (`internal/api/ask_eval.go` → `AskCompletenessCase`; a synthetic sample is
+`backend/eval/ask-completeness.example.json` — the real per-corpus set is kept out
+of this public repo):
+
+```json
+[
+  { "question": "which topics are used in the pipeline? give a table",
+    "expect_all": ["ingest-raw", "enriched-out", "deadletter"], "space_id": 51 }
+]
+```
+
+The mean-coverage number plus the drops-vs-gaps split is the before/after metric
+for any prompt or generation change. Validate an enumeration fix on *several*
+questions (not just the one that was reported) so the change generalises.
+
 ## Operations
 
 - **Force a full re-embed** (model name unchanged but the embedder setup moved):

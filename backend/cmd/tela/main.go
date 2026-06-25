@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -92,6 +93,11 @@ func main() {
 			// Score retrieval against a golden set (recall@k / MRR / nDCG).
 			runRAGEval(d, os.Args[2:])
 			return
+		case "ask-eval":
+			// Score ANSWER completeness (the generation-recall layer rag-eval
+			// can't see); splits each miss into generation-drop vs retrieval-gap.
+			runAskEval(d, os.Args[2:])
+			return
 		case "create-admin":
 			runCreateAdmin(d, os.Args[2:])
 			return
@@ -102,7 +108,7 @@ func main() {
 			runListUsers(d)
 			return
 		default:
-			fatal("unknown subcommand (known: reindex-all, summarize-all, rag-eval, create-admin, set-plan, list-users)", "subcommand", os.Args[1])
+			fatal("unknown subcommand (known: reindex-all, summarize-all, rag-eval, ask-eval, create-admin, set-plan, list-users)", "subcommand", os.Args[1])
 		}
 	}
 
@@ -354,6 +360,90 @@ func runRAGEval(d *sql.DB, args []string) {
 			q = q[:61] + "…"
 		}
 		fmt.Printf("  %-5s %-5s %s\n", mark, rank, q)
+	}
+	fmt.Println()
+}
+
+// runAskEval scores ANSWER completeness for enumeration questions — the
+// generation-recall layer rag-eval is blind to. It runs the real ask pipeline
+// (retrieve → ground → LLM) per case and reports, for each expected item,
+// whether it was covered, dropped by the model (in grounding but absent from the
+// answer), or never retrieved.
+//
+//	tela ask-eval --set golden.json [--user <id>] [--answers]
+//
+// The golden set is a JSON array of {question, expect_all[], space_id?}. Needs a
+// live embedder AND LLM (so it exercises the same model the deployment serves).
+func runAskEval(d *sql.DB, args []string) {
+	setPath, userID, showAnswers := "", int64(0), false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--set":
+			i++
+			if i < len(args) {
+				setPath = args[i]
+			}
+		case "--user":
+			i++
+			if i < len(args) {
+				userID, _ = strconv.ParseInt(args[i], 10, 64)
+			}
+		case "--answers":
+			showAnswers = true
+		default:
+			fatal("ask-eval: unknown flag (known: --set, --user, --answers)", "flag", args[i])
+		}
+	}
+	if setPath == "" {
+		fatal("ask-eval: --set <golden.json> is required")
+	}
+
+	raw, err := os.ReadFile(setPath)
+	if err != nil {
+		fatal("ask-eval: read golden set", "err", err)
+	}
+	var cases []api.AskCompletenessCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		fatal("ask-eval: parse golden set", "err", err)
+	}
+
+	srv := api.New(d)
+	ctx := context.Background()
+	if userID == 0 {
+		if err := d.QueryRowContext(ctx, `SELECT id FROM users ORDER BY id LIMIT 1`).Scan(&userID); err != nil {
+			fatal("ask-eval: no user to evaluate as (pass --user)", "err", err)
+		}
+	}
+
+	scores, err := srv.EvalAskCompleteness(ctx, userID, cases, showAnswers)
+	if err != nil {
+		fatal("ask-eval", "err", err)
+	}
+
+	var sumCov float64
+	var drops, gaps int
+	for _, sc := range scores {
+		sumCov += sc.Coverage
+		drops += len(sc.GenerationDrops)
+		gaps += len(sc.RetrievalGaps)
+	}
+	mean := 0.0
+	if len(scores) > 0 {
+		mean = sumCov / float64(len(scores))
+	}
+	fmt.Printf("\nAsk-completeness eval — %d cases, user=%d\n", len(scores), userID)
+	fmt.Printf("  mean coverage = %.3f    generation drops = %d    retrieval gaps = %d\n\n", mean, drops, gaps)
+	for _, sc := range scores {
+		fmt.Printf("  [%3.0f%%] %s\n", sc.Coverage*100, sc.Question)
+		if len(sc.GenerationDrops) > 0 {
+			fmt.Printf("        dropped by model (was in grounding): %s\n", strings.Join(sc.GenerationDrops, ", "))
+		}
+		if len(sc.RetrievalGaps) > 0 {
+			fmt.Printf("        never retrieved: %s\n", strings.Join(sc.RetrievalGaps, ", "))
+		}
+		if showAnswers {
+			fmt.Printf("        answer: %s\n", strings.ReplaceAll(strings.TrimSpace(sc.Answer), "\n", "\n        "))
+		}
 	}
 	fmt.Println()
 }

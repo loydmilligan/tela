@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -261,9 +262,35 @@ const askSystemPrompt = "You are a helpful assistant answering questions strictl
 	"Ignore a flagged disagreement only when it is unrelated to the question, and never invent a conflict that isn't stated."
 
 // askUserPrompt assembles the grounded user turn shared by both ask handlers: the
-// cited excerpts, the (optional) known-disagreements block, then the question.
+// cited excerpts, the (optional) known-disagreements block, the question, and —
+// for enumeration questions — a completeness directive (see enumerationDirective).
 func askUserPrompt(excerpts, conflicts, question string) string {
-	return "Answer the question using only these document excerpts.\n\n" + excerpts + conflicts + "Question: " + question
+	return "Answer the question using only these document excerpts.\n\n" + excerpts + conflicts +
+		"Question: " + question + enumerationDirective(question)
+}
+
+// enumerationCue matches questions that ask for a COMPLETE set — a list, a table,
+// or a "which/all/every" enumeration. Deliberately broad: a false positive only
+// appends a "be thorough" nudge to a non-list answer, which is harmless, while a
+// miss reintroduces the bug below.
+var enumerationCue = regexp.MustCompile(`(?i)\b(list|tables?|which|all|every|each|enumerate|how many|what are|name (?:the|all))\b`)
+
+// enumerationDirective returns an exhaustiveness instruction when the question is
+// enumeration-shaped, else "". Rationale: for "which X are used, give a table"
+// the grounding can contain every item yet the model still drops one mentioned
+// only in prose (the live "outputs to `ufdr-nat`" case) — a generation-recall
+// failure, not retrieval. The base prompt optimises for grounding/citation, never
+// completeness; this adds the missing instruction, scoped so ordinary Q&A is
+// unchanged. The split between "in grounding but dropped" vs "never retrieved" is
+// what `tela ask-eval` measures.
+func enumerationDirective(question string) string {
+	if !enumerationCue.MatchString(question) {
+		return ""
+	}
+	return "\n\nThis question asks for a complete set (a list, table, or enumeration). " +
+		"Be exhaustive: scan EVERY excerpt and include every item that qualifies — including items mentioned only " +
+		"in passing or in prose, not just those already collected in a list or table. " +
+		"Before finishing, re-read the excerpts and add any qualifying item you missed."
 }
 
 // RAGAskStream is the streaming (SSE) twin of RAGAsk: identical retrieval and
