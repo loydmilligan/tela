@@ -739,6 +739,9 @@
     border-radius: var(--radius-sm);
     padding: 0 var(--space-1);
     color: var(--text-primary);
+    /* Long unbroken tokens (file paths, URLs) must wrap rather than overflow the
+       container — e.g. an Ask answer citing src/main/.../Foo.java:329-363. */
+    overflow-wrap: anywhere;
   }
 
   /* Code blocks */

@@ -212,7 +212,7 @@ export function AskRoute() {
     ask.isPending && ask.answer.length === 0 && sources.length === 0
 
   return (
-    <div className="flex-1 flex flex-col gap-[var(--space-6)] px-[var(--space-7)] pt-[calc(var(--space-8)*1.5)] pb-[var(--space-7)] max-w-[42rem] w-full mx-auto min-h-0">
+    <div className="flex-1 flex flex-col gap-[var(--space-6)] px-[var(--space-7)] pt-[calc(var(--space-8)*1.5)] pb-[var(--space-7)] max-w-[52rem] w-full mx-auto min-h-0">
       <header className="flex flex-col gap-[var(--space-2)]">
         <div className="flex items-center gap-[var(--space-3)]">
           <span
