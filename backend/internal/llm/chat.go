@@ -42,6 +42,31 @@ func NewOpenAIClient(base, model, token string, maxTokens int) *OpenAIClient {
 
 func (c *OpenAIClient) Model() string { return c.model }
 
+// Live is a cheap liveness probe for the AI-health prober: GET {base}/models
+// (the OpenAI/Ollama/MLX model list) confirms the chat server process answers
+// WITHOUT running a completion — critical here, since the answer model is often
+// a large local model we must not wake just to check it's up. Any response < 500
+// is reachable; a transport error (refused / DNS / timeout) or a 5xx is down.
+func (c *OpenAIClient) Live(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/models", nil)
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("llm models: %w", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("llm models: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // maxChatResponseBytes caps how much we read from the provider's response. A
 // chat completion is at most a few hundred KB; 16 MiB is a generous ceiling
 // that still guards against an unbounded/malicious upstream body.

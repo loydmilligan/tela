@@ -106,6 +106,26 @@ func NewServiceWithCompleter(cl Completer) *Service { return &Service{cl: cl} }
 // Enabled reports whether a chat client is configured.
 func (s *Service) Enabled() bool { return s != nil && s.cl != nil }
 
+// liveChecker is the optional liveness probe a chat client can expose so the
+// background AI-health prober can confirm reachability without a completion. A
+// client without one (a test fake) is treated as reachable.
+type liveChecker interface {
+	Live(ctx context.Context) error
+}
+
+// Ping checks the chat backend is reachable, for the AI-health prober. Defers to
+// the client's Live check; a client without one is treated as reachable. A
+// disabled service returns errLLMDisabled.
+func (s *Service) Ping(ctx context.Context) error {
+	if !s.Enabled() {
+		return errLLMDisabled
+	}
+	if lc, ok := s.cl.(liveChecker); ok {
+		return lc.Live(ctx)
+	}
+	return nil
+}
+
 var errLLMDisabled = errors.New("llm: client disabled")
 
 // Complete runs one non-streaming chat completion. Surfaces the disabled error

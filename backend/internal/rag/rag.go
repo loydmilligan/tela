@@ -168,6 +168,31 @@ func NewServiceWithEmbedder(db *sql.DB, emb Embedder) *Service {
 // Enabled reports whether an embedder is configured.
 func (s *Service) Enabled() bool { return s != nil && s.emb != nil }
 
+// liveChecker is the optional liveness probe an embedder can expose so the
+// background AI-health prober can cheaply check reachability without running a
+// (metered) embed. Embedders that don't implement it are assumed reachable.
+type liveChecker interface {
+	Live(ctx context.Context) error
+}
+
+// Ping checks the embedder is reachable, for the AI-health prober. It unwraps the
+// usage-metering decorator so probe traffic is never counted as user usage, then
+// defers to the embedder's Live check; an embedder without one (e.g. a test fake)
+// is treated as reachable. A disabled service returns errEmbedderDisabled.
+func (s *Service) Ping(ctx context.Context) error {
+	if !s.Enabled() {
+		return errEmbedderDisabled
+	}
+	emb := s.emb
+	if rec, ok := emb.(recordingEmbedder); ok {
+		emb = rec.inner
+	}
+	if lc, ok := emb.(liveChecker); ok {
+		return lc.Live(ctx)
+	}
+	return nil
+}
+
 func getenv(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v

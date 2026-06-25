@@ -64,7 +64,9 @@ type hostContextDTO struct {
 	// Maintenance notice for the app-wide banner; nil = none.
 	Maintenance *maintenanceDTO `json:"maintenance,omitempty"`
 	// Whether managed AI (ask / semantic search) is serving — false when the
-	// embedder is unconfigured OR an admin flipped the ai.disabled kill-switch.
+	// embedder is unconfigured, an admin flipped the ai.disabled kill-switch, OR
+	// the background health prober found the embedder/chat model unreachable (so
+	// the client shows "AI unavailable" automatically during an outage).
 	AIAvailable bool `json:"ai_available"`
 }
 
@@ -104,7 +106,7 @@ func (s *Server) HostContext(w http.ResponseWriter, r *http.Request) {
 		Login:         hostLoginDTO{PasswordEnabled: true, SocialEnabled: true},
 		CanonicalBase: canonicalBaseURL(),
 		Maintenance:   s.maintenanceNotice(),
-		AIAvailable:   s.aiEnabled(),
+		AIAvailable:   s.aiHealthy(),
 	}
 
 	oc, ok := auth.OrgContextFromContext(ctx)

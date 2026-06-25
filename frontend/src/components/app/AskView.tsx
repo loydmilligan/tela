@@ -181,7 +181,7 @@ export function AskRoute() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={aiPaused ? 'Ask is paused for maintenance…' : 'Ask anything about your pages…'}
+            placeholder={aiPaused ? 'Ask is temporarily unavailable…' : 'Ask anything about your pages…'}
             aria-label="Question"
             rows={2}
             autoFocus
@@ -221,10 +221,10 @@ export function AskRoute() {
         {aiPaused ? (
           <EmptyState
             icon={Wrench}
-            title="AI is paused for maintenance"
+            title="AI is temporarily unavailable"
             description={
               maintenanceNote ||
-              'An admin has temporarily paused AI features (ask & semantic search). Full-text search still works — give it a moment and try again later.'
+              'AI features (ask & semantic search) are offline right now — the model may be down or under maintenance. Full-text search still works; give it a moment and try again later.'
             }
           />
         ) : unavailable ? (

@@ -50,6 +50,33 @@ func NewOllamaEmbedder(base, model, token string) *OllamaEmbedder {
 
 func (e *OllamaEmbedder) Model() string { return e.model }
 
+// Live is a cheap liveness probe for the AI-health prober: GET {base}/api/tags
+// (Ollama's installed-models list) just to confirm the embedder host answers. It
+// runs NO inference, so a cold model is never woken and nothing is metered. Any
+// HTTP response < 500 counts as reachable; a transport error (connection
+// refused / DNS / timeout) or a 5xx means down. The managed cloud endpoint has
+// no /api/tags and returns 404 — still a response, so still "reachable", which
+// is exactly the up/down signal we want.
+func (e *OllamaEmbedder) Live(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.base+"/api/tags", nil)
+	if err != nil {
+		return err
+	}
+	if e.token != "" {
+		req.Header.Set("Authorization", "Bearer "+e.token)
+	}
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("ollama tags: %w", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("ollama tags: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // EmbedQuery embeds a SEARCH QUERY with the asymmetric instruction prefix, the
 // counterpart to Embed (which embeds passages raw). Search calls this for the
 // query side only; the corpus is never re-embedded with the prefix. With no

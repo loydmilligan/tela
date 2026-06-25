@@ -106,6 +106,13 @@ type Server struct {
 	// correctness-independent (renders are content-keyed); see deck_warm.go.
 	deckWarm *deckWarmer
 
+	// aiHealth caches the background prober's latest reachability verdict for the
+	// embedder + chat model, so host-context's `ai_available` reflects whether AI
+	// is actually serving (not just configured). Zero value = "not yet probed",
+	// which aiHealthy() treats optimistically. The prober is started from the real
+	// entrypoint via StartAIHealthProbe; tests never run it. See ai_health.go.
+	aiHealth aiHealthState
+
 	// seedWelcome controls whether POST /api/spaces seeds a starter "Welcome"
 	// page into a freshly created space (so a new team doesn't land in an empty
 	// void). On by default; the test package disables it via
