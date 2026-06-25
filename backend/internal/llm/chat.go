@@ -23,20 +23,40 @@ type OpenAIClient struct {
 	token     string // optional bearer; set when base points at tela's managed endpoint
 	maxTokens int    // completion length cap; 0 => unbounded (provider default)
 	client    *http.Client
+	// stall is the streaming inactivity timeout: a stream is aborted only after
+	// this long with NO bytes (not deltas — the upstream's keepalive comments count
+	// too), so a long-but-healthy generation never trips it. A field, not a const,
+	// so tests can shrink it. See CompleteStream.
+	stall time.Duration
 }
+
+const (
+	// completeTotalTimeout bounds a BLOCKING (non-streaming) completion. The whole
+	// exchange must finish within it — correct for Complete, where there's no
+	// stream of bytes to prove liveness.
+	completeTotalTimeout = 120 * time.Second
+	// streamStallTimeout bounds INACTIVITY on a streaming completion: the gap
+	// between bytes, reset on each read. Generous because the slow part (prompt
+	// processing on a large local model) still emits keepalive bytes, so only a
+	// genuinely dead upstream stalls this long.
+	streamStallTimeout = 90 * time.Second
+)
 
 // NewOpenAIClient builds a client for an OpenAI-compatible chat endpoint. token
 // is optional: empty for a direct provider/Ollama, or a tela PAT when base
 // points at tela cloud's managed LLM proxy. maxTokens caps the completion length
 // (0 => provider default); bounding it keeps a slow local model from generating
-// for minutes and tripping the request/idle timeout.
+// for minutes. The http.Client carries NO global Timeout — that's a total cap,
+// wrong for streaming; Complete and CompleteStream bound themselves via context
+// (a total deadline vs a per-read stall, respectively).
 func NewOpenAIClient(base, model, token string, maxTokens int) *OpenAIClient {
 	return &OpenAIClient{
 		base:      strings.TrimRight(base, "/"),
 		model:     model,
 		token:     token,
 		maxTokens: maxTokens,
-		client:    &http.Client{Timeout: 120 * time.Second},
+		client:    &http.Client{},
+		stall:     streamStallTimeout,
 	}
 }
 
@@ -98,6 +118,12 @@ type chatResponse struct {
 // Non-streaming (stream:false) is fine for v1 — "ask your docs" wants the whole
 // grounded answer, not tokens.
 func (c *OpenAIClient) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	// Total deadline: a blocking completion has no live byte-stream to vouch for it,
+	// so cap the whole exchange (was the http.Client.Timeout; now context-scoped so
+	// it composes with the caller's ctx).
+	ctx, cancel := context.WithTimeout(ctx, completeTotalTimeout)
+	defer cancel()
+
 	msgs := make([]chatMessage, 0, 2)
 	if strings.TrimSpace(systemPrompt) != "" {
 		msgs = append(msgs, chatMessage{Role: "system", Content: systemPrompt})
@@ -159,6 +185,15 @@ func (c *OpenAIClient) CompleteStream(ctx context.Context, systemPrompt, userPro
 	}
 	msgs = append(msgs, chatMessage{Role: "user", Content: userPrompt})
 
+	// Stall watchdog: cancel the request after c.stall with no bytes — reset on
+	// every read below, so a healthy stream (token deltas, or just the upstream's
+	// keepalive comments during prompt-processing) never trips it, but a dead
+	// connection is cut. Armed before Do so a hung header-wait is caught too.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	watchdog := time.AfterFunc(c.stall, cancel)
+	defer watchdog.Stop()
+
 	body, _ := json.Marshal(chatRequest{Model: c.model, Messages: msgs, Stream: true, MaxTokens: c.maxTokens})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
@@ -185,6 +220,7 @@ func (c *OpenAIClient) CompleteStream(ctx context.Context, systemPrompt, userPro
 	br := bufio.NewReader(resp.Body)
 	for {
 		line, rerr := br.ReadString('\n')
+		watchdog.Reset(c.stall) // bytes arrived (or the read ended) — the upstream is alive
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			if data, ok := strings.CutPrefix(trimmed, "data:"); ok {
 				data = strings.TrimSpace(data)
