@@ -67,7 +67,7 @@ func TestFeatureOG_Ask(t *testing.T) {
 		_, body := get("/ask?q=How%20do%20I%20deploy%20tela%3F&demo=1")
 		s := string(body)
 		for _, want := range []string{
-			`og:title" content="How do I deploy tela?`,
+			`og:title" content="Ask: How do I deploy tela?`,
 			`/ask/og.png?q=`,
 		} {
 			if !strings.Contains(s, want) {

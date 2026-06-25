@@ -60,6 +60,7 @@ const (
 	ogLogoMaxWidth  = 440 // org logo bounding box in the branded card header
 	ogLogoMaxHeight = 68
 	ogWeaveCell     = 44 // woven-grid pitch (tela = loom; the signature device)
+	ogKickerSize    = 26 // accent eyebrow (e.g. "ASK YOUR DOCS") above the title
 )
 
 // ogAccentTintWeight is how much the org accent bleeds into the dark ink
@@ -242,7 +243,24 @@ func renderOGImage(title, subtitle string) ([]byte, error) {
 // documented as not safe for concurrent use; sharing a Face across goroutines
 // races on its internal sfnt.Buffer / vector.Rasterizer / mask. The parsed
 // *opentype.Font values are concurrent-safe and live at package scope.
+// ogCardOpts configures a rendered card. kicker is an accent eyebrow above the
+// title that frames the card as an action (e.g. "ASK YOUR DOCS") rather than an
+// article; maxTitleLines caps the title wrap (0 → ogMaxTitleLines); brand carries
+// the org logo/accent/name.
+type ogCardOpts struct {
+	kicker        string
+	title         string
+	subtitle      string
+	maxTitleLines int
+	brand         ogBrand
+}
+
+// renderOGCard renders a plain card (no kicker, default title wrap).
 func renderOGCard(title, subtitle string, brand ogBrand) ([]byte, error) {
+	return renderOGCardOpts(ogCardOpts{title: title, subtitle: subtitle, brand: brand})
+}
+
+func renderOGCardOpts(o ogCardOpts) ([]byte, error) {
 	titleFace, err := opentype.NewFace(ogBoldFont, &opentype.FaceOptions{
 		Size: ogTitleSize, DPI: 72, Hinting: font.HintingFull,
 	})
@@ -271,29 +289,50 @@ func renderOGCard(title, subtitle string, brand ogBrand) ([]byte, error) {
 
 	// The accent is tela's indigo by default, or the org's accent when branded —
 	// the single earned color across the whole card (woven threads, light sweep,
-	// the header rule).
+	// the header mark/rule).
 	accent := ogAccentColor
-	if brand.hasAccent {
-		accent = brand.accent
+	if o.brand.hasAccent {
+		accent = o.brand.accent
 	}
-	paintOGBackground(img, accent, brand.hasAccent)
+	paintOGBackground(img, accent, o.brand.hasAccent)
 
-	// Header: the org logo when present (the strongest brand signal), else a short
-	// accent rule. The title sits below either.
+	// Header cursor: optional org logo, then an accent kicker eyebrow (when set),
+	// else a short accent rule (the plain page-card look). The title sits below.
+	top := ogMargin
+	if o.brand.logo != nil {
+		top += drawLogoFit(img, o.brand.logo, ogMargin, ogMargin, ogLogoMaxWidth, ogLogoMaxHeight)
+	}
 	var titleY int
-	if brand.logo != nil {
-		h := drawLogoFit(img, brand.logo, ogMargin, ogMargin, ogLogoMaxWidth, ogLogoMaxHeight)
-		titleY = ogMargin + h + 44 + ogTitleSize
+	if o.kicker != "" {
+		kickerFace, kerr := opentype.NewFace(ogBoldFont, &opentype.FaceOptions{
+			Size: ogKickerSize, DPI: 72, Hinting: font.HintingFull,
+		})
+		if kerr != nil {
+			return nil, fmt.Errorf("og: kicker face: %w", kerr)
+		}
+		defer kickerFace.Close()
+		ky := ogMargin + ogKickerSize
+		if o.brand.logo != nil {
+			ky = top + 26 + ogKickerSize
+		}
+		mk := ogKickerSize - 7
+		draw.Draw(img, image.Rect(ogMargin, ky-mk, ogMargin+mk, ky), &image.Uniform{C: accent}, image.Point{}, draw.Src)
+		kd := &font.Drawer{Dst: img, Src: &image.Uniform{C: accent}, Face: kickerFace, Dot: fixed.P(ogMargin+mk+14, ky)}
+		kd.DrawString(strings.ToUpper(o.kicker))
+		titleY = ky + 30 + ogTitleSize
+	} else if o.brand.logo != nil {
+		titleY = top + 44 + ogTitleSize
 	} else {
-		accentRect := image.Rect(
-			ogMargin, ogAccentY,
-			ogMargin+ogAccentWidth, ogAccentY+ogAccentHeight,
-		)
-		draw.Draw(img, accentRect, &image.Uniform{C: accent}, image.Point{}, draw.Src)
+		draw.Draw(img, image.Rect(ogMargin, ogAccentY, ogMargin+ogAccentWidth, ogAccentY+ogAccentHeight),
+			&image.Uniform{C: accent}, image.Point{}, draw.Src)
 		titleY = ogAccentY + ogAccentHeight + 34 + ogTitleSize
 	}
 
-	titleLines := wrapLines(titleFace, title, ogDrawableWidth, ogMaxTitleLines)
+	maxLines := o.maxTitleLines
+	if maxLines <= 0 {
+		maxLines = ogMaxTitleLines
+	}
+	titleLines := wrapLines(titleFace, o.title, ogDrawableWidth, maxLines)
 	titleDrawer := &font.Drawer{
 		Dst:  img,
 		Src:  &image.Uniform{C: ogTitleColor},
@@ -304,14 +343,13 @@ func renderOGCard(title, subtitle string, brand ogBrand) ([]byte, error) {
 		titleDrawer.DrawString(line)
 	}
 
-	// Draw the subtitle only if it clears the footer rule — a long (3-line) title,
-	// especially under a logo header, can push it down into the footer; in that
-	// case the title is the message and the subtitle is dropped rather than
-	// colliding. ruleY mirrors the footer hairline below.
+	// Draw the subtitle only if it clears the footer rule — a long title (esp.
+	// under a logo) can push it into the footer; there the title is the message
+	// and the subtitle is dropped rather than colliding. ruleY mirrors the footer.
 	subtitleY := titleY + (len(titleLines)-1)*ogTitleLineH + 24 + ogSubtitleSize
 	ruleY := ogCanvasHeight - ogMargin - ogFooterSize - 20
-	if subtitle != "" && subtitleY <= ruleY-12 {
-		sub := truncateToWidth(subtitleFace, subtitle, ogDrawableWidth)
+	if o.subtitle != "" && subtitleY <= ruleY-12 {
+		sub := truncateToWidth(subtitleFace, o.subtitle, ogDrawableWidth)
 		subtitleDrawer := &font.Drawer{
 			Dst:  img,
 			Src:  &image.Uniform{C: ogSubtitleColor},
@@ -325,8 +363,8 @@ func renderOGCard(title, subtitle string, brand ogBrand) ([]byte, error) {
 	// when branded, else "tela"). The rule + mark anchor the lower third so the
 	// card doesn't read as an empty void below the title.
 	footer := "tela"
-	if brand.name != "" {
-		footer = brand.name
+	if o.brand.name != "" {
+		footer = o.brand.name
 	}
 	footerY := ogCanvasHeight - ogMargin
 	draw.Draw(img, image.Rect(ogMargin, ruleY, ogCanvasWidth-ogMargin, ruleY+2),

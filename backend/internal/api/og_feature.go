@@ -65,8 +65,9 @@ func (s *Server) HandleFeatureOG(w http.ResponseWriter, r *http.Request) {
 	// → the generic "Ask your docs" feature card.
 	title, desc := fc.title, fc.desc
 	if q := featureQuestion(r); q != "" {
-		title = q
-		desc = "Open to see the answer — grounded in " + siteName + "'s wiki, with sources."
+		// "Ask:" prefix frames the unfurl text as a prompt to go ask, not a page.
+		title = "Ask: " + q
+		desc = "Open to ask " + siteName + " your docs — the answer, with sources. (Beats pinging a human.)"
 		imageURL += "?q=" + url.QueryEscape(q)
 	}
 	ogTitle := title
@@ -135,13 +136,21 @@ func (s *Server) HandleFeatureOGImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	brand := s.resolveOGBrand(r, 0)
-	// With a shared ?q=, the question is the hero and "Ask your docs" the label;
-	// otherwise the generic feature card.
-	title, subtitle := fc.title, fc.subtitle
+	// With a shared ?q=, the question is the hero under an "ASK YOUR DOCS" eyebrow
+	// (so it reads as a prompt to go ask, not an article) + a nudge CTA, capped to
+	// two lines so a long question is cut off rather than sprawling. No q → the
+	// generic feature card.
+	opts := ogCardOpts{title: fc.title, subtitle: fc.subtitle, brand: brand}
 	if q := featureQuestion(r); q != "" {
-		title, subtitle = q, fc.title
+		opts = ogCardOpts{
+			kicker:        fc.title, // "Ask your docs"
+			title:         q,
+			subtitle:      "Open to see the answer →",
+			maxTitleLines: 2,
+			brand:         brand,
+		}
 	}
-	png, err := renderOGCard(title, subtitle, brand)
+	png, err := renderOGCardOpts(opts)
 	if err != nil {
 		writeInternalHTML(w)
 		return
