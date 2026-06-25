@@ -153,19 +153,20 @@ export function AskRoute() {
       return
     }
     setDemoTyping(true)
-    let i = 0
+    const frames = buildTypingFrames(q)
+    let fi = 0
     let timer: ReturnType<typeof setTimeout>
-    const tick = () => {
-      i += 1
-      setQuestion(q.slice(0, i))
-      if (i < q.length) {
-        timer = setTimeout(tick, 26)
-      } else {
+    const play = () => {
+      if (fi >= frames.length) {
         setDemoTyping(false)
         runQuestion(q)
+        return
       }
+      const f = frames[fi++]
+      setQuestion(f.value)
+      timer = setTimeout(play, f.delay)
     }
-    timer = setTimeout(tick, 320)
+    timer = setTimeout(play, 360) // a beat before the first keystroke
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -243,7 +244,10 @@ export function AskRoute() {
             aria-label="Question"
             rows={2}
             autoFocus
-            disabled={ask.isPending || aiPaused || demoTyping}
+            disabled={ask.isPending || aiPaused}
+            // During the demo typewriter, keep the box live (not greyed) so the
+            // native caret blinks at the end — it should look like someone typing.
+            readOnly={demoTyping}
             className="border-0 bg-transparent resize-none px-0 py-[var(--space-1)] text-[length:var(--text-base)] min-h-[calc(var(--space-8)*1.75)] placeholder:text-[var(--text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-transparent"
           />
           <div className="flex items-center gap-[var(--space-2)]">
@@ -414,6 +418,59 @@ export function AskRoute() {
       </section>
     </div>
   )
+}
+
+// buildTypingFrames turns a question into a sequence of {value, delay} keystroke
+// frames that read like a real person typing — jittered speed, up to two
+// adjacent-key typos it notices and backspaces, longer beats at spaces and
+// punctuation, the odd mid-thought pause, then a beat before it "hits enter".
+// It's a joke feature (a tela-flavoured LMGTFY), so it leans into the theatre.
+// Math.random is fine here — this is browser code, not the workflow sandbox.
+interface TypeFrame {
+  value: string
+  delay: number
+}
+
+function buildTypingFrames(q: string): TypeFrame[] {
+  const rnd = (a: number, b: number) => a + Math.random() * (b - a)
+  const rows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
+  // An adjacent key on the same QWERTY row — a plausible fat-finger slip.
+  const neighbor = (ch: string): string => {
+    const lower = ch.toLowerCase()
+    for (const r of rows) {
+      const i = r.indexOf(lower)
+      if (i >= 0) {
+        const n = r[i + (Math.random() < 0.5 ? -1 : 1)] ?? r[i === 0 ? i + 1 : i - 1]
+        if (n) return ch === ch.toUpperCase() ? n.toUpperCase() : n
+      }
+    }
+    return ch
+  }
+
+  const frames: TypeFrame[] = []
+  let soFar = ''
+  let typos = 0
+  for (let idx = 0; idx < q.length; idx++) {
+    const ch = q[idx]
+    // Occasional fumble mid-word: hit a neighbouring key, notice it, backspace.
+    if (typos < 2 && idx > 0 && /[a-z]/i.test(ch) && q[idx - 1] !== ' ' && Math.random() < 0.06) {
+      const wrong = neighbor(ch)
+      if (wrong !== ch) {
+        typos++
+        frames.push({ value: soFar + wrong, delay: rnd(55, 105) }) // wrong key
+        frames.push({ value: soFar + wrong, delay: rnd(190, 320) }) // ...notice
+        frames.push({ value: soFar, delay: rnd(70, 120) }) // backspace
+      }
+    }
+    soFar += ch
+    let d = rnd(45, 100)
+    if (ch === ' ') d = rnd(90, 170)
+    else if ('.?!,;:'.includes(ch)) d = rnd(170, 290)
+    else if (Math.random() < 0.04) d = rnd(220, 380) // a rare mid-thought pause
+    frames.push({ value: soFar, delay: d })
+  }
+  frames.push({ value: soFar, delay: rnd(380, 560) }) // beat before hitting enter
+  return frames
 }
 
 // FollowUps — the ask-first navigation thread. The backend suggests up to 3 next
