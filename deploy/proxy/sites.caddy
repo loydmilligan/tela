@@ -140,9 +140,19 @@
 	handle /u/* {
 		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
 	}
-	# Public discovery directory — indexable (no noindex header), like /public
-	# and /u. Without this it falls to the app-SPA catch-all and gets noindex'd,
-	# which we don't want for a public, crawlable page.
+	# Public discovery directory — indexable (NO noindex), like /public and /u.
+	# Bot UAs get the backend OG card (og_feature.go); the og.png serves to all
+	# UAs; humans get the SPA. (Keep the UA regex in sync with public_share.go.)
+	handle /discover/og.png {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@discover_bots {
+		path /discover
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
+	}
+	handle @discover_bots {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
 	handle /discover* {
 		reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
 	}
@@ -164,18 +174,36 @@
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 
+	# Space overview cards (/spaces/{id}): the link to share a whole space. The
+	# og.png serves to all UAs; the HTML is bot-gated (humans get the SPA). noindex
+	# (app route). The regexes anchor to end so they never catch the page deep link
+	# /spaces/{id}/pages/{id} handled above. Keep the UA regex in sync.
+	@space_og path_regexp ^/spaces/[0-9]+/og\.png$
+	handle @space_og {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@space_bots {
+		path_regexp ^/spaces/[0-9]+$
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
+	}
+	handle @space_bots {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
 	# Feature routes (e.g. /ask): authed app routes with a public *purpose* but no
 	# page behind them. The og.png card is served to ALL UAs (link-preview fetchers
 	# carry arbitrary UAs); the HTML envelope is bot-gated — bot UAs get a backend
 	# OG card, humans fall through to the app SPA below. noindex (app routes). Keep
 	# the path list + UA regex in sync with featureCards in og_feature.go and
 	# botUASubstrings in backend/internal/api/public_share.go.
-	handle /ask/og.png {
+	handle /ask/og.png /graph/og.png {
 		header X-Robots-Tag "noindex"
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 	@feature_bots {
-		path /ask
+		path /ask /graph
 		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @feature_bots {
@@ -345,15 +373,29 @@ https:// {
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 
-	# Feature routes (e.g. /ask) shared from this org's white-label domain: the
-	# og.png card → backend for all UAs; the HTML envelope is bot-gated (humans get
-	# the SPA). Backend brands the card to this org via the request host. Mirror of
-	# the canonical block; keep in sync with featureCards (og_feature.go).
-	handle /ask/og.png {
+	# Space overview cards (/spaces/{id}) shared from this org's domain. Block-scoped
+	# noindex already applies. Mirror of the canonical block.
+	@space_og path_regexp ^/spaces/[0-9]+/og\.png$
+	handle @space_og {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@space_bots {
+		path_regexp ^/spaces/[0-9]+$
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
+	}
+	handle @space_bots {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# Feature routes (/ask, /graph, /discover) shared from this org's white-label
+	# domain: the og.png card → backend for all UAs; the HTML envelope is bot-gated
+	# (humans get the SPA). Backend brands the card to this org via the request host.
+	# Mirror of the canonical block; keep in sync with featureCards (og_feature.go).
+	handle /ask/og.png /graph/og.png /discover/og.png {
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 	@feature_bots {
-		path /ask
+		path /ask /graph /discover
 		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @feature_bots {

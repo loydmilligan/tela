@@ -36,6 +36,16 @@ var featureCards = map[string]featureCard{
 		subtitle: "AI answers grounded in your team's wiki",
 		desc:     "Ask a question and get an answer grounded in your team's wiki, with citations to the source pages.",
 	},
+	"/graph": {
+		title:    "Knowledge graph",
+		subtitle: "How your pages connect",
+		desc:     "Explore the wiki as a graph — every page and the links between them.",
+	},
+	"/discover": {
+		title:    "Discover",
+		subtitle: "Public spaces & people",
+		desc:     "Browse the public spaces and authors published here.",
+	},
 }
 
 // HandleFeatureOG emits the OG HTML envelope for a feature route (bot-gated by

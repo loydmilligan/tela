@@ -252,6 +252,13 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// to all UAs. On auth.IsPublicPath. See api/og_feature.go.
 	mux.HandleFunc("GET /ask", srv.HandleFeatureOG)
 	mux.HandleFunc("GET /ask/og.png", srv.HandleFeatureOGImage)
+	mux.HandleFunc("GET /graph", srv.HandleFeatureOG)
+	mux.HandleFunc("GET /graph/og.png", srv.HandleFeatureOGImage)
+	mux.HandleFunc("GET /discover", srv.HandleFeatureOG)
+	mux.HandleFunc("GET /discover/og.png", srv.HandleFeatureOGImage)
+	// Space overview card (entity, like /p): name-only, branded by the owning org.
+	mux.HandleFunc("GET /spaces/{id}", srv.HandleSpaceOG)
+	mux.HandleFunc("GET /spaces/{id}/og.png", srv.HandleSpaceOGImage)
 	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}", srv.GetPublicSpacePage)
 	mux.HandleFunc("GET /api/public/spaces/{id}/pages/{page_id}/md", srv.ExportPublicSpacePageMarkdown)
 	// Public decks: the live Present SPA + the first-slide cover, for public spaces.

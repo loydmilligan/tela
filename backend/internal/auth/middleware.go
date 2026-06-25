@@ -340,13 +340,39 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/public/") || strings.HasPrefix(p, "/u/") {
 		return true
 	}
-	// Feature OG routes (og_feature.go): crawler card + og.png for app routes that
-	// have a public purpose but no page behind them. Caddy bot-gates the HTML;
-	// the og.png is fetched by arbitrary-UA link-preview bots. Both self-contained.
-	if p == "/ask" || p == "/ask/og.png" {
+	// OG card routes (og_feature.go / og_space.go): crawler card + og.png for app
+	// routes that have a public/shareable purpose but no page behind them. Caddy
+	// bot-gates the HTML; the og.png is fetched by arbitrary-UA link-preview bots.
+	// All self-contained (name/copy only, no private contents).
+	switch p {
+	case "/ask", "/ask/og.png", "/graph", "/graph/og.png", "/discover", "/discover/og.png":
+		return true
+	}
+	// Space overview card: /spaces/{id} and /spaces/{id}/og.png (id numeric). The
+	// app SPA's /spaces/* never reaches the backend (Caddy serves it from the FE);
+	// only these crawler routes do, and they render the space name only.
+	if isSpaceOGPath(p) {
 		return true
 	}
 	return strings.HasPrefix(p, "/p/")
+}
+
+// isSpaceOGPath matches the space overview card routes — /spaces/{id} and
+// /spaces/{id}/og.png with a numeric id — and nothing deeper (a page deep link
+// /spaces/{id}/pages/{id} has a non-digit segment, so it never matches; those are
+// rewritten to /p by Caddy anyway).
+func isSpaceOGPath(p string) bool {
+	p = strings.TrimSuffix(p, "/og.png")
+	rest, ok := strings.CutPrefix(p, "/spaces/")
+	if !ok || rest == "" {
+		return false
+	}
+	for _, c := range rest {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // Middleware enforces authentication on every request except IsPublicPath.
