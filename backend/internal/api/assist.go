@@ -117,39 +117,34 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 	// Topical-hub signal (rerank-INDEPENDENT). A precision reranker demotes terse
 	// tables, so a page whose WHOLE body answers an aggregate question (a "services
 	// using X" registry) can have every chunk ranked low — present but never
-	// expanded. HubPages finds the page TITLED for the topic. Pull such hubs to the
-	// FRONT so they expand before the per-page budget is spent on lower-value pages
-	// (the registry page ranking ~8th was getting the budget-exhausted fallback —
-	// the bug that kept the table out of the prompt). Best-effort.
-	var hubFront []string
+	// expanded. Pull topical HUBS to the FRONT so they expand before the per-page
+	// budget is spent on lower-value pages (the registry page ranking ~8th was
+	// getting the budget-exhausted fallback — the bug that kept the table out).
+	//
+	// A hub is detected two ways, unioned: (1) TITLE match (HubPages — the page
+	// named for the topic), and (2) CONTENT density — a page the query retrieved
+	// many chunks from (count >= askDenseChunks), even if its title doesn't name the
+	// topic. (2) is load-bearing: an "Architecture Overview" page enumerates the
+	// topics without naming them in its title, so title-match alone left it as a
+	// budget-starved snippet and its enumerated items vanished from the grounding.
+	titleHubs := map[string]bool{}
 	if hubs, herr := s.rag.HubPages(ctx, userID, query, spaceID, askHubProbe); herr == nil {
 		for _, hp := range hubs {
 			if hp.Count < askDenseChunks {
 				continue
 			}
 			k := "p" + strconv.FormatInt(hp.PageID, 10)
+			titleHubs[k] = true
 			count[k] += hp.Count
 			if _, seen := best[k]; !seen {
 				best[k] = rag.Hit{SourceKind: "page", PageID: hp.PageID, Title: hp.Title, ChunkID: hp.ChunkID}
 				chunkIDs = append(chunkIDs, hp.ChunkID)
 				pageIDs = append(pageIDs, hp.PageID)
-			}
-			hubFront = append(hubFront, k)
-		}
-	}
-	if len(hubFront) > 0 {
-		hub := map[string]bool{}
-		for _, k := range hubFront {
-			hub[k] = true
-		}
-		reordered := append([]string{}, hubFront...)
-		for _, k := range order {
-			if !hub[k] {
-				reordered = append(reordered, k)
+				order = append(order, k)
 			}
 		}
-		order = reordered
 	}
+	order = frontHubs(order, count, titleHubs, askDenseChunks)
 	bodies, err := s.rag.PageBodies(ctx, userID, pageIDs, spaceID)
 	if err != nil {
 		return "", nil, 0, err
@@ -160,6 +155,25 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 	}
 	block, pageHits := buildAskContext(order, best, count, bodies, contents)
 	return block, pageHits, hits[0].Score, nil
+}
+
+// frontHubs moves topical-hub sources to the front of the order so they expand to
+// full body before the per-page budget is spent on lower-value pages. A source is
+// a hub if its title matched (titleHubs) OR the query retrieved at least `dense`
+// of its chunks (count) — the density signal catches enumerator pages whose title
+// doesn't name the topic. Stable: relative order within hubs and within non-hubs
+// is preserved (so rank still breaks ties). Pure, so it's unit-testable.
+func frontHubs(order []string, count map[string]int, titleHubs map[string]bool, dense int) []string {
+	front := make([]string, 0, len(order))
+	rest := make([]string, 0, len(order))
+	for _, k := range order {
+		if titleHubs[k] || count[k] >= dense {
+			front = append(front, k)
+		} else {
+			rest = append(rest, k)
+		}
+	}
+	return append(front, rest...)
 }
 
 // hitKey is the dedup key for a retrieved source: page hits collapse by page id,

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -262,36 +261,28 @@ const askSystemPrompt = "You are a helpful assistant answering questions strictl
 	"Ignore a flagged disagreement only when it is unrelated to the question, and never invent a conflict that isn't stated."
 
 // askUserPrompt assembles the grounded user turn shared by both ask handlers: the
-// cited excerpts, the (optional) known-disagreements block, the question, and —
-// for enumeration questions — a completeness directive (see enumerationDirective).
+// cited excerpts, the (optional) known-disagreements block, the question, and the
+// always-on, self-scoping completeness directive (askEnumerationDirective).
 func askUserPrompt(excerpts, conflicts, question string) string {
 	return "Answer the question using only these document excerpts.\n\n" + excerpts + conflicts +
-		"Question: " + question + enumerationDirective(question)
+		"Question: " + question + askEnumerationDirective
 }
 
-// enumerationCue matches questions that ask for a COMPLETE set — a list, a table,
-// or a "which/all/every" enumeration. Deliberately broad: a false positive only
-// appends a "be thorough" nudge to a non-list answer, which is harmless, while a
-// miss reintroduces the bug below.
-var enumerationCue = regexp.MustCompile(`(?i)\b(list|tables?|which|all|every|each|enumerate|how many|what are|name (?:the|all))\b`)
-
-// enumerationDirective returns an exhaustiveness instruction when the question is
-// enumeration-shaped, else "". Rationale: for "which X are used, give a table"
-// the grounding can contain every item yet the model still drops one mentioned
-// only in prose (the live "outputs to `ufdr-nat`" case) — a generation-recall
-// failure, not retrieval. The base prompt optimises for grounding/citation, never
-// completeness; this adds the missing instruction, scoped so ordinary Q&A is
-// unchanged. The split between "in grounding but dropped" vs "never retrieved" is
-// what `tela ask-eval` measures.
-func enumerationDirective(question string) string {
-	if !enumerationCue.MatchString(question) {
-		return ""
-	}
-	return "\n\nThis question asks for a complete set (a list, table, or enumeration). " +
-		"Be exhaustive: scan EVERY excerpt and include every item that qualifies — including items mentioned only " +
-		"in passing or in prose, not just those already collected in a list or table. " +
-		"Before finishing, re-read the excerpts and add any qualifying item you missed."
-}
+// askEnumerationDirective is appended to EVERY ask. It is self-scoping ("If this
+// question asks for a list/table…"), so the model applies it only to enumeration
+// questions — which makes it language-agnostic (it fires on Turkish "tabloda ver"
+// too, where an English-keyword gate silently did not) and a no-op for ordinary
+// Q&A (validated: a non-list answer was unchanged and coherent).
+//
+// It targets the GENERATION-DROP class: items present in the grounding that a
+// small model omits while building a table (a topic dropped 4/4 runs went to 8/8
+// 4/4 with this). The other class — items never retrieved because output-format
+// words skewed the query embedding — is handled upstream by stripPresentation on
+// the retrieval query (see askContext); the two are independent and both needed.
+// `tela ask-eval` reports which class any remaining miss falls in.
+const askEnumerationDirective = "\n\nIf this question asks for a list, table, or complete set of items, be exhaustive: " +
+	"scan EVERY excerpt and include every item that qualifies — including items mentioned only in passing or in prose, " +
+	"not just those already collected in a list or table. Before finishing, re-read the excerpts and add any you missed."
 
 // RAGAskStream is the streaming (SSE) twin of RAGAsk: identical retrieval and
 // prompt, but the answer is streamed token-by-token over text/event-stream so the

@@ -150,11 +150,22 @@ tela ask-eval --set golden.json [--user <id>] [--answers]
 ```
 
 - **generation drop** — the item *was* in the assembled grounding but is absent
-  from the answer. The model's fault; what the `enumerationDirective` in
-  `askUserPrompt` (the exhaustiveness instruction added for list/table/"which/all"
-  questions) targets.
-- **retrieval gap** — the item never reached the grounding. Retrieval's fault — a
-  `rag-eval`/chunking concern, not generation.
+  from the answer. The model's fault; targeted by `askEnumerationDirective` in
+  `askUserPrompt` — an always-on, **self-scoping** completeness instruction ("If
+  this asks for a list/table, be exhaustive…"). It's always appended so the model
+  decides when it applies, which makes it language-agnostic (it fires on Turkish
+  "tabloda ver" too) and a no-op for ordinary Q&A — unlike an English-keyword gate,
+  which silently missed non-English enumeration phrasings.
+- **retrieval gap** — the item never reached the grounding. Two sub-causes seen:
+  the chunk ranked out of the pool, OR (subtler) the page *was* retrieved but its
+  full body was never **expanded** — the per-page `askExpandBudget` was spent on
+  earlier pages, so the enumerator page degraded to a snippet that omits the
+  tail-end items. The fix is `frontHubs` (`askContext`): a **content-dense** page
+  (one the query retrieved many chunks from) is treated as a topical hub and
+  fronted to expand first — not only **title**-matched pages, since an
+  "Architecture Overview" page enumerates the topics without naming them in its
+  title. A *real* ranking gap (chunk never retrieved) is still a chunking/fusion
+  concern, not generation.
 
 Needs a live embedder **and** LLM (so it exercises the deployed model). Golden set
 format (`internal/api/ask_eval.go` → `AskCompletenessCase`; a synthetic sample is

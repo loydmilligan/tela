@@ -1,30 +1,17 @@
 package api
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestEnumerationDirective(t *testing.T) {
-	enum := []string{
-		"which topics are used in UDN, give a table",
-		"list all the services that talk to kafka",
-		"what are the report types?",
-		"how many loggers are there",
-		"name the external delivery targets",
-		"every topic the UFDR job reads",
-	}
-	for _, q := range enum {
-		if enumerationDirective(q) == "" {
-			t.Errorf("expected enumeration directive for %q, got none", q)
-		}
-	}
-	plain := []string{
-		"how does the UFDR job correlate data",
-		"why is kafka used as a buffer",
-		"explain the rollover policy",
-		"",
-	}
-	for _, q := range plain {
-		if d := enumerationDirective(q); d != "" {
-			t.Errorf("expected no directive for %q, got %q", q, d)
+func TestAskUserPromptCarriesDirective(t *testing.T) {
+	// The completeness directive is always appended (self-scoping), and the
+	// excerpts + question are preserved verbatim so retrieval/citation are intact.
+	p := askUserPrompt("EXCERPTS_HERE", "", "which topics are used?")
+	for _, want := range []string{"EXCERPTS_HERE", "which topics are used?", "be exhaustive"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("askUserPrompt missing %q in:\n%s", want, p)
 		}
 	}
 }

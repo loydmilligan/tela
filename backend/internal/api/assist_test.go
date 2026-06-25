@@ -240,3 +240,21 @@ func TestRAGAsk_Followups(t *testing.T) {
 		t.Error("expected follow-up questions")
 	}
 }
+
+func TestFrontHubs(t *testing.T) {
+	// p5 is content-dense (4 retrieved chunks) but not title-matched — the
+	// "Architecture Overview" case. It must jump ahead of the lower-value pages
+	// p1..p4 so it expands before the budget is spent. p2 is a title hub.
+	order := []string{"p1", "p2", "p3", "p4", "p5"}
+	count := map[string]int{"p1": 1, "p2": 1, "p3": 1, "p4": 1, "p5": 4}
+	got := frontHubs(order, count, map[string]bool{"p2": true}, 3)
+	want := []string{"p2", "p5", "p1", "p3", "p4"} // hubs first (stable), then the rest (stable)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("frontHubs = %v, want %v", got, want)
+	}
+	// No hubs → order unchanged.
+	plain := frontHubs([]string{"p1", "p2"}, map[string]int{"p1": 1, "p2": 1}, nil, 3)
+	if strings.Join(plain, ",") != "p1,p2" {
+		t.Errorf("frontHubs (no hubs) = %v, want [p1 p2]", plain)
+	}
+}
