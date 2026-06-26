@@ -74,7 +74,7 @@
        across themes without per-theme overrides. hover is a plain surface step;
        active is a soft accent veil + a left accent bar (--sidebar-item-active-bar). */
     --sidebar-item-hover: var(--surface-3);
-    --sidebar-item-active: color-mix(in oklch, var(--accent) 12%, transparent);
+    --sidebar-item-active: color-mix(in oklch, var(--accent) 18%, transparent);
     --sidebar-item-active-bar: var(--accent);
     /* Indent step per nesting level in the page tree (kept tight on purpose). */
     --sidebar-indent: 0.875rem;

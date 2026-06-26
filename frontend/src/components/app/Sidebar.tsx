@@ -1,4 +1,4 @@
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useParams, useRouterState } from '@tanstack/react-router'
 import {
   BookOpen,
   FilePlus,
@@ -38,6 +38,16 @@ export function Sidebar({ open = false }: { open?: boolean }) {
   }
   const activeSpaceId = typeof params.spaceId === 'number' ? params.spaceId : null
   const activePageId = typeof params.pageId === 'number' ? params.pageId : null
+
+  // Current path → which top-level nav row is active. The page tree highlights
+  // its own active row (SpacePages); these top rows had no active state at all.
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const navActive = (path: string, exact = false) =>
+    exact ? pathname === path : pathname === path || pathname.startsWith(path + '/')
+  // Same active treatment as the page/space rows: accent veil + left accent bar
+  // + accent label, so "where am I" reads identically across the whole sidebar.
+  const activeRow =
+    'bg-[var(--sidebar-item-active)] text-[var(--accent)] font-medium shadow-[inset_2px_0_0_0_var(--sidebar-item-active-bar)]'
 
   const newPageShortcut = IS_MAC ? '⌘N' : 'Ctrl+N'
   const searchShortcut = IS_MAC ? '⌘K' : 'Ctrl+K'
@@ -89,7 +99,7 @@ export function Sidebar({ open = false }: { open?: boolean }) {
           asChild
           variant="ghost"
           size="sm"
-          className="w-full justify-start"
+          className={cn('w-full justify-start', navActive('/ask') && activeRow)}
         >
           <Link to="/ask" aria-label="Ask your docs" title="Ask your docs">
             <Sparkles width={14} height={14} className="text-[var(--accent)]" />
@@ -129,19 +139,19 @@ export function Sidebar({ open = false }: { open?: boolean }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+        <Button asChild variant="ghost" size="sm" className={cn('w-full justify-start', navActive('/', true) && activeRow)}>
           <Link to="/" aria-label="Home" title="Home">
             <Home width={14} height={14} />
             <span className="flex-1 text-left">Home</span>
           </Link>
         </Button>
-        <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+        <Button asChild variant="ghost" size="sm" className={cn('w-full justify-start', navActive('/graph') && activeRow)}>
           <Link to="/graph" aria-label="Graph view" title="Graph view">
             <Share2 width={14} height={14} />
             <span className="flex-1 text-left">Graph</span>
           </Link>
         </Button>
-        <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+        <Button asChild variant="ghost" size="sm" className={cn('w-full justify-start', navActive('/atlas') && activeRow)}>
           <Link to="/atlas" aria-label="Atlas" title="Atlas — generate docs from sources">
             <Wand2 width={14} height={14} />
             <span className="flex-1 text-left">Atlas</span>
