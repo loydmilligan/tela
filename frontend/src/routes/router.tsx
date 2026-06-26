@@ -594,6 +594,31 @@ const atlasRoute = createRoute({
   ),
 })
 
+// Per-project operator screen. Sibling of /atlas (not a child) so it owns the
+// full canvas. Lazy like the rest of the atlas surface.
+const atlasProjectRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/atlas/projects/$projectId',
+  parseParams: (raw) => ({ projectId: Number(raw.projectId) }),
+  stringifyParams: (params) => ({ projectId: String(params.projectId) }),
+  component: lazyRouteComponent(
+    () => import('../components/app/atlas/AtlasProject'),
+    'AtlasProject',
+  ),
+})
+
+// Run-detail screen (live stage stream, coverage, stats).
+const atlasRunRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/atlas/runs/$runId',
+  parseParams: (raw) => ({ runId: Number(raw.runId) }),
+  stringifyParams: (params) => ({ runId: String(params.runId) }),
+  component: lazyRouteComponent(
+    () => import('../components/app/atlas/AtlasRun'),
+    'AtlasRun',
+  ),
+})
+
 // M15.1 — public share routes. Children of `rootRoute` (NOT appLayoutRoute)
 // because share-mode is unauthenticated; no ensureMe gate, no sidebar / app
 // shell. Both routes lazy-load the share view so the share bundle stays off
@@ -760,6 +785,8 @@ const routeTree = rootRoute.addChildren([
     askRoute,
     graphRoute,
     atlasRoute,
+    atlasProjectRoute,
+    atlasRunRoute,
     spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
   ]),
 ])
