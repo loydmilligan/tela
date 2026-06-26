@@ -28,9 +28,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
  && mkdir -p /out/data \
  && chown -R 65532:65532 /out/data
 
-FROM gcr.io/distroless/static-debian12:nonroot
+# Runtime: Alpine rather than distroless/static because the atlas git source
+# connector shells out to the `git` CLI (clone / ls-remote / diff / ls-files) —
+# distroless has no git. ca-certificates covers HTTPS clones + the remote
+# LLM/embed calls. (A future pure-Go git, e.g. go-git, could restore a
+# distroless runtime.) uid 65532 keeps the nonroot user id stable across the
+# image change so /data ownership is unchanged.
+FROM alpine:3.20
+RUN apk add --no-cache git ca-certificates \
+ && adduser -D -H -u 65532 nonroot
 COPY --from=builder /out/tela /tela
-COPY --from=builder --chown=nonroot:nonroot /out/data /data
+COPY --from=builder --chown=65532:65532 /out/data /data
 EXPOSE 8080
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/tela"]
