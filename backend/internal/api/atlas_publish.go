@@ -1,0 +1,368 @@
+package api
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/zcag/tela/backend/internal/atlas/core"
+	"github.com/zcag/tela/backend/internal/atlas/engine"
+	"github.com/zcag/tela/backend/internal/pagemd"
+)
+
+// atlasPublisher is the in-process engine.Publisher: it delivers a finished
+// atlas run's pages into the bound tela space by writing the `pages` table
+// DIRECTLY (the summarize/agreement background-write pattern — no per-write user
+// identity, no revision/notification, and updated_at only bumped on a real
+// change). It is the SQL port of standalone atlas's REST delivery
+// (atlas/internal/engine/deliver.go): the same per-source overview + page upsert
+// + publish-prune logic, with the (source, slug)→page mapping kept in
+// atlas_page_map instead of atlas's page_deliveries, and tela's RAG reindex
+// queued for every page it touches.
+//
+// Decoupled from *Server for testability: it holds only the db, the (nilable)
+// reindex hook, and the space binding (space id + optional top-dir parent page).
+type atlasPublisher struct {
+	db           *sql.DB
+	queueReindex func(pageID int64) // = s.rag.QueueReindex; nil = no reindex (tests / RAG off)
+	spaceID      int64
+	parentPageID *int64 // atlas_sources.parent_page_id; nil = under the space root
+}
+
+func newAtlasPublisher(db *sql.DB, queueReindex func(int64), spaceID int64, parentPageID *int64) *atlasPublisher {
+	return &atlasPublisher{db: db, queueReindex: queueReindex, spaceID: spaceID, parentPageID: parentPageID}
+}
+
+var _ engine.Publisher = (*atlasPublisher)(nil)
+
+// Publish upserts the per-source root (coverage overview) + every generated page
+// into the space, prunes pages dropped since the last run, and queues a reindex
+// for each created/changed page. Idempotent: an unchanged re-run writes nothing
+// and queues nothing. Everything runs in one transaction; reindex is queued
+// post-commit (the worker reads committed rows).
+func (p *atlasPublisher) Publish(ctx context.Context, rc *engine.RunContext) error {
+	name := sourceName(*rc.Source)
+	props := pagemd.FilterReserved(map[string]any{
+		"generator":    "atlas",
+		"source":       name,
+		"commit":       rc.Source.Ref,
+		"upstream_ref": name + "@" + shortSha(rc.Source.Ref),
+		"generated_at": time.Now().Format(time.RFC3339),
+		"provenance":   "agent",
+	})
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("atlas publish: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var reindex []int64 // created/changed page ids — queued after commit
+
+	// Per-source root = the source name, holding the coverage overview. Parent =
+	// the bound top-dir (nil → space root); position computed (sibling MAX+1).
+	rootID, changed, err := p.upsert(ctx, tx, rc.Source.ID, "__root__", p.parentPageID, name, renderOverview(rc, name), props, nil)
+	if err != nil {
+		return fmt.Errorf("atlas publish: root page: %w", err)
+	}
+	if changed {
+		reindex = append(reindex, rootID)
+	}
+
+	// Each generated page hangs off the root, ordered by its planned Order.
+	current := map[string]bool{"__root__": true}
+	for i := range rc.Art.Pages {
+		pg := &rc.Art.Pages[i]
+		current[pg.Slug] = true
+		ord := pg.Order
+		id, changed, err := p.upsert(ctx, tx, rc.Source.ID, pg.Slug, &rootID, pg.Title, pg.Body, props, &ord)
+		if err != nil {
+			return fmt.Errorf("atlas publish: page %q: %w", pg.Slug, err)
+		}
+		if changed {
+			reindex = append(reindex, id)
+		}
+	}
+
+	// Publish-prune: soft-delete pages whose slug left the output (outline change),
+	// and drop their map rows. Per-slug non-fatal, like atlas's pruneTela.
+	p.prune(ctx, tx, rc.Source.ID, current)
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("atlas publish: commit: %w", err)
+	}
+	if p.queueReindex != nil {
+		for _, id := range reindex {
+			p.queueReindex(id)
+		}
+	}
+	return nil
+}
+
+// upsert creates or updates the tela page mapped to (sourceID, slug), returning
+// its id and whether the title/body changed (the reindex trigger). ord nil =
+// compute the sibling MAX(position)+1 (used for the root); non-nil = use it as
+// the position (docs are ordered by their planned Order under the root).
+//
+// An existing, live mapped page is updated in place — but a no-op (title AND body
+// identical) skips the write entirely, so updated_at never churns and an
+// unchanged re-run is free. A missing mapping, or a mapping to a deleted/absent
+// page, creates fresh and (re)points the map row.
+func (p *atlasPublisher) upsert(ctx context.Context, tx *sql.Tx, sourceID int64, slug string, parentID *int64, title, body string, props map[string]any, ord *int) (int64, bool, error) {
+	var mapped sql.NullInt64
+	err := tx.QueryRowContext(ctx,
+		`SELECT page_id FROM atlas_page_map WHERE source_id = $1 AND slug = $2`, sourceID, slug).Scan(&mapped)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, false, fmt.Errorf("lookup map: %w", err)
+	}
+
+	if mapped.Valid {
+		var curTitle, curBody string
+		var curPos int64
+		err := tx.QueryRowContext(ctx,
+			`SELECT title, body, position FROM pages WHERE id = $1 AND deleted_at IS NULL`,
+			mapped.Int64).Scan(&curTitle, &curBody, &curPos)
+		if err == nil {
+			if curTitle == title && curBody == body {
+				return mapped.Int64, false, nil // no-op: don't touch updated_at, don't reindex
+			}
+			pos := curPos
+			if ord != nil {
+				pos = int64(*ord)
+			}
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE pages SET title = $1, body = $2, props = $3::jsonb, parent_id = $4, position = $5, updated_at = tela_now()
+				 WHERE id = $6`,
+				title, body, propsJSON(props), nullableInt64(parentID), pos, mapped.Int64); err != nil {
+				return 0, false, fmt.Errorf("update page: %w", err)
+			}
+			return mapped.Int64, true, nil
+		}
+		if err != sql.ErrNoRows {
+			return 0, false, fmt.Errorf("load mapped page: %w", err)
+		}
+		// Mapping points at a deleted/absent page — fall through to create + repoint.
+	}
+
+	pos := 0
+	if ord != nil {
+		pos = *ord
+	} else {
+		var maxPos sql.NullInt64
+		if parentID == nil {
+			err = tx.QueryRowContext(ctx,
+				`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id IS NULL AND deleted_at IS NULL`,
+				p.spaceID).Scan(&maxPos)
+		} else {
+			err = tx.QueryRowContext(ctx,
+				`SELECT MAX(position) FROM pages WHERE space_id = $1 AND parent_id = $2 AND deleted_at IS NULL`,
+				p.spaceID, *parentID).Scan(&maxPos)
+		}
+		if err != nil {
+			return 0, false, fmt.Errorf("compute position: %w", err)
+		}
+		if maxPos.Valid {
+			pos = int(maxPos.Int64) + 1
+		}
+	}
+
+	var id int64
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO pages (space_id, parent_id, title, body, position, props)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id`,
+		p.spaceID, nullableInt64(parentID), title, body, pos, propsJSON(props)).Scan(&id); err != nil {
+		return 0, false, fmt.Errorf("insert page: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO atlas_page_map (source_id, slug, page_id) VALUES ($1, $2, $3)
+		 ON CONFLICT (source_id, slug) DO UPDATE SET page_id = EXCLUDED.page_id`,
+		sourceID, slug, id); err != nil {
+		return 0, false, fmt.Errorf("upsert map: %w", err)
+	}
+	return id, true, nil
+}
+
+// prune soft-deletes every recorded page for sourceID whose slug is no longer in
+// the current output, and drops its map row. The per-source root (__root__) is
+// always in `current`, so it's never pruned. Per-slug non-fatal (warn + carry
+// on), matching atlas's pruneTela.
+func (p *atlasPublisher) prune(ctx context.Context, tx *sql.Tx, sourceID int64, current map[string]bool) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT slug, page_id FROM atlas_page_map WHERE source_id = $1`, sourceID)
+	if err != nil {
+		slog.Warn("atlas publish: prune skipped (read map)", "source_id", sourceID, "err", err)
+		return
+	}
+	recorded := map[string]int64{}
+	for rows.Next() {
+		var slug string
+		var pageID int64
+		if err := rows.Scan(&slug, &pageID); err != nil {
+			rows.Close()
+			slog.Warn("atlas publish: prune skipped (scan map)", "source_id", sourceID, "err", err)
+			return
+		}
+		recorded[slug] = pageID
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		slog.Warn("atlas publish: prune skipped (map rows)", "source_id", sourceID, "err", err)
+		return
+	}
+
+	for _, slug := range orphanedSlugs(recorded, current) {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE pages SET deleted_at = tela_now() WHERE id = $1 AND deleted_at IS NULL`, recorded[slug]); err != nil {
+			slog.Warn("atlas publish: prune", "slug", slug, "err", err)
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM atlas_page_map WHERE source_id = $1 AND slug = $2`, sourceID, slug); err != nil {
+			slog.Warn("atlas publish: prune map", "slug", slug, "err", err)
+			continue
+		}
+	}
+}
+
+// orphanedSlugs is the pure prune-selection: recorded slugs no longer in the
+// current set, sorted. The "__root__" page is kept via its presence in current.
+func orphanedSlugs(recorded map[string]int64, current map[string]bool) []string {
+	var out []string
+	for slug := range recorded {
+		if !current[slug] {
+			out = append(out, slug)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// renderOverview builds the atlas-managed coverage overview page (markdown) — a
+// faithful port of atlas's renderOverview, reading off the RunContext. Cost is
+// always 0 in tela (no per-token pricing), so costStr renders "$0 (local)".
+func renderOverview(rc *engine.RunContext, name string) string {
+	src := rc.Source
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s — documentation\n\n", name)
+	b.WriteString("> [!NOTE]\n> Generated and maintained by **atlas** — do not edit by hand; it is overwritten on each run.\n")
+	fmt.Fprintf(&b, "> Source: `%s` · commit `%s`\n\n", src.Location, shortSha(src.Ref))
+
+	if s := rc.Run.Stats; s != nil {
+		b.WriteString("## Run\n\n")
+		fmt.Fprintf(&b, "| Generated | Duration | Model |\n|---|---|---|\n| %s | %s | %s + %s |\n\n",
+			time.Now().Format("2006-01-02 15:04"), fmtDur(s.DurationSec), s.ChatModel, s.EmbedModel)
+		fmt.Fprintf(&b, "| Files | Surface | Chunks | Pages |\n|---|---|---|---|\n| %d | %d | %d | %d |\n\n",
+			s.Files, s.Surface, s.Chunks, s.Pages)
+		u := s.Usage
+		fmt.Fprintf(&b, "| Chat tokens | Embed tokens | Calls | Cost |\n|---|---|---|---|\n| %s in / %s out | %s | %d chat · %d embed | %s |\n\n",
+			thousands(u.PromptTokens), thousands(u.CompletionTokens), thousands(u.EmbedTokens),
+			u.ChatCalls, u.EmbedCalls, costStr(s.Cost))
+	}
+
+	cov := rc.Coverage
+	b.WriteString("## Coverage\n\n")
+	fmt.Fprintf(&b, "| Surface covered | Must-cover | Citations | Diagrams |\n|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| %d/%d (%.0f%%) | %d/%d (%.0f%%) | %d (%d unresolved) | %d |\n\n",
+		cov.Covered, cov.Total, 100*cov.Rate(), cov.MustCovered, cov.MustTotal, 100*cov.MustRate(),
+		cov.Citations, cov.BadCitations, cov.Mermaid)
+	if len(cov.Gaps) > 0 {
+		fmt.Fprintf(&b, "### Undocumented surface (%d)\n\n", len(cov.Gaps))
+		for _, g := range cov.Gaps {
+			fmt.Fprintf(&b, "- `%s` %s — `%s:%d`\n", g.Kind, g.Name, g.File, g.Line)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(rc.Art.Spine) > 0 {
+		b.WriteString("## Surface inventory\n\n")
+		counts := map[core.SpineKind]int{}
+		for _, it := range rc.Art.Spine {
+			counts[it.Kind]++
+		}
+		kinds := make([]core.SpineKind, 0, len(counts))
+		for k := range counts {
+			kinds = append(kinds, k)
+		}
+		sort.Slice(kinds, func(i, j int) bool { return kinds[i] < kinds[j] })
+		b.WriteString("| Kind | Count |\n|---|---|\n")
+		for _, k := range kinds {
+			fmt.Fprintf(&b, "| %s | %d |\n", k, counts[k])
+		}
+		b.WriteString("\n")
+	}
+
+	if len(rc.Art.Pages) > 0 {
+		b.WriteString("## Pages\n\n")
+		for i := range rc.Art.Pages {
+			fmt.Fprintf(&b, "- %s\n", rc.Art.Pages[i].Title)
+		}
+	}
+	return b.String()
+}
+
+// shortSha / fmtDur / thousands / costStr / repoName / sourceName are ported
+// verbatim from atlas's deliver.go so the overview content diffs 1-1.
+
+func shortSha(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
+}
+
+func fmtDur(sec float64) string {
+	if sec < 60 {
+		return fmt.Sprintf("%.0fs", sec)
+	}
+	m, s := int(sec)/60, int(sec)%60
+	if m < 60 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	return fmt.Sprintf("%dh %dm", m/60, m%60)
+}
+
+// thousands groups an integer with commas (12345 → "12,345").
+func thousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	neg := ""
+	if n < 0 {
+		neg, s = "-", s[1:]
+	}
+	var out []byte
+	for i := 0; i < len(s); i++ {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, s[i])
+	}
+	return neg + string(out)
+}
+
+func costStr(c float64) string {
+	if c == 0 {
+		return "$0 (local)"
+	}
+	return fmt.Sprintf("$%.4f", c)
+}
+
+func repoName(location string) string {
+	return strings.TrimSuffix(filepath.Base(location), ".git")
+}
+
+// sourceName is the per-source subtree label: an explicit Source.Name, else a
+// non-git source's scope key (Subpath), else the git repo's base name.
+func sourceName(s core.Source) string {
+	if s.Name != "" {
+		return s.Name
+	}
+	if s.Type != core.SourceGit && s.Subpath != "" {
+		return s.Subpath
+	}
+	return repoName(s.Location)
+}

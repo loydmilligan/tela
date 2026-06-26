@@ -135,6 +135,16 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/spaces/{id}/import", srv.ImportSpace)
 	mux.HandleFunc("GET /api/spaces/{id}/export.zip", srv.ExportSpaceMarkdownZip)
 
+	// atlas: source-grounded, coverage-audited doc generation (docs/atlas.md).
+	// Space-scoped (manage = owner/org-admin; list = member) + source/run-scoped.
+	mux.HandleFunc("POST /api/spaces/{id}/atlas/sources", srv.CreateAtlasSource)
+	mux.HandleFunc("GET /api/spaces/{id}/atlas/sources", srv.ListAtlasSources)
+	mux.HandleFunc("DELETE /api/atlas/sources/{id}", srv.DeleteAtlasSource)
+	mux.HandleFunc("POST /api/atlas/sources/{id}/run", srv.RunAtlasSource)
+	mux.HandleFunc("GET /api/atlas/sources/{id}/runs", srv.ListAtlasSourceRuns)
+	mux.HandleFunc("GET /api/atlas/runs/{id}", srv.GetAtlasRun)
+	mux.HandleFunc("GET /api/atlas/runs/{id}/stream", srv.StreamAtlasRun)
+
 	mux.HandleFunc("GET /api/pages", srv.ListPages)
 	mux.HandleFunc("GET /api/pages/all", srv.ListAllPages)
 	mux.HandleFunc("GET /api/pages/bodies", srv.ListPageBodies)

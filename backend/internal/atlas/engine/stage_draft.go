@@ -1,0 +1,173 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/zcag/tela/backend/internal/atlas/core"
+)
+
+const (
+	retrieveK     = 18
+	contextBudget = 22000 // chars of source per page
+	pageFanout    = 16    // pages drafted/refined in flight; the LLM gate is the real limiter
+)
+
+// draftStage writes each page. Narrative pages hybrid-retrieve the most relevant
+// source and generate under the strict grounded+cited prompt. Reference pages get
+// the COMPLETE extracted item list injected (so they can't omit anything) plus
+// retrieved context to describe each item.
+type draftStage struct{}
+
+func (draftStage) Name() core.StageName { return core.StageDraft }
+
+func (draftStage) Run(ctx context.Context, rc *RunContext) error {
+	// Per-page drafts are independent: each worker writes only its own
+	// Pages[i].Body (a pre-sized, distinct slot) and persists its own row via
+	// UpdatePageBody(p.ID). Progress goes through the atomic StepDone counter.
+	rc.resetProgress()
+	n := len(rc.Art.Pages)
+	return parallelN(ctx, pageFanout, n, func(ctx context.Context, i int) error {
+		p := &rc.Art.Pages[i]
+		// Idempotent on resume: a page that already carries a body was drafted in a
+		// prior (interrupted) run — skip it so a restart redoes only unfinished pages.
+		if strings.TrimSpace(p.Body) != "" {
+			rc.StepDone(n, "drafting: %s (already drafted)", p.Title)
+			return nil
+		}
+		var body string
+		var err error
+		if p.Kind == core.PageReference {
+			body, err = draftReference(ctx, rc, p)
+		} else {
+			body, err = draftNarrative(ctx, rc, p)
+		}
+		if err != nil {
+			return fmt.Errorf("draft %q: %w", p.Title, err)
+		}
+		p.Body = body
+		if err := rc.Store.UpdatePageBody(p.ID, body); err != nil {
+			return err
+		}
+		rc.StepDone(n, "drafting: %s", p.Title)
+		return nil
+	})
+}
+
+func draftNarrative(ctx context.Context, rc *RunContext, p *core.Page) (string, error) {
+	chunks, err := narrativeChunks(ctx, rc, p)
+	if err != nil {
+		return "", err
+	}
+	ctxStr := assembleContext(chunks)
+	user := draftUserCode(p.Title, p.Summary, ctxStr)
+	if rc.Source != nil && rc.Source.Type == core.SourceJira {
+		user = draftUserJira(p.Title, p.Summary, ctxStr)
+	}
+	body, err := rc.LLM.Chat(ctx, draftSystem, user, 0.3)
+	return sanitizePage(body), err
+}
+
+// narrativeChunks retrieves the source for a narrative page and, for a Jira
+// source, prepends a synthetic project-state context chunk (built from status.md)
+// so the prose can state "X in QA, Y blocked, the SNMP epic is N% complete" with a
+// citation to status.md. The git path is unchanged (state chunk is nil/skipped).
+func narrativeChunks(ctx context.Context, rc *RunContext, p *core.Page) ([]core.Chunk, error) {
+	query := p.Title + " " + p.Summary + " " + strings.Join(p.Topics, " ")
+	chunks, err := retrieve(ctx, rc, query, retrieveK)
+	if err != nil {
+		return nil, err
+	}
+	if rc.Source != nil && rc.Source.Type == core.SourceJira {
+		if sc, ok := buildJiraStateContext(rc); ok {
+			chunks = append([]core.Chunk{sc}, chunks...)
+		}
+	}
+	return chunks, nil
+}
+
+// buildJiraStateContext synthesizes status.md into one citeable context chunk
+// (Kind doc, cited to status.md) carrying the status counts, epic progress,
+// blocked set and recency. Prepended to retrieved context for Jira narrative
+// pages so the model grounds current-state claims with a real citation. Returns
+// ok=false when status.md is absent (older snapshots).
+func buildJiraStateContext(rc *RunContext) (core.Chunk, bool) {
+	data, err := os.ReadFile(filepath.Join(rc.Art.RepoDir, "status.md"))
+	if err != nil || len(strings.TrimSpace(string(data))) == 0 {
+		return core.Chunk{}, false
+	}
+	text := string(data)
+	lines := strings.Count(text, "\n") + 1
+	return core.Chunk{
+		File: "status.md", StartLine: 1, EndLine: lines, Kind: core.ChunkDoc,
+		Symbol: "project-state", Text: text,
+	}, true
+}
+
+func draftReference(ctx context.Context, rc *RunContext, p *core.Page) (string, error) {
+	items := rc.Art.SpineByKind(p.SpineKinds...)
+	var list strings.Builder
+	q := make([]string, 0, len(items))
+	for _, it := range items {
+		fmt.Fprintf(&list, "- [%s] %s  (%s:%d)%s\n", it.Kind, it.Name, it.File, it.Line, detailSuffix(it.Detail))
+		q = append(q, it.Name)
+	}
+	chunks, err := retrieve(ctx, rc, strings.Join(q, " "), retrieveK)
+	if err != nil {
+		return "", err
+	}
+	body, err := rc.LLM.Chat(ctx, refSystem, refUser(p.Title, list.String(), assembleContext(chunks)), 0.2)
+	return sanitizePage(body), err
+}
+
+func detailSuffix(d string) string {
+	if d == "" {
+		return ""
+	}
+	return " — " + d
+}
+
+// sanitizePage strips any prompt scaffolding the model echoed (leaked tags,
+// "## Current draft" headers, whole-doc code fences) so the published page is
+// just the page.
+func sanitizePage(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "```markdown")
+	s = strings.TrimPrefix(s, "```md")
+	for _, m := range []string{"<existing_page>", "</existing_page>", "<source_excerpts>", "</source_excerpts>"} {
+		s = strings.ReplaceAll(s, m, "")
+	}
+	if i := strings.Index(s, "## Current draft"); i >= 0 {
+		s = s[i+len("## Current draft"):]
+	}
+	return strings.TrimSpace(s)
+}
+
+// retrieve embeds the query and runs hybrid search.
+func retrieve(ctx context.Context, rc *RunContext, query string, k int) ([]core.Chunk, error) {
+	vecs, _, err := rc.LLM.Embed(ctx, []string{query})
+	if err != nil {
+		return nil, err
+	}
+	return rc.Retriever.Search(vecs[0], query, k), nil
+}
+
+// assembleContext formats retrieved chunks with file:line headers and numbered
+// lines, capped at the context budget, so the model can cite exact ranges.
+func assembleContext(chunks []core.Chunk) string {
+	var b strings.Builder
+	for _, c := range chunks {
+		block := fmt.Sprintf("### %s:%d-%d\n```\n%s\n```\n\n", c.File, c.StartLine, c.EndLine, c.Text)
+		if b.Len()+len(block) > contextBudget {
+			if b.Len() == 0 { // single oversized chunk — include a trimmed head
+				b.WriteString(block[:contextBudget])
+			}
+			break
+		}
+		b.WriteString(block)
+	}
+	return b.String()
+}

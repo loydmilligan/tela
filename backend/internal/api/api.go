@@ -90,6 +90,11 @@ type Server struct {
 	// the embedder are configured. Page writes call s.agreement.Queue.
 	agreement *agreement.Service
 
+	// atlas owns documentation-generation runs (source → coverage-audited pages
+	// in a managed space). Reuses s.rag (embed + reindex) and the instance LLM;
+	// disabled at the edges when those are unconfigured. Never nil — built in New.
+	atlas *atlasManager
+
 	// oauth is the MCP endpoint's OAuth 2.1 Resource-Server config (WorkOS JWT
 	// acceptance + Protected Resource Metadata). nil = disabled (PAT-only),
 	// unless TELA_WORKOS_ISSUER is set. Tests inject a configured one.
@@ -207,6 +212,10 @@ func New(db *sql.DB) *Server {
 	// Background agreement worker (no-op unless both llm + embedder are on).
 	s.agreement.SetPaused(aiPaused)
 	s.agreement.Start(context.Background())
+	// Documentation-generation manager (atlas): resume any runs a previous
+	// process left mid-flight, then it's ready to drive new runs on demand.
+	s.atlas = newAtlasManager(s)
+	s.atlas.ResumeDangling(context.Background())
 	return s
 }
 
