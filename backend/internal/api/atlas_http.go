@@ -48,6 +48,9 @@ type atlasSourceDTO struct {
 	Include   string `json:"include,omitempty"`
 	Exclude   string `json:"exclude,omitempty"`
 	CreatedAt string `json:"created_at"`
+	// Drift: set (a timestamp) when detection has seen upstream move past `ref`
+	// since the last generation; '' when the docs match upstream.
+	StaleSince string `json:"stale_since,omitempty"`
 	// Latest-run summary (nil when never run), for the sources list.
 	LastRunID     *int64   `json:"last_run_id,omitempty"`
 	LastRunStatus string   `json:"last_run_status,omitempty"`
@@ -56,7 +59,7 @@ type atlasSourceDTO struct {
 
 const atlasSourceDTOSelect = `
 	SELECT s.id, s.project_id, s.cred_id, s.type, s.location, s.name, s.ref, s.branch, s.subpath,
-	       s.include, s.exclude, s.created_at, lr.id, lr.status, lr.coverage_json
+	       s.include, s.exclude, s.created_at, s.stale_since, lr.id, lr.status, lr.coverage_json
 	  FROM atlas_sources s
 	  LEFT JOIN LATERAL (
 	        SELECT id, status, coverage_json FROM atlas_runs WHERE source_id = s.id ORDER BY id DESC LIMIT 1
@@ -67,7 +70,7 @@ func scanSourceDTO(sc interface{ Scan(...any) error }) (atlasSourceDTO, error) {
 	var cred, lastRunID sql.NullInt64
 	var lastStatus, covJSON sql.NullString
 	if err := sc.Scan(&d.ID, &d.ProjectID, &cred, &d.Type, &d.Location, &d.Name, &d.Ref, &d.Branch,
-		&d.Subpath, &d.Include, &d.Exclude, &d.CreatedAt, &lastRunID, &lastStatus, &covJSON); err != nil {
+		&d.Subpath, &d.Include, &d.Exclude, &d.CreatedAt, &d.StaleSince, &lastRunID, &lastStatus, &covJSON); err != nil {
 		return d, err
 	}
 	if cred.Valid {

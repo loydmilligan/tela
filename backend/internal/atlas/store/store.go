@@ -105,9 +105,11 @@ func (s *Store) GetRun(id int64) (*core.Run, error) {
 	return &r, nil
 }
 
-// SetSourceRef pins a source's last-seen commit/revision.
+// SetSourceRef pins a source's last-GENERATED commit/revision. Advancing it means
+// the docs now match that ref, so clear staleness + restamp the drift check (the
+// UI flips to fresh immediately, not on the next detection poll).
 func (s *Store) SetSourceRef(id int64, ref string) error {
-	_, err := s.db.Exec(`UPDATE atlas_sources SET ref=$1 WHERE id=$2`, ref, id)
+	_, err := s.db.Exec(`UPDATE atlas_sources SET ref=$1, stale_since='', upstream_checked_at=tela_now() WHERE id=$2`, ref, id)
 	return err
 }
 

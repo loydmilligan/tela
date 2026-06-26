@@ -144,6 +144,7 @@ type atlasProjectDTO struct {
 	LastRefreshAt      string         `json:"last_refresh_at,omitempty"`
 	NextDue            string         `json:"next_due,omitempty"`
 	SourcesCount       int            `json:"sources_count"`
+	StaleSources       int            `json:"stale_sources"` // generated sources now behind upstream
 	LastRun            *atlasLastRun  `json:"last_run"`
 	CreatedAt          string         `json:"created_at"`
 	CanManage          bool           `json:"can_manage"`
@@ -159,6 +160,7 @@ const atlasProjectSelect = `
 	       p.output_space_id, sp.name,
 	       p.output_parent_page_id, p.cadence, p.auto_update, p.last_refresh_at, p.created_at,
 	       (SELECT count(*) FROM atlas_sources s WHERE s.project_id = p.id),
+	       (SELECT count(*) FROM atlas_sources s WHERE s.project_id = p.id AND s.stale_since <> '' AND s.ref <> ''),
 	       lr.id, lr.status, lr.coverage_json
 	  FROM atlas_projects p
 	  LEFT JOIN spaces sp ON sp.id = p.output_space_id
@@ -177,7 +179,7 @@ func scanProjectDTO(sc interface{ Scan(...any) error }) (atlasProjectDTO, error)
 	var cadence, lastRefresh string
 	if err := sc.Scan(&d.ID, &d.Name, &d.Owner.Kind, &d.Owner.ID, &ownerName,
 		&spaceID, &spaceName, &parent, &cadence, &auto, &lastRefresh, &d.CreatedAt,
-		&d.SourcesCount, &lastRunID, &lastStatus, &covJSON); err != nil {
+		&d.SourcesCount, &d.StaleSources, &lastRunID, &lastStatus, &covJSON); err != nil {
 		return d, err
 	}
 	d.Owner.Name = ownerName.String
