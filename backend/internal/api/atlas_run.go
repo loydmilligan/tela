@@ -171,14 +171,17 @@ func (m *atlasManager) spawn(src atlasSourceRow, runID int64, fromStage core.Sta
 	}()
 }
 
-// onFinish meters the run's chat token usage into tela's AI-usage ledger.
-// Embeddings are already metered per-call by tela's rag recorder (s.rag.Embed),
-// so only chat is recorded here to avoid double counting. (Notifications: Phase 6.)
+// onFinish meters the run's chat token usage into tela's AI-usage ledger and
+// notifies the space's managers that the run finished. Embeddings are already
+// metered per-call by tela's rag recorder (s.rag.Embed), so only chat is
+// recorded here to avoid double counting. Both steps are best-effort: a metering
+// or notify failure must never affect the run (it's already terminal).
 func (m *atlasManager) onFinish(rc *engine.RunContext, status core.RunStatus, runErr error) {
 	if rc.Run != nil && rc.Run.Stats != nil {
 		u := rc.Run.Stats.Usage
 		m.s.recordAIUsage("chat", rc.Project.Model.ChatModel, int(u.PromptTokens), int(u.CompletionTokens), 0)
 	}
+	m.notifyAtlasRunFinish(context.Background(), rc, status, runErr)
 }
 
 // ResumeDangling picks up runs left 'running' by a previous process and continues
