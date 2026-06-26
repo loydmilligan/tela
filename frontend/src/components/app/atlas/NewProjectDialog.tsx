@@ -6,6 +6,7 @@ import { Button } from '../../ui/button'
 import { Input } from '../../ui/input'
 import { Select } from '../../ui/select'
 import { useSpaces } from '../../../lib/queries/spaces'
+import { usePages } from '../../../lib/queries/pages'
 import { type AtlasOwner, useCreateProject } from '../../../lib/queries/atlas'
 import { SpacePicker, type SpaceChoice } from './SpacePicker'
 
@@ -24,6 +25,7 @@ export function NewProjectDialog({
   const [name, setName] = useState('')
   const [ownerIdx, setOwnerIdx] = useState(0)
   const [output, setOutput] = useState<SpaceChoice>({})
+  const [parentId, setParentId] = useState<number | undefined>(undefined)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -31,9 +33,14 @@ export function NewProjectDialog({
       setName('')
       setOwnerIdx(0)
       setOutput({})
+      setParentId(undefined)
       setErr(null)
     }
   }, [open])
+
+  // Top-level pages of the chosen existing space, for the optional top-dir.
+  const dirPagesQ = usePages({ spaceId: output.space_id, parentId: null })
+  const dirPages = (dirPagesQ.data ?? []) as { id: number; title: string }[]
 
   const owner = owners[ownerIdx]
   const canSubmit = useMemo(
@@ -47,7 +54,7 @@ export function NewProjectDialog({
     // Output defaults to a new space named after the project when left untouched.
     const out =
       output.space_id != null
-        ? { space_id: output.space_id }
+        ? { space_id: output.space_id, parent_page_id: parentId }
         : { new_space_name: (output.new_space_name || name).trim() }
     try {
       const { project } = await create.mutateAsync({
@@ -99,10 +106,19 @@ export function NewProjectDialog({
             <SpacePicker
               spaces={(spacesQ.data ?? []).map((s) => ({ id: s.id, name: s.name }))}
               value={output}
-              onChange={setOutput}
+              onChange={(v) => { setOutput(v); setParentId(undefined) }}
               placeholder={name.trim() ? `Default: “${name.trim()}” (new space)` : 'Search a space, or name a new one…'}
             />
           </FieldBlock>
+
+          {output.space_id != null && (
+            <Field label="Top-dir" hint="Optional folder inside the space; each source publishes under its own folder beneath it.">
+              <Select value={parentId != null ? String(parentId) : ''} onChange={(e) => setParentId(e.target.value ? Number(e.target.value) : undefined)}>
+                <option value="">Space root</option>
+                {dirPages.map((p) => <option key={p.id} value={p.id}>Under “{p.title}”</option>)}
+              </Select>
+            </Field>
+          )}
 
           {err && <p className="text-[length:var(--text-sm)] text-[var(--accent-negative-fg)]">{err}</p>}
         </div>
