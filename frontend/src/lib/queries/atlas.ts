@@ -90,6 +90,9 @@ export interface AtlasSource {
   last_run_id?: number
   last_run_status?: AtlasRunStatus
   last_must_rate?: number
+  last_surface_rate?: number
+  last_pages?: number
+  last_generated_at?: string
 }
 
 // ── coverage / stats (core.Coverage, core.RunStats) ──────────────────────────

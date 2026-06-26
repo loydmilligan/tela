@@ -52,25 +52,30 @@ type atlasSourceDTO struct {
 	// since the last generation; '' when the docs match upstream.
 	StaleSince string `json:"stale_since,omitempty"`
 	// Latest-run summary (nil when never run), for the sources list.
-	LastRunID     *int64   `json:"last_run_id,omitempty"`
-	LastRunStatus string   `json:"last_run_status,omitempty"`
-	LastMustRate  *float64 `json:"last_must_rate,omitempty"`
+	LastRunID       *int64   `json:"last_run_id,omitempty"`
+	LastRunStatus   string   `json:"last_run_status,omitempty"`
+	LastMustRate    *float64 `json:"last_must_rate,omitempty"`
+	LastSurfaceRate *float64 `json:"last_surface_rate,omitempty"`
+	LastPages       *int     `json:"last_pages,omitempty"`
+	LastGeneratedAt string   `json:"last_generated_at,omitempty"` // last successful run's finish time
 }
 
 const atlasSourceDTOSelect = `
 	SELECT s.id, s.project_id, s.cred_id, s.type, s.location, s.name, s.ref, s.branch, s.subpath,
-	       s.include, s.exclude, s.created_at, s.stale_since, lr.id, lr.status, lr.coverage_json
+	       s.include, s.exclude, s.created_at, s.stale_since,
+	       lr.id, lr.status, lr.coverage_json, lr.stats_json, lr.finished_at
 	  FROM atlas_sources s
 	  LEFT JOIN LATERAL (
-	        SELECT id, status, coverage_json FROM atlas_runs WHERE source_id = s.id ORDER BY id DESC LIMIT 1
+	        SELECT id, status, coverage_json, stats_json, finished_at FROM atlas_runs WHERE source_id = s.id ORDER BY id DESC LIMIT 1
 	  ) lr ON true`
 
 func scanSourceDTO(sc interface{ Scan(...any) error }) (atlasSourceDTO, error) {
 	var d atlasSourceDTO
 	var cred, lastRunID sql.NullInt64
-	var lastStatus, covJSON sql.NullString
+	var lastStatus, covJSON, statsJSON, finishedAt sql.NullString
 	if err := sc.Scan(&d.ID, &d.ProjectID, &cred, &d.Type, &d.Location, &d.Name, &d.Ref, &d.Branch,
-		&d.Subpath, &d.Include, &d.Exclude, &d.CreatedAt, &d.StaleSince, &lastRunID, &lastStatus, &covJSON); err != nil {
+		&d.Subpath, &d.Include, &d.Exclude, &d.CreatedAt, &d.StaleSince,
+		&lastRunID, &lastStatus, &covJSON, &statsJSON, &finishedAt); err != nil {
 		return d, err
 	}
 	if cred.Valid {
@@ -79,11 +84,21 @@ func scanSourceDTO(sc interface{ Scan(...any) error }) (atlasSourceDTO, error) {
 	if lastRunID.Valid {
 		d.LastRunID = &lastRunID.Int64
 		d.LastRunStatus = lastStatus.String
+		d.LastGeneratedAt = finishedAt.String
 		if covJSON.Valid && covJSON.String != "" {
 			var cov core.Coverage
 			if json.Unmarshal([]byte(covJSON.String), &cov) == nil {
 				mr := cov.MustRate()
+				sr := cov.Rate()
 				d.LastMustRate = &mr
+				d.LastSurfaceRate = &sr
+			}
+		}
+		if statsJSON.Valid && statsJSON.String != "" {
+			var st core.RunStats
+			if json.Unmarshal([]byte(statsJSON.String), &st) == nil && st.Pages > 0 {
+				p := st.Pages
+				d.LastPages = &p
 			}
 		}
 	}
