@@ -42,7 +42,11 @@ type atlasSourceDTO struct {
 	Cadence       string `json:"cadence"`
 	AutoUpdate    bool   `json:"auto_update"`
 	LastRefreshAt string `json:"last_refresh_at,omitempty"`
-	CreatedAt     string `json:"created_at"`
+	// NextDue is the next scheduled refresh (last_refresh_at + cadence), for the
+	// drift UI ("auto-updates daily · next due in 3h"). Empty when auto-update is
+	// off, the cadence is off, or the source has never refreshed (due now).
+	NextDue   string `json:"next_due,omitempty"`
+	CreatedAt string `json:"created_at"`
 	// Latest-run summary (nil when never run), for the sources list.
 	LastRunID     *int64   `json:"last_run_id,omitempty"`
 	LastRunStatus string   `json:"last_run_status,omitempty"`
@@ -171,6 +175,7 @@ func (s *Server) ListAtlasSources(w http.ResponseWriter, r *http.Request) {
 			d.ParentPageID = &parent.Int64
 		}
 		d.AutoUpdate = autoUpd != 0
+		d.NextDue = atlasNextDueStr(d.AutoUpdate, d.Cadence, d.LastRefreshAt)
 		if lastRunID.Valid {
 			d.LastRunID = &lastRunID.Int64
 			d.LastRunStatus = lastStatus.String

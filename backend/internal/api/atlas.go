@@ -33,6 +33,10 @@ type atlasManager struct {
 
 	mu     sync.Mutex
 	active map[int64]context.CancelFunc // sourceID -> cancel for its in-flight run
+
+	// paused is the admin AI kill-switch, shared with the other background
+	// workers; the freshness scheduler skips a tick while it's true.
+	paused func() bool
 }
 
 func newAtlasManager(s *Server) *atlasManager {

@@ -84,13 +84,10 @@ func (m *atlasManager) StartRun(ctx context.Context, sourceID int64) (int64, *ap
 func (m *atlasManager) buildRunContext(ctx context.Context, src atlasSourceRow, run *core.Run, workspace string) *engine.RunContext {
 	client := m.newLLMClient()
 	proj := &core.Project{ID: src.SpaceID, Model: atlasModelCfg(m.s.rag.EmbedModel())}
-	coreSrc := &core.Source{
-		ID: src.ID, Type: core.SourceType(src.Type), Location: src.Location, Name: src.Name,
-		Ref: src.Ref, Branch: src.Branch, Subpath: src.Subpath, Include: src.Include, Exclude: src.Exclude,
-	}
+	coreSrc := coreSourceFrom(src)
 	return &engine.RunContext{
 		Project:   proj,
-		Source:    coreSrc,
+		Source:    &coreSrc,
 		Run:       run,
 		Workspace: workspace,
 		Store:     m.store,

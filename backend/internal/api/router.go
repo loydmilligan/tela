@@ -141,6 +141,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/spaces/{id}/atlas/sources", srv.ListAtlasSources)
 	mux.HandleFunc("DELETE /api/atlas/sources/{id}", srv.DeleteAtlasSource)
 	mux.HandleFunc("POST /api/atlas/sources/{id}/run", srv.RunAtlasSource)
+	mux.HandleFunc("POST /api/atlas/sources/{id}/sync", srv.SyncAtlasSource)
 	mux.HandleFunc("GET /api/atlas/sources/{id}/runs", srv.ListAtlasSourceRuns)
 	mux.HandleFunc("GET /api/atlas/runs/{id}", srv.GetAtlasRun)
 	mux.HandleFunc("GET /api/atlas/runs/{id}/stream", srv.StreamAtlasRun)

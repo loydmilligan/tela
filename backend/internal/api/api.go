@@ -216,6 +216,9 @@ func New(db *sql.DB) *Server {
 	// process left mid-flight, then it's ready to drive new runs on demand.
 	s.atlas = newAtlasManager(s)
 	s.atlas.ResumeDangling(context.Background())
+	// Freshness scheduler: 1-minute poll firing change-gated delta re-ingests for
+	// auto_update sources whose cadence has elapsed (no-op while AI is off/paused).
+	s.atlas.startScheduler(context.Background(), aiPaused)
 	return s
 }
 
