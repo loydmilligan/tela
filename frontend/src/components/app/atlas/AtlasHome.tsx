@@ -5,6 +5,7 @@ import { Button } from '../../ui/button'
 import { StatusBadge } from '../../ui/status-badge'
 import { EmptyState } from '../../ui/empty-state'
 import { useMe } from '../../../lib/queries/auth'
+import { useOrgs } from '../../../lib/queries/orgs'
 import {
   type AtlasOwner,
   type AtlasProject,
@@ -60,23 +61,17 @@ export function AtlasHome() {
     })
   }, [projects, me?.id])
 
-  // Owners the caller may create under: themselves + every org they manage a
-  // project in (org-from-scratch is a later refinement).
+  // Owners the caller may create a project under: themselves (personal) + every
+  // org they administer — independent of whether a project already exists there.
+  const orgs = useOrgs().data
   const ownerOptions = useMemo<AtlasOwner[]>(() => {
-    const seen = new Set<string>()
     const out: AtlasOwner[] = []
-    if (me) {
-      out.push({ kind: 'user', id: me.id, name: me.display_name || me.username })
-      seen.add(`user:${me.id}`)
-    }
-    for (const p of projects) {
-      if (p.owner.kind === 'org' && p.can_manage && !seen.has(ownerKey(p.owner))) {
-        seen.add(ownerKey(p.owner))
-        out.push(p.owner)
-      }
+    if (me) out.push({ kind: 'user', id: me.id, name: me.display_name || me.username })
+    for (const o of orgs ?? []) {
+      if (o.my_role === 'admin') out.push({ kind: 'org', id: o.id, name: o.name })
     }
     return out
-  }, [me, projects])
+  }, [me, orgs])
 
   const counts = useMemo(() => {
     const c = { fresh: 0, running: 0, failed: 0 }

@@ -102,7 +102,7 @@ export function NewProjectDialog({
             </Field>
           )}
 
-          <FieldBlock label="Output space" hint="Pick an existing space or name a new one. Defaults to a new space named after the project.">
+          <FieldBlock label="Output space" hint={`Pick an existing space or name a new one. A new space is created ${owner?.kind === 'org' ? `in ${owner.name}` : 'as personal'} (the project's owner); defaults to the project name.`}>
             <SpacePicker
               spaces={(spacesQ.data ?? []).map((s) => ({ id: s.id, name: s.name }))}
               value={output}
