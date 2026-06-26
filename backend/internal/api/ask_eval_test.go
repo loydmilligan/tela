@@ -41,6 +41,41 @@ func TestScoreAskCompleteness(t *testing.T) {
 	}
 }
 
+func TestScoreAskCompleteness_Leaks(t *testing.T) {
+	// ExpectNone is the cross-project leak guard: "projectx" appears in the answer
+	// (a leak), "projecty" does not. Coverage (over ExpectAll) is unaffected.
+	c := AskCompletenessCase{
+		Question:   "how does alpha deploy?",
+		ExpectAll:  []string{"make deploy"},
+		ExpectNone: []string{"projectx", "projecty"},
+	}
+	grounding := "Alpha ships with make deploy."
+	answer := "Alpha ships with make deploy. Unrelated, projectx uses kubectl."
+
+	sc := scoreAskCompleteness(c, grounding, answer)
+	if got := join(sc.Leaks); got != "projectx" {
+		t.Errorf("leaks = %q, want [projectx]", got)
+	}
+	if sc.Coverage != 1.0 {
+		t.Errorf("coverage = %v, want 1.0 (expect_all fully covered)", sc.Coverage)
+	}
+}
+
+func TestScoreAskCompleteness_LeakOnly(t *testing.T) {
+	// A leak-only case (no expect_all) scores 1.0 coverage and is judged purely on
+	// leaks — so a clean answer passes and a bleeding one is caught.
+	c := AskCompletenessCase{Question: "how does alpha deploy?", ExpectNone: []string{"beta-secret"}}
+
+	clean := scoreAskCompleteness(c, "grounding", "Alpha deploys via make deploy.")
+	if clean.Coverage != 1.0 || len(clean.Leaks) != 0 {
+		t.Errorf("clean leak-only case: coverage=%v leaks=%v, want 1.0 / none", clean.Coverage, clean.Leaks)
+	}
+	bleed := scoreAskCompleteness(c, "grounding", "Alpha deploys like beta-secret does.")
+	if got := join(bleed.Leaks); got != "beta-secret" {
+		t.Errorf("bleeding leak-only case: leaks=%q, want [beta-secret]", got)
+	}
+}
+
 func join(xs []string) string {
 	out := ""
 	for i, x := range xs {

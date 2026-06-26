@@ -137,7 +137,7 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 			titleHubs[k] = true
 			count[k] += hp.Count
 			if _, seen := best[k]; !seen {
-				best[k] = rag.Hit{SourceKind: "page", PageID: hp.PageID, Title: hp.Title, ChunkID: hp.ChunkID}
+				best[k] = rag.Hit{SourceKind: "page", PageID: hp.PageID, SpaceID: hp.SpaceID, Title: hp.Title, ChunkID: hp.ChunkID}
 				chunkIDs = append(chunkIDs, hp.ChunkID)
 				pageIDs = append(pageIDs, hp.PageID)
 				order = append(order, k)
@@ -153,8 +153,60 @@ func (s *Server) askContext(ctx context.Context, userID int64, query string, spa
 	if err != nil {
 		return "", nil, 0, err
 	}
-	block, pageHits := buildAskContext(order, best, count, bodies, contents)
+	locations := s.sourceLocations(ctx, order, best)
+	block, pageHits := buildAskContext(order, best, count, bodies, contents, locations)
 	return block, pageHits, hits[0].Score, nil
+}
+
+// askPathMaxSegments bounds a source's location label (Space › a › b › …) so a
+// deep tree doesn't spend grounding tokens on the middle of the path: the space
+// and the first/last dirs carry the disambiguating signal, the middle is elided.
+const askPathMaxSegments = 4
+
+// sourceLocations builds the "Space › path" provenance prefix for each retrieved
+// source, keyed by the same source key used in `order`/`best`. This is what lets
+// the model keep one project's facts out of another's answer (the cross-space
+// "soft leak" an all-spaces ask is prone to): the space name is the load-bearing
+// signal; the breadcrumb dirs additionally separate sub-areas within a big space.
+// The source's own title is NOT included — buildAskContext appends it after the
+// prefix. Reuses pageBreadcrumb (the same ancestor walk the search UI shows).
+// Best-effort per source: a breadcrumb error degrades that label to the space name
+// alone, and a missing space name to the breadcrumb alone. For a file source
+// PageID is its parent page, so the path stops at that parent (the file's own name
+// is the title).
+func (s *Server) sourceLocations(ctx context.Context, order []string, best map[string]rag.Hit) map[string]string {
+	names := map[int64]string{} // space id → name, cached across sources
+	out := make(map[string]string, len(order))
+	for _, k := range order {
+		h := best[k]
+		name, ok := names[h.SpaceID]
+		if !ok {
+			name = s.spaceName(ctx, &h.SpaceID)
+			names[h.SpaceID] = name
+		}
+		segs := make([]string, 0, askPathMaxSegments)
+		if name != "" {
+			segs = append(segs, name)
+		}
+		if h.PageID > 0 {
+			if crumbs, err := pageBreadcrumb(ctx, s.DB, h.PageID); err == nil {
+				segs = append(segs, crumbs...)
+			}
+		}
+		out[k] = boundSegments(segs, askPathMaxSegments)
+	}
+	return out
+}
+
+// boundSegments joins location segments with " › ", eliding the middle when there
+// are more than max so a deep path stays short: the first segment (the space) and
+// the last (the deepest dir) are the disambiguating ones. Pure — unit-testable.
+func boundSegments(segs []string, max int) string {
+	if len(segs) <= max {
+		return strings.Join(segs, " › ")
+	}
+	kept := append(append([]string{}, segs[:max-2]...), "…", segs[len(segs)-1])
+	return strings.Join(kept, " › ")
 }
 
 // frontHubs moves topical-hub sources to the front of the order so they expand to
@@ -190,9 +242,11 @@ func hitKey(h rag.Hit) string {
 // and files, keyed by `order`), expanding topically-central PAGES (top-by-rank or
 // dense hubs) to their full body and falling back to chunk text otherwise. File
 // sources have no body — they always render their chunk text. Pure (no I/O) so
-// it's unit-testable. `bodies` is keyed by PAGE id; `contents` by chunk id.
+// it's unit-testable. `bodies` is keyed by PAGE id; `contents` by chunk id;
+// `locations` (keyed by source key) prefixes each label with its "Space › path"
+// provenance so the model can tell projects apart — nil/missing → title only.
 // Returns the block and the per-source hits aligned to the [n] numbering.
-func buildAskContext(order []string, best map[string]rag.Hit, count map[string]int, bodies, contents map[int64]string) (string, []rag.Hit) {
+func buildAskContext(order []string, best map[string]rag.Hit, count map[string]int, bodies, contents map[int64]string, locations map[string]string) (string, []rag.Hit) {
 	var b strings.Builder
 	pageHits := make([]rag.Hit, 0, len(order))
 	spent, n := 0, 0
@@ -210,6 +264,9 @@ func buildAskContext(order []string, best map[string]rag.Hit, count map[string]i
 			(rank < askExpandTopRank || count[key] >= askDenseChunks)
 
 		label := h.Title
+		if loc := locations[key]; loc != "" {
+			label = loc + " › " + h.Title // "Space › path › Title" provenance keeps projects distinct
+		}
 		if h.SourceKind == "file" {
 			label += " (file)" // mark an attachment source so the model cites it as a file
 		}

@@ -231,6 +231,7 @@ func (s *Service) PageBodies(ctx context.Context, userID int64, ids []int64, spa
 // ANY query term (OR semantics), plus a representative chunk for fallback.
 type HubPage struct {
 	PageID  int64
+	SpaceID int64
 	Title   string
 	ChunkID int64
 	Count   int
@@ -256,7 +257,7 @@ func (s *Service) HubPages(ctx context.Context, userID int64, query string, spac
 	uid := qb.arg(userID)
 	orq := `replace(plainto_tsquery('english', ` + qb.arg(query) + `)::text, '&', '|')::tsquery`
 	sql := `
-		SELECT p.id, p.title,
+		SELECT p.id, p.space_id, p.title,
 		       (SELECT min(id) FROM page_chunks WHERE page_id = p.id),
 		       count(pc.id)::int AS matches
 		  FROM pages p
@@ -278,7 +279,7 @@ func (s *Service) HubPages(ctx context.Context, userID int64, query string, spac
 	var out []HubPage
 	for rows.Next() {
 		var h HubPage
-		if err := rows.Scan(&h.PageID, &h.Title, &h.ChunkID, &h.Count); err != nil {
+		if err := rows.Scan(&h.PageID, &h.SpaceID, &h.Title, &h.ChunkID, &h.Count); err != nil {
 			return nil, err
 		}
 		out = append(out, h)

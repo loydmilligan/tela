@@ -26,13 +26,17 @@ import (
 // from being judged on a retrieval problem (or vice versa). Wired as
 // `tela ask-eval` (see cmd/tela). Needs a live embedder + LLM.
 
-// AskCompletenessCase is one labelled enumeration question: the answer must
-// contain EVERY string in ExpectAll (case-insensitive substring). Same JSON-on-
-// disk shape as rag.EvalCase so a golden set lives outside the binary and grows.
+// AskCompletenessCase is one labelled question. The answer must contain EVERY
+// string in ExpectAll and NONE of ExpectNone (case-insensitive substring).
+// ExpectNone is the cross-project leak guard: ask with SpaceID nil (all spaces)
+// and list terms that belong only to OTHER projects, so a soft leak (the answer
+// pulling in another space's facts) is caught. Same JSON-on-disk shape as
+// rag.EvalCase so a golden set lives outside the binary and grows.
 type AskCompletenessCase struct {
-	Question  string   `json:"question"`
-	SpaceID   *int64   `json:"space_id,omitempty"`
-	ExpectAll []string `json:"expect_all"`
+	Question   string   `json:"question"`
+	SpaceID    *int64   `json:"space_id,omitempty"`
+	ExpectAll  []string `json:"expect_all,omitempty"`
+	ExpectNone []string `json:"expect_none,omitempty"`
 }
 
 // AskCompletenessScore is the per-question outcome. Coverage is the fraction of
@@ -44,6 +48,7 @@ type AskCompletenessScore struct {
 	Covered         []string `json:"covered"`
 	GenerationDrops []string `json:"generation_drops"`
 	RetrievalGaps   []string `json:"retrieval_gaps"`
+	Leaks           []string `json:"leaks,omitempty"` // expect_none items that appeared (cross-project bleed)
 	Coverage        float64  `json:"coverage"`
 	Answer          string   `json:"answer,omitempty"`
 }
@@ -54,8 +59,8 @@ type AskCompletenessScore struct {
 func (s *Server) EvalAskCompleteness(ctx context.Context, userID int64, cases []AskCompletenessCase, includeAnswer bool) ([]AskCompletenessScore, error) {
 	out := make([]AskCompletenessScore, 0, len(cases))
 	for _, c := range cases {
-		if c.Question == "" || len(c.ExpectAll) == 0 {
-			return nil, fmt.Errorf("ask-eval: case %q has no question or no expect_all", c.Question)
+		if c.Question == "" || (len(c.ExpectAll) == 0 && len(c.ExpectNone) == 0) {
+			return nil, fmt.Errorf("ask-eval: case %q needs a question and expect_all or expect_none", c.Question)
 		}
 		excerpts, hits, _, err := s.askContext(ctx, userID, c.Question, c.SpaceID, 0)
 		if err != nil {
@@ -82,7 +87,9 @@ func (s *Server) EvalAskCompleteness(ctx context.Context, userID int64, cases []
 // scoreAskCompleteness classifies each expected item against the grounding and
 // the answer. Pure (no I/O) so it's unit-testable. An item present in the answer
 // is covered; otherwise it's a generation drop if it appeared in the grounding,
-// else a retrieval gap.
+// else a retrieval gap. ExpectNone items present in the answer are Leaks (a
+// cross-project bleed). Coverage is over ExpectAll only; a leak-only case (no
+// ExpectAll) scores 1.0 coverage and is judged purely by its leak count.
 func scoreAskCompleteness(c AskCompletenessCase, excerpts, answer string) AskCompletenessScore {
 	ans := strings.ToLower(answer)
 	grounding := strings.ToLower(excerpts)
@@ -103,8 +110,19 @@ func scoreAskCompleteness(c AskCompletenessCase, excerpts, answer string) AskCom
 			sc.RetrievalGaps = append(sc.RetrievalGaps, e)
 		}
 	}
+	for _, e := range c.ExpectNone {
+		el := strings.ToLower(strings.TrimSpace(e))
+		if el == "" {
+			continue
+		}
+		if strings.Contains(ans, el) {
+			sc.Leaks = append(sc.Leaks, e)
+		}
+	}
 	if total > 0 {
 		sc.Coverage = float64(len(sc.Covered)) / float64(total)
+	} else {
+		sc.Coverage = 1 // no positive requirements — judged purely on leaks
 	}
 	return sc
 }

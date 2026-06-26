@@ -255,6 +255,7 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 // ask handlers (single source so the two never drift).
 const askSystemPrompt = "You are a helpful assistant answering questions strictly from the provided document excerpts. " +
 	"Cite the relevant sources by their [n] number. If the excerpts don't contain the answer, say so — do not invent facts. " +
+	"Each excerpt is labeled with its source location as 'Space › path › Title'. When the question is about one project, space, or area, answer only from the excerpts whose location matches it and ignore the rest; never merge facts across different spaces/projects, and when excerpts differ because they describe different projects, keep them distinct (name the location) instead of blending them into one answer. " +
 	"Sources may also be flagged in a 'Known disagreements' note, and excerpts can themselves conflict on a value, status, or claim. " +
 	"When a conflict bears on the question, surface it explicitly and give both sides — never present a contested value as settled or silently pick one. " +
 	"In particular, if a flagged disagreement is about the very thing the question asks for, you MUST report both values and name the conflicting sources, even when one excerpt states a single value confidently. " +
@@ -280,9 +281,10 @@ func askUserPrompt(excerpts, conflicts, question string) string {
 // words skewed the query embedding — is handled upstream by stripPresentation on
 // the retrieval query (see askContext); the two are independent and both needed.
 // `tela ask-eval` reports which class any remaining miss falls in.
-const askEnumerationDirective = "\n\nIf this question asks for a list, table, or complete set of items, be exhaustive: " +
-	"scan EVERY excerpt and include every item that qualifies — including items mentioned only in passing or in prose, " +
-	"not just those already collected in a list or table. Before finishing, re-read the excerpts and add any you missed."
+const askEnumerationDirective = "\n\nIf this question asks for a list, table, or complete set of items, be exhaustive within the question's scope: " +
+	"scan every excerpt that belongs to that scope (the same project/space/area — see each excerpt's 'Space › path' label) and include every item there that qualifies — " +
+	"including items mentioned only in passing or in prose, not just those already collected in a list or table — but do NOT pull in items from unrelated projects/spaces. " +
+	"Before finishing, re-read those excerpts and add any you missed."
 
 // RAGAskStream is the streaming (SSE) twin of RAGAsk: identical retrieval and
 // prompt, but the answer is streamed token-by-token over text/event-stream so the

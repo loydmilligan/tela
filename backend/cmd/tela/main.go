@@ -372,8 +372,10 @@ func runRAGEval(d *sql.DB, args []string) {
 //
 //	tela ask-eval --set golden.json [--user <id>] [--answers]
 //
-// The golden set is a JSON array of {question, expect_all[], space_id?}. Needs a
-// live embedder AND LLM (so it exercises the same model the deployment serves).
+// The golden set is a JSON array of {question, expect_all[]?, expect_none[]?,
+// space_id?} — expect_none lists terms that must be ABSENT (the cross-project leak
+// guard, used with space_id unset). Needs a live embedder AND LLM (so it
+// exercises the same model the deployment serves).
 func runAskEval(d *sql.DB, args []string) {
 	setPath, userID, showAnswers := "", int64(0), false
 	for i := 0; i < len(args); i++ {
@@ -421,18 +423,19 @@ func runAskEval(d *sql.DB, args []string) {
 	}
 
 	var sumCov float64
-	var drops, gaps int
+	var drops, gaps, leaks int
 	for _, sc := range scores {
 		sumCov += sc.Coverage
 		drops += len(sc.GenerationDrops)
 		gaps += len(sc.RetrievalGaps)
+		leaks += len(sc.Leaks)
 	}
 	mean := 0.0
 	if len(scores) > 0 {
 		mean = sumCov / float64(len(scores))
 	}
 	fmt.Printf("\nAsk-completeness eval — %d cases, user=%d\n", len(scores), userID)
-	fmt.Printf("  mean coverage = %.3f    generation drops = %d    retrieval gaps = %d\n\n", mean, drops, gaps)
+	fmt.Printf("  mean coverage = %.3f    generation drops = %d    retrieval gaps = %d    leaks = %d\n\n", mean, drops, gaps, leaks)
 	for _, sc := range scores {
 		fmt.Printf("  [%3.0f%%] %s\n", sc.Coverage*100, sc.Question)
 		if len(sc.GenerationDrops) > 0 {
@@ -440,6 +443,9 @@ func runAskEval(d *sql.DB, args []string) {
 		}
 		if len(sc.RetrievalGaps) > 0 {
 			fmt.Printf("        never retrieved: %s\n", strings.Join(sc.RetrievalGaps, ", "))
+		}
+		if len(sc.Leaks) > 0 {
+			fmt.Printf("        LEAKED from another scope (should be absent): %s\n", strings.Join(sc.Leaks, ", "))
 		}
 		if showAnswers {
 			fmt.Printf("        answer: %s\n", strings.ReplaceAll(strings.TrimSpace(sc.Answer), "\n", "\n        "))

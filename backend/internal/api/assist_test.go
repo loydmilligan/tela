@@ -118,7 +118,7 @@ func TestBuildAskContext_ExpandsHubAndFallsBack(t *testing.T) {
 	}
 	count["p6"] = askDenseChunks // page 6 is the dense hub despite ranking last
 
-	block, pageHits := buildAskContext(order, best, count, bodies, contents)
+	block, pageHits := buildAskContext(order, best, count, bodies, contents, nil)
 
 	// Top-ranked pages expanded to full body.
 	if !strings.Contains(block, "FULLBODY1") {
@@ -143,6 +143,52 @@ func TestBuildAskContext_ExpandsHubAndFallsBack(t *testing.T) {
 		if h.PageID != pageIDs[i] {
 			t.Errorf("pageHits[%d] = page %d, want %d", i, h.PageID, pageIDs[i])
 		}
+	}
+}
+
+func TestBoundSegments(t *testing.T) {
+	cases := []struct {
+		name string
+		segs []string
+		want string
+	}{
+		{"empty", nil, ""},
+		{"single space", []string{"Eng"}, "Eng"},
+		{"under cap", []string{"Eng", "Runbooks", "Deploy"}, "Eng › Runbooks › Deploy"},
+		{"at cap", []string{"Eng", "A", "B", "C"}, "Eng › A › B › C"},
+		{"over cap elides middle", []string{"Eng", "A", "B", "C", "D"}, "Eng › A › … › D"},
+	}
+	for _, c := range cases {
+		if got := boundSegments(c.segs, askPathMaxSegments); got != c.want {
+			t.Errorf("%s: boundSegments(%v) = %q, want %q", c.name, c.segs, got, c.want)
+		}
+	}
+}
+
+func TestBuildAskContext_LocationPrefix(t *testing.T) {
+	// A page source and a file source, each with a "Space › path" location: the
+	// label must read "loc › Title", and the file keeps its (file) marker after it.
+	order := []string{"p1", "f2"}
+	best := map[string]rag.Hit{
+		"p1": {SourceKind: "page", PageID: 1, ChunkID: 10, Title: "Deploy", Snippet: "snip"},
+		"f2": {SourceKind: "file", FileID: 2, ChunkID: 20, Title: "runbook.pdf", Snippet: "fsnip"},
+	}
+	count := map[string]int{"p1": 1, "f2": 1}
+	contents := map[int64]string{10: "chunk text", 20: "file chunk text"}
+	locations := map[string]string{"p1": "Eng › Runbooks", "f2": "Eng"}
+
+	block, _ := buildAskContext(order, best, count, map[int64]string{}, contents, locations)
+
+	if !strings.Contains(block, "[1] Eng › Runbooks › Deploy") {
+		t.Errorf("page label missing location prefix: %q", block)
+	}
+	if !strings.Contains(block, "[2] Eng › runbook.pdf (file)") {
+		t.Errorf("file label missing location prefix or (file) marker: %q", block)
+	}
+	// A missing location degrades to the bare title (nil-safe).
+	plain, _ := buildAskContext([]string{"p1"}, best, count, map[int64]string{}, contents, nil)
+	if !strings.Contains(plain, "[1] Deploy") || strings.Contains(plain, "›") {
+		t.Errorf("nil locations should yield a bare title: %q", plain)
 	}
 }
 
