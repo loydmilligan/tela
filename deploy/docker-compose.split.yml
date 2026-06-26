@@ -67,6 +67,9 @@ services:
       TELA_LLM_URL:    ${TELA_LLM_URL:-}
       TELA_LLM_MODEL:  ${TELA_LLM_MODEL:-}
       TELA_LLM_TOKEN:  ${TELA_LLM_TOKEN:-}
+      # Completion length cap (0/unset → in-code default 1024). Raise for long
+      # table/enumeration answers that otherwise truncate mid-stream.
+      TELA_LLM_MAX_TOKENS: ${TELA_LLM_MAX_TOKENS:-}
       # Deck image generation (MCP generate_deck_image) — OpenAI-compatible Images
       # endpoint incl. /v1. Unset → 503. Use the overlay IP from Docker, not a name.
       TELA_IMAGE_GEN_URL:    ${TELA_IMAGE_GEN_URL:-}
