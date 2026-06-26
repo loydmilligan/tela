@@ -6,16 +6,8 @@ import { Button } from '../../ui/button'
 import { Input } from '../../ui/input'
 import { Select } from '../../ui/select'
 import { useSpaces } from '../../../lib/queries/spaces'
-import { type AtlasCadence, type AtlasOwner, useCreateProject } from '../../../lib/queries/atlas'
+import { type AtlasOwner, useCreateProject } from '../../../lib/queries/atlas'
 import { SpacePicker, type SpaceChoice } from './SpacePicker'
-
-const CADENCES: { value: AtlasCadence; label: string }[] = [
-  { value: '', label: 'Manual — I run it' },
-  { value: 'hourly', label: 'Automatic · hourly' },
-  { value: 'daily', label: 'Automatic · daily' },
-  { value: 'weekly', label: 'Automatic · weekly' },
-  { value: 'monthly', label: 'Automatic · monthly' },
-]
 
 export function NewProjectDialog({
   open,
@@ -32,7 +24,6 @@ export function NewProjectDialog({
   const [name, setName] = useState('')
   const [ownerIdx, setOwnerIdx] = useState(0)
   const [output, setOutput] = useState<SpaceChoice>({})
-  const [cadence, setCadence] = useState<AtlasCadence>('')
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -40,7 +31,6 @@ export function NewProjectDialog({
       setName('')
       setOwnerIdx(0)
       setOutput({})
-      setCadence('')
       setErr(null)
     }
   }, [open])
@@ -65,8 +55,10 @@ export function NewProjectDialog({
         owner_kind: owner.kind,
         owner_id: owner.id,
         output: out,
-        cadence,
-        auto_update: cadence !== '',
+        // Sensible default: keep docs current automatically (change-gated, so it
+        // no-ops when nothing moved). Adjustable in project settings.
+        cadence: 'daily',
+        auto_update: true,
       })
       onOpenChange(false)
       navigate({ to: '/atlas/projects/$projectId', params: { projectId: project.id } })
@@ -81,7 +73,7 @@ export function NewProjectDialog({
         <DialogHeader>
           <DialogTitle>New Atlas project</DialogTitle>
           <DialogDescription>
-            A project bundles sources into one output space. You'll add the repos / Jira projects next, then run it.
+            A project bundles sources into one output space. You'll add the repos / Jira projects next, then run it. It auto-refreshes daily by default — change that in settings.
           </DialogDescription>
         </DialogHeader>
 
@@ -110,14 +102,6 @@ export function NewProjectDialog({
               placeholder={name.trim() ? `Default: “${name.trim()}” (new space)` : 'Search a space, or name a new one…'}
             />
           </FieldBlock>
-
-          <Field label="Refresh">
-            <Select value={cadence} onChange={(e) => setCadence(e.target.value as AtlasCadence)}>
-              {CADENCES.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </Select>
-          </Field>
 
           {err && <p className="text-[length:var(--text-sm)] text-[var(--accent-negative-fg)]">{err}</p>}
         </div>
