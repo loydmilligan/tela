@@ -15,7 +15,7 @@ import (
 // ── request / response shapes ───────────────────────────────────────────────
 
 type atlasSourceCreateReq struct {
-	Type         string `json:"type"` // "git" (jira lands in Phase 5)
+	Type         string `json:"type"` // "git" | "jira"
 	Location     string `json:"location"`
 	Name         string `json:"name"`
 	Branch       string `json:"branch"`
@@ -23,6 +23,7 @@ type atlasSourceCreateReq struct {
 	Include      string `json:"include"`
 	Exclude      string `json:"exclude"`
 	ParentPageID *int64 `json:"parent_page_id"`
+	SecretID     *int64 `json:"secret_id"`   // optional credential; must be in this space
 	Cadence      string `json:"cadence"`     // "hourly"|"daily"|"weekly"|"monthly"|"" = off
 	AutoUpdate   *bool  `json:"auto_update"` // default true
 }
@@ -31,6 +32,7 @@ type atlasSourceDTO struct {
 	ID            int64  `json:"id"`
 	SpaceID       int64  `json:"space_id"`
 	ParentPageID  *int64 `json:"parent_page_id,omitempty"`
+	SecretID      *int64 `json:"secret_id,omitempty"`
 	Type          string `json:"type"`
 	Location      string `json:"location"`
 	Name          string `json:"name"`
@@ -81,13 +83,37 @@ func (s *Server) CreateAtlasSource(w http.ResponseWriter, r *http.Request) {
 	if req.Type == "" {
 		req.Type = string(core.SourceGit)
 	}
-	if req.Type != string(core.SourceGit) {
-		writeError(w, http.StatusBadRequest, "unsupported_type", "only 'git' sources are supported yet")
+	if req.Type != string(core.SourceGit) && req.Type != string(core.SourceJira) {
+		writeError(w, http.StatusBadRequest, "unsupported_type", "type must be 'git' or 'jira'")
 		return
 	}
 	if req.Location == "" {
 		writeError(w, http.StatusBadRequest, "invalid_source", "location is required")
 		return
+	}
+	// jira ingests a single project's issues + schema; the project key rides in
+	// subpath and the secret (email + API token) authenticates the REST calls.
+	if req.Type == string(core.SourceJira) {
+		if req.Subpath == "" {
+			writeError(w, http.StatusBadRequest, "invalid_source", "jira sources require subpath (the project key)")
+			return
+		}
+		if req.SecretID == nil {
+			writeError(w, http.StatusBadRequest, "invalid_source", "jira sources require a secret (email + API token)")
+			return
+		}
+	}
+	// A bound secret must live in the same space (and so be reachable only by this
+	// space's managers) — no borrowing another space's credential.
+	if req.SecretID != nil {
+		var inSpace bool
+		err := s.DB.QueryRowContext(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM atlas_secrets WHERE id=$1 AND space_id=$2)`,
+			*req.SecretID, spaceID).Scan(&inSpace)
+		if err != nil || !inSpace {
+			writeError(w, http.StatusBadRequest, "invalid_secret", "secret_id must be a secret in this space")
+			return
+		}
 	}
 	if !atlasCadences[req.Cadence] {
 		writeError(w, http.StatusBadRequest, "invalid_cadence", "cadence must be hourly|daily|weekly|monthly or empty")
@@ -112,16 +138,16 @@ func (s *Server) CreateAtlasSource(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	var createdAt string
 	err := s.DB.QueryRowContext(r.Context(), `
-		INSERT INTO atlas_sources (space_id, parent_page_id, type, location, name, branch, subpath, include, exclude, cadence, auto_update)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, created_at`,
-		spaceID, nullableInt64(req.ParentPageID), req.Type, req.Location, req.Name, req.Branch, req.Subpath,
+		INSERT INTO atlas_sources (space_id, parent_page_id, secret_id, type, location, name, branch, subpath, include, exclude, cadence, auto_update)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, created_at`,
+		spaceID, nullableInt64(req.ParentPageID), nullableInt64(req.SecretID), req.Type, req.Location, req.Name, req.Branch, req.Subpath,
 		req.Include, req.Exclude, cadence, boolToInt(autoUpdate)).Scan(&id, &createdAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "create source failed")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"source": atlasSourceDTO{
-		ID: id, SpaceID: spaceID, ParentPageID: req.ParentPageID, Type: req.Type, Location: req.Location,
+		ID: id, SpaceID: spaceID, ParentPageID: req.ParentPageID, SecretID: req.SecretID, Type: req.Type, Location: req.Location,
 		Name: req.Name, Branch: req.Branch, Subpath: req.Subpath, Include: req.Include, Exclude: req.Exclude,
 		Cadence: cadence, AutoUpdate: autoUpdate, CreatedAt: createdAt,
 	}})
@@ -145,7 +171,7 @@ func (s *Server) ListAtlasSources(w http.ResponseWriter, r *http.Request) {
 	}
 	canManage := s.atlasSpaceManageErr(r.Context(), u, k, spaceID) == nil
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT s.id, s.space_id, s.parent_page_id, s.type, s.location, s.name, s.ref, s.branch, s.subpath,
+		SELECT s.id, s.space_id, s.parent_page_id, s.secret_id, s.type, s.location, s.name, s.ref, s.branch, s.subpath,
 		       s.include, s.exclude, s.cadence, s.auto_update, s.last_refresh_at, s.created_at,
 		       lr.id, lr.status, lr.coverage_json
 		  FROM atlas_sources s
@@ -162,10 +188,10 @@ func (s *Server) ListAtlasSources(w http.ResponseWriter, r *http.Request) {
 	out := []atlasSourceDTO{}
 	for rows.Next() {
 		var d atlasSourceDTO
-		var parent, lastRunID sql.NullInt64
+		var parent, secret, lastRunID sql.NullInt64
 		var autoUpd int
 		var lastStatus, covJSON sql.NullString
-		if err := rows.Scan(&d.ID, &d.SpaceID, &parent, &d.Type, &d.Location, &d.Name, &d.Ref, &d.Branch,
+		if err := rows.Scan(&d.ID, &d.SpaceID, &parent, &secret, &d.Type, &d.Location, &d.Name, &d.Ref, &d.Branch,
 			&d.Subpath, &d.Include, &d.Exclude, &d.Cadence, &autoUpd, &d.LastRefreshAt, &d.CreatedAt,
 			&lastRunID, &lastStatus, &covJSON); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan source failed")
@@ -173,6 +199,9 @@ func (s *Server) ListAtlasSources(w http.ResponseWriter, r *http.Request) {
 		}
 		if parent.Valid {
 			d.ParentPageID = &parent.Int64
+		}
+		if secret.Valid {
+			d.SecretID = &secret.Int64
 		}
 		d.AutoUpdate = autoUpd != 0
 		d.NextDue = atlasNextDueStr(d.AutoUpdate, d.Cadence, d.LastRefreshAt)

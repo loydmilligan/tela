@@ -145,6 +145,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/atlas/sources/{id}/runs", srv.ListAtlasSourceRuns)
 	mux.HandleFunc("GET /api/atlas/runs/{id}", srv.GetAtlasRun)
 	mux.HandleFunc("GET /api/atlas/runs/{id}/stream", srv.StreamAtlasRun)
+	// Source credential store (Phase 5): all management-gated; value write-only.
+	mux.HandleFunc("POST /api/spaces/{id}/atlas/secrets", srv.CreateAtlasSecret)
+	mux.HandleFunc("GET /api/spaces/{id}/atlas/secrets", srv.ListAtlasSecrets)
+	mux.HandleFunc("DELETE /api/atlas/secrets/{id}", srv.DeleteAtlasSecret)
 
 	mux.HandleFunc("GET /api/pages", srv.ListPages)
 	mux.HandleFunc("GET /api/pages/all", srv.ListAllPages)

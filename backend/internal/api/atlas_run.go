@@ -27,16 +27,20 @@ type atlasSourceRow struct {
 	Subpath      string
 	Include      string
 	Exclude      string
+	SecretID     *int64
 }
 
-const atlasSourceCols = `id, space_id, parent_page_id, type, location, name, ref, branch, subpath, include, exclude`
+const atlasSourceCols = `id, space_id, parent_page_id, type, location, name, ref, branch, subpath, include, exclude, secret_id`
 
 func scanAtlasSource(sc interface{ Scan(...any) error }) (atlasSourceRow, error) {
 	var r atlasSourceRow
-	var parent sql.NullInt64
-	err := sc.Scan(&r.ID, &r.SpaceID, &parent, &r.Type, &r.Location, &r.Name, &r.Ref, &r.Branch, &r.Subpath, &r.Include, &r.Exclude)
+	var parent, secret sql.NullInt64
+	err := sc.Scan(&r.ID, &r.SpaceID, &parent, &r.Type, &r.Location, &r.Name, &r.Ref, &r.Branch, &r.Subpath, &r.Include, &r.Exclude, &secret)
 	if parent.Valid {
 		r.ParentPageID = &parent.Int64
+	}
+	if secret.Valid {
+		r.SecretID = &secret.Int64
 	}
 	return r, err
 }
@@ -85,6 +89,17 @@ func (m *atlasManager) buildRunContext(ctx context.Context, src atlasSourceRow, 
 	client := m.newLLMClient()
 	proj := &core.Project{ID: src.SpaceID, Model: atlasModelCfg(m.s.rag.EmbedModel())}
 	coreSrc := coreSourceFrom(src)
+	// Resolve the bound credential into the transient secret fields just before the
+	// run acquires (mirrors atlas's secret.ResolveSource): jira reads SecretValue +
+	// SecretMeta["email"] directly; git auth is injected into the clone Location
+	// (the git connector authenticates via the URL, never SecretValue).
+	if src.SecretID != nil {
+		if val, meta, err := loadAtlasSecret(ctx, m.s.DB, *src.SecretID); err == nil {
+			applyAtlasSecret(&coreSrc, val, meta)
+		} else {
+			slog.Warn("atlas: resolve source secret", "source", src.ID, "secret", *src.SecretID, "err", err)
+		}
+	}
 	return &engine.RunContext{
 		Project:   proj,
 		Source:    &coreSrc,
@@ -189,13 +204,16 @@ func (m *atlasManager) ResumeDangling(ctx context.Context) {
 		var runID int64
 		var stage string
 		var src atlasSourceRow
-		var parent sql.NullInt64
-		if err := rows.Scan(&runID, &stage, &src.ID, &src.SpaceID, &parent, &src.Type, &src.Location, &src.Name, &src.Ref, &src.Branch, &src.Subpath, &src.Include, &src.Exclude); err != nil {
+		var parent, secret sql.NullInt64
+		if err := rows.Scan(&runID, &stage, &src.ID, &src.SpaceID, &parent, &src.Type, &src.Location, &src.Name, &src.Ref, &src.Branch, &src.Subpath, &src.Include, &src.Exclude, &secret); err != nil {
 			slog.Error("atlas: resume row", "err", err)
 			continue
 		}
 		if parent.Valid {
 			src.ParentPageID = &parent.Int64
+		}
+		if secret.Valid {
+			src.SecretID = &secret.Int64
 		}
 		todo = append(todo, pending{src, runID, core.StageName(stage)})
 	}
@@ -214,7 +232,7 @@ func (m *atlasManager) ResumeDangling(ctx context.Context) {
 func atlasSourceColsPrefixed(alias string) string {
 	return alias + ".id, " + alias + ".space_id, " + alias + ".parent_page_id, " + alias + ".type, " +
 		alias + ".location, " + alias + ".name, " + alias + ".ref, " + alias + ".branch, " +
-		alias + ".subpath, " + alias + ".include, " + alias + ".exclude"
+		alias + ".subpath, " + alias + ".include, " + alias + ".exclude, " + alias + ".secret_id"
 }
 
 // atlasWorkRoot is where run workspaces (repo clones) are materialized. Override
