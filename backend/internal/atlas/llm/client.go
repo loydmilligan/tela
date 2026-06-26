@@ -263,6 +263,7 @@ type chatReq struct {
 	Model       string    `json:"model"`
 	Messages    []chatMsg `json:"messages"`
 	Temperature float64   `json:"temperature"`
+	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Stream      bool      `json:"stream"`
 }
 type chatResp struct {
@@ -286,7 +287,7 @@ func (c *Client) Chat(ctx context.Context, system, user string, temperature floa
 	}
 	defer release()
 	var resp chatResp
-	req := chatReq{Model: c.cfg.ChatModel, Temperature: temperature, Messages: []chatMsg{
+	req := chatReq{Model: c.cfg.ChatModel, Temperature: temperature, MaxTokens: c.cfg.MaxTokens, Messages: []chatMsg{
 		{Role: "system", Content: system}, {Role: "user", Content: user},
 	}}
 	if err := c.post(ctx, c.cfg.BaseURL, "/chat/completions", req, &resp, chatTimeout); err != nil {

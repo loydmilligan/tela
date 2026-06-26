@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
@@ -64,7 +65,20 @@ func atlasModelCfg(embedModel string) core.ModelCfg {
 		APIKey:     os.Getenv("TELA_LLM_TOKEN"),
 		ChatModel:  atlasGetenv("TELA_LLM_MODEL", "qwen2.5:7b"),
 		EmbedModel: embedModel,
+		MaxTokens:  atlasMaxTokens(),
 	}
+}
+
+// atlasMaxTokens caps each chat completion's output. Without it, an mlx_lm.server
+// endpoint defaults to 512 and truncates long pages/outlines mid-JSON. Reads
+// TELA_LLM_MAX_TOKENS (shared with tela's own LLM); a generous default otherwise.
+func atlasMaxTokens() int {
+	if v := os.Getenv("TELA_LLM_MAX_TOKENS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 8192
 }
 
 // newLLMClient constructs the lifted client and wires embedding to tela's

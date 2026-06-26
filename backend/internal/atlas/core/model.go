@@ -71,6 +71,10 @@ type ModelCfg struct {
 	APIKey     string `json:"api_key"`   // dummy is fine for local
 	ChatModel  string `json:"chat_model"`
 	EmbedModel string `json:"embed_model"`
+	// MaxTokens caps each chat completion's OUTPUT length. 0 = don't send it (use
+	// the endpoint default) — but that's dangerous: mlx_lm.server defaults to 512,
+	// which truncates long pages/outlines mid-JSON. Wired from TELA_LLM_MAX_TOKENS.
+	MaxTokens int `json:"max_tokens,omitempty"`
 	// Concurrency caps total in-flight LLM requests (chat+embed) for a client.
 	// 0 = the package default (overridable via ATLAS_LLM_CONCURRENCY). The gate
 	// exists so parallel stages/sources never swamp a single-box provider.
