@@ -12,24 +12,28 @@ import (
 )
 
 // TestMCP_AtlasTools exercises the atlas MCP surface end-to-end over the
-// transport: atlas_list_sources + atlas_run_status are member-readable and
-// return the source/coverage envelopes, while atlas_run is management-gated (an
-// editor is rejected with a forbidden code before any run is attempted).
+// transport: atlas_list_projects + atlas_run_status are view-readable (owner and
+// org members) and return the project/coverage envelopes, while atlas_run is
+// management-gated (an org member who isn't an admin is rejected with a forbidden
+// code before any run is attempted).
 func TestMCP_AtlasTools(t *testing.T) {
 	ts, d := newWiredServer(t)
-	alice := seedUser(t, d, "alice", "alicepw12", false)      // space owner (manage)
-	charlie := seedUser(t, d, "charlie", "charliepw1", false) // editor member (view only)
-	space := seedSpace(t, d, "Repo Docs", "repo-docs", alice)
-	seedMember(t, d, space, charlie, "editor")
+	admin := seedUser(t, d, "admin", "adminpw12", false)   // org admin (manage)
+	member := seedUser(t, d, "member", "memberpw1", false) // org member (view only)
+	org := seedOrg(t, d, "Acme", "acme")
+	seedOrgMember(t, d, org, admin, orgRoleAdmin)
+	seedOrgMember(t, d, org, member, orgRoleMember)
 
-	// A bound source (makes the space atlas-managed) with a completed run that has
-	// coverage + stats — so list_sources reports the last run and run_status
-	// surfaces the audit.
+	space := seedSpace(t, d, "Acme Docs", "acme-docs", admin)
+	pid := seedAtlasProject(t, d, "Acme Docs", accountOrg, org, space, 0)
+
+	// A source with a completed run that has coverage + stats — so list_projects
+	// reports the last run and run_status surfaces the audit.
 	var srcID int64
 	if err := d.QueryRowContext(context.Background(),
-		`INSERT INTO atlas_sources (space_id, type, location, name, ref, cadence, auto_update)
-		 VALUES ($1,'git','https://github.com/example/repo.git','repo','abc123','daily',1) RETURNING id`,
-		space).Scan(&srcID); err != nil {
+		`INSERT INTO atlas_sources (project_id, type, location, name, ref)
+		 VALUES ($1,'git','https://github.com/example/repo.git','repo','abc123') RETURNING id`,
+		pid).Scan(&srcID); err != nil {
 		t.Fatalf("insert source: %v", err)
 	}
 	cov := `{"total":10,"covered":8,"must_total":5,"must_covered":4,"citations":12,` +
@@ -45,38 +49,38 @@ func TestMCP_AtlasTools(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	// Owner with a write key; editor with a read key.
-	ownerSess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeWrite))
-	editorSess := mcpSession(t, ctx, ts, seedReadKey(t, d, charlie, auth.ScopeRead))
+	// Admin with a write key; member with a read key.
+	adminSess := mcpSession(t, ctx, ts, seedReadKey(t, d, admin, auth.ScopeWrite))
+	memberSess := mcpSession(t, ctx, ts, seedReadKey(t, d, member, auth.ScopeRead))
 
-	// atlas_list_sources (member): the bound source, managed + can_manage true for
-	// the owner, with the latest-run status and last must-cover rate (4/5 = 0.8).
-	var ls atlasListSourcesOut
-	mcpCallJSON(t, ctx, ownerSess, "atlas_list_sources", map[string]any{"space_id": space}, &ls)
-	if len(ls.Sources) != 1 || ls.Sources[0].ID != srcID {
-		t.Fatalf("atlas_list_sources: %+v", ls.Sources)
+	// atlas_list_projects (admin): the project, can_manage true, with the latest-run
+	// status and last must-cover rate (4/5 = 0.8).
+	var lp atlasListProjectsOut
+	mcpCallJSON(t, ctx, adminSess, "atlas_list_projects", map[string]any{}, &lp)
+	if len(lp.Projects) != 1 || lp.Projects[0].ID != pid {
+		t.Fatalf("atlas_list_projects: %+v", lp.Projects)
 	}
-	if !ls.Managed || !ls.CanManage {
-		t.Fatalf("atlas_list_sources flags: managed=%v can_manage=%v", ls.Managed, ls.CanManage)
+	p0 := lp.Projects[0]
+	if !p0.CanManage || p0.Owner.Kind != "org" || p0.Owner.ID != org {
+		t.Fatalf("atlas_list_projects flags: %+v", p0)
 	}
-	s0 := ls.Sources[0]
-	if s0.LastRunID == nil || *s0.LastRunID != runID || s0.LastRunStatus != "done" {
-		t.Fatalf("atlas_list_sources last run: %+v", s0)
+	if p0.LastRun == nil || p0.LastRun.ID != runID || p0.LastRun.Status != "done" {
+		t.Fatalf("atlas_list_projects last run: %+v", p0.LastRun)
 	}
-	if s0.LastMustRate == nil || *s0.LastMustRate != 0.8 {
-		t.Fatalf("atlas_list_sources last_must_rate: %+v", s0.LastMustRate)
-	}
-
-	// The editor (member, not manager) can still view — can_manage is false.
-	var lsEd atlasListSourcesOut
-	mcpCallJSON(t, ctx, editorSess, "atlas_list_sources", map[string]any{"space_id": space}, &lsEd)
-	if !lsEd.Managed || lsEd.CanManage {
-		t.Fatalf("editor list flags: managed=%v can_manage=%v", lsEd.Managed, lsEd.CanManage)
+	if p0.LastRun.MustRate == nil || *p0.LastRun.MustRate != 0.8 {
+		t.Fatalf("atlas_list_projects last_must_rate: %+v", p0.LastRun.MustRate)
 	}
 
-	// atlas_run_status (member): status/stage + computed coverage + stats.
+	// The member (org member, not admin) can still view — can_manage is false.
+	var lpM atlasListProjectsOut
+	mcpCallJSON(t, ctx, memberSess, "atlas_list_projects", map[string]any{}, &lpM)
+	if len(lpM.Projects) != 1 || lpM.Projects[0].CanManage {
+		t.Fatalf("member list flags: %+v", lpM.Projects)
+	}
+
+	// atlas_run_status (member, view): status/stage + computed coverage + stats.
 	var rs atlasRunStatusOut
-	mcpCallJSON(t, ctx, editorSess, "atlas_run_status", map[string]any{"run_id": runID}, &rs)
+	mcpCallJSON(t, ctx, memberSess, "atlas_run_status", map[string]any{"run_id": runID}, &rs)
 	if rs.Run.Status != "done" || rs.Run.Stage != "publish" || rs.Run.Kind != "full" {
 		t.Fatalf("atlas_run_status run: %+v", rs.Run)
 	}
@@ -90,35 +94,35 @@ func TestMCP_AtlasTools(t *testing.T) {
 		t.Fatalf("atlas_run_status stats: %+v", rs.Run.Stats)
 	}
 
-	// atlas_run manage-gate: the editor is rejected with the forbidden code,
-	// BEFORE any run is attempted (no ai_unavailable leak).
-	res, err := editorSess.CallTool(ctx, &mcp.CallToolParams{Name: "atlas_run", Arguments: map[string]any{"source_id": srcID}})
+	// atlas_run manage-gate: the member is rejected with the forbidden code, BEFORE
+	// any run is attempted (no ai_unavailable leak).
+	res, err := memberSess.CallTool(ctx, &mcp.CallToolParams{Name: "atlas_run", Arguments: map[string]any{"project_id": pid}})
 	if err != nil {
-		t.Fatalf("editor atlas_run call: %v", err)
+		t.Fatalf("member atlas_run call: %v", err)
 	}
 	if !res.IsError {
-		t.Fatalf("editor atlas_run: expected a tool error (management-gated)")
+		t.Fatalf("member atlas_run: expected a tool error (management-gated)")
 	}
 	if txt := mcpErrText(res); !strings.Contains(txt, `"code":"forbidden"`) {
-		t.Fatalf("editor atlas_run: want forbidden, got %s", txt)
+		t.Fatalf("member atlas_run: want forbidden, got %s", txt)
 	}
 
-	// The owner passes the manage gate; in tests the AI backends are unconfigured,
+	// The admin passes the manage gate; in tests the AI backends are unconfigured,
 	// so the run trips the enablement guard (503 ai_unavailable) — proving the gate
-	// let the owner through to StartRun.
-	resOwner, err := ownerSess.CallTool(ctx, &mcp.CallToolParams{Name: "atlas_run", Arguments: map[string]any{"source_id": srcID}})
+	// let the admin through to StartRun.
+	resAdmin, err := adminSess.CallTool(ctx, &mcp.CallToolParams{Name: "atlas_run", Arguments: map[string]any{"project_id": pid}})
 	if err != nil {
-		t.Fatalf("owner atlas_run call: %v", err)
+		t.Fatalf("admin atlas_run call: %v", err)
 	}
-	if !resOwner.IsError {
-		t.Fatalf("owner atlas_run: expected ai_unavailable in tests")
+	if !resAdmin.IsError {
+		t.Fatalf("admin atlas_run: expected ai_unavailable in tests")
 	}
-	if txt := mcpErrText(resOwner); !strings.Contains(txt, `"code":"ai_unavailable"`) {
-		t.Fatalf("owner atlas_run: want ai_unavailable (gate passed), got %s", txt)
+	if txt := mcpErrText(resAdmin); !strings.Contains(txt, `"code":"ai_unavailable"`) {
+		t.Fatalf("admin atlas_run: want ai_unavailable (gate passed), got %s", txt)
 	}
 
 	// Unknown run → not_found.
-	resNF, err := ownerSess.CallTool(ctx, &mcp.CallToolParams{Name: "atlas_run_status", Arguments: map[string]any{"run_id": 999999}})
+	resNF, err := adminSess.CallTool(ctx, &mcp.CallToolParams{Name: "atlas_run_status", Arguments: map[string]any{"run_id": 999999}})
 	if err != nil {
 		t.Fatalf("missing run call: %v", err)
 	}

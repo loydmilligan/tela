@@ -52,15 +52,13 @@ func TestAtlasCadenceLogic(t *testing.T) {
 	}
 }
 
-// seedAtlasSource binds a minimal git source to a space and returns its id.
-// autoUpdate gates whether the freshness scheduler will pick it up — set 0 in
-// AI-enabled tests that drive StartDelta directly, so the boot poll doesn't race.
-func seedAtlasSource(t *testing.T, d *sql.DB, spaceID int64, location, ref string, autoUpdate int) int64 {
+// seedAtlasSource binds a minimal git source to a project and returns its id.
+func seedAtlasSource(t *testing.T, d *sql.DB, projectID int64, location, ref string) int64 {
 	t.Helper()
 	var id int64
 	err := d.QueryRow(
-		`INSERT INTO atlas_sources (space_id, type, location, name, ref, cadence, auto_update)
-		 VALUES ($1,'git',$2,'repo',$3,'daily',$4) RETURNING id`, spaceID, location, ref, autoUpdate).Scan(&id)
+		`INSERT INTO atlas_sources (project_id, type, location, name, ref)
+		 VALUES ($1,'git',$2,'repo',$3) RETURNING id`, projectID, location, ref).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed source: %v", err)
 	}
@@ -87,9 +85,10 @@ func TestAtlasLastDoneBaseline(t *testing.T) {
 	srv := New(d)
 	owner := seedUser(t, d, "alice", "alicepw12", false)
 	space := seedSpace(t, d, "Repo Docs", "repo-docs", owner)
+	pid := seedAtlasProject(t, d, "Repo Docs", accountUser, owner, space, 0)
 	ctx := context.Background()
 
-	src := seedAtlasSource(t, d, space, "https://example.com/repo.git", "abc123", 1)
+	src := seedAtlasSource(t, d, pid, "https://example.com/repo.git", "abc123")
 
 	// No runs yet → no baseline.
 	if id, ref := srv.atlas.lastDoneBaseline(ctx, src, "abc123"); id != 0 || ref != "" {
@@ -129,8 +128,9 @@ func TestAtlasStartDelta_FallbackToFull(t *testing.T) {
 	srv := New(d)
 	owner := seedUser(t, d, "alice", "alicepw12", false)
 	space := seedSpace(t, d, "Repo Docs", "repo-docs", owner)
+	pid := seedAtlasProject(t, d, "Repo Docs", accountUser, owner, space, 0)
 	// Unreachable local path → the background run fails immediately at acquire.
-	src := seedAtlasSource(t, d, space, "/nonexistent/atlas-test-repo", "", 0)
+	src := seedAtlasSource(t, d, pid, "/nonexistent/atlas-test-repo", "")
 
 	runID, changed, ae := srv.atlas.StartDelta(context.Background(), src)
 	if ae != nil {
@@ -156,7 +156,8 @@ func TestAtlasStartDelta_AIUnavailable(t *testing.T) {
 	srv := New(d)
 	owner := seedUser(t, d, "alice", "alicepw12", false)
 	space := seedSpace(t, d, "Repo Docs", "repo-docs", owner)
-	src := seedAtlasSource(t, d, space, "https://example.com/repo.git", "", 1)
+	pid := seedAtlasProject(t, d, "Repo Docs", accountUser, owner, space, 0)
+	src := seedAtlasSource(t, d, pid, "https://example.com/repo.git", "")
 
 	if _, _, ae := srv.atlas.StartDelta(context.Background(), src); ae == nil || ae.Code != "ai_unavailable" {
 		t.Fatalf("want ai_unavailable apiErr, got %+v", ae)

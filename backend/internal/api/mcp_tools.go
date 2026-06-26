@@ -308,36 +308,30 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpConfirmAttachmentUpload)
 
 	// ---- atlas (source-grounded, coverage-audited doc generation) ----
-	// atlas turns a source system (a git repo) bound to a space into generated,
-	// coverage-audited docs. Listing + reading a run's coverage is member-gated;
+	// atlas turns a project's sources (git repos / Jira projects) into generated,
+	// coverage-audited docs published into the project's output space. Listing
+	// projects + reading a run's coverage is view-gated (owner + org members);
 	// triggering a run is management-gated (a run spends LLM budget and rewrites
 	// the generated subtree — never read-only).
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "atlas_list_sources",
-		Title:       "List atlas sources",
-		Description: "List a space's atlas doc-generation sources (the git repos bound to it), each with its latest-run status and last must-cover rate. `managed` says the space is atlas-managed (has ≥1 source); `can_manage` says whether you may trigger runs. Start here to find a source_id for atlas_run / atlas_sync, or to read the current coverage health at a glance.",
+		Name:        "atlas_list_projects",
+		Title:       "List atlas projects",
+		Description: "List the atlas doc-generation projects you can see (your personal ones plus those of every org you belong to). Each project carries its owner, output space, schedule, source count, and latest-run summary (status + last must-cover rate); `can_manage` says whether you may trigger runs. Start here to find a project_id for atlas_run, or to read coverage health at a glance.",
 		Annotations: readOnly,
-	}, s.mcpAtlasListSources)
+	}, s.mcpAtlasListProjects)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "atlas_run",
 		Title:       "Run atlas generation",
-		Description: "Trigger a FULL doc-generation run for an atlas source (source_id from atlas_list_sources): re-ingest the repo, regenerate the cited pages, and re-audit coverage. Management-level (space owner / org admin) — a run fetches the source, spends LLM budget, and rewrites the whole generated subtree. Returns a run_id; poll atlas_run_status (or open the run's live stream) for progress and final coverage. Returns 503 ai_unavailable when the instance has no embedder/LLM configured, or 409 when a run is already in progress for the source.",
+		Description: "Trigger a FULL doc-generation run for every source in an atlas project (project_id from atlas_list_projects): re-ingest the sources, regenerate the cited pages, and re-audit coverage. Management-level (project owner / org admin) — a run fetches the sources, spends LLM budget, and rewrites the generated subtree (creating the output space on the first run). Returns run_ids (one per source); poll each with atlas_run_status. Returns 503 ai_unavailable when the instance has no embedder/LLM configured.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpAtlasRun)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "atlas_sync",
-		Title:       "Sync atlas source on change",
-		Description: "Change-gated refresh of an atlas source (source_id from atlas_list_sources): if the upstream repo changed since the last run, start a delta run that re-ingests only what changed; if nothing changed, do nothing. Management-level. Returns `changed` (false = no run started) and the `run_id` when a run was started. Cheaper than atlas_run for keeping docs current; falls back to a full run when there's no baseline to diff against.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
-	}, s.mcpAtlasSync)
-
-	mcp.AddTool(server, &mcp.Tool{
 		Name:        "atlas_run_status",
 		Title:       "Get atlas run status",
-		Description: "Read an atlas run's status and coverage by run_id (member+). Returns the run's status + current stage and, once auditing has run, coverage (must_rate = the headline fraction of must-cover surface documented, surface_rate, gap_count + the gap list of undocumented surface items) and stats (files / surface / chunks / pages). Use to follow a run started by atlas_run/atlas_sync to completion and judge whether the docs are complete.",
+		Description: "Read an atlas run's status and coverage by run_id (view+). Returns the run's status + current stage and, once auditing has run, coverage (must_rate = the headline fraction of must-cover surface documented, surface_rate, gap_count + the gap list of undocumented surface items) and stats (files / surface / chunks / pages). Use to follow a run started by atlas_run to completion and judge whether the docs are complete.",
 		Annotations: readOnly,
 	}, s.mcpAtlasRunStatus)
 }

@@ -582,15 +582,15 @@ const pageHistoryRoute = createRoute({
   ),
 })
 
-// atlas generation console for a managed space (docs/atlas.md): sources, runs,
-// live SSE progress, coverage. Lazy so the console stays off the main chunk for
-// spaces that aren't generated.
+// Atlas — the doc-generation operator surface (docs/atlas.md): one top-level
+// section with projects (grouped per person/org), per-project and per-run
+// screens. Lazy so it stays off the main chunk.
 const atlasRoute = createRoute({
-  getParentRoute: () => spaceRoute,
-  path: 'atlas',
+  getParentRoute: () => appLayoutRoute,
+  path: '/atlas',
   component: lazyRouteComponent(
-    () => import('../components/app/atlas/AtlasConsole'),
-    'AtlasConsole',
+    () => import('../components/app/atlas/AtlasHome'),
+    'AtlasHome',
   ),
 })
 
@@ -759,7 +759,8 @@ const routeTree = rootRoute.addChildren([
     searchRoute,
     askRoute,
     graphRoute,
-    spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute, atlasRoute]),
+    atlasRoute,
+    spaceRoute.addChildren([spaceIndexRoute, pageRoute, pageHistoryRoute]),
   ]),
 ])
 

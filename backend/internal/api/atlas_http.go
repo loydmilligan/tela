@@ -6,48 +6,47 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
-	"github.com/zcag/tela/backend/internal/auth"
 )
 
 // ── request / response shapes ───────────────────────────────────────────────
 
 type atlasSourceCreateReq struct {
-	Type         string `json:"type"` // "git" | "jira"
-	Location     string `json:"location"`
-	Name         string `json:"name"`
-	Branch       string `json:"branch"`
-	Subpath      string `json:"subpath"`
-	Include      string `json:"include"`
-	Exclude      string `json:"exclude"`
-	ParentPageID *int64 `json:"parent_page_id"`
-	SecretID     *int64 `json:"secret_id"`   // optional credential; must be in this space
-	Cadence      string `json:"cadence"`     // "hourly"|"daily"|"weekly"|"monthly"|"" = off
-	AutoUpdate   *bool  `json:"auto_update"` // default true
+	Type     string `json:"type"` // "git" | "jira"
+	Location string `json:"location"`
+	Name     string `json:"name"`
+	Branch   string `json:"branch"`
+	Subpath  string `json:"subpath"`
+	Include  string `json:"include"`
+	Exclude  string `json:"exclude"`
+	CredID   *int64 `json:"cred_id"` // optional reusable credential (owner-scoped)
+}
+
+type atlasSourcePatchReq struct {
+	Location *string `json:"location"`
+	Name     *string `json:"name"`
+	Branch   *string `json:"branch"`
+	Subpath  *string `json:"subpath"`
+	Include  *string `json:"include"`
+	Exclude  *string `json:"exclude"`
+	CredID   *int64  `json:"cred_id"`
 }
 
 type atlasSourceDTO struct {
-	ID            int64  `json:"id"`
-	SpaceID       int64  `json:"space_id"`
-	ParentPageID  *int64 `json:"parent_page_id,omitempty"`
-	SecretID      *int64 `json:"secret_id,omitempty"`
-	Type          string `json:"type"`
-	Location      string `json:"location"`
-	Name          string `json:"name"`
-	Ref           string `json:"ref"`
-	Branch        string `json:"branch,omitempty"`
-	Subpath       string `json:"subpath,omitempty"`
-	Include       string `json:"include,omitempty"`
-	Exclude       string `json:"exclude,omitempty"`
-	Cadence       string `json:"cadence"`
-	AutoUpdate    bool   `json:"auto_update"`
-	LastRefreshAt string `json:"last_refresh_at,omitempty"`
-	// NextDue is the next scheduled refresh (last_refresh_at + cadence), for the
-	// drift UI ("auto-updates daily · next due in 3h"). Empty when auto-update is
-	// off, the cadence is off, or the source has never refreshed (due now).
-	NextDue   string `json:"next_due,omitempty"`
+	ID        int64  `json:"id"`
+	ProjectID int64  `json:"project_id"`
+	CredID    *int64 `json:"cred_id,omitempty"`
+	Type      string `json:"type"`
+	Location  string `json:"location"`
+	Name      string `json:"name"`
+	Ref       string `json:"ref"`
+	Branch    string `json:"branch,omitempty"`
+	Subpath   string `json:"subpath,omitempty"`
+	Include   string `json:"include,omitempty"`
+	Exclude   string `json:"exclude,omitempty"`
 	CreatedAt string `json:"created_at"`
 	// Latest-run summary (nil when never run), for the sources list.
 	LastRunID     *int64   `json:"last_run_id,omitempty"`
@@ -55,14 +54,61 @@ type atlasSourceDTO struct {
 	LastMustRate  *float64 `json:"last_must_rate,omitempty"`
 }
 
-var atlasCadences = map[string]bool{"": true, "hourly": true, "daily": true, "weekly": true, "monthly": true}
+const atlasSourceDTOSelect = `
+	SELECT s.id, s.project_id, s.cred_id, s.type, s.location, s.name, s.ref, s.branch, s.subpath,
+	       s.include, s.exclude, s.created_at, lr.id, lr.status, lr.coverage_json
+	  FROM atlas_sources s
+	  LEFT JOIN LATERAL (
+	        SELECT id, status, coverage_json FROM atlas_runs WHERE source_id = s.id ORDER BY id DESC LIMIT 1
+	  ) lr ON true`
 
-// ── space-scoped: source CRUD ───────────────────────────────────────────────
+func scanSourceDTO(sc interface{ Scan(...any) error }) (atlasSourceDTO, error) {
+	var d atlasSourceDTO
+	var cred, lastRunID sql.NullInt64
+	var lastStatus, covJSON sql.NullString
+	if err := sc.Scan(&d.ID, &d.ProjectID, &cred, &d.Type, &d.Location, &d.Name, &d.Ref, &d.Branch,
+		&d.Subpath, &d.Include, &d.Exclude, &d.CreatedAt, &lastRunID, &lastStatus, &covJSON); err != nil {
+		return d, err
+	}
+	if cred.Valid {
+		d.CredID = &cred.Int64
+	}
+	if lastRunID.Valid {
+		d.LastRunID = &lastRunID.Int64
+		d.LastRunStatus = lastStatus.String
+		if covJSON.Valid && covJSON.String != "" {
+			var cov core.Coverage
+			if json.Unmarshal([]byte(covJSON.String), &cov) == nil {
+				mr := cov.MustRate()
+				d.LastMustRate = &mr
+			}
+		}
+	}
+	return d, nil
+}
 
-// CreateAtlasSource binds a source (git repo) to a space, making it atlas-managed.
-// POST /api/spaces/{id}/atlas/sources — management-gated.
+func (s *Server) listProjectSources(ctx context.Context, projectID int64) ([]atlasSourceDTO, error) {
+	rows, err := s.DB.QueryContext(ctx, atlasSourceDTOSelect+` WHERE s.project_id = $1 ORDER BY s.id`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []atlasSourceDTO{}
+	for rows.Next() {
+		d, err := scanSourceDTO(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// ── source CRUD (under a project) ───────────────────────────────────────────
+
+// CreateAtlasSource adds a source to a project. POST /api/atlas/projects/{id}/sources — manage.
 func (s *Server) CreateAtlasSource(w http.ResponseWriter, r *http.Request) {
-	spaceID, ok := parseIDParam(w, r, "id")
+	projectID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
@@ -70,8 +116,15 @@ func (s *Server) CreateAtlasSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	k, _ := auth.APIKeyFromContext(r.Context())
-	if ae := s.atlasSpaceManageErr(r.Context(), u, k, spaceID); ae != nil {
+	ownerKind, ownerID, err := s.atlasProjectOwner(r.Context(), projectID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "lookup project failed")
+		return
+	}
+	if ae := s.atlasOwnerManageErr(r.Context(), u, ownerKind, ownerID); ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
@@ -92,71 +145,46 @@ func (s *Server) CreateAtlasSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// jira ingests a single project's issues + schema; the project key rides in
-	// subpath and the secret (email + API token) authenticates the REST calls.
+	// subpath and the credential (email + API token) authenticates the REST calls.
 	if req.Type == string(core.SourceJira) {
 		if req.Subpath == "" {
 			writeError(w, http.StatusBadRequest, "invalid_source", "jira sources require subpath (the project key)")
 			return
 		}
-		if req.SecretID == nil {
-			writeError(w, http.StatusBadRequest, "invalid_source", "jira sources require a secret (email + API token)")
+		if req.CredID == nil {
+			writeError(w, http.StatusBadRequest, "invalid_source", "jira sources require a credential (email + API token)")
 			return
 		}
 	}
-	// A bound secret must live in the same space (and so be reachable only by this
-	// space's managers) — no borrowing another space's credential.
-	if req.SecretID != nil {
-		var inSpace bool
-		err := s.DB.QueryRowContext(r.Context(),
-			`SELECT EXISTS(SELECT 1 FROM atlas_secrets WHERE id=$1 AND space_id=$2)`,
-			*req.SecretID, spaceID).Scan(&inSpace)
-		if err != nil || !inSpace {
-			writeError(w, http.StatusBadRequest, "invalid_secret", "secret_id must be a secret in this space")
-			return
-		}
-	}
-	if !atlasCadences[req.Cadence] {
-		writeError(w, http.StatusBadRequest, "invalid_cadence", "cadence must be hourly|daily|weekly|monthly or empty")
-		return
-	}
-	autoUpdate := req.AutoUpdate == nil || *req.AutoUpdate
-	cadence := req.Cadence
-	if cadence == "" && autoUpdate {
-		cadence = "daily"
-	}
-	// parent_page_id, when given, must belong to this space.
-	if req.ParentPageID != nil {
-		var inSpace bool
-		err := s.DB.QueryRowContext(r.Context(),
-			`SELECT EXISTS(SELECT 1 FROM pages WHERE id=$1 AND space_id=$2 AND deleted_at IS NULL)`,
-			*req.ParentPageID, spaceID).Scan(&inSpace)
-		if err != nil || !inSpace {
-			writeError(w, http.StatusBadRequest, "invalid_parent", "parent_page_id must be a page in this space")
+	// A bound credential must belong to the project's owner — no borrowing another
+	// owner's token across scopes.
+	if req.CredID != nil {
+		if ae := s.atlasCredOwnedBy(r.Context(), *req.CredID, ownerKind, ownerID); ae != nil {
+			writeError(w, ae.Status, ae.Code, ae.Message)
 			return
 		}
 	}
 	var id int64
 	var createdAt string
-	err := s.DB.QueryRowContext(r.Context(), `
-		INSERT INTO atlas_sources (space_id, parent_page_id, secret_id, type, location, name, branch, subpath, include, exclude, cadence, auto_update)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, created_at`,
-		spaceID, nullableInt64(req.ParentPageID), nullableInt64(req.SecretID), req.Type, req.Location, req.Name, req.Branch, req.Subpath,
-		req.Include, req.Exclude, cadence, boolToInt(autoUpdate)).Scan(&id, &createdAt)
+	err = s.DB.QueryRowContext(r.Context(), `
+		INSERT INTO atlas_sources (project_id, cred_id, type, location, name, branch, subpath, include, exclude)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, created_at`,
+		projectID, nullableInt64(req.CredID), req.Type, req.Location, req.Name, req.Branch, req.Subpath, req.Include, req.Exclude).
+		Scan(&id, &createdAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "create source failed")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"source": atlasSourceDTO{
-		ID: id, SpaceID: spaceID, ParentPageID: req.ParentPageID, SecretID: req.SecretID, Type: req.Type, Location: req.Location,
-		Name: req.Name, Branch: req.Branch, Subpath: req.Subpath, Include: req.Include, Exclude: req.Exclude,
-		Cadence: cadence, AutoUpdate: autoUpdate, CreatedAt: createdAt,
+		ID: id, ProjectID: projectID, CredID: req.CredID, Type: req.Type, Location: req.Location,
+		Name: req.Name, Branch: req.Branch, Subpath: req.Subpath, Include: req.Include, Exclude: req.Exclude, CreatedAt: createdAt,
 	}})
 }
 
-// ListAtlasSources lists a space's sources (+ latest-run summary) and whether the
-// space is atlas-managed. GET /api/spaces/{id}/atlas/sources — member-gated.
+// ListAtlasSources lists a project's sources (+ latest-run summary).
+// GET /api/atlas/projects/{id}/sources — view.
 func (s *Server) ListAtlasSources(w http.ResponseWriter, r *http.Request) {
-	spaceID, ok := parseIDParam(w, r, "id")
+	projectID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
@@ -164,71 +192,92 @@ func (s *Server) ListAtlasSources(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	k, _ := auth.APIKeyFromContext(r.Context())
-	if _, ae := s.membershipCore(r.Context(), u, k, spaceID); ae != nil {
+	if ae := s.atlasProjectViewErr(r.Context(), u, projectID); ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
-	canManage := s.atlasSpaceManageErr(r.Context(), u, k, spaceID) == nil
-	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT s.id, s.space_id, s.parent_page_id, s.secret_id, s.type, s.location, s.name, s.ref, s.branch, s.subpath,
-		       s.include, s.exclude, s.cadence, s.auto_update, s.last_refresh_at, s.created_at,
-		       lr.id, lr.status, lr.coverage_json
-		  FROM atlas_sources s
-		  LEFT JOIN LATERAL (
-		        SELECT id, status, coverage_json FROM atlas_runs WHERE source_id = s.id ORDER BY id DESC LIMIT 1
-		  ) lr ON true
-		 WHERE s.space_id = $1
-		 ORDER BY s.id`, spaceID)
+	out, err := s.listProjectSources(r.Context(), projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list sources failed")
 		return
 	}
-	defer rows.Close()
-	out := []atlasSourceDTO{}
-	for rows.Next() {
-		var d atlasSourceDTO
-		var parent, secret, lastRunID sql.NullInt64
-		var autoUpd int
-		var lastStatus, covJSON sql.NullString
-		if err := rows.Scan(&d.ID, &d.SpaceID, &parent, &secret, &d.Type, &d.Location, &d.Name, &d.Ref, &d.Branch,
-			&d.Subpath, &d.Include, &d.Exclude, &d.Cadence, &autoUpd, &d.LastRefreshAt, &d.CreatedAt,
-			&lastRunID, &lastStatus, &covJSON); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "scan source failed")
-			return
-		}
-		if parent.Valid {
-			d.ParentPageID = &parent.Int64
-		}
-		if secret.Valid {
-			d.SecretID = &secret.Int64
-		}
-		d.AutoUpdate = autoUpd != 0
-		d.NextDue = atlasNextDueStr(d.AutoUpdate, d.Cadence, d.LastRefreshAt)
-		if lastRunID.Valid {
-			d.LastRunID = &lastRunID.Int64
-			d.LastRunStatus = lastStatus.String
-			if covJSON.Valid && covJSON.String != "" {
-				var cov core.Coverage
-				if json.Unmarshal([]byte(covJSON.String), &cov) == nil {
-					mr := cov.MustRate()
-					d.LastMustRate = &mr
-				}
-			}
-		}
-		out = append(out, d)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"sources": out, "managed": len(out) > 0, "can_manage": canManage})
+	writeJSON(w, http.StatusOK, map[string]any{"sources": out})
 }
 
-// DeleteAtlasSource unbinds a source (CASCADEs its runs + ingestion artifacts;
-// generated pages are left in place). DELETE /api/atlas/sources/{id} — management.
+// PatchAtlasSource edits a source's scope / credential. PATCH /api/atlas/sources/{id} — manage.
+func (s *Server) PatchAtlasSource(w http.ResponseWriter, r *http.Request) {
+	sourceID, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	ownerKind, ownerID, ok := s.atlasManageSource(w, r, sourceID)
+	if !ok {
+		return
+	}
+	var req atlasSourcePatchReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
+		return
+	}
+	if req.CredID != nil {
+		if ae := s.atlasCredOwnedBy(r.Context(), *req.CredID, ownerKind, ownerID); ae != nil {
+			writeError(w, ae.Status, ae.Code, ae.Message)
+			return
+		}
+	}
+	set := []string{}
+	args := []any{}
+	add := func(col string, v any) {
+		args = append(args, v)
+		set = append(set, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+	if req.Location != nil {
+		add("location", *req.Location)
+	}
+	if req.Name != nil {
+		add("name", *req.Name)
+	}
+	if req.Branch != nil {
+		add("branch", *req.Branch)
+	}
+	if req.Subpath != nil {
+		add("subpath", *req.Subpath)
+	}
+	if req.Include != nil {
+		add("include", *req.Include)
+	}
+	if req.Exclude != nil {
+		add("exclude", *req.Exclude)
+	}
+	if req.CredID != nil {
+		add("cred_id", *req.CredID)
+	}
+	if len(set) == 0 {
+		writeError(w, http.StatusBadRequest, "no_fields", "no updatable fields supplied")
+		return
+	}
+	args = append(args, sourceID)
+	q := "UPDATE atlas_sources SET " + strings.Join(set, ", ") + fmt.Sprintf(" WHERE id = $%d", len(args))
+	if _, err := s.DB.ExecContext(r.Context(), q, args...); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "update source failed")
+		return
+	}
+	d, err := scanSourceDTO(s.DB.QueryRowContext(r.Context(), atlasSourceDTOSelect+` WHERE s.id = $1`, sourceID))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load source failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"source": d})
+}
+
+// DeleteAtlasSource removes a source (CASCADEs its runs + ingestion artifacts;
+// generated pages are left in place). DELETE /api/atlas/sources/{id} — manage.
 func (s *Server) DeleteAtlasSource(w http.ResponseWriter, r *http.Request) {
 	sourceID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
-	if !s.atlasManageSource(w, r, sourceID) {
+	if _, _, ok := s.atlasManageSource(w, r, sourceID); !ok {
 		return
 	}
 	if _, err := s.DB.ExecContext(r.Context(), `DELETE FROM atlas_sources WHERE id=$1`, sourceID); err != nil {
@@ -238,13 +287,13 @@ func (s *Server) DeleteAtlasSource(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// RunAtlasSource triggers a full run for a source. POST /api/atlas/sources/{id}/run — management.
+// RunAtlasSource triggers a full run for one source. POST /api/atlas/sources/{id}/run — manage.
 func (s *Server) RunAtlasSource(w http.ResponseWriter, r *http.Request) {
 	sourceID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
-	if !s.atlasManageSource(w, r, sourceID) {
+	if _, _, ok := s.atlasManageSource(w, r, sourceID); !ok {
 		return
 	}
 	runID, ae := s.atlas.StartRun(r.Context(), sourceID)
@@ -255,18 +304,13 @@ func (s *Server) RunAtlasSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"run_id": runID})
 }
 
-// ListAtlasSourceRuns lists a source's runs. GET /api/atlas/sources/{id}/runs — member.
+// ListAtlasSourceRuns lists a source's runs. GET /api/atlas/sources/{id}/runs — view.
 func (s *Server) ListAtlasSourceRuns(w http.ResponseWriter, r *http.Request) {
 	sourceID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
-	spaceID, err := s.atlasSourceSpace(r.Context(), sourceID)
-	if err != nil {
-		s.atlasResolveErr(w, err)
-		return
-	}
-	if _, ok := s.requireMembership(w, r, spaceID); !ok {
+	if !s.atlasViewSource(w, r, sourceID) {
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(),
@@ -303,18 +347,13 @@ func (s *Server) ListAtlasSourceRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"runs": out})
 }
 
-// GetAtlasRun returns a run's status + coverage + stats. GET /api/atlas/runs/{id} — member.
+// GetAtlasRun returns a run's status + coverage + stats. GET /api/atlas/runs/{id} — view.
 func (s *Server) GetAtlasRun(w http.ResponseWriter, r *http.Request) {
 	runID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
-	spaceID, err := s.atlasRunSpace(r.Context(), runID)
-	if err != nil {
-		s.atlasResolveErr(w, err)
-		return
-	}
-	if _, ok := s.requireMembership(w, r, spaceID); !ok {
+	if !s.atlasViewRun(w, r, runID) {
 		return
 	}
 	run, err := s.atlas.store.GetRun(runID)
@@ -326,18 +365,13 @@ func (s *Server) GetAtlasRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // StreamAtlasRun streams a run's live progress over SSE: persisted events replay
-// first, then live tail. GET /api/atlas/runs/{id}/stream — member.
+// first, then live tail. GET /api/atlas/runs/{id}/stream — view.
 func (s *Server) StreamAtlasRun(w http.ResponseWriter, r *http.Request) {
 	runID, ok := parseIDParam(w, r, "id")
 	if !ok {
 		return
 	}
-	spaceID, err := s.atlasRunSpace(r.Context(), runID)
-	if err != nil {
-		s.atlasResolveErr(w, err)
-		return
-	}
-	if _, ok := s.requireMembership(w, r, spaceID); !ok {
+	if !s.atlasViewRun(w, r, runID) {
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -413,12 +447,35 @@ func (s *Server) StreamAtlasRun(w http.ResponseWriter, r *http.Request) {
 // reaches a terminal state, so live SSE subscribers know to close.
 const atlasEndStage core.StageName = "__end__"
 
-// ── helpers: resolve the governing space + gate ─────────────────────────────
+// ── helpers: resolve the governing project + gate ───────────────────────────
 
-// atlasManageSource resolves a source's space and enforces management rights,
-// writing the error envelope on failure. Returns true when the caller may manage.
-func (s *Server) atlasManageSource(w http.ResponseWriter, r *http.Request, sourceID int64) bool {
-	spaceID, err := s.atlasSourceSpace(r.Context(), sourceID)
+// atlasManageSource resolves a source's project and enforces management rights,
+// writing the error envelope on failure. Returns (ownerKind, ownerID, true) when
+// the caller may manage.
+func (s *Server) atlasManageSource(w http.ResponseWriter, r *http.Request, sourceID int64) (string, int64, bool) {
+	projectID, err := s.atlasSourceProject(r.Context(), sourceID)
+	if err != nil {
+		s.atlasResolveErr(w, err)
+		return "", 0, false
+	}
+	u, ok := requireUser(w, r)
+	if !ok {
+		return "", 0, false
+	}
+	ownerKind, ownerID, err := s.atlasProjectOwner(r.Context(), projectID)
+	if err != nil {
+		s.atlasResolveErr(w, err)
+		return "", 0, false
+	}
+	if ae := s.atlasOwnerManageErr(r.Context(), u, ownerKind, ownerID); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return "", 0, false
+	}
+	return ownerKind, ownerID, true
+}
+
+func (s *Server) atlasViewSource(w http.ResponseWriter, r *http.Request, sourceID int64) bool {
+	projectID, err := s.atlasSourceProject(r.Context(), sourceID)
 	if err != nil {
 		s.atlasResolveErr(w, err)
 		return false
@@ -427,25 +484,57 @@ func (s *Server) atlasManageSource(w http.ResponseWriter, r *http.Request, sourc
 	if !ok {
 		return false
 	}
-	k, _ := auth.APIKeyFromContext(r.Context())
-	if ae := s.atlasSpaceManageErr(r.Context(), u, k, spaceID); ae != nil {
+	if ae := s.atlasProjectViewErr(r.Context(), u, projectID); ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return false
 	}
 	return true
 }
 
-func (s *Server) atlasSourceSpace(ctx context.Context, sourceID int64) (int64, error) {
-	var spaceID int64
-	err := s.DB.QueryRowContext(ctx, `SELECT space_id FROM atlas_sources WHERE id=$1`, sourceID).Scan(&spaceID)
-	return spaceID, err
+func (s *Server) atlasViewRun(w http.ResponseWriter, r *http.Request, runID int64) bool {
+	projectID, err := s.atlasRunProject(r.Context(), runID)
+	if err != nil {
+		s.atlasResolveErr(w, err)
+		return false
+	}
+	u, ok := requireUser(w, r)
+	if !ok {
+		return false
+	}
+	if ae := s.atlasProjectViewErr(r.Context(), u, projectID); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return false
+	}
+	return true
 }
 
-func (s *Server) atlasRunSpace(ctx context.Context, runID int64) (int64, error) {
-	var spaceID int64
+func (s *Server) atlasSourceProject(ctx context.Context, sourceID int64) (int64, error) {
+	var projectID int64
+	err := s.DB.QueryRowContext(ctx, `SELECT project_id FROM atlas_sources WHERE id=$1`, sourceID).Scan(&projectID)
+	return projectID, err
+}
+
+func (s *Server) atlasRunProject(ctx context.Context, runID int64) (int64, error) {
+	var projectID int64
 	err := s.DB.QueryRowContext(ctx,
-		`SELECT s.space_id FROM atlas_runs r JOIN atlas_sources s ON s.id=r.source_id WHERE r.id=$1`, runID).Scan(&spaceID)
-	return spaceID, err
+		`SELECT s.project_id FROM atlas_runs r JOIN atlas_sources s ON s.id=r.source_id WHERE r.id=$1`, runID).Scan(&projectID)
+	return projectID, err
+}
+
+// atlasCredOwnedBy verifies a credential exists and is owned by the given owner
+// scope (so a project may only bind its own owner's credentials).
+func (s *Server) atlasCredOwnedBy(ctx context.Context, credID int64, ownerKind string, ownerID int64) *apiErr {
+	var ok bool
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM atlas_credentials WHERE id=$1 AND owner_kind=$2 AND owner_id=$3)`,
+		credID, ownerKind, ownerID).Scan(&ok)
+	if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup credential failed"}
+	}
+	if !ok {
+		return &apiErr{http.StatusBadRequest, "invalid_credential", "cred_id must be a credential owned by this project's owner"}
+	}
+	return nil
 }
 
 func (s *Server) atlasResolveErr(w http.ResponseWriter, err error) {

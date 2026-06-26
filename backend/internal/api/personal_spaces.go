@@ -124,14 +124,21 @@ func personalSpaceID(ctx context.Context, db *sql.DB, userID int64) (int64, erro
 // uniquePersonalSlug derives a slug from the username and appends -2, -3, … on
 // collision so the spaces.slug UNIQUE constraint never trips.
 func uniquePersonalSlug(ctx context.Context, db *sql.DB, username string) (string, error) {
-	base := normalizeSlug(username)
-	if base == "" {
-		base = "personal"
+	return uniqueSlug(ctx, db, username, "personal")
+}
+
+// uniqueSlug normalizes base (falling back to `fallback` when it normalizes
+// empty) and appends -2, -3, … until the candidate is free in spaces.slug. The
+// shared core behind uniquePersonalSlug + atlas output-space creation.
+func uniqueSlug(ctx context.Context, db *sql.DB, base, fallback string) (string, error) {
+	b := normalizeSlug(base)
+	if b == "" {
+		b = fallback
 	}
-	if len(base) > maxSpaceSlugLen {
-		base = strings.TrimRight(base[:maxSpaceSlugLen], "-")
+	if len(b) > maxSpaceSlugLen {
+		b = strings.TrimRight(b[:maxSpaceSlugLen], "-")
 	}
-	candidate := base
+	candidate := b
 	for n := 2; ; n++ {
 		var x int
 		err := db.QueryRowContext(ctx, `SELECT 1 FROM spaces WHERE slug = $1`, candidate).Scan(&x)
@@ -141,6 +148,6 @@ func uniquePersonalSlug(ctx context.Context, db *sql.DB, username string) (strin
 		if err != nil {
 			return "", err
 		}
-		candidate = fmt.Sprintf("%s-%d", base, n)
+		candidate = fmt.Sprintf("%s-%d", b, n)
 	}
 }

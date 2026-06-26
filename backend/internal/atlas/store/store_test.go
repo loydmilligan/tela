@@ -9,18 +9,15 @@ import (
 	"github.com/zcag/tela/backend/internal/testdb"
 )
 
-// fixture inserts a space + atlas_sources row + a pending atlas_runs row via raw
-// SQL and returns (sourceID, runID).
+// fixture inserts an atlas_sources row + a pending atlas_runs row via raw SQL and
+// returns (sourceID, runID). The engine store is project/space-agnostic — it only
+// reads/writes run-scoped artifacts — so the source needs no project binding.
 func fixture(t *testing.T, d *sql.DB) (int64, int64) {
 	t.Helper()
-	var spaceID, sourceID, runID int64
+	var sourceID, runID int64
 	if err := d.QueryRow(
-		`INSERT INTO spaces(name,slug) VALUES('Atlas Test','atlas-test') RETURNING id`).Scan(&spaceID); err != nil {
-		t.Fatalf("insert space: %v", err)
-	}
-	if err := d.QueryRow(
-		`INSERT INTO atlas_sources(space_id,type,location) VALUES($1,'git','https://example.com/repo.git') RETURNING id`,
-		spaceID).Scan(&sourceID); err != nil {
+		`INSERT INTO atlas_sources(type,location) VALUES('git','https://example.com/repo.git') RETURNING id`).
+		Scan(&sourceID); err != nil {
 		t.Fatalf("insert source: %v", err)
 	}
 	if err := d.QueryRow(

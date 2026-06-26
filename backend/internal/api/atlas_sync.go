@@ -164,7 +164,7 @@ func (s *Server) SyncAtlasSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.atlasManageSource(w, r, sourceID) {
+	if _, _, ok := s.atlasManageSource(w, r, sourceID); !ok {
 		return
 	}
 	runID, changed, ae := s.atlas.StartDelta(r.Context(), sourceID)

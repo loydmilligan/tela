@@ -46,10 +46,11 @@ func seedAtlasFixtures(t *testing.T, d *sql.DB) (spaceID, sourceID, runID int64)
 	ctx := context.Background()
 	uid := seedUser(t, d, "atlas-pub", "pw", false)
 	spaceID = seedSpace(t, d, "Atlas", "atlas", uid)
+	pid := seedAtlasProject(t, d, "Atlas", accountUser, uid, spaceID, 0)
 	if err := d.QueryRowContext(ctx,
-		`INSERT INTO atlas_sources (space_id, type, location, name)
+		`INSERT INTO atlas_sources (project_id, type, location, name)
 		 VALUES ($1, 'git', 'https://example.com/acme/widget.git', '') RETURNING id`,
-		spaceID).Scan(&sourceID); err != nil {
+		pid).Scan(&sourceID); err != nil {
 		t.Fatalf("insert atlas_sources: %v", err)
 	}
 	if err := d.QueryRowContext(ctx,

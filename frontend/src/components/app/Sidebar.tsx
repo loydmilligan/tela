@@ -8,6 +8,7 @@ import {
   Search,
   Share2,
   Sparkles,
+  Wand2,
 } from 'lucide-react'
 import { DOCS } from '../../lib/docs'
 import { SpaceTree } from './SpaceTree'
@@ -138,6 +139,12 @@ export function Sidebar({ open = false }: { open?: boolean }) {
           <Link to="/graph" aria-label="Graph view" title="Graph view">
             <Share2 width={14} height={14} />
             <span className="flex-1 text-left">Graph</span>
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+          <Link to="/atlas" aria-label="Atlas" title="Atlas — generate docs from sources">
+            <Wand2 width={14} height={14} />
+            <span className="flex-1 text-left">Atlas</span>
           </Link>
         </Button>
         <Button asChild variant="ghost" size="sm" className="w-full justify-start">

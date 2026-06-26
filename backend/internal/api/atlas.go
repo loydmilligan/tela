@@ -101,36 +101,80 @@ func (m *atlasManager) embedBatch(ctx context.Context, inputs []string) ([][]flo
 	return out, zeroed, nil
 }
 
-// atlasSpaceManageErr gates the management of atlas on a space (add/edit/delete
-// sources, trigger runs, set cadence): the caller must be the space owner, or an
-// admin of the org that owns the space, or an instance admin. Management is
-// admin-level on purpose — a run fetches an external source, spends LLM budget,
-// and rewrites the whole generated subtree. Mirrors membershipCore's bearer
-// space-scope ceiling. Returns nil when allowed, else an *apiErr.
-func (s *Server) atlasSpaceManageErr(ctx context.Context, u *auth.User, k *auth.APIKey, spaceID int64) *apiErr {
-	if ae := apiKeySpaceScopeErr(k, spaceID); ae != nil {
-		return ae
-	}
+// atlasOwnerManageErr gates MANAGEMENT of an owner-scoped atlas resource (a
+// credential or a project): the caller must be the owner user, an admin of the
+// owner org, or an instance admin. Management is admin-level on purpose — a run
+// fetches an external source, spends LLM budget, and rewrites a generated
+// subtree; a credential carries an access token. Returns nil when allowed.
+func (s *Server) atlasOwnerManageErr(ctx context.Context, u *auth.User, ownerKind string, ownerID int64) *apiErr {
 	if u.IsInstanceAdmin {
 		return nil
 	}
-	if role, err := spaceRole(ctx, s.DB, u.ID, spaceID); err == nil && role == roleOwner {
-		return nil
-	}
-	// Org-owned space → org admins manage it.
-	var orgID sql.NullInt64
-	if err := s.DB.QueryRowContext(ctx, `SELECT org_id FROM spaces WHERE id = $1`, spaceID).Scan(&orgID); err != nil {
-		if err == sql.ErrNoRows {
-			return &apiErr{http.StatusNotFound, "not_found", "space not found"}
-		}
-		return &apiErr{http.StatusInternalServerError, "internal", "lookup space failed"}
-	}
-	if orgID.Valid {
-		if r, err := orgRole(ctx, s.DB, u.ID, orgID.Int64); err == nil && r == orgRoleAdmin {
+	switch ownerKind {
+	case accountUser:
+		if ownerID == u.ID {
 			return nil
 		}
+	case accountOrg:
+		if r, err := orgRole(ctx, s.DB, u.ID, ownerID); err == nil && r == orgRoleAdmin {
+			return nil
+		}
+	default:
+		return &apiErr{http.StatusBadRequest, "invalid_owner", "owner_kind must be 'user' or 'org'"}
 	}
-	return &apiErr{http.StatusForbidden, "forbidden", "space management required"}
+	return &apiErr{http.StatusForbidden, "forbidden", "atlas management required"}
+}
+
+// atlasOwnerViewErr gates VIEWING of an owner-scoped atlas resource: a personal
+// owner reaches their own; an org owner is visible to every member of the org
+// (admins manage, members read). Instance admins always pass.
+func (s *Server) atlasOwnerViewErr(ctx context.Context, u *auth.User, ownerKind string, ownerID int64) *apiErr {
+	if u.IsInstanceAdmin {
+		return nil
+	}
+	switch ownerKind {
+	case accountUser:
+		if ownerID == u.ID {
+			return nil
+		}
+	case accountOrg:
+		if _, err := orgRole(ctx, s.DB, u.ID, ownerID); err == nil {
+			return nil
+		}
+	default:
+		return &apiErr{http.StatusBadRequest, "invalid_owner", "owner_kind must be 'user' or 'org'"}
+	}
+	return &apiErr{http.StatusForbidden, "forbidden", "not allowed to view this owner's atlas"}
+}
+
+// atlasProjectOwner resolves a project's owner scope (kind + id). sql.ErrNoRows
+// when the project doesn't exist.
+func (s *Server) atlasProjectOwner(ctx context.Context, projectID int64) (kind string, id int64, err error) {
+	err = s.DB.QueryRowContext(ctx,
+		`SELECT owner_kind, owner_id FROM atlas_projects WHERE id = $1`, projectID).Scan(&kind, &id)
+	return kind, id, err
+}
+
+// atlasProjectManageErr loads a project's owner and applies the management gate.
+func (s *Server) atlasProjectManageErr(ctx context.Context, u *auth.User, projectID int64) *apiErr {
+	kind, id, err := s.atlasProjectOwner(ctx, projectID)
+	if err == sql.ErrNoRows {
+		return &apiErr{http.StatusNotFound, "not_found", "project not found"}
+	} else if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup project failed"}
+	}
+	return s.atlasOwnerManageErr(ctx, u, kind, id)
+}
+
+// atlasProjectViewErr loads a project's owner and applies the view gate.
+func (s *Server) atlasProjectViewErr(ctx context.Context, u *auth.User, projectID int64) *apiErr {
+	kind, id, err := s.atlasProjectOwner(ctx, projectID)
+	if err == sql.ErrNoRows {
+		return &apiErr{http.StatusNotFound, "not_found", "project not found"}
+	} else if err != nil {
+		return &apiErr{http.StatusInternalServerError, "internal", "lookup project failed"}
+	}
+	return s.atlasOwnerViewErr(ctx, u, kind, id)
 }
 
 func atlasGetenv(key, def string) string {

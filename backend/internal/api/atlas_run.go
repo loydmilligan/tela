@@ -13,34 +13,30 @@ import (
 )
 
 // atlasSourceRow is the persisted binding the executor needs to drive a run: the
-// source's scope + its space binding (which space, and the optional top-dir page
-// generated pages nest under).
+// source's scope + the project it belongs to (which resolves the output space)
+// and the optional reusable credential it authenticates with.
 type atlasSourceRow struct {
-	ID           int64
-	SpaceID      int64
-	ParentPageID *int64
-	Type         string
-	Location     string
-	Name         string
-	Ref          string
-	Branch       string
-	Subpath      string
-	Include      string
-	Exclude      string
-	SecretID     *int64
+	ID        int64
+	ProjectID int64
+	Type      string
+	Location  string
+	Name      string
+	Ref       string
+	Branch    string
+	Subpath   string
+	Include   string
+	Exclude   string
+	CredID    *int64
 }
 
-const atlasSourceCols = `id, space_id, parent_page_id, type, location, name, ref, branch, subpath, include, exclude, secret_id`
+const atlasSourceCols = `id, project_id, type, location, name, ref, branch, subpath, include, exclude, cred_id`
 
 func scanAtlasSource(sc interface{ Scan(...any) error }) (atlasSourceRow, error) {
 	var r atlasSourceRow
-	var parent, secret sql.NullInt64
-	err := sc.Scan(&r.ID, &r.SpaceID, &parent, &r.Type, &r.Location, &r.Name, &r.Ref, &r.Branch, &r.Subpath, &r.Include, &r.Exclude, &secret)
-	if parent.Valid {
-		r.ParentPageID = &parent.Int64
-	}
-	if secret.Valid {
-		r.SecretID = &secret.Int64
+	var cred sql.NullInt64
+	err := sc.Scan(&r.ID, &r.ProjectID, &r.Type, &r.Location, &r.Name, &r.Ref, &r.Branch, &r.Subpath, &r.Include, &r.Exclude, &cred)
+	if cred.Valid {
+		r.CredID = &cred.Int64
 	}
 	return r, err
 }
@@ -51,8 +47,9 @@ func (m *atlasManager) loadSource(ctx context.Context, sourceID int64) (atlasSou
 }
 
 // StartRun creates a full run for a source and drives it in the background.
-// Authorization is the caller's responsibility (gate with atlasSpaceManageErr
-// before calling). One active run per source: a second start is rejected.
+// Authorization is the caller's responsibility (gate the source's project with
+// atlasProjectManageErr before calling). One active run per source: a second
+// start is rejected.
 func (m *atlasManager) StartRun(ctx context.Context, sourceID int64) (int64, *apiErr) {
 	if !m.atlasEnabled() {
 		return 0, &apiErr{http.StatusServiceUnavailable, "ai_unavailable", "atlas needs both an embedder (TELA_RAG_EMBED_URL) and a chat model (TELA_LLM_URL)"}
@@ -82,34 +79,44 @@ func (m *atlasManager) StartRun(ctx context.Context, sourceID int64) (int64, *ap
 	return runID, nil
 }
 
-// buildRunContext assembles the engine inputs for a run. The managed space plays
-// the role of atlas's "project": Model carries the instance chat/embed model
-// names, and the publisher is bound to the space + top-dir.
-func (m *atlasManager) buildRunContext(ctx context.Context, src atlasSourceRow, run *core.Run, workspace string) *engine.RunContext {
+// buildRunContext assembles the engine inputs for a run. It resolves the
+// source's project → output destination (creating the output space on the first
+// run if it doesn't exist yet), binds the publisher to that space + top-dir, and
+// pins the instance chat/embed model. core.Project.ID carries the tela project id
+// (the notify path resolves the project's owner/managers from it).
+func (m *atlasManager) buildRunContext(ctx context.Context, src atlasSourceRow, run *core.Run, workspace string) (*engine.RunContext, error) {
+	proj, err := m.loadProject(ctx, src.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("load project %d: %w", src.ProjectID, err)
+	}
+	spaceID, parentPageID, ae := m.s.ensureOutputSpace(ctx, proj)
+	if ae != nil {
+		return nil, fmt.Errorf("ensure output space: %s", ae.Message)
+	}
 	client := m.newLLMClient()
-	proj := &core.Project{ID: src.SpaceID, Model: atlasModelCfg(m.s.rag.EmbedModel())}
+	coreProj := &core.Project{ID: proj.ID, Name: proj.Name, Model: atlasModelCfg(m.s.rag.EmbedModel())}
 	coreSrc := coreSourceFrom(src)
 	// Resolve the bound credential into the transient secret fields just before the
-	// run acquires (mirrors atlas's secret.ResolveSource): jira reads SecretValue +
-	// SecretMeta["email"] directly; git auth is injected into the clone Location
-	// (the git connector authenticates via the URL, never SecretValue).
-	if src.SecretID != nil {
-		if val, meta, err := loadAtlasSecret(ctx, m.s.DB, *src.SecretID); err == nil {
-			applyAtlasSecret(&coreSrc, val, meta)
+	// run acquires: jira reads SecretValue + SecretMeta["email"] directly; git auth
+	// is injected into the clone Location (the git connector authenticates via the
+	// URL, never SecretValue).
+	if src.CredID != nil {
+		if val, meta, err := loadAtlasCredential(ctx, m.s.DB, *src.CredID); err == nil {
+			applyAtlasCred(&coreSrc, val, meta)
 		} else {
-			slog.Warn("atlas: resolve source secret", "source", src.ID, "secret", *src.SecretID, "err", err)
+			slog.Warn("atlas: resolve source credential", "source", src.ID, "cred", *src.CredID, "err", err)
 		}
 	}
 	return &engine.RunContext{
-		Project:   proj,
+		Project:   coreProj,
 		Source:    &coreSrc,
 		Run:       run,
 		Workspace: workspace,
 		Store:     m.store,
 		LLM:       client,
-		Publisher: newAtlasPublisher(m.s.DB, m.s.rag.QueueReindex, src.SpaceID, src.ParentPageID),
+		Publisher: newAtlasPublisher(m.s.DB, m.s.rag.QueueReindex, spaceID, parentPageID),
 		OnFinish:  m.onFinish,
-	}
+	}, nil
 }
 
 // spawn drives one run to completion in its own goroutine. fromStage == "" runs
@@ -147,7 +154,12 @@ func (m *atlasManager) spawn(src atlasSourceRow, runID int64, fromStage core.Sta
 			slog.Error("atlas: load run", "run", runID, "err", err)
 			return
 		}
-		rc := m.buildRunContext(runCtx, src, run, workspace)
+		rc, err := m.buildRunContext(runCtx, src, run, workspace)
+		if err != nil {
+			slog.Error("atlas: build run context", "run", runID, "err", err)
+			_, _ = m.s.DB.Exec(`UPDATE atlas_runs SET status='failed', err=$2, finished_at=tela_now() WHERE id=$1`, runID, err.Error())
+			return
+		}
 		emit := func(e core.Event) { m.hub.publish(e) }
 		// Publish a terminal marker so live SSE subscribers close cleanly when the
 		// run ends (the engine emits no terminal event of its own).
@@ -207,16 +219,13 @@ func (m *atlasManager) ResumeDangling(ctx context.Context) {
 		var runID int64
 		var stage string
 		var src atlasSourceRow
-		var parent, secret sql.NullInt64
-		if err := rows.Scan(&runID, &stage, &src.ID, &src.SpaceID, &parent, &src.Type, &src.Location, &src.Name, &src.Ref, &src.Branch, &src.Subpath, &src.Include, &src.Exclude, &secret); err != nil {
+		var cred sql.NullInt64
+		if err := rows.Scan(&runID, &stage, &src.ID, &src.ProjectID, &src.Type, &src.Location, &src.Name, &src.Ref, &src.Branch, &src.Subpath, &src.Include, &src.Exclude, &cred); err != nil {
 			slog.Error("atlas: resume row", "err", err)
 			continue
 		}
-		if parent.Valid {
-			src.ParentPageID = &parent.Int64
-		}
-		if secret.Valid {
-			src.SecretID = &secret.Int64
+		if cred.Valid {
+			src.CredID = &cred.Int64
 		}
 		todo = append(todo, pending{src, runID, core.StageName(stage)})
 	}
@@ -233,9 +242,9 @@ func (m *atlasManager) ResumeDangling(ctx context.Context) {
 // atlasSourceColsPrefixed returns the source columns qualified with a table
 // alias, for the resume join (keeps column order in sync with scanAtlasSource).
 func atlasSourceColsPrefixed(alias string) string {
-	return alias + ".id, " + alias + ".space_id, " + alias + ".parent_page_id, " + alias + ".type, " +
+	return alias + ".id, " + alias + ".project_id, " + alias + ".type, " +
 		alias + ".location, " + alias + ".name, " + alias + ".ref, " + alias + ".branch, " +
-		alias + ".subpath, " + alias + ".include, " + alias + ".exclude, " + alias + ".secret_id"
+		alias + ".subpath, " + alias + ".include, " + alias + ".exclude, " + alias + ".cred_id"
 }
 
 // atlasWorkRoot is where run workspaces (repo clones) are materialized. Override

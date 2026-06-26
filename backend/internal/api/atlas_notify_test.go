@@ -44,11 +44,12 @@ func atlasNotifsFor(t *testing.T, d *sql.DB, userID int64) []notifRow {
 	return out
 }
 
-// finishRC builds the minimal RunContext onFinish/notify needs: a space-bound
-// project, a named source, and a run carrying stats + coverage.
-func finishRC(spaceID, sourceID, runID int64, status core.RunStatus, runErr string) *engine.RunContext {
+// finishRC builds the minimal RunContext onFinish/notify needs: a project-bound
+// run (Project.ID resolves the owner + output space from the DB), a named source,
+// and a run carrying stats + coverage.
+func finishRC(projectID, sourceID, runID int64, status core.RunStatus, runErr string) *engine.RunContext {
 	return &engine.RunContext{
-		Project: &core.Project{ID: spaceID},
+		Project: &core.Project{ID: projectID},
 		Source:  &core.Source{ID: sourceID, Name: "code"},
 		Run: &core.Run{ID: runID, SourceID: sourceID, Status: status, Err: runErr,
 			Stats: &core.RunStats{Pages: 13}},
@@ -66,13 +67,15 @@ func TestAtlasNotifyRunFinish(t *testing.T) {
 
 	owner := seedUser(t, d, "atlas-owner", "pw12345678", false)
 	other := seedUser(t, d, "atlas-bystander", "pw12345678", false)
-	spaceID := seedSpace(t, d, "compass", "compass", owner) // owner via space_members
-	seedMember(t, d, spaceID, other, "editor")              // editor is NOT a manager
+	spaceID := seedSpace(t, d, "compass", "compass", owner) // the project's output space
+	seedMember(t, d, spaceID, other, "editor")              // an editor is NOT a project manager
+	// A personal project named "compass" → its manager is the owner user only.
+	projectID := seedAtlasProject(t, d, "compass", accountUser, owner, spaceID, 0)
 	var sourceID, doneRun, failRun int64
 	if err := d.QueryRowContext(context.Background(),
-		`INSERT INTO atlas_sources (space_id, type, location, name)
+		`INSERT INTO atlas_sources (project_id, type, location, name)
 		 VALUES ($1, 'git', 'https://example.com/acme/code.git', 'code') RETURNING id`,
-		spaceID).Scan(&sourceID); err != nil {
+		projectID).Scan(&sourceID); err != nil {
 		t.Fatalf("insert source: %v", err)
 	}
 	if err := d.QueryRowContext(context.Background(),
@@ -87,13 +90,14 @@ func TestAtlasNotifyRunFinish(t *testing.T) {
 	ctx := context.Background()
 
 	// --- done run ---
-	m.notifyAtlasRunFinish(ctx, finishRC(spaceID, sourceID, doneRun, core.RunDone, ""), core.RunDone, nil)
+	m.notifyAtlasRunFinish(ctx, finishRC(projectID, sourceID, doneRun, core.RunDone, ""), core.RunDone, nil)
 
 	got := atlasNotifsFor(t, d, owner)
 	if len(got) != 1 {
 		t.Fatalf("done: want 1 notification for owner, got %d", len(got))
 	}
 	n := got[0]
+	// Subject + in-app space point at the project's output space.
 	if n.subjKind != "space" || n.subjID != spaceID || !n.spaceID.Valid || n.spaceID.Int64 != spaceID {
 		t.Fatalf("done: wrong subject/space: kind=%s subj=%d space=%v", n.subjKind, n.subjID, n.spaceID)
 	}
@@ -103,23 +107,23 @@ func TestAtlasNotifyRunFinish(t *testing.T) {
 	if n.data["summary"] != "13 pages, must-cover 100%, surface 97%" {
 		t.Fatalf("done summary = %q", n.data["summary"])
 	}
-	if n.data["link"] != ("/spaces/" + strconv.FormatInt(spaceID, 10) + "/atlas") {
+	if n.data["link"] != ("/atlas/projects/" + strconv.FormatInt(projectID, 10)) {
 		t.Fatalf("done link = %q", n.data["link"])
 	}
-	// The editor (not a manager) must NOT be notified.
+	// The editor (not a project manager) must NOT be notified.
 	if other := atlasNotifsFor(t, d, other); len(other) != 0 {
 		t.Fatalf("editor got %d notifications, want 0", len(other))
 	}
 
 	// Re-firing the same terminal run must not double-notify (dedup key).
-	m.notifyAtlasRunFinish(ctx, finishRC(spaceID, sourceID, doneRun, core.RunDone, ""), core.RunDone, nil)
+	m.notifyAtlasRunFinish(ctx, finishRC(projectID, sourceID, doneRun, core.RunDone, ""), core.RunDone, nil)
 	if again := atlasNotifsFor(t, d, owner); len(again) != 1 {
 		t.Fatalf("after re-fire: want 1 (deduped), got %d", len(again))
 	}
 
 	// --- failed run ---
 	m.notifyAtlasRunFinish(ctx,
-		finishRC(spaceID, sourceID, failRun, core.RunFailed, "clone failed: auth required"),
+		finishRC(projectID, sourceID, failRun, core.RunFailed, "clone failed: auth required"),
 		core.RunFailed, errors.New("clone failed: auth required"))
 
 	got = atlasNotifsFor(t, d, owner)

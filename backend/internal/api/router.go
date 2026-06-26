@@ -136,19 +136,29 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/spaces/{id}/export.zip", srv.ExportSpaceMarkdownZip)
 
 	// atlas: source-grounded, coverage-audited doc generation (docs/atlas.md).
-	// Space-scoped (manage = owner/org-admin; list = member) + source/run-scoped.
-	mux.HandleFunc("POST /api/spaces/{id}/atlas/sources", srv.CreateAtlasSource)
-	mux.HandleFunc("GET /api/spaces/{id}/atlas/sources", srv.ListAtlasSources)
+	// First-class projects: owner-scoped reusable credentials, projects (name +
+	// owner + output space + schedule), sources under a project, runs per source.
+	// Manage = owner user / owner-org admin / instance admin; view = + org members.
+	mux.HandleFunc("GET /api/atlas/credentials", srv.ListAtlasCredentials)
+	mux.HandleFunc("POST /api/atlas/credentials", srv.CreateAtlasCredential)
+	mux.HandleFunc("DELETE /api/atlas/credentials/{id}", srv.DeleteAtlasCredential)
+
+	mux.HandleFunc("GET /api/atlas/projects", srv.ListAtlasProjects)
+	mux.HandleFunc("POST /api/atlas/projects", srv.CreateAtlasProject)
+	mux.HandleFunc("GET /api/atlas/projects/{id}", srv.GetAtlasProject)
+	mux.HandleFunc("PATCH /api/atlas/projects/{id}", srv.PatchAtlasProject)
+	mux.HandleFunc("DELETE /api/atlas/projects/{id}", srv.DeleteAtlasProject)
+	mux.HandleFunc("POST /api/atlas/projects/{id}/run", srv.RunAtlasProject)
+
+	mux.HandleFunc("POST /api/atlas/projects/{id}/sources", srv.CreateAtlasSource)
+	mux.HandleFunc("GET /api/atlas/projects/{id}/sources", srv.ListAtlasSources)
+	mux.HandleFunc("PATCH /api/atlas/sources/{id}", srv.PatchAtlasSource)
 	mux.HandleFunc("DELETE /api/atlas/sources/{id}", srv.DeleteAtlasSource)
 	mux.HandleFunc("POST /api/atlas/sources/{id}/run", srv.RunAtlasSource)
 	mux.HandleFunc("POST /api/atlas/sources/{id}/sync", srv.SyncAtlasSource)
 	mux.HandleFunc("GET /api/atlas/sources/{id}/runs", srv.ListAtlasSourceRuns)
 	mux.HandleFunc("GET /api/atlas/runs/{id}", srv.GetAtlasRun)
 	mux.HandleFunc("GET /api/atlas/runs/{id}/stream", srv.StreamAtlasRun)
-	// Source credential store (Phase 5): all management-gated; value write-only.
-	mux.HandleFunc("POST /api/spaces/{id}/atlas/secrets", srv.CreateAtlasSecret)
-	mux.HandleFunc("GET /api/spaces/{id}/atlas/secrets", srv.ListAtlasSecrets)
-	mux.HandleFunc("DELETE /api/atlas/secrets/{id}", srv.DeleteAtlasSecret)
 
 	mux.HandleFunc("GET /api/pages", srv.ListPages)
 	mux.HandleFunc("GET /api/pages/all", srv.ListAllPages)

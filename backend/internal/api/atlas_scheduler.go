@@ -35,11 +35,11 @@ func (m *atlasManager) startScheduler(ctx context.Context, paused func() bool) {
 	}()
 }
 
-// pollFreshness fires every source whose freshness poll is due as of now. For
-// each it runs a cheap no-clone HasChanges probe and, only when upstream has
-// moved, starts a change-gated delta (StartDelta also handles the no-baseline →
-// full-run fallback). last_refresh_at is stamped regardless of the outcome so the
-// cadence measures from this poll. No-op when AI is unconfigured or paused.
+// pollFreshness fires every PROJECT whose freshness poll is due as of now: for
+// each it refreshes all of the project's sources (a cheap no-clone HasChanges
+// probe per source, then a change-gated delta only when upstream moved).
+// last_refresh_at is stamped on the project regardless of outcome so the cadence
+// measures from this poll. No-op when AI is unconfigured or paused.
 func (m *atlasManager) pollFreshness(ctx context.Context) {
 	if !m.atlasEnabled() {
 		return
@@ -55,7 +55,7 @@ func (m *atlasManager) pollFreshness(ctx context.Context) {
 		last    string
 	}
 	rows, err := m.s.DB.QueryContext(ctx,
-		`SELECT id, cadence, last_refresh_at FROM atlas_sources WHERE auto_update = 1`)
+		`SELECT id, cadence, last_refresh_at FROM atlas_projects WHERE auto_update = 1`)
 	if err != nil {
 		slog.Error("atlas: freshness poll", "err", err)
 		return
@@ -78,13 +78,33 @@ func (m *atlasManager) pollFreshness(ctx context.Context) {
 		if !atlasIsDue(d.cadence, last, now) {
 			continue
 		}
-		m.refreshSource(ctx, d.id)
+		m.refreshProject(ctx, d.id)
 		// Stamp regardless so the cadence measures from this poll (whether or not a
 		// run started). A failed run is owed again next cadence, not next minute.
 		if _, err := m.s.DB.ExecContext(ctx,
-			`UPDATE atlas_sources SET last_refresh_at = tela_now() WHERE id = $1`, d.id); err != nil {
-			slog.Error("atlas: stamp last_refresh_at", "source", d.id, "err", err)
+			`UPDATE atlas_projects SET last_refresh_at = tela_now() WHERE id = $1`, d.id); err != nil {
+			slog.Error("atlas: stamp last_refresh_at", "project", d.id, "err", err)
 		}
+	}
+}
+
+// refreshProject runs the change-gated refresh for every source in a due project.
+func (m *atlasManager) refreshProject(ctx context.Context, projectID int64) {
+	rows, err := m.s.DB.QueryContext(ctx, `SELECT id FROM atlas_sources WHERE project_id = $1 ORDER BY id`, projectID)
+	if err != nil {
+		slog.Error("atlas: refresh project", "project", projectID, "err", err)
+		return
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		m.refreshSource(ctx, id)
 	}
 }
 

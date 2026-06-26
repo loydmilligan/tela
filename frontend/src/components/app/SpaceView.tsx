@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { Link } from '@tanstack/react-router'
 import {
   CalendarClock,
   Clock,
@@ -8,10 +7,8 @@ import {
   Folder,
   ShieldAlert,
   Unlink,
-  Wand2,
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
-import { Button } from '../ui/button'
 import { EmptyState } from '../ui/empty-state'
 import { useSpaceOverview } from '../../lib/queries/space-overview'
 import { useSpaces } from '../../lib/queries/spaces'
@@ -52,13 +49,7 @@ export function SpaceView({ spaceId }: { spaceId: number }) {
               {data.pages} {data.pages === 1 ? 'page' : 'pages'}
             </span>
           ) : null}
-          <span className="ml-auto self-center flex items-center gap-[var(--space-1)]">
-            <Button asChild variant="ghost" size="sm" title="Generate docs from sources">
-              <Link to="/spaces/$spaceId/atlas" params={{ spaceId }}>
-                <Wand2 width={14} height={14} />
-                <span>Generation</span>
-              </Link>
-            </Button>
+          <span className="ml-auto self-center">
             <FollowButton id={spaceId} kind="space" />
           </span>
         </header>

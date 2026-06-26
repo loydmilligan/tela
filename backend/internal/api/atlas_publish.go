@@ -32,7 +32,7 @@ type atlasPublisher struct {
 	db           *sql.DB
 	queueReindex func(pageID int64) // = s.rag.QueueReindex; nil = no reindex (tests / RAG off)
 	spaceID      int64
-	parentPageID *int64 // atlas_sources.parent_page_id; nil = under the space root
+	parentPageID *int64 // the project's output_parent_page_id; nil = under the space root
 }
 
 func newAtlasPublisher(db *sql.DB, queueReindex func(int64), spaceID int64, parentPageID *int64) *atlasPublisher {
