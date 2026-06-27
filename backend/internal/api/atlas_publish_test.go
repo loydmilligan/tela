@@ -125,8 +125,8 @@ func TestAtlasPublish(t *testing.T) {
 	if rootDel.Valid {
 		t.Error("root page is soft-deleted")
 	}
-	if rootTitle != "widget" {
-		t.Errorf("root title = %q, want %q (repo base name)", rootTitle, "widget")
+	if rootTitle != "widget - repo" {
+		t.Errorf("root title = %q, want %q (repo base name + kind tag)", rootTitle, "widget - repo")
 	}
 	if !strings.Contains(rootProps, `"generator": "atlas"`) {
 		t.Errorf("root props missing generator=atlas: %s", rootProps)

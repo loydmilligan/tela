@@ -65,9 +65,11 @@ func (p *atlasPublisher) Publish(ctx context.Context, rc *engine.RunContext) err
 
 	var reindex []int64 // created/changed page ids — queued after commit
 
-	// Per-source root = the source name, holding the coverage overview. Parent =
-	// the bound top-dir (nil → space root); position computed (sibling MAX+1).
-	rootID, changed, err := p.upsert(ctx, tx, rc.Source.ID, "__root__", p.parentPageID, name, renderOverview(rc, name), props, nil)
+	// Per-source root = "<name> - <kind>", holding the coverage overview — the kind
+	// tag (repo/jira) lets a project's tree distinguish its sources at a glance.
+	// Parent = the bound top-dir (nil → space root); position computed (sibling MAX+1).
+	rootTitle := name + " - " + sourceKindLabel(rc.Source.Type)
+	rootID, changed, err := p.upsert(ctx, tx, rc.Source.ID, "__root__", p.parentPageID, rootTitle, renderOverview(rc, name), props, nil)
 	if err != nil {
 		return fmt.Errorf("atlas publish: root page: %w", err)
 	}
@@ -365,4 +367,14 @@ func sourceName(s core.Source) string {
 		return s.Subpath
 	}
 	return repoName(s.Location)
+}
+
+// sourceKindLabel is the type tag appended to a per-source root title ("repo" for
+// a git repo, "jira" for a jira project) so sibling sources in a project read
+// clearly, e.g. "compass - repo" next to "COM - jira".
+func sourceKindLabel(t core.SourceType) string {
+	if t == core.SourceJira {
+		return "jira"
+	}
+	return "repo"
 }
