@@ -58,15 +58,15 @@
     source; it reads the source, plans a wiki, drafts cited markdown pages, scores how
     completely they cover the source's real surface, publishes them as ordinary tela pages,
     then watches the source and regenerates on a schedule when it drifts.
-  - THE AI IS ONE COMPOSED ACT (§2–§3b), not four sibling features — restructured so it reads
-    source-to-answer: §2 ATLAS *writes & refreshes* the wiki → §3 RETRIEVAL is the shared engine
-    that *indexes* it → §3a ASK *answers* from it (tela's own AI) → §3b the AGENT LAYER (MCP) is the
-    *external* half (your agents in Claude/ChatGPT reason over the same knowledge). Atlas + Ask =
-    tela's first-party intelligence (one writes, one answers — same grounded-and-cited DNA);
-    retrieval is the engine; the MCP connector is the "works where you already work" beat. All
-    four Tier 1; Atlas and the agent layer carry equal headline weight. (The agent layer moved
-    from first-in-cluster to the closing beat of the act.) Nav now: Atlas · Search · Ask · Agents
-    · Compare · Pricing.
+  - THE AI IS ONE COMPOSED ACT — now THREE beats, not four (2026-06-27 follow-up, agreed with
+    the user): §2 ATLAS *writes & refreshes* the wiki → §3 ASK & SEARCH (find by meaning OR get a
+    cited answer — tela's own AI) → §3b the AGENT LAYER (MCP), the *external* half (your agents in
+    Claude/ChatGPT reason over the same knowledge). **Semantic search/retrieval is NO LONGER a
+    standalone section** — it's a mechanism, not an outcome, and it overlapped Ask (Ask = retrieval
+    + a written answer), so it's MERGED INTO §3 ASK & SEARCH and shown as "one engine underneath"
+    (hybrid keyword + pgvector, heading-aware chunks). The old standalone §3 Retrieval component is
+    deleted. All three beats Tier 1; Atlas and the agent layer carry equal headline weight. Nav:
+    Atlas · Ask · Agents · Compare · Pricing (Search dropped — it lives inside Ask now).
   - FACT CORRECTIONS (verified against internal/api/mcp_tools.go + the live connector):
       * The MCP surface is now **39 tools** — NOT 24, NOT 20. (Atlas, deck, attachment, and
         sharing tools grew it.) Never write "24 tools" again.
@@ -174,7 +174,7 @@ Write like an engineer wrote it for other engineers: claims are falsifiable, spe
 
 ## Information architecture
 
-- **Site type:** single-page marketing landing (developer-tool tier — Linear/Vercel register). **In-page anchor nav (≤6, in scroll order — the AI act leads):** Atlas · Search · Ask · Agents · Compare · Pricing (Pricing is the dedicated-page link; Security stays reachable by scroll). Pinned header: wordmark + GitHub link + theme toggle + primary CTA (`Get started`) + secondary (`Log in`).
+- **Site type:** single-page marketing landing (developer-tool tier — Linear/Vercel register). **In-page anchor nav (≤6, in scroll order — the AI act leads):** Atlas · Ask · Agents · Compare · Pricing (Pricing is the dedicated-page link; Security stays reachable by scroll). Pinned header: wordmark + GitHub link + theme toggle + primary CTA (`Get started`) + secondary (`Log in`).
 - **Page:** one page. **Dominant search intent:** commercial-investigation / navigational ("MCP wiki", "wiki Claude can search", "RAG wiki for agents", "ChatGPT connector wiki", "agent-native wiki", "auto-generate docs from a repo", "self-updating documentation from git", "documentation generator from codebase", "tela").
 
 ## Page plan  (content model — visual hierarchy MUST mirror this priority)
