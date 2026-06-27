@@ -1,16 +1,10 @@
 ---
-// §3 — Ask & search (tela's first-party AI, by meaning). One beat for two doors
-// onto the same knowledge: SEARCH returns the exact section even when it doesn't
-// share your keywords; ASK writes a direct, cited answer grounded in your pages.
-// Retrieval (hybrid keyword + pgvector, heading-aware chunks) is the engine shown
-// here, named once — not a standalone section. Token-driven, no JSON on screen.
-
-// SEARCH demo — "rollback steps" returns the runbook section that never says it.
-const chunks = [
-  { path: 'Runbooks ▸ Rollback', page: 'Incident response', space: 'Engineering', snip: 'revert the image tag, re-probe <mark>/api/version</mark>, then purge the edge cache', via: 'vector' },
-  { path: 'Deploy ▸ Production', page: 'Deploy runbook', space: 'Engineering', snip: 'if the canary drifts, <mark>roll back</mark> to the last green build before paging', via: 'both' },
-];
-// ASK demo — the cited answer's sources.
+// §3 — Ask your docs (tela's first-party AI). The smart, project-aware answer is
+// the HERO: ask in plain language, get a direct answer grounded ONLY in your pages
+// (the ones Atlas wrote + your team maintains), with a citation to every source and
+// an explicit "says so when it can't answer" trust cue. Search-by-meaning is the
+// SAME engine underneath, mentioned as support — never a competing search box, so
+// first glance reads as a sourced AI answer, not generic search. No JSON, no scores.
 const sources = [
   { n: '1', page: 'Incident response', path: 'Rollback', space: 'Engineering' },
   { n: '2', page: 'Deploy runbook', path: 'Production', space: 'Engineering' },
@@ -18,51 +12,44 @@ const sources = [
 ---
 <section id="ask" class="ask-section">
   <div class="ask-head reveal-up">
-    <p class="kicker"><span class="kicker-dot"></span>Ask &amp; search</p>
-    <h2 class="h2">Find it by meaning. Ask in plain language.</h2>
+    <p class="kicker"><span class="kicker-dot"></span>Ask your docs</p>
+    <h2 class="h2">Ask anything about your project. Get an answer that cites its sources.</h2>
     <p class="lede">
-      Two doors onto the same knowledge — both by meaning. Search returns the exact section even when
-      it doesn’t share your keywords. Ask in plain language and tela writes a direct answer
-      <strong>with citations</strong>, grounded only in pages you’re allowed to read — and says so when
-      your docs don’t cover it.
+      tela’s own AI answers in plain language from your own pages — the ones Atlas wrote and your
+      team maintains — so it actually knows your project. Every answer <strong>cites the exact
+      pages</strong> it came from, stays scoped to what you’re allowed to read, and says so when your
+      docs don’t cover it instead of guessing.
     </p>
   </div>
 
-  <div class="ask-grid">
-    <!-- SEARCH: find the right section by meaning -->
-    <div class="card reveal-up" aria-hidden="true">
-      <p class="card-kick">Search — find the section</p>
-      <div class="bar">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <span class="q">rollback steps<span class="caret"></span></span>
+  <div class="ask-layout">
+    <!-- HERO: the grounded, cited answer -->
+    <div class="answer-card reveal-up" aria-hidden="true">
+      <div class="ac-top">
+        <span class="ac-brand"><span class="ac-glyph">✳</span> tela · ask</span>
+        <span class="ac-scope">Engineering</span>
       </div>
-      <ul class="results">
-        {chunks.map((c, i) => (
-          <li class:list={['rchunk', { top: i === 0 }]}>
-            <span class="rc-path">{c.path}</span>
-            <p class="rc-snip" set:html={c.snip}></p>
-            <span class="rc-page">{c.page}<span class="rc-space"> · {c.space}</span></span>
-          </li>
-        ))}
-      </ul>
-      <div class="foot"><span>Top result has no “rollback” in it — matched on meaning</span></div>
-    </div>
 
-    <!-- ASK: get a written, cited answer -->
-    <div class="card reveal-up" aria-hidden="true">
-      <p class="card-kick">Ask — get the answer</p>
-      <div class="bar">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span class="q">How do we roll back a bad deploy?</span>
+      <p class="ac-q">How do we roll back a bad deploy?</p>
+
+      <div class="ac-a">
+        <span class="ac-avatar" aria-hidden="true">✳</span>
+        <div class="ac-body">
+          <p>
+            Revert the image tag, re-probe <code>/api/version</code>, then purge the edge cache —
+            purge first, or the rollback keeps serving stale responses.<sup class="cite">1</sup>
+            If the canary is still drifting after that, roll back to the last green build before
+            paging on-call.<sup class="cite">2</sup>
+          </p>
+        </div>
       </div>
-      <div class="answer">
-        <p>
-          Revert the image tag, re-probe <code>/api/version</code>, then purge the edge cache —
-          purge first, or the rollback keeps serving stale responses.<sup class="cite">1</sup>
-          If the canary is still drifting, roll back to the last green build before paging on-call.<sup class="cite">2</sup>
-        </p>
+
+      <div class="ac-grounded">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        Grounded in your pages — never invents an answer your docs don’t support.
       </div>
-      <div class="sources">
+
+      <div class="ac-sources">
         <span class="srcs-label">Sources</span>
         <ul class="srcs">
           {sources.map((s) => (
@@ -73,29 +60,38 @@ const sources = [
           ))}
         </ul>
       </div>
-      <div class="foot"><span>Grounded in your pages · cites every source · says so when it can’t answer</span></div>
-    </div>
-  </div>
-
-  <div class="ask-after reveal-up">
-    <p class="engine-line">
-      <span class="engine-tag">One engine</span>
-      Every page — written by Atlas or a human — is split into heading-aware chunks, embedded, and
-      indexed. Keyword full-text (Postgres) and vector similarity (<code>pgvector</code>) are fused, so
-      the right section wins even when the words don’t match.
-    </p>
-
-    <div class="doors">
-      <p class="door"><span class="rs-tag">For your team</span> Search and ask inside tela — over every space you can read, with a link to the exact page.</p>
-      <p class="door"><span class="rs-tag agent">For your agent</span> Claude and ChatGPT call the same index through the connector, scoped to your access, and cite the source.</p>
     </div>
 
-    <p class="ask-honest">
-      Semantic search needs an embedder; ask-your-docs also needs an LLM — both on for the hosted
-      instance (metered by your plan’s monthly answer allowance), or bring your own to self-host.
-      Keyword search works out of the box.
-    </p>
+    <!-- SUPPORT: how it knows, the search door, the two front doors -->
+    <aside class="ask-rail">
+      <div class="rail-item reveal-up">
+        <p class="rail-kick">How it knows your project</p>
+        <p class="rail-d">
+          Every page — written by Atlas or a human — is split into heading-aware chunks, embedded,
+          and indexed. Keyword full-text (Postgres) and vector similarity (<code>pgvector</code>) are
+          fused, so it pulls the section that answers the question, not just keyword hits.
+        </p>
+      </div>
+
+      <div class="rail-item reveal-up">
+        <p class="rail-kick">Prefer the raw section?</p>
+        <p class="rail-d">
+          Search by meaning over the same index — “rollback steps” finds the runbook section that
+          never says “rollback”. Same retrieval, just the passage instead of a written answer.
+        </p>
+      </div>
+
+      <div class="doors reveal-up">
+        <p class="door"><span class="rs-tag">For your team</span> Ask inside tela, over every space you can read.</p>
+        <p class="door"><span class="rs-tag agent">For your agent</span> Claude and ChatGPT ground answers the same way, through the connector.</p>
+      </div>
+    </aside>
   </div>
+
+  <p class="ask-honest reveal-up">
+    Ask-your-docs needs an embedder and an LLM — both on for the hosted instance, metered by your
+    plan’s monthly answer allowance; self-hosting, point tela at any OpenAI-compatible model.
+  </p>
 </section>
 
 <style>
@@ -108,104 +104,152 @@ const sources = [
   .ask-head { max-width: 50rem; margin-bottom: 2.25rem; }
   .ask-head .lede strong { color: var(--fg); font-weight: 600; }
 
-  .ask-grid {
+  .ask-layout {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1.25rem;
+    gap: 1.5rem;
     align-items: start;
   }
 
-  /* ── shared card shell (search + ask) ─────────────────────────────── */
-  .card {
+  /* ── HERO: the grounded answer (the AI surface, deliberately elevated) ── */
+  .answer-card {
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg);
     background: var(--surface);
-    box-shadow: var(--shadow-card);
+    box-shadow: var(--shadow-frame);
     overflow: hidden;
   }
-  .card-kick {
-    margin: 0;
-    padding: 0.7rem 1rem 0;
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--fg-faint);
-  }
-  .bar {
+  .ac-top {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    margin-top: 0.55rem;
-    padding: 0.7rem 1rem;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-sunk);
-    color: var(--fg-faint);
+    gap: 0.75rem;
+    padding: 0.7rem 1.1rem;
+    border-bottom: 1px solid var(--pill-border);
+    background: var(--brand-wash);
   }
-  .q { color: var(--fg); font-size: var(--text-base); }
-  .caret { display: inline-block; width: 2px; height: 1em; margin-left: 1px; vertical-align: -2px; background: var(--brand); animation: askblink 1.1s steps(2) infinite; }
+  .ac-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--brand);
+  }
+  .ac-glyph { color: var(--brand); }
+  .ac-scope {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-faint);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 0.12rem 0.45rem;
+    background: var(--surface);
+  }
 
-  /* search results */
-  .results { display: flex; flex-direction: column; }
-  .rchunk { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border); }
-  .rchunk:last-child { border-bottom: 0; }
-  .rchunk.top { background: var(--brand-wash); }
-  .rc-path { display: block; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rc-snip { margin-top: 0.3rem; font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
-  .rc-snip :global(mark) { background: transparent; color: var(--fg); font-weight: 600; }
-  .rc-page { display: block; margin-top: 0.35rem; font-size: var(--text-xs); color: var(--fg-faint); }
-  .rc-space { color: var(--fg-faint); }
+  .ac-q {
+    margin: 0;
+    padding: 1.1rem 1.2rem 0.4rem;
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    color: var(--fg);
+  }
 
-  /* ask answer */
-  .answer { padding: 1rem; font-size: var(--text-sm); line-height: var(--leading-normal); color: var(--fg-soft); }
-  .answer p { margin: 0; }
-  .answer code { font-family: var(--font-mono); font-size: 0.9em; color: var(--fg); background: var(--surface-sunk); border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0.05rem 0.32rem; }
+  .ac-a {
+    display: flex;
+    gap: 0.7rem;
+    padding: 0.5rem 1.2rem 0.4rem;
+  }
+  .ac-avatar {
+    flex: none;
+    width: 1.6rem; height: 1.6rem;
+    display: grid; place-items: center;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    color: var(--brand-fg);
+    font-size: 0.8rem;
+  }
+  .ac-body { min-width: 0; }
+  .ac-body p { margin: 0; font-size: var(--text-base); line-height: var(--leading-normal); color: var(--fg-soft); }
+  .ac-body code {
+    font-family: var(--font-mono); font-size: 0.9em; color: var(--fg);
+    background: var(--surface-sunk); border: 1px solid var(--border);
+    border-radius: var(--radius-xs); padding: 0.05rem 0.32rem;
+  }
   .cite { font-family: var(--font-mono); font-size: 0.7em; font-weight: 600; color: var(--brand); margin-left: 1px; vertical-align: super; }
 
-  .sources { padding: 0.4rem 1rem 0.85rem; border-top: 1px solid var(--border); }
-  .srcs-label { display: block; font-family: var(--font-mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-faint); margin: 0.5rem 0 0.5rem; }
-  .srcs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-  .src { display: flex; align-items: center; gap: 0.55rem; }
-  .src-n { flex: none; width: 1.15rem; height: 1.15rem; display: grid; place-items: center; border-radius: var(--radius-xs); background: var(--brand-wash); border: 1px solid var(--pill-border); color: var(--brand); font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600; }
-  .src-meta { font-size: var(--text-sm); color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .src-page { color: var(--fg-soft); font-weight: 500; }
-  .src-space { color: var(--fg-faint); }
+  .ac-grounded {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 1.2rem 0;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunk);
+    font-size: var(--text-xs);
+    color: var(--fg-soft);
+  }
+  .ac-grounded svg { color: var(--accent); flex: none; }
 
-  .foot { display: flex; gap: 0.5rem; padding: 0.65rem 1rem; border-top: 1px solid var(--border); background: var(--surface-sunk); font-size: var(--text-xs); color: var(--fg-faint); }
-
-  /* ── the engine line + two doors + honesty ────────────────────────── */
-  .ask-after { margin-top: 1.75rem; display: flex; flex-direction: column; gap: 1.1rem; }
-  .engine-line { margin: 0; max-width: var(--measure); font-size: var(--text-base); color: var(--fg-soft); line-height: var(--leading-normal); }
-  .engine-tag {
-    display: inline-block;
-    margin-right: 0.5rem;
+  .ac-sources { padding: 0.9rem 1.2rem 1.2rem; }
+  .srcs-label {
+    display: block;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--brand);
-    border: 1px solid var(--pill-border);
-    background: var(--brand-wash);
-    border-radius: var(--radius-xs);
-    padding: 0.12rem 0.45rem;
+    letter-spacing: 0.1em;
+    color: var(--fg-faint);
+    margin-bottom: 0.55rem;
   }
-  .engine-line code { font-family: var(--font-mono); font-size: 0.9em; color: var(--brand); }
+  .srcs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+  .src { display: flex; align-items: center; gap: 0.55rem; }
+  .src-n {
+    flex: none;
+    width: 1.2rem; height: 1.2rem;
+    display: grid; place-items: center;
+    border-radius: var(--radius-xs);
+    background: var(--brand-wash);
+    border: 1px solid var(--pill-border);
+    color: var(--brand);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+  }
+  .src-meta { font-size: var(--text-sm); color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src-page { color: var(--fg); font-weight: 500; }
+  .src-space { color: var(--fg-faint); }
 
-  .doors { display: grid; grid-template-columns: 1fr; gap: 0.6rem 1.5rem; }
+  /* ── SUPPORT rail ─────────────────────────────────────────────────── */
+  .ask-rail { display: flex; flex-direction: column; gap: 1.25rem; }
+  .rail-item { }
+  .rail-kick {
+    margin: 0 0 0.35rem;
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    color: var(--fg);
+  }
+  .rail-d { margin: 0; font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
+  .rail-d code { font-family: var(--font-mono); font-size: 0.9em; color: var(--brand); }
+
+  .doors { display: flex; flex-direction: column; gap: 0.6rem; }
   .door { margin: 0; font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); padding-left: 0.85rem; border-left: 2px solid var(--border-strong); }
-  .rs-tag { display: inline-block; font-family: var(--font-mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); margin-right: 0.5rem; }
+  .rs-tag { display: inline-block; font-family: var(--font-mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); margin-right: 0.4rem; }
   .rs-tag.agent { color: var(--brand); }
 
-  .ask-honest { margin: 0; max-width: var(--measure); font-size: var(--text-sm); color: var(--fg-faint); line-height: var(--leading-normal); }
-
-  @keyframes askblink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
-
-  @media (min-width: 760px) {
-    .doors { grid-template-columns: 1fr 1fr; }
+  .ask-honest {
+    margin-top: 1.75rem;
+    max-width: var(--measure);
+    font-size: var(--text-sm);
+    color: var(--fg-faint);
+    line-height: var(--leading-normal);
   }
+
   @media (min-width: 940px) {
-    .ask-grid { grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .ask-layout { grid-template-columns: 1.25fr 0.75fr; gap: 2rem; }
   }
 </style>
