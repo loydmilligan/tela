@@ -61,6 +61,10 @@ type plan struct {
 	// MaxLLMCallsPerMonth caps managed LLM calls (ask/chat) per calendar month;
 	// nil = unlimited. The compute meter, beside the resource quotas.
 	MaxLLMCallsPerMonth *int64 `json:"max_llm_calls_per_month"`
+	// MaxAtlasSources caps how many Atlas sources (git repo / Jira project kept
+	// generated + refreshed) the account may keep live; nil = unlimited. Display
+	// source-of-truth for the catalog + landing; enforcement is a follow-up.
+	MaxAtlasSources *int64 `json:"max_atlas_sources"`
 }
 
 func nullToPtr(n sql.NullInt64) *int64 {
@@ -75,16 +79,16 @@ func nullToPtr(n sql.NullInt64) *int64 {
 // `name` column with orgs — every query selecting these must alias plans as p.
 // listed is INTEGER 0/1 (SQLite-era convention) — scanned into an int, not a
 // bool, because pgx is strict about the integer→bool mismatch.
-const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period, p.features, p.max_llm_calls_per_month`
+const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period, p.features, p.max_llm_calls_per_month, p.max_atlas_sources`
 
 func scanPlan(row interface{ Scan(...any) error }) (plan, error) {
 	var (
-		p                                                plan
-		spaces, pages, storage, members, cents, llmCalls sql.NullInt64
-		listed                                           int
-		featuresRaw                                      []byte
+		p                                                           plan
+		spaces, pages, storage, members, cents, llmCalls, atlasSrcs sql.NullInt64
+		listed                                                      int
+		featuresRaw                                                 []byte
 	)
-	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod, &featuresRaw, &llmCalls); err != nil {
+	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod, &featuresRaw, &llmCalls, &atlasSrcs); err != nil {
 		return plan{}, err
 	}
 	p.MaxSpaces, p.MaxPagesPerSpace = nullToPtr(spaces), nullToPtr(pages)
@@ -92,6 +96,7 @@ func scanPlan(row interface{ Scan(...any) error }) (plan, error) {
 	p.Listed = listed == 1
 	p.PriceCents = nullToPtr(cents)
 	p.MaxLLMCallsPerMonth = nullToPtr(llmCalls)
+	p.MaxAtlasSources = nullToPtr(atlasSrcs)
 	p.Features = map[string]bool{}
 	if len(featuresRaw) > 0 {
 		_ = json.Unmarshal(featuresRaw, &p.Features) // malformed JSON → empty map, never fatal
