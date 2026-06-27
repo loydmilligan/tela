@@ -309,12 +309,21 @@ func (c *Client) post(ctx context.Context, base, path string, body, out any, tim
 	buf, _ := json.Marshal(body)
 	url := strings.TrimRight(base, "/") + path
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	// Retry 5xx/429/transport errors with capped exponential backoff. The window
+	// is generous (≈30s over the attempts) so a brief endpoint hiccup — an MLX
+	// server that drops a connection and needs a moment to recover — doesn't fail
+	// the whole multi-minute run on a single page.
+	const maxAttempts = 6
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
+			backoff := time.Duration(math.Pow(2, float64(attempt))) * 500 * time.Millisecond
+			if backoff > 20*time.Second {
+				backoff = 20 * time.Second
+			}
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Duration(math.Pow(2, float64(attempt))) * 300 * time.Millisecond):
+			case <-time.After(backoff):
 			}
 		}
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
