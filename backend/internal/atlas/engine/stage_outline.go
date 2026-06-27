@@ -75,6 +75,7 @@ func (outlineStage) Run(ctx context.Context, rc *RunContext) error {
 		kinds []core.SpineKind
 	}{
 		{"API & Routes", []core.SpineKind{core.KindRoute}},
+		{"Components & Exported Types", []core.SpineKind{core.KindExport}},
 		{"Entry Points, Flags & Environment", []core.SpineKind{core.KindEntrypoint, core.KindFlag, core.KindEnv}},
 		{"Data & Persistence", []core.SpineKind{core.KindDBModel}},
 		{"External Calls & Integrations", []core.SpineKind{core.KindOutbound}},
