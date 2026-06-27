@@ -209,6 +209,17 @@ func (s *Server) buildNotificationEmail(ctx context.Context, in notificationInpu
 		n.CTAURL = s.pageLink(ctx, in)
 		n.Footer = "You're receiving this because you follow this space."
 		n.Related = s.relatedLinks(ctx, in.UserID, in.SubjectID, in.SpaceID)
+	case notifUserRegistered:
+		newName, _ := in.Data["new_display_name"].(string)
+		newEmail, _ := in.Data["new_email"].(string)
+		handle, _ := in.Data["new_username"].(string)
+		n.Subject = "New tela signup: " + newName
+		n.Eyebrow = "New signup"
+		n.Action = "just created an account"
+		n.Target = newEmail
+		n.CTALabel = "View profile"
+		n.CTAURL = canonicalBaseURL() + "/" + handle
+		n.Footer = "You're receiving this because you're an instance admin."
 	default:
 		return mailer.Message{}, false
 	}

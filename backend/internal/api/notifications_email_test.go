@@ -87,6 +87,33 @@ func TestNotificationEmail_Mention(t *testing.T) {
 	}
 }
 
+func TestNotificationEmail_UserRegistered(t *testing.T) {
+	srv, d, cm := newEmailServer(t)
+	ctx := context.Background()
+	admin := seedUser(t, d, "operator", "operatorpw1", true) // instance admin
+	setUserEmail(t, d, admin, "ops@tela.io")
+	bystander := seedUser(t, d, "bystander", "bystpw1234", false) // non-admin, must NOT hear about it
+	setUserEmail(t, d, bystander, "bystander@tela.io")
+
+	newUser := seedUser(t, d, "newbie", "newbiepw123", false)
+	srv.notifyUserRegistered(ctx, newUser, "newbie", "New Bie", "newbie@example.com")
+
+	waitForEmails(t, cm, 1)
+	subj, content, ok := emailTo(cm, "ops@tela.io")
+	if !ok {
+		t.Fatalf("admin got no signup email; got %d", cm.count())
+	}
+	if !strings.Contains(subj, "New Bie") {
+		t.Errorf("subject missing new user name: %q", subj)
+	}
+	if !strings.Contains(content, "newbie@example.com") {
+		t.Errorf("new user's email not surfaced in the body: %q", content)
+	}
+	if _, _, ok := emailTo(cm, "bystander@tela.io"); ok {
+		t.Error("a non-admin was emailed about a signup")
+	}
+}
+
 func TestNotificationEmail_MentionSkipsNonMemberAndSelf(t *testing.T) {
 	srv, d, cm := newEmailServer(t)
 	ctx := context.Background()

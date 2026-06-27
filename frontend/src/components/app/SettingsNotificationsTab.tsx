@@ -4,13 +4,15 @@ import {
   type NotificationPref,
 } from '../../lib/queries/notification-prefs'
 import { useAutowatch, useSetAutowatch } from '../../lib/queries/subscriptions'
+import { useMe } from '../../lib/queries/auth'
 import { Checkbox } from '../ui/checkbox'
 import { cn } from '../../lib/utils'
 
 // The event types + channels the matrix renders. Mirrors the backend's
 // notificationEventTypes / notificationChannels; adding one there + here exposes
-// it. Both in-app and email are delivered.
-const EVENTS: { type: string; label: string; desc: string }[] = [
+// it. Both in-app and email are delivered. `adminOnly` rows show only to instance
+// admins (the recipient set the backend emits them to).
+const EVENTS: { type: string; label: string; desc: string; adminOnly?: boolean }[] = [
   { type: 'mention', label: 'Mentions', desc: 'When someone @-mentions you on a page.' },
   {
     type: 'page_updated',
@@ -32,6 +34,12 @@ const EVENTS: { type: string; label: string; desc: string }[] = [
     label: 'Added to a space',
     desc: 'When someone gives you access to a space.',
   },
+  {
+    type: 'user_registered',
+    label: 'New signups',
+    desc: 'When a new account confirms its email on this instance.',
+    adminOnly: true,
+  },
 ]
 const CHANNELS: { channel: string; label: string }[] = [
   { channel: 'inapp', label: 'In-app' },
@@ -43,6 +51,8 @@ export function SettingsNotificationsTab() {
   const update = useUpdateNotificationPref()
   const autowatch = useAutowatch()
   const setAutowatch = useSetAutowatch()
+  const me = useMe()
+  const events = EVENTS.filter((ev) => !ev.adminOnly || me.data?.is_instance_admin)
 
   const enabled = (eventType: string, channel: string): boolean =>
     prefs.data?.find((p) => p.event_type === eventType && p.channel === channel)?.enabled ?? true
@@ -100,7 +110,7 @@ export function SettingsNotificationsTab() {
             ))}
           </div>
 
-          {EVENTS.map((ev, i) => (
+          {events.map((ev, i) => (
             <div
               key={ev.type}
               className={cn(

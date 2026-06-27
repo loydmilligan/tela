@@ -22,11 +22,12 @@ import (
 // Event types. Text codes (not a DB enum) so a new kind is additive — add a
 // constant, an emit site, and a frontend render case.
 const (
-	notifMention      = "mention"
-	notifPageUpdated  = "page_updated"
-	notifSpaceAdded   = "space_added"
-	notifCommentReply = "comment_reply"
-	notifPageCreated  = "page_created"
+	notifMention        = "mention"
+	notifPageUpdated    = "page_updated"
+	notifSpaceAdded     = "space_added"
+	notifCommentReply   = "comment_reply"
+	notifPageCreated    = "page_created"
+	notifUserRegistered = "user_registered"
 )
 
 // Delivery channels. Only inapp is delivered today; email prefs are stored for
@@ -374,6 +375,59 @@ func (s *Server) notifyCommentReply(ctx context.Context, replier *auth.User, pag
 		SpaceID:     &spaceID,
 		Data:        map[string]any{"page_title": title, "actor_username": replier.Username, "snippet": cleanSnippet(replyBody)},
 	})
+}
+
+// notifyUserRegistered tells every active instance admin that a new account just
+// confirmed its email and went live — the "who's signing up" signal an operator
+// wants while a wiki is still invitation-quiet. Rides the standard pipeline, so
+// it's in-app + email and each admin can mute it per channel like any other type.
+// Best-effort; DedupKey makes it one-ever per (admin, new user) so a stray
+// re-verify can't double-notify. The new user is never themselves an admin here
+// (registration creates non-admins), so no self-exclusion is needed.
+func (s *Server) notifyUserRegistered(ctx context.Context, newUserID int64, username, displayName, email string) {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT id FROM users WHERE is_instance_admin = 1 AND is_active = 1 AND id <> $1`, newUserID)
+	if err != nil {
+		slog.Error("notify user_registered: list admins", "err", err)
+		return
+	}
+	defer rows.Close()
+	var admins []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			slog.Error("notify user_registered: scan admin", "err", err)
+			return
+		}
+		admins = append(admins, id)
+	}
+	if len(admins) == 0 {
+		return
+	}
+
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = username
+	}
+	dedup := "user_registered:" + strconv.FormatInt(newUserID, 10)
+	ins := make([]notificationInput, 0, len(admins))
+	for _, adminID := range admins {
+		ins = append(ins, notificationInput{
+			UserID:      adminID,
+			Type:        notifUserRegistered,
+			ActorID:     &newUserID,
+			SubjectKind: "user",
+			SubjectID:   newUserID,
+			Data: map[string]any{
+				"new_username":     username,
+				"new_display_name": name,
+				"new_email":        email,
+				"actor_username":   username,
+			},
+			DedupKey: dedup,
+		})
+	}
+	s.emitNotifications(ctx, ins...)
 }
 
 // notificationDTO is the wire shape for the inbox. Data is the denormalized

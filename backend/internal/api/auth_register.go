@@ -134,6 +134,15 @@ func (s *Server) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "consume token failed")
 		return
 	}
+	// Capture whether this is the FIRST confirmation (the row was still
+	// unverified): only then do we tell the admins, so a stray re-verify with a
+	// second outstanding link can't re-notify.
+	var alreadyVerified bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT email_verified_at IS NOT NULL FROM users WHERE id = $1`, userID).Scan(&alreadyVerified); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "load user failed")
+		return
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE users SET email_verified_at = COALESCE(email_verified_at, tela_now()),
 		                 updated_at = tela_now()
@@ -147,14 +156,18 @@ func (s *Server) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Provision the personal space now that the account is real (idempotent).
-	var username, email string
-	if err := s.DB.QueryRowContext(ctx, `SELECT username, COALESCE(email, '') FROM users WHERE id = $1`, userID).Scan(&username, &email); err == nil {
+	var username, email, displayName string
+	if err := s.DB.QueryRowContext(ctx, `SELECT username, COALESCE(email, ''), display_name FROM users WHERE id = $1`, userID).Scan(&username, &email, &displayName); err == nil {
 		if _, err := EnsurePersonalSpace(ctx, s.DB, userID, username); err != nil {
 			slog.Error("personal space for verified user", "user_id", userID, "username", username, "err", err)
 		}
 		// Enroll into any org whose auto-join domain matches the just-confirmed
 		// address (#153).
 		applyAutoJoin(ctx, s.DB, userID, email)
+		// Tell the instance admins a new account went live (first confirmation only).
+		if !alreadyVerified {
+			s.notifyUserRegistered(ctx, userID, username, displayName, email)
+		}
 	}
 
 	dto, err := s.authUserByID(ctx, userID)

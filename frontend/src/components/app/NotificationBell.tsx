@@ -35,6 +35,13 @@ function describe(n: NotificationItem): string {
       const space = typeof n.data.space_name === 'string' ? n.data.space_name : 'a space'
       return `${actor} added you to ${space}`
     }
+    case 'user_registered': {
+      const who =
+        typeof n.data.new_display_name === 'string' && n.data.new_display_name
+          ? n.data.new_display_name
+          : actor
+      return `${who} just signed up`
+    }
     default:
       return `${actor} sent you a notification`
   }
@@ -146,6 +153,21 @@ function NotificationRow({ n, onOpen }: { n: NotificationItem; onOpen: () => voi
         <Link
           to="/spaces/$spaceId"
           params={{ spaceId: n.subject_id }}
+          onClick={onOpen}
+          className={className}
+        >
+          {inner}
+        </Link>
+      </DropdownMenuItem>
+    )
+  }
+  // A new-signup notification points at the registrant's public handle home.
+  if (n.subject_kind === 'user' && typeof n.data.new_username === 'string') {
+    return (
+      <DropdownMenuItem asChild>
+        <Link
+          to="/$handle"
+          params={{ handle: n.data.new_username }}
           onClick={onOpen}
           className={className}
         >

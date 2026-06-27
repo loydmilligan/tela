@@ -66,6 +66,12 @@ emission policies on `notificationInput`:
   **space** (minus the author), so "follow a space" means "watch for new pages",
   not just edits. Idempotent per (page, user). Fires only on the interactive
   create path (`createPageCore`) — bulk import/sync doesn't storm followers.
+- **user_registered** — when a new account **confirms its email** (first time
+  only; the verify handler gates on the prior `email_verified_at` being NULL),
+  `notifyUserRegistered` notifies every active **instance admin** (`is_instance_admin`)
+  so an operator sees who's signing up. `subject_kind='user'`, the registrant is
+  the actor; `DedupKey` makes it one-ever per (admin, new user). The Settings
+  matrix row ("New signups") renders for admins only; non-admins never receive it.
 - **Autowatch** — you auto-follow a page when you **create**, **edit**, or
   **comment** on it (Confluence-style), via `autoFollow` in the shared cores
   (`createPageCore` / `updatePageCore` / `createCommentCore`) so REST *and* MCP
@@ -96,7 +102,7 @@ settings tab (the watch list, with one-click unfollow).
 
 ## Email channel
 
-`dispatchEmails` (`notifications_email.go`) delivers all five event types
+`dispatchEmails` (`notifications_email.go`) delivers every event type
 out of the app, reusing the feedback pattern: recipient/content resolved
 synchronously (ctx live), SMTP fired in a detached goroutine so relay latency
 never slows the request. A missing relay (LogMailer) just logs. Needs
@@ -128,7 +134,7 @@ never slows the request. A missing relay (LogMailer) just logs. Needs
   has no collapse, so `claimPageUpdatedEmail` atomically caps it to **one email
   per (user, page) per `pageUpdatedEmailWindow`** (4h) via the
   `notification_email_throttle` table (migration `0046`, swept on page delete).
-  The other three types are one-shot, never throttled.
+  The other types are one-shot, never throttled.
 - **Slack/Teams later** — add a sibling `dispatch*` off the same loop + a channel
   value in the prefs `CHECK`; the emit sites don't change.
 
