@@ -14,6 +14,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,29 @@ func New() *Connector { return &Connector{} }
 
 func (*Connector) Type() string { return string(core.SourceGit) }
 
+// authURL injects the resolved credential into an https(s) git URL's userinfo
+// for the duration of a single git command — so the token NEVER lands on
+// core.Source.Location (which is printed in the overview page, logged, and
+// emitted in run events). A token-only secret becomes the userinfo (a GitHub
+// PAT); a username (GitHub "x-access-token", GitLab "oauth2", a real login)
+// becomes user:token. No secret, or a non-http scheme (ssh/local), returns
+// Location unchanged.
+func authURL(src core.Source) string {
+	if src.SecretValue == "" {
+		return src.Location
+	}
+	u, err := url.Parse(src.Location)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return src.Location
+	}
+	if user := src.SecretMeta["username"]; user != "" {
+		u.User = url.UserPassword(user, src.SecretValue)
+	} else {
+		u.User = url.User(src.SecretValue)
+	}
+	return u.String()
+}
+
 // Acquire clones the repo into workdir/repo and pins HEAD. Local paths and
 // remote URLs are both cloned fresh (full clone — real line history for
 // citations). Source.Branch, if set, selects a single branch.
@@ -45,7 +69,7 @@ func (*Connector) Acquire(ctx context.Context, src core.Source, workdir string) 
 	if src.Branch != "" {
 		args = append(args, "--branch", src.Branch, "--single-branch")
 	}
-	args = append(args, src.Location, dst)
+	args = append(args, authURL(src), dst)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return source.Snapshot{}, fmt.Errorf("git clone: %v: %s", err, strings.TrimSpace(string(out)))
@@ -198,8 +222,8 @@ func (*Connector) Delta(ctx context.Context, snap source.Snapshot, src core.Sour
 
 // HasChanges cheaply probes whether the remote HEAD differs from fromRef using
 // `git ls-remote <Location> HEAD` — no clone. An empty fromRef (no baseline) is
-// always "changed". Auth for private repos travels in the URL (Source.Location),
-// as it does for Acquire. Branch, if set, scopes the probe to that ref.
+// always "changed". Auth for private repos is injected into the command URL only
+// (authURL) — never onto Source.Location. Branch, if set, scopes the probe.
 func (*Connector) HasChanges(ctx context.Context, src core.Source, fromRef string) (bool, error) {
 	if fromRef == "" {
 		return true, nil
@@ -208,7 +232,7 @@ func (*Connector) HasChanges(ctx context.Context, src core.Source, fromRef strin
 	if src.Branch != "" {
 		ref = src.Branch
 	}
-	out, err := exec.CommandContext(ctx, "git", "ls-remote", src.Location, ref).Output()
+	out, err := exec.CommandContext(ctx, "git", "ls-remote", authURL(src), ref).Output()
 	if err != nil {
 		return false, fmt.Errorf("git ls-remote: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -70,6 +71,22 @@ func coreSourceFrom(src atlasSourceRow) core.Source {
 		ID: src.ID, Type: core.SourceType(src.Type), Location: src.Location, Name: src.Name,
 		Ref: src.Ref, Branch: src.Branch, Subpath: src.Subpath, Include: src.Include, Exclude: src.Exclude,
 	}
+}
+
+// resolveCoreSource builds the engine source with its bound credential resolved
+// into the transient secret fields (SecretValue/SecretMeta), so both the run and
+// the cheap detection probe authenticate against private sources. Location stays
+// clean — the git connector injects auth at command time (never onto the Source).
+func (m *atlasManager) resolveCoreSource(ctx context.Context, src atlasSourceRow) core.Source {
+	cs := coreSourceFrom(src)
+	if src.CredID != nil {
+		if val, meta, err := loadAtlasCredential(ctx, m.s.DB, *src.CredID); err == nil {
+			applyAtlasCred(&cs, val, meta)
+		} else {
+			slog.Warn("atlas: resolve source credential", "source", src.ID, "cred", *src.CredID, "err", err)
+		}
+	}
+	return cs
 }
 
 // lastDoneBaseline returns the source's most recent successful run id and the ref

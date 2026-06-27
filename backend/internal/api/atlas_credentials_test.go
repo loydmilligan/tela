@@ -103,7 +103,8 @@ func TestAtlasCredentialResolution(t *testing.T) {
 	pid := seedAtlasProject(t, d, "Repo Docs", accountUser, owner, space, 0)
 	ctx := context.Background()
 
-	// git: token injected into the clone URL userinfo.
+	// git: token + username resolved onto the transient source; Location stays
+	// CLEAN (auth is injected only at git-command time, never onto the Source).
 	gitCred := seedAtlasCredential(t, d, accountUser, owner, "gh", "git", "ghp_tok", map[string]string{"username": "x-access-token"})
 	var gitSrcID int64
 	if err := d.QueryRow(
@@ -126,8 +127,11 @@ func TestAtlasCredentialResolution(t *testing.T) {
 	if gitRC.Source.SecretValue != "ghp_tok" {
 		t.Fatalf("git SecretValue: got %q", gitRC.Source.SecretValue)
 	}
-	if want := "https://x-access-token:ghp_tok@github.com/example/repo.git"; gitRC.Source.Location != want {
-		t.Fatalf("git Location not authed: got %q want %q", gitRC.Source.Location, want)
+	if gitRC.Source.SecretMeta["username"] != "x-access-token" {
+		t.Fatalf("git SecretMeta username: got %q", gitRC.Source.SecretMeta["username"])
+	}
+	if want := "https://github.com/example/repo.git"; gitRC.Source.Location != want {
+		t.Fatalf("git Location must stay clean (no token): got %q want %q", gitRC.Source.Location, want)
 	}
 
 	// jira: token + email on the transient source, base URL (Location) untouched.

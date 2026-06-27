@@ -93,7 +93,7 @@ func (m *atlasManager) probeStaleness(ctx context.Context, sourceID int64) {
 	if err != nil {
 		return
 	}
-	has, herr := engine.HasChanges(ctx, coreSourceFrom(src), src.Ref)
+	has, herr := engine.HasChanges(ctx, m.resolveCoreSource(ctx, src), src.Ref)
 	if herr != nil {
 		slog.Warn("atlas: detection probe failed", "source", sourceID, "err", herr)
 		_, _ = m.s.DB.ExecContext(ctx, `UPDATE atlas_sources SET upstream_checked_at = tela_now() WHERE id = $1`, sourceID)

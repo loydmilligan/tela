@@ -95,18 +95,10 @@ func (m *atlasManager) buildRunContext(ctx context.Context, src atlasSourceRow, 
 	}
 	client := m.newLLMClient()
 	coreProj := &core.Project{ID: proj.ID, Name: proj.Name, Model: atlasModelCfg(m.s.rag.EmbedModel())}
-	coreSrc := coreSourceFrom(src)
-	// Resolve the bound credential into the transient secret fields just before the
-	// run acquires: jira reads SecretValue + SecretMeta["email"] directly; git auth
-	// is injected into the clone Location (the git connector authenticates via the
-	// URL, never SecretValue).
-	if src.CredID != nil {
-		if val, meta, err := loadAtlasCredential(ctx, m.s.DB, *src.CredID); err == nil {
-			applyAtlasCred(&coreSrc, val, meta)
-		} else {
-			slog.Warn("atlas: resolve source credential", "source", src.ID, "cred", *src.CredID, "err", err)
-		}
-	}
+	// Resolve the bound credential into the transient secret fields (Location stays
+	// clean; the git connector injects auth at command time). jira reads
+	// SecretValue + SecretMeta["email"]; git reads SecretValue + SecretMeta["username"].
+	coreSrc := m.resolveCoreSource(ctx, src)
 	return &engine.RunContext{
 		Project:   coreProj,
 		Source:    &coreSrc,

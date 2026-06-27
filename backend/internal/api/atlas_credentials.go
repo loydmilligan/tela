@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"net/url"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
 )
@@ -190,32 +189,10 @@ func loadAtlasCredential(ctx context.Context, db *sql.DB, id int64) (value strin
 func applyAtlasCred(src *core.Source, value string, meta map[string]string) {
 	src.SecretValue = value
 	src.SecretMeta = meta
-	if src.Type == core.SourceGit && value != "" {
-		username := ""
-		if meta != nil {
-			username = meta["username"]
-		}
-		src.Location = injectGitAuth(src.Location, username, value)
-	}
-}
-
-// injectGitAuth embeds credentials in an https(s) git URL's userinfo so `git
-// clone`/`ls-remote` authenticate non-interactively. A token-only credential
-// becomes the userinfo (works for a GitHub PAT); a username (GitHub
-// "x-access-token", GitLab "oauth2", or a real login) becomes user:token.
-// Non-http schemes (ssh, local paths) are returned unchanged — auth there isn't
-// URL-borne.
-func injectGitAuth(location, username, token string) string {
-	u, err := url.Parse(location)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
-		return location
-	}
-	if username != "" {
-		u.User = url.UserPassword(username, token)
-	} else {
-		u.User = url.User(token)
-	}
-	return u.String()
+	// Git auth is injected at git-command time (the git connector's authURL),
+	// NEVER onto Location — that keeps the token out of the overview page, the
+	// server logs, and the run events. The connector reads SecretValue +
+	// SecretMeta["username"]; jira reads SecretValue + SecretMeta["email"].
 }
 
 func parseCredMeta(metaJSON string) map[string]string {
