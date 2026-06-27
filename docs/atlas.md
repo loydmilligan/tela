@@ -1,5 +1,7 @@
 # atlas — source-grounded, coverage-audited doc generation (inside tela)
 
+> **Current (shipped on `main`, deployed).** The model evolved from the design below to an explicit **Credential → Project → Source → Run** (owner-scoped projects + a write-only credential store). **[As built](#as-built--model-ownership--internals-current--authoritative)** below is the authoritative current architecture; everything from *The native model* onward is **historical design context**. Hardening since launch: a **durable run queue**, **per-page draft/refine tolerance**, hardened LLM retry, an **exported-types reference page** (major coverage lever), kind-tagged source roots, git-auth-kept-off-`Source.Location` (token-leak fix), and a timezone-correct jira staleness probe. End-user docs live in tela Docs space 16 (*Atlas — automated documentation* + 3 children).
+
 > Status: **Phases 1–6 (backend) done; UI first cut done — all on `feat/atlas`.** Ported engine (`EngineStore` Postgres, chat→`TELA_LLM_URL`, embed→`rag.Embedder` via `EmbedFunc`), in-process publisher, executor + SSE + `ResumeDangling`, HTTP API (gating tested), **delta runs + freshness scheduler + drift** (P4), **per-space secret store + private-git & Jira sources** (P5), **MCP tools** `atlas_list_sources`/`atlas_run`/`atlas_sync`/`atlas_run_status` (P6), **run-finish notifications** via tela's native in-app system (P6). UI: the generation console (`/spaces/$spaceId/atlas`), `StatusBadge` + `CoverageGauge` primitives, a space-header entry point — **visually QA'd**. `cmd/atlasdiff` is the 1-1 fidelity harness; the live compass 1-1 **passed the deterministic gate** (64 files / 77 surface / 433 chunks + exact spine items). **Remaining:** the **tela Docs space (16) end-user docs** (at deploy) and opening the PR off `feat/atlas`. Baseline for reference: compass `fa5b543` → Atlas space 51; models `qwen3:30b-a3b-instruct-2507-q4_K_M` + `qwen3-embedding:0.6b` (compass `fa5b543` → Atlas space 51 reference; models `qwen3:30b-a3b-instruct-2507-q4_K_M` + `qwen3-embedding:0.6b`; baseline 64 files / 77 surface / 433 chunks / 13 pages / 100% must-cover). This is the developer/architecture contract for bringing the standalone `atlas` system natively into tela. It is the source of truth for the build; update it as phases land. End-user docs go to the tela Docs space (space 16) per `CLAUDE.md`.
 
 ## What this is
@@ -10,7 +12,42 @@ atlas already **publishes into tela** today over a REST client. Bringing it *ins
 
 The full description of standalone atlas is `~/proj/atlas/atlasdesc.md` (read it for the domain model and pipeline detail).
 
-## The native model — "the space *is* the project"
+## As built — model, ownership & internals (current / authoritative)
+
+The "space *is* the project / no `projects` table" design below was **superseded** during the build. atlas in tela is **Credential → Project → Source → Run**, owner-scoped to a user or org.
+
+### Model & data (added migrations)
+- **`atlas_projects`** — `name, owner_kind ('user'|'org'), owner_id, output_space_id, output_parent_page_id, cadence, auto_update`. A project owns its output destination + schedule.
+- **`atlas_credentials`** — `owner_kind, owner_id, name, kind ('git'|'jira'), value, meta_json`. The token **value is write-only** (blanked on every read DTO); owner-scoped like projects.
+- **`atlas_sources`** — `project_id (FK), cred_id (nullable FK), …, stale_since, upstream_checked_at`. Belongs to a project, optionally binds a credential.
+- **`atlas_page_map`** — `(source_id, slug) → page_id`; the publisher's stable mapping for upsert + publish-prune (replaces atlas's `page_deliveries`).
+- Run/ingestion tables (`atlas_runs`, `atlas_run_events`, `atlas_files`, `atlas_symbols`, `atlas_chunks`) are as in the design below.
+
+### Ownership, credentials & auth (security-sensitive)
+- Management gated by `atlasOwnerManageErr` (owner user, owner-org admin, or instance admin); viewing by `atlasOwnerViewErr` (org members read).
+- **Personal creds on org projects:** `atlasCredBindable` accepts a credential owned by **the project's owner OR the acting user** — so a user can lend a private token to an org project's source without it entering the org's reusable pool. Other admins can *run* it (the run uses the token) but can't see its value or reuse it elsewhere.
+- **Git auth is injected at command time, NEVER onto `Source.Location`.** `applyAtlasCred` sets `SecretValue`/`SecretMeta`; the git connector's `authURL` builds the auth'd URL only for the `git clone`/`ls-remote` exec. **Load-bearing:** a token on `Location` previously leaked into the overview page + run events **and** broke `CiteURL` parsing. The clone-failure path also **redacts** the token from git's output (`redactSecret`). `resolveCoreSource` applies the credential for both the run and the cheap detection probe.
+
+### Output structure
+`Space → [optional top-dir] → Project folder → per-source root → pages`. The **project folder is auto-created** (named after the project) when outputting to an existing space (`createProjectFolder`); a brand-new space named after the project is itself the namespace. Each per-source root is **kind-tagged** `"<name> - repo|jira"` (`sourceKindLabel`). Publish writes `pages` directly + queues RAG reindex (background-write pattern), keyed by `atlas_page_map`.
+
+### Run queue (durable, global) — `atlas_run.go`
+Runs are gated by a **DB-backed dispatcher** (`runDispatcher`/`dispatchPending`/`claimNextPending`), capped at `TELA_ATLAS_MAX_CONCURRENT_RUNS` (**default 1** — generation shares the LLM with interactive ask/research, and overlapping drafts demonstrably 502'd the endpoint). Launch paths (`StartRun`, `StartDelta`, scheduler) **enqueue** a `pending` row + `signalDispatch`; the dispatcher claims the oldest pending run (`pending`→`running`) when a slot frees. The queue **is** the set of `pending` rows, so a restart/redeploy never strands a queued run — on boot the dispatcher repopulates from the DB (`ResumeDangling` separately recovers in-flight `running` runs). One non-terminal run per source (`sourceHasNonTerminalRun`). *(Replaced an in-memory semaphore that lost queued runs on restart.)*
+
+### Resilience
+- **Per-page tolerance** (`stage_draft.go`/`stage_refine.go`): a transient LLM failure on one page no longer fails the run — `draft` drops the failed page (its surface → a coverage gap for `repair`), `refine` keeps the existing draft; the run fails only if **every** page fails.
+- **Retry:** the lifted `llm` client retries 5xx/429/transport errors **6×** with capped exponential backoff (~30s window).
+- **MaxTokens:** `TELA_LLM_MAX_TOKENS` → `ModelCfg.MaxTokens` → `max_tokens` on every chat call. Required — `mlx_lm.server` silently caps output at **512** when unset, truncating outlines/pages mid-JSON.
+
+### Coverage & reference pages — `stage_outline.go`
+The outline plans deterministic **reference pages** per spine kind that enumerate the surface with `file:line` citations. **Repos now get a `Components & Exported Types` page (`KindExport`)** — previously jira-only, so class/type-heavy repos (Java/Go/TS) under-covered badly (UDN went 46% → 95% on adding it). Citations linkify (`CiteURL`) to a commit-pinned GitHub blob URL (git) or a Jira browse URL (issues).
+
+### Freshness / staleness — `atlas_scheduler.go`, `source/jira`
+`detectStaleness` runs cheap no-clone `HasChanges` probes every 15 min and stamps `stale_since`; `pollRegen` regenerates only stale sources on the project cadence (a delta). **Jira change detection compares instants in Go** (`latestUpdated` vs the stored ref, normalized to UTC) — *not* a JQL `updated >= <literal>` probe, which reads the literal in the **instance timezone** and (with a UTC-formatted ref) perpetually re-matched the ref's own boundary issue → false "stale". `Delta` keeps the JQL as a timezone-approximate superset but trims to issues truly updated after the ref. Git uses exact-SHA `ls-remote` compare (immune).
+
+---
+
+## The native model — "the space *is* the project" *(historical design — superseded by* As built *above)*
 
 Standalone atlas's `Project` only existed to group sources + an LLM connection + an output dir + a freshness cadence. Inside tela the connection is gone (instance LLM), the output *is* a space, and cadence lives on the space — so **the managed space is the project**. No `projects` table.
 
