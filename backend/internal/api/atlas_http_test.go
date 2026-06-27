@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -146,6 +147,13 @@ func TestAtlasCredReuse(t *testing.T) {
 	bob := seedUser(t, d, "bob", "bobpw1234", false)
 	ca := loginClient(t, ts, "alice", "alicepw12")
 
+	// This test is about credential reuse, not the source cap — lift the
+	// per-tier Atlas source limit so two sources can be created.
+	if _, err := d.ExecContext(context.Background(),
+		`UPDATE plans SET max_atlas_sources = NULL WHERE key = 'personal_free'`); err != nil {
+		t.Fatalf("lift source cap: %v", err)
+	}
+
 	// One credential, reused across two of Alice's projects.
 	cred := seedAtlasCredential(t, d, accountUser, alice, "gh", "git", "ghp_tok", map[string]string{"username": "x-access-token"})
 	p1 := seedAtlasProject(t, d, "Proj One", accountUser, alice, 0, 0)
@@ -164,5 +172,41 @@ func TestAtlasCredReuse(t *testing.T) {
 	crossBody := fmt.Sprintf(`{"type":"git","location":"https://github.com/example/repo.git","cred_id":%d}`, bobCred)
 	if st, rb := atlasReq(t, ca, "POST", url, crossBody); st != http.StatusBadRequest || !strings.Contains(rb, "invalid_credential") {
 		t.Fatalf("cross-owner cred bind: want 400 invalid_credential, got %d %s", st, rb)
+	}
+}
+
+// TestAtlasSourceQuota enforces the per-tier Atlas source cap
+// (plans.max_atlas_sources): the default personal_free plan caps sources at 1,
+// counted across ALL of the account's projects; raising the cap lifts the gate.
+func TestAtlasSourceQuota(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	ca := loginClient(t, ts, "alice", "alicepw12")
+	space := seedSpace(t, d, "Repo Docs", "repo-docs", alice)
+	pa := seedAtlasProject(t, d, "Proj A", accountUser, alice, space, 0)
+	pb := seedAtlasProject(t, d, "Proj B", accountUser, alice, space, 0)
+
+	srcURL := func(pid int64) string {
+		return fmt.Sprintf("%s/api/atlas/projects/%d/sources", ts.URL, pid)
+	}
+	src := func(name string) string {
+		return fmt.Sprintf(`{"type":"git","location":"https://github.com/example/%s.git","name":"%s"}`, name, name)
+	}
+
+	// personal_free caps Atlas sources at 1 → the first connects.
+	if st, rb := atlasReq(t, ca, "POST", srcURL(pa), src("one")); st != http.StatusCreated {
+		t.Fatalf("first source: want 201, got %d %s", st, rb)
+	}
+	// A second source — even on a DIFFERENT project of the same account — is gated.
+	if st, rb := atlasReq(t, ca, "POST", srcURL(pb), src("two")); st != http.StatusPaymentRequired || !strings.Contains(rb, "quota_exceeded") {
+		t.Fatalf("second source (cross-project): want 402 quota_exceeded, got %d %s", st, rb)
+	}
+	// Raise the cap → the gate lifts.
+	if _, err := d.ExecContext(context.Background(),
+		`UPDATE plans SET max_atlas_sources = 5 WHERE key = 'personal_free'`); err != nil {
+		t.Fatalf("raise cap: %v", err)
+	}
+	if st, rb := atlasReq(t, ca, "POST", srcURL(pb), src("two")); st != http.StatusCreated {
+		t.Fatalf("after raising cap: want 201, got %d %s", st, rb)
 	}
 }

@@ -217,6 +217,18 @@ func countOrgMembers(ctx context.Context, q queryer, orgID int64) (int64, error)
 	return n, err
 }
 
+// countAtlasSources counts the Atlas sources across every project the account
+// owns — the metered unit behind the per-tier max_atlas_sources cap.
+func countAtlasSources(ctx context.Context, q queryer, acct account) (int64, error) {
+	var n int64
+	err := q.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM atlas_sources s
+		   JOIN atlas_projects p ON p.id = s.project_id
+		  WHERE p.owner_kind = $1 AND p.owner_id = $2`,
+		acct.Kind, acct.ID).Scan(&n)
+	return n, err
+}
+
 // ── gates ─────────────────────────────────────────────────────────────────────
 
 func quotaErr(format string, args ...any) *apiErr {
@@ -242,6 +254,26 @@ func (s *Server) checkSpaceQuota(ctx context.Context, acct account) *apiErr {
 	}
 	if used+1 > *p.MaxSpaces {
 		return quotaErr("%s plan space limit reached (%d) — upgrade to add more spaces", p.Name, *p.MaxSpaces)
+	}
+	return nil
+}
+
+// checkAtlasSourceQuota gates connecting one more Atlas source to a project owned
+// by acct, against the plan's per-account max_atlas_sources (nil = unlimited).
+func (s *Server) checkAtlasSourceQuota(ctx context.Context, acct account) *apiErr {
+	p, err := planFor(ctx, s.DB, acct)
+	if err != nil {
+		return internalQuotaErr()
+	}
+	if p.MaxAtlasSources == nil {
+		return nil
+	}
+	used, err := countAtlasSources(ctx, s.DB, acct)
+	if err != nil {
+		return internalQuotaErr()
+	}
+	if used+1 > *p.MaxAtlasSources {
+		return quotaErr("%s plan Atlas source limit reached (%d) — upgrade to connect more sources", p.Name, *p.MaxAtlasSources)
 	}
 	return nil
 }

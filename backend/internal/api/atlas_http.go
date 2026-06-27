@@ -182,6 +182,12 @@ func (s *Server) CreateAtlasSource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Per-tier Atlas source cap (plans.max_atlas_sources), counted across all the
+	// owning account's projects.
+	if ae := s.checkAtlasSourceQuota(r.Context(), account{Kind: ownerKind, ID: ownerID}); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
 	var id int64
 	var createdAt string
 	err = s.DB.QueryRowContext(r.Context(), `
