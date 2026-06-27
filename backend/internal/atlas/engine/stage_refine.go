@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
@@ -39,7 +38,12 @@ func (refineStage) Run(ctx context.Context, rc *RunContext) error {
 		}
 		chunks, err := narrativeChunks(ctx, rc, p)
 		if err != nil {
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			rc.Warn("refine %q: retrieval failed, keeping draft: %v", p.Title, err)
+			rc.StepDone(n, "refining: %s (kept draft)", p.Title)
+			return nil
 		}
 		user := refineUser(p.Title, p.Body, assembleContext(chunks))
 		if rc.Source != nil && rc.Source.Type == core.SourceJira {
@@ -47,7 +51,14 @@ func (refineStage) Run(ctx context.Context, rc *RunContext) error {
 		}
 		improved, err := rc.LLM.Chat(ctx, refineSystem, user, 0.3)
 		if err != nil {
-			return fmt.Errorf("refine %q: %w", p.Title, err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// Refine is improvement-only — keep the existing draft on a transient
+			// failure rather than failing the whole run on one page.
+			rc.Warn("refine %q failed, keeping draft: %v", p.Title, err)
+			rc.StepDone(n, "refining: %s (kept draft)", p.Title)
+			return nil
 		}
 		improved = sanitizePage(improved)
 		if len(strings.TrimSpace(improved)) >= len(strings.TrimSpace(p.Body))/2 { // guard against a degenerate shrink

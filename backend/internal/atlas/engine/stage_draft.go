@@ -30,7 +30,7 @@ func (draftStage) Run(ctx context.Context, rc *RunContext) error {
 	// UpdatePageBody(p.ID). Progress goes through the atomic StepDone counter.
 	rc.resetProgress()
 	n := len(rc.Art.Pages)
-	return parallelN(ctx, pageFanout, n, func(ctx context.Context, i int) error {
+	if err := parallelN(ctx, pageFanout, n, func(ctx context.Context, i int) error {
 		p := &rc.Art.Pages[i]
 		// Idempotent on resume: a page that already carries a body was drafted in a
 		// prior (interrupted) run — skip it so a restart redoes only unfinished pages.
@@ -46,7 +46,16 @@ func (draftStage) Run(ctx context.Context, rc *RunContext) error {
 			body, err = draftNarrative(ctx, rc, p)
 		}
 		if err != nil {
-			return fmt.Errorf("draft %q: %w", p.Title, err)
+			if ctx.Err() != nil {
+				return ctx.Err() // run canceled / shutting down — abort for real
+			}
+			// Tolerate a per-page failure (e.g. a transient endpoint 502): warn, leave
+			// the body empty (the page is dropped below), and carry on — one bad page
+			// must not throw away a whole multi-page run. Its surface resurfaces as a
+			// coverage gap that repair can retry.
+			rc.Warn("draft %q failed — skipping, repair will retry: %v", p.Title, err)
+			rc.StepDone(n, "drafting: %s (failed)", p.Title)
+			return nil
 		}
 		p.Body = body
 		if err := rc.Store.UpdatePageBody(p.ID, body); err != nil {
@@ -54,7 +63,25 @@ func (draftStage) Run(ctx context.Context, rc *RunContext) error {
 		}
 		rc.StepDone(n, "drafting: %s", p.Title)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Drop pages that failed to draft (empty body). All failed ⇒ the endpoint is
+	// down, so fail the run rather than publishing nothing.
+	kept := rc.Art.Pages[:0]
+	for i := range rc.Art.Pages {
+		if strings.TrimSpace(rc.Art.Pages[i].Body) != "" {
+			kept = append(kept, rc.Art.Pages[i])
+		}
+	}
+	if len(kept) == 0 {
+		return fmt.Errorf("draft: all %d pages failed (endpoint unavailable)", n)
+	}
+	if len(kept) < n {
+		rc.Warn("draft: %d of %d pages failed and were dropped (surface becomes a coverage gap)", n-len(kept), n)
+	}
+	rc.Art.Pages = kept
+	return nil
 }
 
 func draftNarrative(ctx context.Context, rc *RunContext, p *core.Page) (string, error) {
