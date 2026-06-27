@@ -69,13 +69,23 @@ seats on the next flight?
         </div>
       </div>
 
-      <!-- answer (markdown, with a plaintext ASCII flow) -->
-      <div class="answer">
-        <p class="ans-text">Every affected passenger is rebooked automatically the moment a flight’s cancelled:<sup class="cite">1</sup></p>
-        <pre class="dg-ascii">{flow}</pre>
-        <p class="ans-text">
-          Protected passengers — tight connections, unaccompanied minors — get first pick of the open seats.<sup class="cite">2</sup>
-        </p>
+      <!-- answer (the constructed answer, as the assistant's reply) -->
+      <div class="answer-card">
+        <span class="ans-avatar" aria-hidden="true">
+          <svg viewBox="0 0 512 512" width="13" height="13" fill="none">
+            <g transform="translate(-2.5,-38.5)">
+              <path fill="var(--brand-fg)" d="M150 240 L196 188 Q205 178 218 178 H356 Q378 178 366 200 L332 240 Q325 250 312 250 H162 Q140 250 150 240 Z"></path>
+              <path fill="var(--brand-fg)" d="M238 250 H296 Q300 250 300 268 V396 Q300 414 281 410 L245 402 Q226 398 226 380 V272 Q226 252 238 250 Z"></path>
+            </g>
+          </svg>
+        </span>
+        <div class="ans-content">
+          <p class="ans-text">Every affected passenger is rebooked automatically the moment a flight’s cancelled:<sup class="cite">1</sup></p>
+          <pre class="dg-ascii">{flow}</pre>
+          <p class="ans-text">
+            Protected passengers — tight connections, unaccompanied minors — get first pick of the open seats.<sup class="cite">2</sup>
+          </p>
+        </div>
       </div>
 
       <!-- sources -->
@@ -212,8 +222,26 @@ seats on the next flight?
     box-shadow: var(--glow-brand);
   }
 
-  /* answer */
-  .answer { padding: 0.85rem 1.1rem 0.4rem; }
+  /* answer — its own block (the assistant's reply), clearly below the question */
+  .answer-card {
+    display: flex;
+    gap: 0.65rem;
+    margin: 0.85rem 1.1rem 0;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--border-strong);
+    border-left: 2px solid var(--brand);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .ans-avatar {
+    flex: none;
+    width: 1.5rem; height: 1.5rem;
+    display: grid; place-items: center;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    box-shadow: var(--glow-brand);
+  }
+  .ans-content { min-width: 0; flex: 1; }
   .ans-text { margin: 0 0 0.5rem; font-size: var(--text-base); line-height: var(--leading-snug); color: var(--fg-soft); }
   .ans-text:last-child { margin-bottom: 0; }
   .cite {
