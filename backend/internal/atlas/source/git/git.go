@@ -57,6 +57,15 @@ func authURL(src core.Source) string {
 	return u.String()
 }
 
+// redactSecret blanks the token in a string (git command output can echo the
+// auth'd URL on failure) so it never surfaces in a run error / log / event.
+func redactSecret(s, secret string) string {
+	if secret == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, secret, "***")
+}
+
 // Acquire clones the repo into workdir/repo and pins HEAD. Local paths and
 // remote URLs are both cloned fresh (full clone — real line history for
 // citations). Source.Branch, if set, selects a single branch.
@@ -72,7 +81,9 @@ func (*Connector) Acquire(ctx context.Context, src core.Source, workdir string) 
 	args = append(args, authURL(src), dst)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return source.Snapshot{}, fmt.Errorf("git clone: %v: %s", err, strings.TrimSpace(string(out)))
+		// git can echo the (auth'd) clone URL on failure — redact the token so it
+		// never reaches the run error / logs / events.
+		return source.Snapshot{}, fmt.Errorf("git clone: %v: %s", err, redactSecret(strings.TrimSpace(string(out)), src.SecretValue))
 	}
 	sha, err := gitHead(ctx, dst)
 	if err != nil {
