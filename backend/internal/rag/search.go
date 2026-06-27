@@ -49,8 +49,9 @@ func IsFileChunk(chunkID int64) bool { return chunkID >= fileChunkIDBase }
 // calibration between the lexical and vector rankers.
 const rrfK = 60
 
-// Search runs hybrid retrieval scoped to what userID can access (the
-// space_access view). mode is "hybrid" (default), "semantic", or "lexical".
+// Search runs hybrid retrieval scoped to what userID can access — their
+// space_access plus every public space (see accessibleSpacesSQL). mode is
+// "hybrid" (default), "semantic", or "lexical".
 // spaceID, when non-nil, narrows to a single space.
 func (s *Service) Search(ctx context.Context, userID int64, q string, spaceID *int64, limit int, mode string) ([]Hit, error) {
 	q = strings.TrimSpace(q)
@@ -155,14 +156,14 @@ func (s *Service) lexicalRank(ctx context.Context, userID int64, q string, space
 			SELECT pc.id AS id, ts_rank_cd(pc.content_tsv, ` + tsq + `) AS r
 			  FROM page_chunks pc
 			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = p.space_id
 			 WHERE pc.content_tsv @@ ` + tsq + pageSp + `
 			UNION ALL
 			SELECT fc.id AS id, ts_rank_cd(fc.content_tsv, ` + tsq + `) AS r
 			  FROM file_chunks fc
 			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = sf.space_id
 			 WHERE fc.content_tsv @@ ` + tsq + fileSp + `
 		) u ORDER BY r DESC LIMIT ` + lim
@@ -210,14 +211,14 @@ func (s *Service) vectorRank(ctx context.Context, userID int64, q string, spaceI
 			SELECT pc.id AS id, (pc.embedding <=> ` + qvec + `) AS d
 			  FROM page_chunks pc
 			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = p.space_id
 			 WHERE pc.embedding IS NOT NULL` + pageSp + `
 			UNION ALL
 			SELECT fc.id AS id, (fc.embedding <=> ` + qvec + `) AS d
 			  FROM file_chunks fc
 			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = sf.space_id
 			 WHERE fc.embedding IS NOT NULL` + fileSp + `
 		) u ORDER BY d ASC LIMIT ` + lim

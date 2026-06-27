@@ -59,9 +59,12 @@ Postgres switch is worth it for search.
   pollute search. The strip logic (regex in the old `db/sqlite_funcs.go`,
   recoverable from git history) must be reapplied to whatever text feeds the
   tsvector / embedding pipeline.
-- **Access control.** Both endpoints join `space_access` (and honor the bearer
-  `space_id` restriction). Any rewrite must preserve that — never surface a hit
-  from a space the caller can't open.
+- **Access control.** Both endpoints join `space_access` **plus every
+  `visibility='public'` space** (and honor the bearer `space_id` restriction), so
+  the public **tela Docs** answer a signed-in user even when they aren't a member.
+  Any rewrite must preserve that — surface public + member spaces, never a hit from
+  a *private* space the caller can't open. (Keyword `/api/search` inlines the union;
+  the RAG path shares `rag.accessibleSpacesSQL`.)
 - **Response contracts.** `/api/search` → `{results:[{page_id,space_id,title,
   snippet,breadcrumb}]}`; `/api/search/bodies` → `{results:[{id,title,score}]}`
   with score higher = better. Keep these stable so the FE + MCP tool don't move.

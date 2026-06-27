@@ -22,7 +22,13 @@ Two invariants shape everything (see `rag.go`):
    carries no authorization state of its own.
 2. **Authorize through the live page row, in-query.** Every retrieval joins
    `page_chunks → pages → space_access`. A chunk can never out-live or out-scope
-   its page. This is the anti-leak invariant.
+   its page. This is the anti-leak invariant. The readable set is `space_access`
+   **plus every `visibility='public'` space** (`accessibleSpacesSQL`, shared by
+   `Search`/`ReadChunk`/`ChunkContents`/`PageBodies`/`HubPages`): a public space is
+   already world-readable (`/api/public`, SEO), so its chunks belong in the
+   ask/search corpus for non-members — that's how a signed-in stranger can ask the
+   public **tela Docs** how to use the product. Read-only: publishing still grants
+   no `space_access` row and no write, and private spaces stay invisible.
 
 ## Two consumers, one index
 

@@ -44,7 +44,8 @@ type searchHit struct {
 // above body, Excalidraw stripped, ordered by ts_rank_cd, snippet via
 // ts_headline. websearch_to_tsquery parses the user's raw input forgivingly
 // (quotes/operators tolerated, never errors) so the box can't 500 on
-// punctuation. Scoped through space_access. The instant client-side tiers (Orama
+// punctuation. Scoped through space_access plus public spaces. The instant
+// client-side tiers (Orama
 // titles + bodies) paint first; this fills in ranked hits on the debounce.
 func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 	u, ok := requireUser(w, r)
@@ -91,7 +92,8 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			       ts_headline('english', `+stripExcalidrawSQL+`,
 			                   websearch_to_tsquery('english', $3), $4) AS snippet
 			FROM pages p
-			JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+			JOIN (SELECT space_id FROM space_access WHERE user_id = $1
+			      UNION SELECT id FROM spaces WHERE visibility = 'public') sm ON sm.space_id = p.space_id
 			WHERE p.space_id = $2 AND p.deleted_at IS NULL AND p.search_tsv @@ websearch_to_tsquery('english', $3)
 			ORDER BY ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $3)) DESC, p.updated_at DESC
 			LIMIT $5`, u.ID, *spaceFilter, query, headlineOpts, limit)
@@ -101,7 +103,8 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			       ts_headline('english', `+stripExcalidrawSQL+`,
 			                   websearch_to_tsquery('english', $2), $3) AS snippet
 			FROM pages p
-			JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = $1) sm ON sm.space_id = p.space_id
+			JOIN (SELECT space_id FROM space_access WHERE user_id = $1
+			      UNION SELECT id FROM spaces WHERE visibility = 'public') sm ON sm.space_id = p.space_id
 			WHERE p.deleted_at IS NULL AND p.search_tsv @@ websearch_to_tsquery('english', $2)
 			ORDER BY ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $2)) DESC, p.updated_at DESC
 			LIMIT $4`, u.ID, query, headlineOpts, limit)

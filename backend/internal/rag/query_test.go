@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -114,6 +115,70 @@ func TestChunkContents_ScopedToAccess(t *testing.T) {
 	}
 	if _, ok := leaked[chunkID]; ok {
 		t.Fatal("LEAK: bob read content of a chunk in a space he can't access")
+	}
+}
+
+// TestPublicSpace_RetrievableByNonMember proves a published (public) space joins
+// the ask/search corpus for a user who is NOT a member — the tela-Docs case where
+// any signed-in user can ask the product docs — while a private space stays
+// invisible even when its content matches the query (the anti-leak invariant).
+func TestPublicSpace_RetrievableByNonMember(t *testing.T) {
+	d := testdb.New(t)
+	ctx := context.Background()
+	alice := newUser(t, d, "alice")
+	stranger := newUser(t, d, "stranger") // member of nothing
+
+	pub := newSpace(t, d, "docs", alice)
+	if _, err := d.Exec(`UPDATE spaces SET visibility='public' WHERE id=$1`, pub); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	priv := newSpace(t, d, "private", alice)
+
+	pubPage := newPage(t, d, pub, "Comments", "## Adding\nUse the comment tool to attach a comment to any page.")
+	privPage := newPage(t, d, priv, "Secret", "## A\nconfidential comment internals not for outsiders")
+
+	svc := NewServiceWithEmbedder(d, &fakeEmbedder{})
+	for _, p := range []int64{pubPage, privPage} {
+		if _, err := svc.ReindexPage(ctx, p); err != nil {
+			t.Fatalf("index: %v", err)
+		}
+	}
+
+	// Search: the stranger finds the public page; the private page matches the
+	// same term but is filtered out by access.
+	hits, err := svc.Search(ctx, stranger, "comment", nil, 20, "hybrid")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	var sawPub, sawPriv bool
+	for _, h := range hits {
+		switch h.PageID {
+		case pubPage:
+			sawPub = true
+		case privPage:
+			sawPriv = true
+		}
+	}
+	if !sawPub {
+		t.Error("stranger could not search a public space")
+	}
+	if sawPriv {
+		t.Error("LEAK: stranger searched a private space")
+	}
+
+	// ReadChunk: the public chunk is readable, the private chunk is not.
+	chunkOf := func(page int64) int64 {
+		var id int64
+		if err := d.QueryRow(`SELECT id FROM page_chunks WHERE page_id=$1 LIMIT 1`, page).Scan(&id); err != nil {
+			t.Fatalf("chunk id for %d: %v", page, err)
+		}
+		return id
+	}
+	if _, err := svc.ReadChunk(ctx, stranger, chunkOf(pubPage), nil); err != nil {
+		t.Errorf("stranger could not read a public chunk: %v", err)
+	}
+	if _, err := svc.ReadChunk(ctx, stranger, chunkOf(privPage), nil); !errors.Is(err, ErrChunkNotFound) {
+		t.Errorf("expected ErrChunkNotFound for a private chunk, got %v", err)
 	}
 }
 

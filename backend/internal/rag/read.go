@@ -51,7 +51,7 @@ func (s *Service) ReadChunk(ctx context.Context, userID, chunkID int64, spaceID 
 		SELECT pc.id, pc.page_id, p.space_id, pc.heading_path, pc.content, p.title, p.updated_at
 		  FROM page_chunks pc
 		  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+		  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 		    ON sm.space_id = p.space_id
 		 WHERE pc.id = ` + cid
 	if spaceID != nil {
@@ -81,7 +81,7 @@ func (s *Service) readFileChunk(ctx context.Context, userID, chunkID int64, spac
 		SELECT fc.id, fc.space_file_id, sf.space_id, sf.parent_page_id, fc.heading_path, fc.content, sf.name, sf.content_hash, sf.updated_at
 		  FROM file_chunks fc
 		  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+		  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 		    ON sm.space_id = sf.space_id
 		 WHERE fc.id = ` + cid
 	if spaceID != nil {
@@ -150,7 +150,7 @@ func (s *Service) ChunkContents(ctx context.Context, userID int64, ids []int64, 
 			SELECT pc.id, pc.content
 			  FROM page_chunks pc
 			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = p.space_id
 			 WHERE pc.id IN (` + strings.Join(ph, ",") + `)`
 		if spaceID != nil {
@@ -172,7 +172,7 @@ func (s *Service) ChunkContents(ctx context.Context, userID int64, ids []int64, 
 			SELECT fc.id, fc.content
 			  FROM file_chunks fc
 			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
-			  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = sf.space_id
 			 WHERE fc.id IN (` + strings.Join(ph, ",") + `)`
 		if spaceID != nil {
@@ -204,7 +204,7 @@ func (s *Service) PageBodies(ctx context.Context, userID int64, ids []int64, spa
 	query := `
 		SELECT p.id, p.body
 		  FROM pages p
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+		  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 		    ON sm.space_id = p.space_id
 		 WHERE p.deleted_at IS NULL AND p.id IN (` + strings.Join(ph, ",") + `)`
 	if spaceID != nil {
@@ -261,7 +261,7 @@ func (s *Service) HubPages(ctx context.Context, userID int64, query string, spac
 		       (SELECT min(id) FROM page_chunks WHERE page_id = p.id),
 		       count(pc.id)::int AS matches
 		  FROM pages p
-		  JOIN (SELECT DISTINCT space_id FROM space_access WHERE user_id = ` + uid + `) sm
+		  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 		    ON sm.space_id = p.space_id
 		  LEFT JOIN page_chunks pc ON pc.page_id = p.id AND pc.content_tsv @@ ` + orq + `
 		 WHERE p.deleted_at IS NULL
