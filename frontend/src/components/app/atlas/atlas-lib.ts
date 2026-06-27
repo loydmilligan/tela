@@ -58,7 +58,10 @@ export function runTone(s?: AtlasRunStatus | null): Tone {
 }
 
 export function runLabel(s?: AtlasRunStatus | null): string {
-  return s ? s[0].toUpperCase() + s.slice(1) : 'Pending'
+  // A 'pending' run is waiting on the global run-slot queue — call it "Queued"
+  // so a not-yet-started run reads as deliberately waiting, not stuck.
+  if (s === 'pending') return 'Queued'
+  return s ? s[0].toUpperCase() + s.slice(1) : 'Queued'
 }
 
 // Freshness of a project, from its last run + schedule — the home/console hero

@@ -133,6 +133,19 @@ func (m *atlasManager) spawn(src atlasSourceRow, runID int64, fromStage core.Sta
 			}
 		}()
 
+		// Queue gate: block for a global run slot so at most TELA_ATLAS_MAX_CONCURRENT_RUNS
+		// execute at once. While waiting the run stays status='pending' (UI: "Queued").
+		// Cancellable mid-queue (a user cancel, or process shutdown via runCtx).
+		select {
+		case m.runSlots <- struct{}{}:
+			defer func() { <-m.runSlots }()
+		case <-runCtx.Done():
+			_, _ = m.s.DB.Exec(`UPDATE atlas_runs SET status='canceled', finished_at=tela_now() WHERE id=$1 AND status='pending'`, runID)
+			return
+		}
+		// Slot granted → flip out of the Queued state.
+		_, _ = m.s.DB.Exec(`UPDATE atlas_runs SET status='running' WHERE id=$1 AND status='pending'`, runID)
+
 		workspace, err := os.MkdirTemp(atlasWorkRoot(), fmt.Sprintf("atlas-run-%d-", runID))
 		if err != nil {
 			slog.Error("atlas: workspace", "run", runID, "err", err)

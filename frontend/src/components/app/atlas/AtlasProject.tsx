@@ -35,7 +35,8 @@ import { AddSourceDialog } from './AddSourceDialog'
 function headerState(project: AtlasProjectT): { tone: Tone; label: string } {
   const r = project.last_run
   if (!r) return { tone: 'neutral', label: 'Never run' }
-  if (r.status === 'running' || r.status === 'pending') return { tone: 'running', label: 'Generating' }
+  if (r.status === 'pending') return { tone: 'info', label: 'Queued' }
+  if (r.status === 'running') return { tone: 'running', label: 'Generating' }
   if (r.status === 'failed') return { tone: 'negative', label: 'Failed' }
   if (project.stale_sources > 0) return { tone: 'warning', label: 'Stale' }
   return { tone: 'positive', label: 'Fresh' }

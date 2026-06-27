@@ -117,6 +117,14 @@ export function AtlasRun() {
         )}
       </p>
 
+      {run.status === 'pending' && (
+        <Card className="mt-[var(--space-4)]">
+          <CardBody className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            <span className="font-medium text-[var(--text-primary)]">Queued.</span> Runs execute one at a time so generation never clogs the shared model that also powers ask &amp; search — this run starts automatically when the one ahead of it finishes.
+          </CardBody>
+        </Card>
+      )}
+
       {run.status === 'running' && (
         <Card className="mt-[var(--space-4)]">
           <CardBody className="flex flex-col gap-[var(--space-2)]">

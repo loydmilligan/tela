@@ -33,7 +33,14 @@ type atlasManager struct {
 	hub   *atlasHub
 
 	mu     sync.Mutex
-	active map[int64]context.CancelFunc // sourceID -> cancel for its in-flight run
+	active map[int64]context.CancelFunc // sourceID -> cancel for its queued-or-running run
+
+	// runSlots is the GLOBAL run-concurrency gate: a spawned run blocks on it
+	// before doing any work, so at most cap(runSlots) runs execute at once no
+	// matter how many are triggered (manual, delta, or the hourly scheduler). A
+	// waiting run stays status='pending' (the UI shows "Queued"). Default cap 1 so
+	// generation never clogs the shared LLM that interactive ask/research also use.
+	runSlots chan struct{}
 
 	// paused is the admin AI kill-switch, shared with the other background
 	// workers; the freshness scheduler skips a tick while it's true.
@@ -42,11 +49,25 @@ type atlasManager struct {
 
 func newAtlasManager(s *Server) *atlasManager {
 	return &atlasManager{
-		s:      s,
-		store:  atlasstore.New(s.DB),
-		hub:    newAtlasHub(),
-		active: map[int64]context.CancelFunc{},
+		s:        s,
+		store:    atlasstore.New(s.DB),
+		hub:      newAtlasHub(),
+		active:   map[int64]context.CancelFunc{},
+		runSlots: make(chan struct{}, atlasMaxConcurrentRuns()),
 	}
+}
+
+// atlasMaxConcurrentRuns is the global cap on simultaneously-executing runs
+// (TELA_ATLAS_MAX_CONCURRENT_RUNS, default 1). Kept at 1 by default on purpose:
+// runs and interactive ask/research share one LLM endpoint, and overlapping
+// drafts demonstrably overwhelmed it (502s). Raise only with a beefier endpoint.
+func atlasMaxConcurrentRuns() int {
+	if v := os.Getenv("TELA_ATLAS_MAX_CONCURRENT_RUNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 1
 }
 
 // atlasEnabled reports whether a run can start: both the embedder and the chat
