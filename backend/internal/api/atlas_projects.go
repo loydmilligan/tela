@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
@@ -312,6 +313,17 @@ func (s *Server) CreateAtlasProject(w http.ResponseWriter, r *http.Request) {
 			}
 			parentPageID = req.Output.ParentPageID
 		}
+		// Namespace the project under its own folder in the (often shared) space, so
+		// the tree reads Space → [topdir] → Project → Source and multiple projects in
+		// one space never collide at the root. The folder becomes the project's
+		// output parent; sources publish beneath it. (A brand-new space, below, is
+		// already named after the project — it IS the namespace, so no folder there.)
+		folderID, ae := s.createProjectFolder(r.Context(), *outputSpaceID, parentPageID, req.Name)
+		if ae != nil {
+			writeError(w, ae.Status, ae.Code, ae.Message)
+			return
+		}
+		parentPageID = &folderID
 	case req.Output.NewSpaceName != "":
 		id, ae := s.createProjectOutputSpace(r.Context(), req.OwnerKind, req.OwnerID, req.Output.NewSpaceName)
 		if ae != nil {
@@ -609,4 +621,29 @@ func (s *Server) pageInSpace(ctx context.Context, pageID, spaceID int64) bool {
 		`SELECT EXISTS(SELECT 1 FROM pages WHERE id=$1 AND space_id=$2 AND deleted_at IS NULL)`,
 		pageID, spaceID).Scan(&ok)
 	return err == nil && ok
+}
+
+// createProjectFolder makes the project's namespace page in its output space —
+// the container sources publish beneath, so the tree reads Space → [topdir] →
+// Project → Source. parentID is the (optional) user-chosen top-dir; nil roots it
+// at the space. Positioned after existing siblings so it appends, not displaces.
+func (s *Server) createProjectFolder(ctx context.Context, spaceID int64, parentID *int64, name string) (int64, *apiErr) {
+	var maxPos sql.NullInt64
+	if err := s.DB.QueryRowContext(ctx,
+		`SELECT MAX(position) FROM pages WHERE space_id=$1 AND deleted_at IS NULL AND parent_id IS NOT DISTINCT FROM $2`,
+		spaceID, nullableInt64(parentID)).Scan(&maxPos); err != nil {
+		return 0, &apiErr{http.StatusInternalServerError, "internal", "compute folder position"}
+	}
+	pos := 0
+	if maxPos.Valid {
+		pos = int(maxPos.Int64) + 1
+	}
+	body := fmt.Sprintf("Documentation for **%s**, generated and maintained by atlas. Each source publishes under its own page below.\n", name)
+	var id int64
+	if err := s.DB.QueryRowContext(ctx,
+		`INSERT INTO pages (space_id, parent_id, title, body, position) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+		spaceID, nullableInt64(parentID), name, body, pos).Scan(&id); err != nil {
+		return 0, &apiErr{http.StatusInternalServerError, "internal", "create project folder"}
+	}
+	return id, nil
 }
