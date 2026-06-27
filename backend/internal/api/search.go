@@ -12,6 +12,12 @@ import (
 
 const searchLimit = 25
 
+// publicRankPenalty soft-demotes hits from public-but-non-member spaces in the
+// cross-space palette: a member page wins a near-tie, a strongly-matching public
+// page still ranks. (Within a single space the whole result set shares one
+// membership state, so the factor is a no-op there.)
+const publicRankPenalty = 0.4
+
 // headlineOpts configures ts_headline: one <mark>-wrapped fragment, ~8-24 words,
 // matching the snippet contract the frontend renders.
 const headlineOpts = `StartSel=<mark>, StopSel=</mark>, MaxFragments=1, MaxWords=24, MinWords=8, ShortWord=2`
@@ -92,8 +98,10 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			       ts_headline('english', `+stripExcalidrawSQL+`,
 			                   websearch_to_tsquery('english', $3), $4) AS snippet
 			FROM pages p
-			JOIN (SELECT space_id FROM space_access WHERE user_id = $1
-			      UNION SELECT id FROM spaces WHERE visibility = 'public') sm ON sm.space_id = p.space_id
+			JOIN (SELECT space_id, max(is_member) AS is_member FROM (
+			        SELECT space_id, 1 AS is_member FROM space_access WHERE user_id = $1
+			        UNION ALL SELECT id, 0 FROM spaces WHERE visibility = 'public'
+			      ) a GROUP BY space_id) sm ON sm.space_id = p.space_id
 			WHERE p.space_id = $2 AND p.deleted_at IS NULL AND p.search_tsv @@ websearch_to_tsquery('english', $3)
 			ORDER BY ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $3)) DESC, p.updated_at DESC
 			LIMIT $5`, u.ID, *spaceFilter, query, headlineOpts, limit)
@@ -103,10 +111,14 @@ func (s *Server) searchCore(ctx context.Context, u *auth.User, k *auth.APIKey, q
 			       ts_headline('english', `+stripExcalidrawSQL+`,
 			                   websearch_to_tsquery('english', $2), $3) AS snippet
 			FROM pages p
-			JOIN (SELECT space_id FROM space_access WHERE user_id = $1
-			      UNION SELECT id FROM spaces WHERE visibility = 'public') sm ON sm.space_id = p.space_id
+			JOIN (SELECT space_id, max(is_member) AS is_member FROM (
+			        SELECT space_id, 1 AS is_member FROM space_access WHERE user_id = $1
+			        UNION ALL SELECT id, 0 FROM spaces WHERE visibility = 'public'
+			      ) a GROUP BY space_id) sm ON sm.space_id = p.space_id
 			WHERE p.deleted_at IS NULL AND p.search_tsv @@ websearch_to_tsquery('english', $2)
-			ORDER BY ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $2)) DESC, p.updated_at DESC
+			ORDER BY ts_rank_cd(p.search_tsv, websearch_to_tsquery('english', $2))
+			         * (CASE WHEN sm.is_member = 1 THEN 1.0 ELSE `+strconv.FormatFloat(publicRankPenalty, 'f', -1, 64)+` END) DESC,
+			         p.updated_at DESC
 			LIMIT $4`, u.ID, query, headlineOpts, limit)
 	}
 	if err != nil {

@@ -64,7 +64,9 @@ Postgres switch is worth it for search.
   the public **tela Docs** answer a signed-in user even when they aren't a member.
   Any rewrite must preserve that — surface public + member spaces, never a hit from
   a *private* space the caller can't open. (Keyword `/api/search` inlines the union;
-  the RAG path shares `rag.accessibleSpacesSQL`.)
+  the RAG path shares `rag.accessibleSpacesSQL`.) Public-but-non-member hits are
+  **soft-demoted** in the cross-space palette (ts_rank ×`publicRankPenalty`) so a
+  member page wins a near-tie; within a single space the factor is a no-op.
 - **Response contracts.** `/api/search` → `{results:[{page_id,space_id,title,
   snippet,breadcrumb}]}`; `/api/search/bodies` → `{results:[{id,title,score}]}`
   with score higher = better. Keep these stable so the FE + MCP tool don't move.

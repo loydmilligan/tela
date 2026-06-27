@@ -118,6 +118,51 @@ func TestChunkContents_ScopedToAccess(t *testing.T) {
 	}
 }
 
+// TestPublicSpace_SoftDemotedBelowMember proves the ranking penalty: when a user
+// is a member of one space and another (public) space matches the SAME query just
+// as well, the member page ranks first — public content can't dilute a near-tie.
+func TestPublicSpace_SoftDemotedBelowMember(t *testing.T) {
+	d := testdb.New(t)
+	ctx := context.Background()
+	owner := newUser(t, d, "owner")   // owns the public space, but...
+	reader := newUser(t, d, "reader") // ...is a member of `mine` only, not `pub`
+	pub := newSpace(t, d, "pub", owner)
+	if _, err := d.Exec(`UPDATE spaces SET visibility='public' WHERE id=$1`, pub); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	mine := newSpace(t, d, "mine", reader)
+
+	// Near-identical bodies so relevance is a wash and the penalty is the decider.
+	pubPage := newPage(t, d, pub, "Kafka (public)", "## A\nkafka kafka kafka broker topic")
+	minePage := newPage(t, d, mine, "Kafka (mine)", "## A\nkafka kafka kafka broker topic")
+	svc := NewServiceWithEmbedder(d, &fakeEmbedder{})
+	for _, p := range []int64{pubPage, minePage} {
+		if _, err := svc.ReindexPage(ctx, p); err != nil {
+			t.Fatalf("index: %v", err)
+		}
+	}
+
+	hits, err := svc.Search(ctx, reader, "kafka", nil, 20, "hybrid")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	var minePos, pubPos = -1, -1
+	for i, h := range hits {
+		if h.PageID == minePage {
+			minePos = i
+		}
+		if h.PageID == pubPage {
+			pubPos = i
+		}
+	}
+	if minePos < 0 || pubPos < 0 {
+		t.Fatalf("expected both pages in results, got mine=%d pub=%d", minePos, pubPos)
+	}
+	if minePos > pubPos {
+		t.Errorf("member page should outrank the public near-tie: mine at %d, public at %d", minePos, pubPos)
+	}
+}
+
 // TestPublicSpace_RetrievableByNonMember proves a published (public) space joins
 // the ask/search corpus for a user who is NOT a member — the tela-Docs case where
 // any signed-in user can ask the product docs — while a private space stays

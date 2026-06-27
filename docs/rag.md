@@ -29,6 +29,12 @@ Two invariants shape everything (see `rag.go`):
    ask/search corpus for non-members — that's how a signed-in stranger can ask the
    public **tela Docs** how to use the product. Read-only: publishing still grants
    no `space_access` row and no write, and private spaces stay invisible.
+   `accessibleSpacesSQL` carries an `is_member` flag (1 = via `space_access`,
+   0 = public-only; a space that's both → 1), and the ranked surfaces **soft-demote**
+   public-only content — lexical ts_rank ×`publicRankPenalty`, vector distance
+   ×`publicDistPenalty` — so a member page wins a near-tie while a strongly-matching
+   public page still ranks. The Luis case (no member match) is unaffected: a uniform
+   penalty doesn't change order when every candidate is public.
 
 ## Two consumers, one index
 

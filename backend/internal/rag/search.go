@@ -151,22 +151,26 @@ func (s *Service) lexicalRank(ctx context.Context, userID int64, q string, space
 		pageSp, fileSp = ` AND p.space_id = `+sp, ` AND sf.space_id = `+sp
 	}
 	lim := qb.arg(limit)
+	pen := strconv.FormatFloat(publicRankPenalty, 'f', -1, 64)
+	// Soft-demote public-only chunks: members rank at full ts_rank, public at a
+	// fraction, so a member match wins a near-tie but a strong public match survives.
+	demoted := `(r * CASE WHEN is_member = 1 THEN 1.0 ELSE ` + pen + ` END)`
 	sql := `
 		SELECT id FROM (
-			SELECT pc.id AS id, ts_rank_cd(pc.content_tsv, ` + tsq + `) AS r
+			SELECT pc.id AS id, ts_rank_cd(pc.content_tsv, ` + tsq + `) AS r, sm.is_member AS is_member
 			  FROM page_chunks pc
 			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
 			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = p.space_id
 			 WHERE pc.content_tsv @@ ` + tsq + pageSp + `
 			UNION ALL
-			SELECT fc.id AS id, ts_rank_cd(fc.content_tsv, ` + tsq + `) AS r
+			SELECT fc.id AS id, ts_rank_cd(fc.content_tsv, ` + tsq + `) AS r, sm.is_member AS is_member
 			  FROM file_chunks fc
 			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
 			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = sf.space_id
 			 WHERE fc.content_tsv @@ ` + tsq + fileSp + `
-		) u ORDER BY r DESC LIMIT ` + lim
+		) u ORDER BY ` + demoted + ` DESC LIMIT ` + lim
 	return s.queryIDs(ctx, sql, qb.args...)
 }
 
@@ -206,22 +210,26 @@ func (s *Service) vectorRank(ctx context.Context, userID int64, q string, spaceI
 		pageSp, fileSp = ` AND p.space_id = `+sp, ` AND sf.space_id = `+sp
 	}
 	lim := qb.arg(limit)
+	pen := strconv.FormatFloat(publicDistPenalty, 'f', -1, 64)
+	// Soft-demote public-only chunks: scale up their cosine distance (lower = better)
+	// so a member chunk wins a near-tie, while a much-closer public chunk still leads.
+	demoted := `(d * CASE WHEN is_member = 1 THEN 1.0 ELSE ` + pen + ` END)`
 	sql := `
 		SELECT id FROM (
-			SELECT pc.id AS id, (pc.embedding <=> ` + qvec + `) AS d
+			SELECT pc.id AS id, (pc.embedding <=> ` + qvec + `) AS d, sm.is_member AS is_member
 			  FROM page_chunks pc
 			  JOIN pages p ON p.id = pc.page_id AND p.deleted_at IS NULL
 			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = p.space_id
 			 WHERE pc.embedding IS NOT NULL` + pageSp + `
 			UNION ALL
-			SELECT fc.id AS id, (fc.embedding <=> ` + qvec + `) AS d
+			SELECT fc.id AS id, (fc.embedding <=> ` + qvec + `) AS d, sm.is_member AS is_member
 			  FROM file_chunks fc
 			  JOIN space_files sf ON sf.id = fc.space_file_id AND sf.deleted_at IS NULL
 			  JOIN ` + accessibleSpacesSQL(uid) + ` sm
 			    ON sm.space_id = sf.space_id
 			 WHERE fc.embedding IS NOT NULL` + fileSp + `
-		) u ORDER BY d ASC LIMIT ` + lim
+		) u ORDER BY ` + demoted + ` ASC LIMIT ` + lim
 	return s.queryIDs(ctx, sql, qb.args...)
 }
 
