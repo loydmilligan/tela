@@ -11,14 +11,14 @@ const sources = [
     title: 'Rebooking',
     crumb: 'Disruptions ▸ Rebooking',
     gh: 'acme-air/ops/rebooking.md',
-    excerpt: 'A cancelled flight moves every passenger to the next departure with open seats on the same route, worst-affected first.',
+    excerpt: 'Moves every passenger to the next flight with open seats, worst-affected first.',
     when: '6d ago',
   },
   {
     title: 'findRebooking',
     crumb: 'Disruptions ▸ Rebooking logic',
     gh: 'acme-air/ops/rebook.go#L62',
-    excerpt: 'Ranks open seats by passenger priority — protected fares (tight connections, unaccompanied minors) jump the queue.',
+    excerpt: 'Ranks open seats by priority — protected fares jump the queue.',
     when: '2w ago',
   },
 ];
@@ -27,12 +27,9 @@ const flow = `flight cancelled
    │
    ▼
 seats on the next flight?
-   │
    ├─ yes ─▶ auto-rebook, priority first
-   │
    └─ no ──▶ search again, up to 4h
-              │
-              └─▶ still empty? offer partners`;
+               └─▶ still empty? partner airlines`;
 ---
 <section id="ask" class="ask-section">
   <div class="ask-head reveal-up">
@@ -40,8 +37,7 @@ seats on the next flight?
     <h2 class="h2">Ask anything about your project. Get an answer that cites its sources.</h2>
     <p class="lede">
       tela’s own AI answers from your own pages — the ones Atlas wrote and your team maintains —
-      <strong>citing every source</strong>, and it says so when your docs don’t cover it instead of
-      guessing.
+      <strong>citing every source</strong>, and saying so when they don’t cover it instead of guessing.
     </p>
   </div>
 
@@ -78,8 +74,7 @@ seats on the next flight?
         <p class="ans-text">Every affected passenger is rebooked automatically the moment a flight’s cancelled:<sup class="cite">1</sup></p>
         <pre class="dg-ascii">{flow}</pre>
         <p class="ans-text">
-          Protected passengers — tight connections and unaccompanied minors — get first pick of the
-          open seats.<sup class="cite">2</sup> Anything still open after four hours pulls in partner airlines.
+          Protected passengers — tight connections, unaccompanied minors — get first pick of the open seats.<sup class="cite">2</sup>
         </p>
       </div>
 
@@ -144,7 +139,7 @@ seats on the next flight?
     padding: var(--section-y) var(--space-gutter);
     scroll-margin-top: 5rem;
   }
-  .ask-head { max-width: 50rem; margin-bottom: 2rem; }
+  .ask-head { max-width: 50rem; margin-bottom: 1.5rem; }
   .ask-head .lede strong { color: var(--fg); font-weight: 600; }
 
   .ask-layout {
@@ -166,8 +161,8 @@ seats on the next flight?
   .app-head {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.8rem 1.1rem;
+    gap: 0.55rem;
+    padding: 0.65rem 1.1rem;
     border-bottom: 1px solid var(--border);
   }
   .app-spark {
@@ -190,12 +185,12 @@ seats on the next flight?
 
   /* composer */
   .composer {
-    margin: 0.85rem 1.1rem 0;
+    margin: 0.7rem 1.1rem 0;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
     background: var(--surface-sunk);
   }
-  .composer-q { margin: 0; padding: 0.75rem 0.85rem 0.5rem; font-size: var(--text-base); color: var(--fg); }
+  .composer-q { margin: 0; padding: 0.6rem 0.85rem 0.45rem; font-size: var(--text-base); color: var(--fg); }
   .composer-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 1px; vertical-align: -2px; background: var(--brand); animation: askblink 1.1s steps(2) infinite; }
   .composer-bar { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.55rem 0.55rem; }
   .scope { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.45rem; border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--fg-soft); }
@@ -218,8 +213,8 @@ seats on the next flight?
   }
 
   /* answer */
-  .answer { padding: 1rem 1.1rem 0.5rem; }
-  .ans-text { margin: 0 0 0.6rem; font-size: var(--text-base); line-height: var(--leading-normal); color: var(--fg-soft); }
+  .answer { padding: 0.85rem 1.1rem 0.4rem; }
+  .ans-text { margin: 0 0 0.5rem; font-size: var(--text-base); line-height: var(--leading-snug); color: var(--fg-soft); }
   .ans-text:last-child { margin-bottom: 0; }
   .cite {
     display: inline-grid; place-items: center;
@@ -232,14 +227,14 @@ seats on the next flight?
 
   /* the answer's diagram — plaintext ASCII, in a code well like an LLM emits */
   .dg-ascii {
-    margin: 0.3rem 0 0.85rem;
-    padding: 0.8rem 0.95rem;
+    margin: 0.2rem 0 0.7rem;
+    padding: 0.7rem 0.9rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     background: var(--surface-sunk);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    line-height: 1.55;
+    line-height: 1.4;
     color: var(--fg-soft);
     white-space: pre;
     overflow-x: auto;
@@ -247,16 +242,16 @@ seats on the next flight?
   }
 
   /* sources */
-  .sources { padding: 0.85rem 1.1rem; border-top: 1px solid var(--border); }
+  .sources { padding: 0.7rem 1.1rem 0.85rem; border-top: 1px solid var(--border); }
   .sources-label {
-    margin: 0 0 0.5rem;
+    margin: 0 0 0.4rem;
     font-family: var(--font-mono); font-size: var(--text-xs);
     text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-faint);
   }
-  .src-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+  .src-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
   .src {
-    display: flex; flex-direction: column; gap: 0.15rem;
-    padding: 0.5rem 0.65rem;
+    display: flex; flex-direction: column; gap: 0.12rem;
+    padding: 0.4rem 0.65rem;
     border: 1px solid transparent; border-radius: var(--radius-md);
     transition: background var(--dur-fast) var(--ease-out);
   }
@@ -265,10 +260,10 @@ seats on the next flight?
   .src-title { font-size: var(--text-sm); font-weight: 500; color: var(--fg); }
   .src-when { flex: none; font-size: var(--text-xs); color: var(--fg-faint); }
   .src-crumb { font-size: var(--text-xs); color: var(--fg-faint); }
-  .src-excerpt { font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
+  .src-excerpt { font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-snug); }
   .src-gh {
     display: inline-flex; align-items: center; gap: 0.35rem; align-self: flex-start;
-    margin-top: 0.1rem;
+    margin-top: 0.05rem;
     font-family: var(--font-mono); font-size: var(--text-xs);
     color: var(--fg-faint);
     transition: color var(--dur-fast) var(--ease-out);
