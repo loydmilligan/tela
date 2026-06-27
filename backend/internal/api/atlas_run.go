@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
 	"github.com/zcag/tela/backend/internal/atlas/engine"
@@ -54,15 +55,10 @@ func (m *atlasManager) StartRun(ctx context.Context, sourceID int64) (int64, *ap
 	if !m.atlasEnabled() {
 		return 0, &apiErr{http.StatusServiceUnavailable, "ai_unavailable", "atlas needs both an embedder (TELA_RAG_EMBED_URL) and a chat model (TELA_LLM_URL)"}
 	}
-	m.mu.Lock()
-	if _, busy := m.active[sourceID]; busy {
-		m.mu.Unlock()
-		return 0, &apiErr{http.StatusConflict, "run_active", "a run is already in progress for this source"}
+	if m.sourceHasNonTerminalRun(ctx, sourceID) {
+		return 0, &apiErr{http.StatusConflict, "run_active", "a run is already queued or in progress for this source"}
 	}
-	m.mu.Unlock()
-
-	src, err := m.loadSource(ctx, sourceID)
-	if err == sql.ErrNoRows {
+	if _, err := m.loadSource(ctx, sourceID); err == sql.ErrNoRows {
 		return 0, &apiErr{http.StatusNotFound, "not_found", "source not found"}
 	} else if err != nil {
 		return 0, &apiErr{http.StatusInternalServerError, "internal", "lookup source failed"}
@@ -75,7 +71,7 @@ func (m *atlasManager) StartRun(ctx context.Context, sourceID int64) (int64, *ap
 		return 0, &apiErr{http.StatusInternalServerError, "internal", "create run failed"}
 	}
 
-	m.spawn(src, runID, "")
+	m.signalDispatch() // enqueue — the dispatcher starts it when a run slot is free
 	return runID, nil
 }
 
@@ -131,20 +127,8 @@ func (m *atlasManager) spawn(src atlasSourceRow, runID int64, fromStage core.Sta
 				_, _ = m.s.DB.Exec(`UPDATE atlas_runs SET status='failed', err=$2, finished_at=tela_now() WHERE id=$1`,
 					runID, fmt.Sprintf("panic: %v", r))
 			}
+			m.signalDispatch() // slot freed — let the dispatcher start the next queued run
 		}()
-
-		// Queue gate: block for a global run slot so at most TELA_ATLAS_MAX_CONCURRENT_RUNS
-		// execute at once. While waiting the run stays status='pending' (UI: "Queued").
-		// Cancellable mid-queue (a user cancel, or process shutdown via runCtx).
-		select {
-		case m.runSlots <- struct{}{}:
-			defer func() { <-m.runSlots }()
-		case <-runCtx.Done():
-			_, _ = m.s.DB.Exec(`UPDATE atlas_runs SET status='canceled', finished_at=tela_now() WHERE id=$1 AND status='pending'`, runID)
-			return
-		}
-		// Slot granted → flip out of the Queued state.
-		_, _ = m.s.DB.Exec(`UPDATE atlas_runs SET status='running' WHERE id=$1 AND status='pending'`, runID)
 
 		workspace, err := os.MkdirTemp(atlasWorkRoot(), fmt.Sprintf("atlas-run-%d-", runID))
 		if err != nil {
@@ -201,6 +185,96 @@ func (m *atlasManager) onFinish(rc *engine.RunContext, status core.RunStatus, ru
 	m.notifyAtlasRunFinish(context.Background(), rc, status, runErr)
 }
 
+// signalDispatch nudges the queue dispatcher (non-blocking; coalesces repeated
+// signals into a single pending wake-up).
+func (m *atlasManager) signalDispatch() {
+	select {
+	case m.dispatch <- struct{}{}:
+	default:
+	}
+}
+
+// sourceHasNonTerminalRun is the one-run-per-source guard, DB-backed: a queued
+// run isn't in the in-memory active set, so the old map check would miss it.
+func (m *atlasManager) sourceHasNonTerminalRun(ctx context.Context, sourceID int64) bool {
+	var n int
+	_ = m.s.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM atlas_runs WHERE source_id=$1 AND status IN ('pending','running')`,
+		sourceID).Scan(&n)
+	return n > 0
+}
+
+// runDispatcher is the durable run queue. It keeps at most maxRuns runs executing,
+// claiming the oldest pending run from the DB whenever a slot frees. The queue is
+// the set of status='pending' rows (not in-memory goroutines), so a restart or
+// redeploy never strands a waiting run — on boot the dispatcher picks the pending
+// rows back up (ResumeDangling separately recovers runs that were mid-execution).
+// Signalled on enqueue and on each run finish; a slow ticker is a safety backstop.
+func (m *atlasManager) runDispatcher(ctx context.Context) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		m.dispatchPending(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-m.dispatch:
+		case <-t.C:
+		}
+	}
+}
+
+// dispatchPending starts queued runs (oldest first) until the global slot cap is
+// reached. Only runDispatcher calls it (single goroutine), so the slot accounting
+// against the active set is race-free.
+func (m *atlasManager) dispatchPending(ctx context.Context) {
+	if !m.atlasEnabled() {
+		return
+	}
+	for {
+		m.mu.Lock()
+		free := len(m.active) < m.maxRuns
+		m.mu.Unlock()
+		if !free {
+			return
+		}
+		src, runID, ok := m.claimNextPending(ctx)
+		if !ok {
+			return
+		}
+		m.spawn(src, runID, "")
+	}
+}
+
+// claimNextPending atomically claims the oldest pending run (pending→running) and
+// returns its source. One-run-per-source is enforced at enqueue, so a pending
+// run's source is never already executing. ok=false when the queue is empty.
+func (m *atlasManager) claimNextPending(ctx context.Context) (atlasSourceRow, int64, bool) {
+	var runID int64
+	var src atlasSourceRow
+	var cred sql.NullInt64
+	err := m.s.DB.QueryRowContext(ctx,
+		`SELECT r.id, `+atlasSourceColsPrefixed("s")+`
+		   FROM atlas_runs r JOIN atlas_sources s ON s.id = r.source_id
+		  WHERE r.status='pending' ORDER BY r.id LIMIT 1`).
+		Scan(&runID, &src.ID, &src.ProjectID, &src.Type, &src.Location, &src.Name, &src.Ref, &src.Branch, &src.Subpath, &src.Include, &src.Exclude, &cred)
+	if err != nil {
+		return src, 0, false // sql.ErrNoRows ⇒ empty queue
+	}
+	if cred.Valid {
+		src.CredID = &cred.Int64
+	}
+	res, err := m.s.DB.ExecContext(ctx,
+		`UPDATE atlas_runs SET status='running' WHERE id=$1 AND status='pending'`, runID)
+	if err != nil {
+		return src, 0, false
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return src, 0, false // already claimed (multi-instance) — the ticker retries
+	}
+	return src, runID, true
+}
+
 // ResumeDangling picks up runs left 'running' by a previous process and continues
 // them from their persisted stage. Called once at boot (mirrors atlas's
 // ResumeDangling). Best-effort: a run that can't be resumed is left as-is.
@@ -242,6 +316,7 @@ func (m *atlasManager) ResumeDangling(ctx context.Context) {
 		slog.Info("atlas: resuming dangling run", "run", p.runID, "from", p.stage)
 		m.spawn(p.src, p.runID, p.stage)
 	}
+	m.signalDispatch() // fill any remaining slots with queued (pending) runs
 }
 
 // atlasSourceColsPrefixed returns the source columns qualified with a table

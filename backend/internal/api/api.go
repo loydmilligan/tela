@@ -215,6 +215,10 @@ func New(db *sql.DB) *Server {
 	// Documentation-generation manager (atlas): resume any runs a previous
 	// process left mid-flight, then it's ready to drive new runs on demand.
 	s.atlas = newAtlasManager(s)
+	// Durable run queue: the dispatcher keeps ≤ maxRuns executing, claiming pending
+	// runs from the DB (so a restart never strands a queued run). Start it before
+	// ResumeDangling so recovered + queued runs are scheduled together.
+	go s.atlas.runDispatcher(context.Background())
 	s.atlas.ResumeDangling(context.Background())
 	// Freshness scheduler: 1-minute poll firing change-gated delta re-ingests for
 	// auto_update sources whose cadence has elapsed (no-op while AI is off/paused).

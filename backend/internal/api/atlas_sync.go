@@ -122,12 +122,9 @@ func (m *atlasManager) StartDelta(ctx context.Context, sourceID int64) (int64, b
 	if !m.atlasEnabled() {
 		return 0, false, &apiErr{http.StatusServiceUnavailable, "ai_unavailable", "atlas needs both an embedder (TELA_RAG_EMBED_URL) and a chat model (TELA_LLM_URL)"}
 	}
-	m.mu.Lock()
-	if _, busy := m.active[sourceID]; busy {
-		m.mu.Unlock()
-		return 0, false, &apiErr{http.StatusConflict, "run_active", "a run is already in progress for this source"}
+	if m.sourceHasNonTerminalRun(ctx, sourceID) {
+		return 0, false, &apiErr{http.StatusConflict, "run_active", "a run is already queued or in progress for this source"}
 	}
-	m.mu.Unlock()
 
 	src, err := m.loadSource(ctx, sourceID)
 	if err == sql.ErrNoRows {
@@ -169,7 +166,7 @@ func (m *atlasManager) StartDelta(ctx context.Context, sourceID int64) (int64, b
 		sourceID, baselineID, string(csJSON)).Scan(&runID); err != nil {
 		return 0, false, &apiErr{http.StatusInternalServerError, "internal", "create run failed"}
 	}
-	m.spawn(src, runID, "")
+	m.signalDispatch() // enqueue — the dispatcher starts it when a run slot is free
 	return runID, true, nil
 }
 

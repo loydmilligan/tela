@@ -33,14 +33,16 @@ type atlasManager struct {
 	hub   *atlasHub
 
 	mu     sync.Mutex
-	active map[int64]context.CancelFunc // sourceID -> cancel for its queued-or-running run
+	active map[int64]context.CancelFunc // sourceID -> cancel for its currently-executing run
 
-	// runSlots is the GLOBAL run-concurrency gate: a spawned run blocks on it
-	// before doing any work, so at most cap(runSlots) runs execute at once no
-	// matter how many are triggered (manual, delta, or the hourly scheduler). A
-	// waiting run stays status='pending' (the UI shows "Queued"). Default cap 1 so
+	// maxRuns caps simultaneously-executing runs; dispatch nudges the durable
+	// queue dispatcher (runDispatcher), which claims the next pending run from the
+	// DB up to maxRuns whenever a slot frees. The queue lives in the DB
+	// (status='pending'), so a restart/redeploy never strands a waiting run — on
+	// boot the dispatcher simply picks the pending rows back up. Default cap 1 so
 	// generation never clogs the shared LLM that interactive ask/research also use.
-	runSlots chan struct{}
+	maxRuns  int
+	dispatch chan struct{}
 
 	// paused is the admin AI kill-switch, shared with the other background
 	// workers; the freshness scheduler skips a tick while it's true.
@@ -53,7 +55,8 @@ func newAtlasManager(s *Server) *atlasManager {
 		store:    atlasstore.New(s.DB),
 		hub:      newAtlasHub(),
 		active:   map[int64]context.CancelFunc{},
-		runSlots: make(chan struct{}, atlasMaxConcurrentRuns()),
+		maxRuns:  atlasMaxConcurrentRuns(),
+		dispatch: make(chan struct{}, 1),
 	}
 }
 
