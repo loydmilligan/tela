@@ -24,6 +24,19 @@ export interface StatsKindCount {
   kind: string
   count: number
 }
+export interface StatsSignup {
+  user_id: number
+  username: string
+  display_name: string
+  email: string
+  created_at: string
+  activated: boolean
+}
+export interface StatsUnanswered {
+  question: string
+  who: string
+  created_at: string
+}
 
 export interface AdminStats {
   days: string[]
@@ -49,6 +62,10 @@ export interface AdminStats {
   stale_pages: number
   orphan_pages: number
   contradictions: number
+  new_users_30: number
+  activated: number
+  recent_signups: StatsSignup[]
+  unanswered_asks: StatsUnanswered[]
 }
 
 export const adminStatsKeys = { stats: ['admin-stats'] as const }

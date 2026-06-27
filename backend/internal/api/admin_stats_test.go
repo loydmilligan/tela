@@ -37,6 +37,12 @@ func TestAdminStats_Aggregates(t *testing.T) {
 		`INSERT INTO ask_log (user_id, question, answered) VALUES ($1,'q1',0),($1,'q2',1)`, admin); err != nil {
 		t.Fatalf("insert ask_log: %v", err)
 	}
+	// A page revision authored by the admin → they count as "activated".
+	if _, err := d.ExecContext(ctx,
+		`INSERT INTO page_revisions (page_id, title, body, author_id, source, byte_size, created_at)
+		 VALUES ($1,'Guide','hello world',$2,'edit',11,tela_now())`, pageID, admin); err != nil {
+		t.Fatalf("insert page_revision: %v", err)
+	}
 
 	c := loginClient(t, ts, "admin", "testpass123")
 	resp, err := c.Get(ts.URL + "/api/admin/stats")
@@ -81,6 +87,27 @@ func TestAdminStats_Aggregates(t *testing.T) {
 	// Cumulative growth ends at the current totals.
 	if got.UsersCum[statsWindowDays-1] != got.Users {
 		t.Fatalf("users_cum tail=%d want %d", got.UsersCum[statsWindowDays-1], got.Users)
+	}
+
+	// Operator signals: the admin signed up in-window, authored a revision, and
+	// asked one question that returned nothing.
+	if got.NewUsers30 < 1 {
+		t.Fatalf("new_users_30=%d want ≥1", got.NewUsers30)
+	}
+	if got.Activated < 1 {
+		t.Fatalf("activated=%d want ≥1 (admin authored a revision)", got.Activated)
+	}
+	var adminRow *statsSignup
+	for i := range got.RecentSignups {
+		if got.RecentSignups[i].Username == "admin" {
+			adminRow = &got.RecentSignups[i]
+		}
+	}
+	if adminRow == nil || !adminRow.Activated {
+		t.Fatalf("recent signups missing an activated admin: %+v", got.RecentSignups)
+	}
+	if len(got.UnansweredAsks) != 1 || got.UnansweredAsks[0].Question != "q1" {
+		t.Fatalf("unanswered asks wrong: %+v", got.UnansweredAsks)
 	}
 }
 

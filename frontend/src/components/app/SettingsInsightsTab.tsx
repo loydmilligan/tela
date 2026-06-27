@@ -3,11 +3,14 @@ import { useAIUsage } from '../../lib/queries/ai-usage'
 import {
   useAdminStats,
   type AdminStats,
+  type StatsSignup,
   type StatsTopPage,
   type StatsTopPerson,
   type StatsTopSpace,
+  type StatsUnanswered,
 } from '../../lib/queries/admin-stats'
 import { Sparkline } from '../ui/sparkline'
+import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 import { cn } from '../../lib/utils'
 
 // Settings → Insights — the instance-analytics dashboard (instance-admin).
@@ -43,6 +46,25 @@ export function SettingsInsightsTab() {
         <Metric label="Pages" value={s.pages} series={s.pages_cum} tone="accent" />
         <Metric label="Spaces" value={s.spaces} />
       </div>
+
+      {/* Signups & activation */}
+      <Group title="Signups & activation">
+        <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-[var(--space-4)]">
+          <div className="grid grid-cols-2 gap-[var(--space-3)] content-start">
+            <Metric label="New users · 30d" value={s.new_users_30} tone="accent" />
+            <Metric
+              label="Activated"
+              value={s.activated}
+              sub={`of ${s.users} ever wrote a page`}
+            />
+          </div>
+          <TopList title="Recent signups" empty="No signups yet.">
+            {s.recent_signups.map((u) => (
+              <SignupRow key={u.user_id} u={u} />
+            ))}
+          </TopList>
+        </div>
+      </Group>
 
       {/* Activity trends */}
       <Group title="Activity">
@@ -97,8 +119,49 @@ export function SettingsInsightsTab() {
         </div>
       </Group>
 
+      {/* Unanswered questions — what people asked that the docs couldn't answer */}
+      <Group title="Unanswered questions">
+        <TopList
+          title="Recent asks that returned nothing — a to-do list for what to write"
+          empty="Every recent question found something. 🎉"
+        >
+          {s.unanswered_asks.map((a, i) => (
+            <UnansweredRow key={i} a={a} />
+          ))}
+        </TopList>
+      </Group>
+
       <AIUsageSection />
     </section>
+  )
+}
+
+function SignupRow({ u }: { u: StatsSignup }) {
+  return (
+    <li className="flex items-baseline justify-between gap-[var(--space-2)] text-[length:var(--text-sm)]">
+      <span className="min-w-0 truncate text-[var(--text-primary)]">
+        <span className="font-medium">{u.display_name || u.username}</span>
+        {u.email ? <span className="text-[var(--text-muted)]"> · {u.email}</span> : null}
+      </span>
+      <span className="flex shrink-0 items-baseline gap-[var(--space-2)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        <span className={u.activated ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}>
+          {u.activated ? 'active' : 'no activity'}
+        </span>
+        <span className="tabular-nums">{relativeTimeFromSqlite(u.created_at)}</span>
+      </span>
+    </li>
+  )
+}
+
+function UnansweredRow({ a }: { a: StatsUnanswered }) {
+  return (
+    <li className="flex flex-col gap-[1px] text-[length:var(--text-sm)]">
+      <span className="text-[var(--text-primary)]">{a.question}</span>
+      <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        {a.who ? `${a.who} · ` : ''}
+        {relativeTimeFromSqlite(a.created_at)}
+      </span>
+    </li>
   )
 }
 

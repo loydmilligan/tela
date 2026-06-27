@@ -45,6 +45,26 @@ type statsKindCount struct {
 	Count int64  `json:"count"`
 }
 
+// statsSignup is one recent account for the "who's new" panel. Activated = the
+// user has authored ≥1 page revision (the real-vs-tyre-kicker signal); Email is
+// admin-eyes-only, same as the admin users list.
+type statsSignup struct {
+	UserID      int64  `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	CreatedAt   string `json:"created_at"`
+	Activated   bool   `json:"activated"`
+}
+
+// statsUnanswered is one recent Ask question that retrieved nothing — a content
+// gap to write toward (the generalized "agent asked, docs didn't answer" signal).
+type statsUnanswered struct {
+	Question  string `json:"question"`
+	Who       string `json:"who"`
+	CreatedAt string `json:"created_at"`
+}
+
 type adminStats struct {
 	// Dense daily buckets (oldest→newest), len == statsWindowDays. `days` are the
 	// 'YYYY-MM-DD' labels the others align to.
@@ -84,6 +104,13 @@ type adminStats struct {
 	StalePages     int64 `json:"stale_pages"`
 	OrphanPages    int64 `json:"orphan_pages"`
 	Contradictions int64 `json:"contradictions"`
+
+	// Operator signals: growth/activation + the newest accounts and the questions
+	// the docs couldn't answer. Turns "ask someone to run SQL" into a glance.
+	NewUsers30     int64             `json:"new_users_30"`    // accounts created in the window
+	Activated      int64             `json:"activated"`       // users who have authored ≥1 page revision (all-time)
+	RecentSignups  []statsSignup     `json:"recent_signups"`  // newest accounts + whether they activated
+	UnansweredAsks []statsUnanswered `json:"unanswered_asks"` // recent Ask questions that returned nothing
 }
 
 func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +146,8 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		TopContributors: []statsTopPerson{},
 		TopSpaces:       []statsTopSpace{},
 		ErrorsByKind:    []statsKindCount{},
+		RecentSignups:   []statsSignup{},
+		UnansweredAsks:  []statsUnanswered{},
 	}
 
 	// --- Daily activity by type ---
@@ -267,6 +296,49 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		   AND NOT EXISTS (SELECT 1 FROM page_links l WHERE l.target_id = p.id)`).Scan(&out.OrphanPages)
 	_ = s.DB.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM page_agreement WHERE dispute > 0`).Scan(&out.Contradictions)
+
+	// --- Growth / activation ---
+	_ = s.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users WHERE created_at >= $1`, cut30).Scan(&out.NewUsers30)
+	// Activated = has authored ≥1 page revision. page_revisions.author_id is the
+	// real-work signal (a tyre-kicker who only logged in has none).
+	_ = s.DB.QueryRowContext(ctx,
+		`SELECT COUNT(DISTINCT author_id) FROM page_revisions WHERE author_id IS NOT NULL`).Scan(&out.Activated)
+
+	// --- Recent signups (newest accounts + activated flag) ---
+	if rows, err := s.DB.QueryContext(ctx, `
+		SELECT u.id, u.username, u.display_name, COALESCE(u.email, ''), u.created_at,
+		       EXISTS (SELECT 1 FROM page_revisions r WHERE r.author_id = u.id) AS activated
+		  FROM users u
+		 ORDER BY u.created_at DESC LIMIT 12`); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var g statsSignup
+			if err := rows.Scan(&g.UserID, &g.Username, &g.DisplayName, &g.Email, &g.CreatedAt, &g.Activated); err != nil {
+				break
+			}
+			out.RecentSignups = append(out.RecentSignups, g)
+		}
+		rows.Close()
+	}
+
+	// --- Unanswered Ask questions (30d) — the content-gap to-do list ---
+	if rows, err := s.DB.QueryContext(ctx, `
+		SELECT a.question, COALESCE(NULLIF(u.display_name, ''), u.username, '') AS who, a.created_at
+		  FROM ask_log a
+		  LEFT JOIN users u ON u.id = a.user_id
+		 WHERE a.answered = 0 AND a.created_at >= $1
+		 ORDER BY a.created_at DESC LIMIT 12`, cut30); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var ua statsUnanswered
+			if err := rows.Scan(&ua.Question, &ua.Who, &ua.CreatedAt); err != nil {
+				break
+			}
+			out.UnansweredAsks = append(out.UnansweredAsks, ua)
+		}
+		rows.Close()
+	}
 
 	writeJSON(w, http.StatusOK, out)
 }
