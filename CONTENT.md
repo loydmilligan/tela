@@ -51,7 +51,8 @@
     sources in → a wiki that documents itself and stays fresh (ATLAS) → your AI reasons
     over it (RAG + MCP) → humans collaborate on it. Atlas and the agent layer are co-stars
     at equal Tier-1 weight; the RAG/MCP story is NOT demoted — it's paired with Atlas.
-    New hero promise: "The wiki that documents itself — and that your AI reasons over."
+    New hero promise (H1): "Docs that write themselves. An AI that already knows them."
+    (the loop in prose stays "documents itself … your AI reasons over it"; the H1 just reads punchier).
   - ATLAS is the public name of the capability (a named sub-brand, like "Linear Agents").
     What it is: a source-grounded, coverage-audited documentation generator. Point it at a
     source; it reads the source, plans a wiki, drafts cited markdown pages, scores how
@@ -191,7 +192,7 @@ Read it as: **Atlas + Ask = tela's first-party intelligence** (both grounded-and
 
 ### 1. Hero  — Tier 1  (BAB: the after-state, stated flatly)
 - **Eyebrow:** `Agent-native team wiki · documents itself · in Claude & ChatGPT`
-- **Headline (H1):** `The wiki that documents itself — and that your AI reasons over.`  (accent the two halves: "documents itself" and "reasons over")
+- **Headline (H1):** `Docs that write themselves. An AI that already knows them.`  (two-sentence; accent the two halves: "write themselves" and "already knows them". The eyebrow carries "team wiki"; the subhead carries the proof. Avoid the clunkier "reasons over" framing.)
 - **Subhead:** `Point tela at your sources — a git repo, a Jira project — and Atlas writes a cited, coverage-checked wiki, then keeps it fresh as they change. Your agents search that wiki by meaning and read, write, and cite it from inside Claude and ChatGPT. Real-time editing for the humans; SSO, scoped access, and an audit trail for the team.`
 - **Signature / wow moment (described for the build):** A looping *one-loop* moment beside the hero. A source feeds in on the left — a git repo node (or a Jira project) — and the woven-grid threads light up and resolve left-to-right into a freshly written tela page: cited markdown lines with `file:line` citations and a small **coverage badge** (e.g. `coverage 92%`). Then a chat-style turn shows an agent in Claude/ChatGPT calling `research` over that very page and citing it back. It must read in under 5 seconds as *"the source becomes a covered wiki, and the AI reasons over it — one loop."* Real names (a repo URL, real tool names, a `tela_pat_…`/connector shape), no fake data. (Carved-out signature moment — hand to the `wow` skill; DESIGN.md owns the visual.)
 - **Primary CTA:** `Get started` → https://tela.cagdas.io (hosted, free to start).  **Secondary CTA:** `Add to Claude or ChatGPT` → the MCP/connect section (`#agents`).
