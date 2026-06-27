@@ -1,61 +1,63 @@
-# tela — the team wiki your agents can write to
+# tela — the team wiki that documents itself
 
-> A self-hostable, markdown-native team wiki with a built-in MCP server, so AI agents read, write, and search your docs as first-class teammates. Live multiplayer, ranked full-text + semantic search, your data on your server.
+> Point Atlas at your sources — a git repo, a Jira project — and tela writes a cited, coverage-checked wiki and keeps it fresh. Your agents search it by meaning and read, write, and cite it from inside Claude and ChatGPT. Real-time multiplayer for the humans; SSO, scoped access, and an audit trail for the team. Markdown you own — hosted, or self-hosted.
 
 ## What tela is
 
-tela is an open-source, self-hostable **agent-native** team wiki. The wedge: a built-in Model Context Protocol (MCP) server makes AI agents first-class participants — they read, write, and search the wiki through the same API the team's UI uses, not through a bolted-on chat box.
+tela is an open-source **agent-native** team wiki built around one loop: your sources become a wiki that documents itself and stays fresh (Atlas), your AI reasons over that wiki (semantic retrieval + a built-in MCP server), and your team collaborates on it live. Atlas and the agent layer are co-equal: one writes and maintains the knowledge, the other lets you and your agents use it.
 
-- **Markdown is canonical, forever.** `pages.body` is plain markdown text — no block model, no proprietary format. The Milkdown editor is fully WYSIWYG; the file underneath stays clean markdown. Bulk-import a directory, export any time. Leaving tela means copying files.
-- **Self-hosted, your data.** Go backend on PostgreSQL; full-text search is native Postgres (ranked `ts_rank_cd` over a generated `tsvector`), with optional semantic/RAG retrieval via an embedding model — no Elasticsearch, no external search service. `docker compose up`, one host port, your data on your disk.
-- **Real-time multiplayer.** Live collaborative editing over Yjs — concurrent cursors and edits, rebased onto the canonical markdown on save. Comments anchor to a `{prefix, exact, suffix}` text window, so they don't drift when the page is edited.
-- **Built for agents.** Ships `tela-mcp` (published on npm). Agents authenticate with a scoped personal access token and get 20 tools: search (ranked full-text), semantic_search + read_chunk (vector + keyword retrieval with cited chunks), get_page, list_pages, list_backlinks, fetch, create_page, update_page (auto-snapshots a revision), move_page, add_comment (text-anchored), submit_feedback, plus space management. Keys are scoped read / write / admin and can be pinned to a single space.
+- **Atlas — docs that write and refresh themselves.** Point Atlas at a source (a git repo, public or private with a token; or a Jira project). It reads the source, extracts its real surface — routes, CLI flags, env vars, DB models, entrypoints, outbound services, config (or, for Jira, the issues, schema, and current state) — plans a wiki structure, drafts grounded, cited markdown pages, and publishes them into a space as ordinary tela pages. It then probes the source for drift about every 15 minutes (a cheap no-clone check) and regenerates on a schedule you set (hourly / daily / weekly / monthly / off) — only the sources that actually changed, as a delta run over just the changed files once a baseline exists.
+- **Coverage you can measure.** Atlas doesn't just write some pages and stop. It measures the docs against a deterministic spine — the actual routes, flags, env vars, models, and state it extracted — and reports a coverage score: the fraction of that real surface the docs cover, with the specific gaps named (kind, name, `file:line`) and every citation resolved to `file:line`. Measurably complete, not "the AI wrote something". Two source types today — git and Jira; more are coming.
+- **Retrieval that reasons.** Every page — written by Atlas or a human — is split into heading-aware chunks, embedded, and indexed. Keyword full-text (Postgres `tsvector` / `ts_rank_cd`) and vector similarity (pgvector) are fused with reciprocal-rank fusion, so a query finds the section that answers it even when it doesn't share the keywords.
+- **Ask your docs.** tela's own AI answers questions in plain language, grounded only in pages you're allowed to read, with citations to the source pages — and abstains when your docs don't cover it.
+- **The agent layer — MCP, inside Claude & ChatGPT.** A built-in remote Model Context Protocol server (Streamable HTTP, OAuth 2.1) gives agents 39 scoped tools over the same API the UI uses. Agents in Claude and ChatGPT connect with one OAuth sign-in; code agents point at the same URL with a scoped token.
+- **Markdown is canonical, forever.** `pages.body` is plain markdown text — no block model, no proprietary format. The Milkdown editor is full block-editing (drag, slash menu, turn-into, tables, callouts, diagrams, math) and every operation round-trips to clean markdown. Bulk-import a directory, export any time; mount a space as a local folder over WebDAV and edit in your own editor.
+- **Real-time multiplayer.** Live collaborative editing over Yjs, rebased onto the canonical markdown on save. Comments anchor to a `{prefix, exact, suffix}` text window, so they don't drift when the page is edited.
+- **Secure and team-shaped.** Single sign-on (WorkOS), email-verified accounts (Argon2id), organizations and sub-team groups, per-space roles with hard invariants, and scoped API keys that are HMAC-stored, expiring, space-pinnable, and audited.
 
 ## Stack
-- Backend: Go + PostgreSQL (`pgx/v5`). Search: ranked Postgres full-text (`tsvector` / `ts_rank_cd`) plus optional semantic/RAG retrieval.
+- Backend: Go + PostgreSQL (`pgx/v5`). Search: ranked Postgres full-text (`tsvector` / `ts_rank_cd`) fused with pgvector semantic retrieval; Atlas and ask-your-docs add an LLM endpoint and an embedder (both on for the hosted instance; bring your own to self-host).
 - Frontend: React + TypeScript + Vite + Tailwind + the Milkdown editor; Yjs for live collaboration.
-- MCP server: TypeScript, published as `tela-mcp` on npm — a thin client over the REST API.
-- Deploy: Docker Compose + a Caddy reverse proxy. Public instance: https://tela.cagdas.io
+- MCP: a built-in remote server at `/api/mcp` (Streamable HTTP + OAuth). `tela-mcp` on npm is a thin stdio proxy for hosts that don't speak the HTTP transport directly.
+- Deploy: Docker Compose + a Caddy reverse proxy. Hosted instance: https://tela.cagdas.io
 
 ## How does an agent use tela?
-Drop this in your `.mcp.json`:
+The endpoint is `https://tela.cagdas.io/api/mcp`. In Claude or ChatGPT, add it as a connector and complete the OAuth sign-in — nothing to paste. For code agents, point any MCP client at the same URL with a scoped personal access token:
 
 ```json
 {
   "mcpServers": {
     "tela": {
-      "command": "npx",
-      "args": ["-y", "tela-mcp@latest"],
-      "env": {
-        "TELA_BASE_URL": "https://tela.cagdas.io",
-        "TELA_API_KEY": "tela_pat_..."
-      }
+      "url": "https://tela.cagdas.io/api/mcp",
+      "headers": { "Authorization": "Bearer tela_pat_..." }
     }
   }
 }
 ```
 
-That's the whole integration. The agent then stops starting from zero every session — it reads the team's docs, writes back what it learns, and the next session (human or agent) picks up where it left off.
+The 39 tools cover spaces, pages, search (`search` keyword + `research` semantic, cited) and `read_chunk`, the knowledge graph (`related_pages`, `suggest_links`, `find_overlaps`, `knowledge_gaps`), Atlas runs (`atlas_list_projects`, `atlas_run`, `atlas_run_status`), decks, attachments, and sharing. Writes are gated by the token's scope; an agent can only touch what your account can. The agent stops starting from zero — it retrieves the right section by meaning, cites it, writes back what it learns, and the next session (human or agent) picks up there.
 
 ## How does tela compare?
-- vs **Notion**: your docs are plain markdown on your own server, and agents get a real read/write API — not a closed block store with a chat sidebar. (Notion wins on databases, templates, polish.)
-- vs **Confluence**: you run it yourself, no per-seat pricing, your data on your disk. (Confluence wins on Jira, granular permissions, enterprise scale.)
-- vs **Obsidian**: built for a team — live multiplayer, a shared server, an agent API. (Obsidian wins on local-first single-user, plugins, graph.)
-- vs **a git repo of markdown**: live WYSIWYG editing, instant full-text search, comments, sharing, and an agent API over the same markdown. (A repo wins on pure version control, free, zero infra.)
-- vs **Outline**: a built-in MCP server makes agents first-class, on canonical markdown you host yourself. (Outline wins on maturity, Slack integration, track record.)
+- vs **Notion**: plain markdown you own, semantic retrieval, a real MCP connector your agent drives from Claude/ChatGPT, and Atlas that turns a repo or Jira project into a coverage-checked wiki — not a closed block store with a chat sidebar. (Notion wins on databases, templates, polish.)
+- vs **Confluence**: Atlas documents *from* your code and Jira into portable markdown you can run yourself, agents search and write it by meaning — no enterprise install, no per-seat pricing. (Confluence wins on deep two-way Jira *workflow* integration, granular permissions, and thousand-user governance — tela documents from Jira, it doesn't drive Jira.)
+- vs **Obsidian**: built for a team — live multiplayer, a shared server with SSO and roles, an agent API, and self-writing docs. (Obsidian wins on local-first single-user, plugins, graph view.)
+- vs **a git repo of markdown**: semantic + full-text search, block editing, comments, sharing, an agent connector, and Atlas-generated docs over the same markdown — no PR to read a doc. (A repo wins on pure version control, free, zero infra.)
 
-None of them combine all of it: an agent-native MCP server, markdown you own, live multiplayer, ranked full-text plus semantic search — that you run yourself.
+None of them combine all of it: a wiki that documents itself from your sources and stays fresh, semantic retrieval your own agent drives from Claude and ChatGPT, markdown you own, and live multiplayer — with SSO and an audit trail.
 
 ## FAQ
-- **Is the MCP integration real or a demo?** Real. `tela-mcp` is published on npm with 20 tools over the live REST API; the tool catalog and `.mcp.json` are in `mcp/README.md`, and the code is open.
-- **Do I need Postgres?** Yes — tela runs on PostgreSQL, which `docker compose` brings up for you. Full-text search is built in (native Postgres `tsvector`); semantic search additionally uses an embedding model. No Elasticsearch, no external search service.
-- **Can I get my content out?** Yes. Pages are canonical plain markdown — bulk-import a directory and export any time. No proprietary format.
-- **How do agents authenticate?** Each agent uses a scoped personal access token (`tela_pat_…`) issued in Settings → API Keys — read, write, or admin, pinnable to a single space.
-- **Is it multiplayer?** Yes — live collaborative editing over Yjs.
+- **Do I have to write all the docs myself?** No — that's what Atlas is for. Point it at a git repo or Jira project and it writes a structured, cited wiki and keeps it current; you and your team edit and add on top. (Atlas-generated pages are the machine-maintained layer: a re-run rewrites the generated subtree.)
+- **What happens when my code changes?** Atlas runs a cheap drift probe about every 15 minutes and flags when a source has moved past the last generated version; on the schedule you set it regenerates only the drifted sources, as a delta over just the changed files.
+- **What sources can Atlas read?** Git repositories and Jira projects today. More are coming. We name what Atlas reads rather than imply a catalog it doesn't have.
+- **Is the MCP integration real or a demo?** Real. It's a remote Streamable-HTTP MCP server with OAuth, 39 tools over the live API; the endpoint and catalog are documented and the code is open.
+- **Is search by meaning real?** Yes — hybrid retrieval (Postgres full-text fused with pgvector) over heading-aware chunks. Agents use `research` (semantic, cited) + `read_chunk`; `search` is keyword and always available. Semantic retrieval and ask-your-docs need an embedder (and an LLM); on the hosted instance both are on.
+- **Can I get my content out?** Yes. Pages are canonical plain markdown — bulk-import a directory, export any time, or sync a space as a local folder over WebDAV. No proprietary format.
+- **Do I need Postgres?** Yes — tela runs on PostgreSQL, which `docker compose` brings up for you.
+- **Is it multiplayer?** Yes — live collaborative editing over Yjs, with comments that survive edits.
 
 ## Links
 - Home: https://tela.cagdas.io/
 - Live instance: https://tela.cagdas.io/login
+- MCP server docs: https://tela.cagdas.io/mcp
 - GitHub: https://github.com/zcag/tela
-- MCP server (npm): https://www.npmjs.com/package/tela-mcp
-- MCP docs: https://github.com/zcag/tela/blob/main/mcp/README.md
+- MCP proxy (npm): https://www.npmjs.com/package/tela-mcp

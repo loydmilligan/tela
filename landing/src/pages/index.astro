@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import Hero from '../components/Hero.astro';
+import Atlas from '../components/Atlas.astro';
 import AgentWeave from '../components/AgentWeave.astro';
 import Retrieval from '../components/Retrieval.astro';
 import AskDocs from '../components/AskDocs.astro';
@@ -19,13 +20,14 @@ import FinalCta from '../components/FinalCta.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 ---
 
-<Base ogDescription="A markdown team wiki with semantic search and a built-in MCP server. Your AI agents search your docs by meaning and read, write, and cite them — right inside Claude and ChatGPT. Real-time multiplayer, SSO, scoped access. Your markdown, hosted or self-hosted.">
+<Base ogDescription="A team wiki that documents itself. Point Atlas at a git repo or Jira project and it writes a cited, coverage-checked wiki and keeps it fresh. Your agents search it by meaning and read, write, and cite it from inside Claude and ChatGPT. Real-time multiplayer, SSO, scoped access. Your markdown, hosted or self-hosted.">
   <SiteHeader />
   <main id="main">
     <Hero />
-    <AgentWeave />
+    <Atlas />
     <Retrieval />
     <AskDocs />
+    <AgentWeave />
     <Pivot />
     <EditorShowcase />
     <ShowcaseBento />

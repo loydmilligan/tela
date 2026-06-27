@@ -1,18 +1,19 @@
 ---
 import Prose from '../layouts/Prose.astro';
 
-// Tool roster mirrors backend/internal/api/mcp_tools.go (24 tools: 10 read, 10
-// write, 4 knowledge). Keep in sync when the tool surface changes.
+// Tool roster mirrors backend/internal/api/mcp_tools.go (39 tools). Keep in sync
+// when the tool surface changes. Note: the meaning/answer tool is `research`
+// (semantic, cited) and `search` is keyword full-text — there is no
+// `semantic_search`/`search_bodies` tool.
 const readTools = [
   ['list_spaces', 'List the spaces you can access.'],
   ['get_space', 'Read a space and its metadata.'],
   ['list_pages', 'List pages in a space, as a tree.'],
   ['get_page', 'Read a page (canonical markdown).'],
   ['list_backlinks', 'Pages that link to a given page.'],
-  ['read_chunk', 'Read a slice of a large page.'],
-  ['search', 'Full-text search across pages.'],
-  ['search_bodies', 'Search returning matching page bodies.'],
-  ['semantic_search', 'Vector search over page content.'],
+  ['read_chunk', 'Read a specific section of a page.'],
+  ['search', 'Keyword full-text search across pages (no embedder needed).'],
+  ['research', 'Semantic, answer-oriented retrieval with cited sources.'],
   ['fetch', 'Fetch a document by id (Deep Research).'],
 ];
 const writeTools = [
@@ -21,10 +22,10 @@ const writeTools = [
   ['delete_space', 'Delete a space.'],
   ['create_page', 'Create a page from markdown.'],
   ['update_page', 'Edit a page body or title.'],
+  ['patch_page', 'Apply a section-scoped edit to a page.'],
   ['move_page', 'Re-parent or reorder a page.'],
   ['delete_page', 'Delete a page.'],
   ['add_comment', 'Comment on a page.'],
-  ['patch_page', 'Apply a section-scoped edit to a page.'],
   ['submit_feedback', 'Send feedback to the maintainers.'],
 ];
 const knowledgeTools = [
@@ -33,6 +34,30 @@ const knowledgeTools = [
   ['find_overlaps', 'Find pages with overlapping or duplicate content.'],
   ['knowledge_gaps', 'Top questions the docs couldn’t answer (admin).'],
 ];
+const atlasTools = [
+  ['atlas_list_projects', 'List Atlas projects you can manage or view.'],
+  ['atlas_run', 'Trigger an Atlas run — generate or refresh a source.'],
+  ['atlas_run_status', 'Check a run — stage, status, and coverage.'],
+];
+const deckTools = [
+  ['preview_deck', 'Render a deck to preview its slides.'],
+  ['lint_deck', 'Check deck markdown before presenting.'],
+  ['deck_authoring_guide', 'The guide for authoring tela decks.'],
+  ['generate_deck_image', 'Generate an image for a slide.'],
+  ['treat_deck_image', 'Process and optimize a slide image.'],
+];
+const attachmentTools = [
+  ['list_attachments', "List a page's attachments."],
+  ['request_attachment_upload', 'Start an upload and get an upload URL.'],
+  ['confirm_attachment_upload', 'Finalize an attachment upload.'],
+  ['upload_attachment', 'Upload a file attachment to a page.'],
+  ['delete_attachment', 'Remove an attachment.'],
+];
+const shareTools = [
+  ['share_page', 'Create a public share link for a page.'],
+  ['revoke_share', 'Revoke a page’s share link.'],
+  ['list_shares', 'List active share links.'],
+];
 ---
 
 <Prose
@@ -40,7 +65,7 @@ const knowledgeTools = [
   description="Connect Claude, ChatGPT or any MCP client to tela: a markdown wiki your agents can read, search and write over HTTP with OAuth."
   kicker="Documentation"
   heading="The tela MCP server"
-  updated="June 10, 2026"
+  updated="June 27, 2026"
   ogImagePath="/og-mcp.png"
 >
   <script type="application/ld+json" is:inline slot="head" set:html={JSON.stringify({
@@ -53,7 +78,7 @@ const knowledgeTools = [
         description: 'Connect Claude, ChatGPT or any MCP client to tela: a markdown wiki your agents can read, search and write over HTTP with OAuth.',
         url: 'https://tela.cagdas.io/mcp/',
         inLanguage: 'en',
-        dateModified: '2026-06-10',
+        dateModified: '2026-06-27',
         author: { '@id': 'https://tela.cagdas.io/#org' },
         publisher: { '@id': 'https://tela.cagdas.io/#org' },
         about: { '@id': 'https://tela.cagdas.io/#software' },
@@ -126,10 +151,12 @@ const knowledgeTools = [
 
   <h2>Tools</h2>
   <p>
-    Twenty-four tools, with read and write cleanly separated. Every tool carries
-    a human-readable title and read/write annotations; writes are scoped by your
-    token's permissions. The knowledge tools help an agent keep the wiki
-    connected — surfacing related pages, suggesting links, and flagging overlap.
+    Thirty-nine tools, grouped by what they touch, with read and write cleanly
+    separated. Every tool carries a human-readable title and read/write
+    annotations; writes are scoped by your token's permissions. The knowledge
+    tools help an agent keep the wiki connected — surfacing related pages,
+    suggesting links, and flagging overlap — and the Atlas tools let an agent
+    kick off and check a documentation run.
   </p>
 
   <h3>Read</h3>
@@ -149,6 +176,34 @@ const knowledgeTools = [
   <h3>Knowledge</h3>
   <ul class="tool-grid">
     {knowledgeTools.map(([name, desc]) => (
+      <li><code>{name}</code><span class="desc">{desc}</span></li>
+    ))}
+  </ul>
+
+  <h3>Atlas</h3>
+  <ul class="tool-grid">
+    {atlasTools.map(([name, desc]) => (
+      <li><code>{name}</code><span class="desc">{desc}</span></li>
+    ))}
+  </ul>
+
+  <h3>Decks</h3>
+  <ul class="tool-grid">
+    {deckTools.map(([name, desc]) => (
+      <li><code>{name}</code><span class="desc">{desc}</span></li>
+    ))}
+  </ul>
+
+  <h3>Attachments</h3>
+  <ul class="tool-grid">
+    {attachmentTools.map(([name, desc]) => (
+      <li><code>{name}</code><span class="desc">{desc}</span></li>
+    ))}
+  </ul>
+
+  <h3>Sharing</h3>
+  <ul class="tool-grid">
+    {shareTools.map(([name, desc]) => (
       <li><code>{name}</code><span class="desc">{desc}</span></li>
     ))}
   </ul>
@@ -178,8 +233,8 @@ const knowledgeTools = [
 
   <h2>Limitations</h2>
   <ul>
-    <li><strong>Semantic search needs an embedder.</strong> <code>semantic_search</code> and <code>read_chunk</code> return <code>503</code> if the instance has no embedding model configured. Full-text <code>search</code> and <code>search_bodies</code> always work.</li>
-    <li><strong>Large pages are capped.</strong> <code>get_page</code> and <code>fetch</code> truncate bodies beyond ~80k characters and set <code>truncated: true</code>; read specific sections with <code>semantic_search</code> + <code>read_chunk</code>.</li>
+    <li><strong>Semantic retrieval needs an embedder.</strong> <code>research</code> (and the semantic side of retrieval) returns <code>503</code> if the instance has no embedding model configured. Keyword <code>search</code> always works.</li>
+    <li><strong>Large pages are capped.</strong> <code>get_page</code> and <code>fetch</code> truncate bodies beyond ~80k characters and set <code>truncated: true</code>; read specific sections with <code>research</code> + <code>read_chunk</code>.</li>
     <li><strong>Writes need editor permission.</strong> Create/update/delete tools require editor access on the target space; a read-scoped token or a viewer account can't write.</li>
   </ul>
 
@@ -190,9 +245,9 @@ const knowledgeTools = [
     <dt>401 / tools don't appear</dt>
     <dd>The token is missing or invalid. For the OAuth flow, reconnect; for the npm proxy, check <code>TELA_TOKEN</code> is a current Personal Access Token.</dd>
     <dt>Tool returns <code>503 rag_disabled</code></dt>
-    <dd>Semantic search isn't configured on this instance — use <code>search</code> / <code>search_bodies</code> instead.</dd>
+    <dd>Semantic retrieval isn't configured on this instance — use keyword <code>search</code> instead.</dd>
     <dt>A page comes back truncated</dt>
-    <dd>Expected for very large pages (<code>truncated: true</code>). Use <code>semantic_search</code> to find the relevant section, then <code>read_chunk</code>.</dd>
+    <dd>Expected for very large pages (<code>truncated: true</code>). Use <code>research</code> to find the relevant section, then <code>read_chunk</code>.</dd>
     <dt>Write tool returns a permission error</dt>
     <dd>Your account or token lacks editor access to that space.</dd>
   </dl>

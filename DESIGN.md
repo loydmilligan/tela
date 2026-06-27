@@ -6,17 +6,27 @@
 
 # Design Contract — tela landing
 
-> 2026-06 REPOSITION: content thesis is now "the wiki your AI reasons over" — semantic
-> retrieval (RAG) + a real MCP connector inside Claude & ChatGPT. The aesthetic, tokens,
-> and woven-grid signature are UNCHANGED. What changed: the agent/MCP section AND a new
-> retrieval section are co-centerpieces; the signature moment shows the agent *reasoning
-> over* the wiki (retrieve → cite → write), not just writing; self-host is demoted from a
-> visual pillar to a quiet line inside the Security section. NEVER render the stale facts
-> "SQLite / FTS5 / single binary" anywhere in chrome, code blocks, or captions.
+> 2026-06-27 REPOSITION — THE LOOP: content thesis is now a co-headline **loop**: the team
+> wiki that **documents itself** (Atlas writes & refreshes it from your sources) AND that
+> **your AI reasons over** (semantic retrieval + a real MCP connector inside Claude & ChatGPT)
+> — one continuous system, not two features. The aesthetic, tokens, and woven-grid signature
+> are UNCHANGED; this is an evolution of the contract, not a redesign. What changed:
+> (1) the old "agent + retrieval co-centerpieces" framing is replaced — **§2–§3b is now ONE
+> composed Tier-1 act** read as a single source→write→index→answer→reason flow (Atlas writes →
+> retrieval is the shared engine → ask answers → the agent layer is the external half), with
+> **Atlas and the agent layer at equal headline weight** and retrieval as the connective tissue
+> between them. (2) The signature moment evolves from "agent writes the wiki" to the **FULL
+> LOOP** — Atlas weaves a *source* into the cloth (a covered page), then the agent reasons over
+> it. The woven-loom motif is now thematically literal: Atlas weaves your sources into the wiki.
+> (3) New visual primitive: the Atlas **coverage panel** (score + named gaps + `file:line`
+> citations) — the killer dev-credible proof. (4) Self-host stays demoted (a quiet line in
+> Security). Sources are **git + Jira only** — never a logo wall, never imply a catalog.
+> NEVER render the stale facts "SQLite / FTS5 / single binary" anywhere in chrome, code blocks,
+> or captions.
 
 ## Aesthetic Direction
 - **Tone:** Refined developer-tool — Linear / Vercel tier. Dark-first, precise, engineer-credible. Not loud, not editorial, not warm.
-- **One-line intent:** A near-black indigo-ink canvas where the real product UI and real code are the heroes, and a faint **woven grid** — tela's loom — runs under everything, lighting up only when an agent reasons over and writes to the wiki.
+- **One-line intent:** A near-black indigo-ink canvas where the real product UI and real code are the heroes, and a faint **woven grid** — tela's loom — runs under everything, lighting up only at the loop's two beats: when **Atlas weaves a source into the cloth** (writes a covered page) and when an **agent reasons over** that page. The loom is now thematically literal: *tela* weaves your sources into the wiki.
 - **Brand origin:** For small technical teams already running AI agents (Claude, ChatGPT, Cursor, Claude Code) who want those agents to actually search and write their shared docs. The feeling is a quiet, confident dev tool you'd trust your team's knowledge to — the register of the terminal and the editor, not the marketing deck. *tela* = woven cloth; the site is literally built on a grid you can see.
 
 ## Negative Constraints (never — the anti-slop fingerprint)
@@ -26,6 +36,9 @@
 - No three-icon-box feature grid with cute line icons. Pillars are **text-led cards with a code/mono detail**, not iconography.
 - No rounded-everything (crisp 6–10px radii; the woven grid and rules are 0px). No flat `0.1` black shadows — depth shadows + one earned indigo glow.
 - No stock isometric illustrations, no fake dashboards, no fabricated customer logos, no "trusted by thousands". Real editor mocks, real tool names, the real connector URL + remote-transport config (NOT an npx command).
+- **No fabricated integration/source logo wall.** Atlas reads **git + Jira ONLY** ("more coming"). Show exactly those two as quiet mono source labels (`git` / `jira` with a real repo name / Jira key) — never a grid of vendor logos, never an "any source / your whole stack" montage that implies a catalog.
+- **No four identical stacked feature sections.** §2–§3b is ONE composed act read as a connected flow (source → woven page → index → answer → external agent). Do not render Atlas, Retrieval, Ask, and Agents as four sibling cards of equal styling stacked vertically — the connective tissue between them must be visible.
+- **No marketing gauge for coverage.** The coverage panel is honest dev-credible proof (a restrained mono score + named gaps + `file:line` citations), never a glossy speedometer/percentage-dial hero graphic.
 - Containers nest ≤ 2 levels. Indigo is **rare and earned** — most of the page is ink + white text; indigo marks the CTA, the live thread, code keywords, the agent-write moment.
 
 ## Inspiration  (pulled live via Steel — decomposed, never replicated)
@@ -49,13 +62,35 @@
 
 ## Signature woven-grid device  (the carved-out moment — exempt from page motion throttling)
 - **The motif:** `tela` = loom/cloth. A faint **woven grid** of interlaced warp/weft threads (`--weave-thread` lit / `--weave-ground` dim, `--weave-cell 28px`). Rendered as a **CSS layered-gradient weave** (two repeating-linear-gradients offset to read as over/under interlacing) or a tiled SVG `<pattern>` for crisper threads — static, near-invisible, technical not craftsy.
-- **Where it appears:** hero background (dim, behind the copy), as **section dividers** (a single lit thread-row between sections), and inside the hero wow moment.
-- **Hero wow moment — "the agent reasoning over the wiki" (ties to CONTENT.md §1):** Left card = a compact MCP **tool-call** (`semantic_search` returning a cited chunk, then `update_page` — real catalog names, real `tela_pat_…`/connector shape, no fake data) typing out as a terminal/tool-call card; a small `claude · mcp` / `chatgpt · mcp` label sells the in-chat origin. Right = the **tela editor** with the woven grid faintly visible; as the call "commits," **threads in the grid light up and resolve left-to-right into the page's markdown lines** materializing in the editor — the weave literally *weaves the page into being*. Must read in <5s as *"the AI is retrieving from and editing the wiki, not chatting about it."* A live "writing" dot uses `--live-dot` (cyan). Loops on a `--dur-weave 3200ms` timeline.
-- **Build flags:** Hand off to the `wow` skill. This single moment is **exempt from page-level motion throttling**; everything else stays subtle. `prefers-reduced-motion` → render the **final resolved frame** (tool-call done + page present + grid static), no animation.
+- **Where it appears:** hero background (dim, behind the copy), as **section dividers** (a single lit thread-row between sections), inside the hero wow moment, and — keyed to the Atlas section — as the cloth a source resolves into.
+- **Hero wow moment — "THE FULL LOOP: source → covered wiki → agent reasons over it" (ties to CONTENT.md §1 hero):** the centerpiece, evolved from "agent writes the wiki" to the *whole loop*. The woven-loom motif is now thematically perfect — **Atlas weaves your sources into the cloth (the wiki).** Read it in **three beats, left→right, in under 5s**:
+  1. **Source (in):** a single quiet **source node** at the left — a `git` repo node (a real repo URL/name) or a `jira` project key, as mono detail. Not a logo wall; one named source.
+  2. **Weave → covered page:** threads from the source feed into the woven grid; the **warp/weft threads light up and resolve left-to-right into a freshly written tela page** — real-feeling cited markdown lines, each carrying a `file:line` citation, and a small **coverage badge** (`coverage 92%`) settling in the page's corner. The weave *literally writes the page from the source.* This is the "documents itself" half made visible.
+  3. **Agent reasons over it (out):** a compact chat-style turn — `claude · mcp` / `chatgpt · mcp` label — shows an agent calling **`semantic_search`** over that very page and **citing it back** (the citation resolves to a line in the page just written). This closes the loop: the weave wrote the page; the AI now reasons over it.
+  - Real names throughout (a repo URL, real tool names, a `tela_pat_…`/connector shape) — **no fake data, no fabricated integration logos.** A live "writing"/"live" dot uses `--live-dot` (cyan). Must read as *"the source becomes a covered wiki, and the AI reasons over it — one loop,"* never "an AI chatting about docs." Loops on a `--dur-weave 3200ms` timeline (extend if the three beats need it; keep each beat legible, not rushed).
+- **Build flags:** Hand off to the `wow` skill. This single moment is **exempt from page-level motion throttling**; everything else stays subtle. `prefers-reduced-motion` → render the **final resolved frame** (source node + the covered page present with its `coverage 92%` badge + the agent's cited `semantic_search` turn + grid static), no animation — the static frame alone must still tell the whole loop.
 
 ## Spacing & Layout
 - Base grid **4px**; `--col-max 1200` (tight dev-tool frame, not 1240+ editorial); `--section-y 120` vertical rhythm; prose `--measure 66ch`.
-- **Composition:** asymmetric, left-anchored. Hero = copy-left / signature-right split. Two **co-centerpieces** (Tier 1): the **agent/MCP section** (the connect-flow as 3 crisp steps + the remote-transport config block + the 9-of-24 tool catalog grouped by scope `read`/`write`/`admin` as mono tags) and the **retrieval section** (a query → ranked *chunk* cards with a mono `heading path`, snippet, and score — the same index labelled "for humans / for agents"). Product UI and code are framed first-class: editor mocks in a `--radius-lg` frame with `--shadow-frame`; code in `--radius-md` wells (`--code-bg`) with indigo keyword / cyan string tokens. The editor section shows the WYSIWYG↔markdown equivalence side by side. Final CTA (Tier 1) re-lights the woven grid. The Security section reads as calm proof tiles, not alarm.
+- **Composition:** asymmetric, left-anchored. Hero = copy-left / signature-right split. **In-page nav** (≤6, scroll order, the AI act leads): `Atlas · Search · Ask · Agents · Compare · Pricing` (Editor dropped from nav — it's still a full Tier-2 section; Pricing is the dedicated-page link, Security stays reachable by scroll). Product UI and code are framed first-class: editor mocks in a `--radius-lg` frame with `--shadow-frame`; code in `--radius-md` wells (`--code-bg`) with indigo keyword / cyan string tokens. The editor section shows the WYSIWYG↔markdown equivalence side by side. Final CTA (Tier 1) re-lights the woven grid. The Security section reads as calm proof tiles, not alarm.
+- **The AI act (§2–§3b) — ONE composed Tier-1 act, not four sibling cards.** This is the structural heart of the reposition. Compose it so a scanner SEES one connected system in source-to-answer order, with a **visible through-line** (a lit woven thread / connector spine running top-to-bottom through the act, or a left rail that advances) tying the beats together:
+  - **§2 Atlas (the "write" half — co-star, equal weight to the agent layer):** a left-anchored act with the **connect-a-source step** (a `git` / `jira` source card with branch/subpath as mono detail), the **coverage panel** (see below) as the killer proof beside a generated tela page (real-feeling cited markdown with `file:line` citations), and a quiet **freshness/drift indicator** (a "behind upstream → regenerated" state, `--live-dot` cyan for the live beat). Honest mechanism, not hype; real repo name / Jira key; never fake data or a source-logo wall.
+  - **§3 Retrieval (the shared engine — connective tissue, NOT a standalone equal card):** render it as the **engine between Atlas and the agent layer** — visually narrower/quieter than the two co-stars, sitting in the through-line, labelled as the index everything runs on. A query → ranked *chunk* cards with a mono `heading path`, snippet, and score; one note that the same index powers the human palette *and* the agent's `semantic_search`.
+  - **§3a Ask (the "answer" half — tela's first-party AI):** an "ask" card — question, a written answer with inline `[n]` citation markers, then the cited source pages (title ▸ heading · space). Real UI, **no JSON, no raw scores** (this is the user-facing answer surface). Reads as the mirror of Atlas: Atlas writes from the index, Ask answers from it — same grounded/cited DNA.
+  - **§3b The agent layer / MCP (the EXTERNAL half — co-star, equal weight to Atlas):** the connect-flow as 3 crisp steps + the remote-transport config block (real connector URL, `tela_pat_…`, NO npx) + the ~9-of-24 tool catalog grouped by scope `read`/`write`/`admin` as mono tags. The strong "works where you already work" beat that closes the act.
+  - **Weighting law:** Atlas and the agent layer get the two largest, most prominent treatments (the named halves of the headline); retrieval is the engine between them (deliberately lighter); Ask mirrors Atlas at a notch below the two co-stars. Do NOT stack four equal-styled blocks.
+
+## Atlas section & the coverage panel  (new — the killer proof primitive)
+- **Atlas section (§2) visual spec — co-star, equal weight to the agent layer:**
+  - **Connect a source:** a single quiet **source card** — `git` or `jira` glyph as a mono kicker, a real repo name (e.g. `github.com/zcag/tela`) or a Jira key (e.g. `PROJ`), with **branch / subpath as mono detail** (`branch main · /backend`). Two source types shown, never a vendor-logo grid. Optional include/exclude globs as muted mono chips.
+  - **The covered page:** beside the source, a generated tela page rendered in the `--radius-lg` editor frame — real-feeling cited markdown (the deploy/incident theme, consistent with §3/§3a), each grounded line carrying a `file:line` citation chip. Tagged quietly `generator=atlas`.
+  - **Freshness / drift indicator:** a restrained status line — a `--live-dot` (cyan) beat plus a state like `behind upstream → regenerated 4m ago` or `drift detected · scheduled daily`. Honest mechanism (cheap ~15-min probe + scheduled regen), never "always up to date / instant".
+  - **One-loop tie-in:** a small mono line that `atlas_run` / `atlas_run_status` are MCP tools — Atlas sits in the loop with the agent layer, not off to the side.
+- **The coverage panel (NEW owned primitive — first-class, restrained, dev-credible — NOT a marketing gauge):** this is Atlas's differentiator made visible. Three parts, all referencing **semantic tokens only**:
+  1. **Coverage score** — a big **mono** number (`92%` / `coverage 92%`), optionally a thin **ring** (a single-stroke arc, `--brand` fill on `--border` track — minimal, not a glossy speedometer). One earned indigo accent permitted here (this is a proof moment).
+  2. **Named-gap list** — a short list of what the docs *didn't* cover, each row `kind · name · file:line` in mono, e.g. `route · POST /api/atlas/run · atlas_projects.go:142` / `env · TELA_RAG_EMBED_URL · config.go:88`. Muted, scannable, honest — the gaps are a feature, not a flaw.
+  3. **Citation chips** — inline mono chips that resolve to `file:line` (e.g. `atlas_projects.go:142`), visually the same family as the code-keyword treatment; they read as validated provenance, not decoration.
+  - **Restraint:** greyscale-first; the score's single indigo accent is the only earned color. Crisp `--radius-md`, no glow, no gradient. It must read as an engineer's audit readout, not a dashboard widget. Reuse the existing code-well / mono-chip tokens; add component tokens only if a semantic one doesn't already cover it (never raw hex/px).
 
 ## Motion
 - **Signature moment:** the woven page-write (above) — the one orchestrated, high-impact gesture.
@@ -67,7 +102,9 @@
 
 ## Components
 - Base: `@shadcn` (owned, tela's `ui/` convention) + tela token utilities. Premium lane only for the hero signature (the `wow` handoff).
-- **Reuse before creating.** Code blocks, tool-tags, proof tiles, and the screenshot frame are owned primitives referencing **semantic tokens** — never raw hex/px.
+- **Reuse before creating.** Code blocks, tool-tags, proof tiles, the screenshot frame, and the new **coverage panel** + **source card** are owned primitives referencing **semantic tokens** — never raw hex/px.
+- **Coverage panel** (Atlas's proof primitive): score + named-gap list + `file:line` citation chips — spec above. Reuse the code-well / mono-chip tokens; greyscale-first with one earned indigo on the score.
+- **Pricing card — Atlas row:** Atlas reads as a **flagship included ability** — render an **Atlas-as-flagship band above the plan cards** (the upgrade reason, prominent). Each plan card then gains a dedicated **"Atlas sources" row** (Free `1` · Plus `5` · Team `20` · Enterprise `unlimited`) — spec the card so this extra metered row sits cleanly alongside the existing limit rows (spaces / pages / storage / AI answers), not bolted on. The **price treatment is structurally UNCHANGED** — the card layout that held the dollar amount and the limit rows stays as is; we're only adding the Atlas-flagship band and the Atlas-sources row. (Dollar values themselves are CONTENT.md's domain — it currently carries `[PRICE TBD]` placeholders for the paid tiers; the card must hold whatever lands without redesign.) The recommended **Team** card keeps its single earned-indigo treatment — the only indigo card; the Atlas-flagship band is the section's other earned-indigo accent.
 
 ## Tokens
 - Source of truth: `tokens.css` (→ `landing/src/styles/`), Tailwind v4 `@theme`, OKLCH only.

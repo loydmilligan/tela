@@ -20,16 +20,16 @@ const turns = [
 
 // real tool catalog (subset shown, grouped by scope) — names from internal/api/mcp_tools.go
 const toolScopes = [
-  { scope: 'read', tone: 'read', tools: ['semantic_search', 'search', 'read_chunk', 'related_pages', 'suggest_links', 'get_page', 'list_pages', 'list_backlinks'] },
+  { scope: 'read', tone: 'read', tools: ['research', 'search', 'read_chunk', 'related_pages', 'suggest_links', 'get_page', 'list_pages', 'list_backlinks', 'atlas_list_projects', 'atlas_run_status'] },
   { scope: 'write', tone: 'write', tools: ['create_page', 'update_page', 'add_comment', 'move_page'] },
-  { scope: 'admin', tone: 'admin', tools: ['create_space', 'update_space', 'manage keys'] },
+  { scope: 'admin', tone: 'admin', tools: ['create_space', 'update_space', 'manage keys', 'atlas_run'] },
 ];
 
 // how you connect the chat apps — no install, no local proxy
 const connectSteps = [
   { n: '1', t: 'Add a connector', d: 'In Claude or ChatGPT, add tela as a connector.', code: 'tela.cagdas.io/api/mcp' },
   { n: '2', t: 'Sign in', d: 'One sign-in with your tela account. No token to paste.', code: 'OAuth 2.1' },
-  { n: '3', t: 'Use it', d: 'The assistant searches and edits the wiki, within your permissions.', code: '24 tools' },
+  { n: '3', t: 'Use it', d: 'The assistant searches and edits the wiki, within your permissions.', code: '39 tools' },
 ];
 ---
 
@@ -100,7 +100,7 @@ const connectSteps = [
   <!-- the tool catalog, grouped by scope -->
   <div class="tools reveal-up">
     <div class="tools-head">
-      <h3 class="tools-title">24 tools, grouped by access</h3>
+      <h3 class="tools-title">39 tools, grouped by access</h3>
       <p class="tools-sub">Give an agent a read-only key, or one that can write. A key can be pinned to a single space.</p>
     </div>
     <div class="tools-grid">
@@ -116,7 +116,8 @@ const connectSteps = [
     <p class="tools-why">
       The assistant reads from the wiki and writes back to it, so context carries from one session
       to the next instead of being pasted in each time. It can also surface related pages, suggest
-      links while writing, and flag overlapping content — so the knowledge base stays connected as it grows.
+      links while writing, and flag overlapping content — and even kick off an Atlas run and check
+      its status — so the knowledge base stays connected and current as it grows.
     </p>
     <a class="tools-link" href="/mcp/">See the full tool catalog →</a>
   </div>
@@ -258,7 +259,7 @@ const connectSteps = [
   .chat.playing .turn.show { opacity: 1; transform: none; }
 
   /* loom (editor + sweep) */
-  .loomwrap { position: relative; }
+  .loomwrap { position: relative; min-width: 0; }
   .loom-editor { position: relative; z-index: 1; }
   .sweep {
     position: absolute;
@@ -447,7 +448,7 @@ const connectSteps = [
   }
 
   @media (min-width: 900px) {
-    .stage { grid-template-columns: 0.92fr 1.08fr; gap: 1.5rem; }
+    .stage { grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr); gap: 1.5rem; }
     .title { font-size: 2.875rem; }
   }
 </style>

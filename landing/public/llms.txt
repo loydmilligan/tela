@@ -1,20 +1,20 @@
 # tela
 
-> The team wiki your AI agents can actually read and write — through a built-in MCP server, on markdown you self-host. Live multiplayer, ranked full-text + semantic search, your data on your server.
+> A team wiki that documents itself — and that your AI reasons over. Point Atlas at a git repo or Jira project and it writes a cited, coverage-checked wiki and keeps it fresh; your agents search and write it from inside Claude and ChatGPT, on markdown you own.
 
-tela is an open-source, self-hostable, **agent-native** team wiki. It ships `tela-mcp`, a published Model Context Protocol server that gives agents 20 scoped tools over the same REST API the UI uses — read, search (keyword and semantic), create and update pages, leave anchored comments, import content, manage spaces. Pages are canonical markdown forever (no block model, no proprietary format). Go + PostgreSQL backend, React/Milkdown editor, Yjs live collaboration.
+tela is an open-source, **agent-native** team wiki. Its headline feature, **Atlas**, ingests your sources — a git repo or a Jira project — reads the source, plans a wiki, drafts cited markdown pages, and publishes them as ordinary tela pages, then watches the source and regenerates on a schedule when it drifts. Atlas measures the docs against a deterministic spine (the real routes, CLI flags, env vars, DB models, and state it extracted) and reports a **coverage score** with the specific gaps named and every citation resolved to `file:line` — measurably complete, not "the AI wrote something". The generated pages are searchable, shareable, and revisioned like any other. A built-in remote MCP server gives agents **39 scoped tools** over the same API the UI uses — keyword `search`, semantic `research`, `read_chunk`, read/create/update pages, anchored comments, the knowledge graph, and `atlas_*` runs — usable in Claude and ChatGPT via one-click OAuth. Pages are canonical markdown forever (no block model, no proprietary format). Go + PostgreSQL backend, React/Milkdown editor, Yjs live collaboration. Hosted at tela.cagdas.io, or self-host it.
 
 ## Product
-- [Home](https://tela.cagdas.io/): what tela is, the agent/MCP story, the feature showcase, an honest comparison vs Notion/Confluence/Obsidian/Outline, and self-host instructions.
+- [Home](https://tela.cagdas.io/): Atlas (the wiki documents itself), semantic retrieval + ask-your-docs with citations, the MCP connector for Claude & ChatGPT, the block editor on canonical markdown, an honest comparison vs Notion/Confluence/Obsidian, security, and pricing.
 - [Live instance](https://tela.cagdas.io/login): the running app.
+- [MCP server docs](https://tela.cagdas.io/mcp): the endpoint, OAuth sign-in, and the full 39-tool catalog.
 
 ## Code & packages
 - [GitHub repository](https://github.com/zcag/tela): open source — Go backend (PostgreSQL), React/Milkdown frontend, and the MCP server.
-- [tela-mcp on npm](https://www.npmjs.com/package/tela-mcp): the published MCP server.
-- [MCP server docs](https://github.com/zcag/tela/blob/main/mcp/README.md): the full tool catalog and the `.mcp.json` configuration.
+- [tela-mcp on npm](https://www.npmjs.com/package/tela-mcp): a thin stdio proxy for hosts that don't speak Streamable HTTP directly.
 
 ## For agents
-Point any MCP client (Claude, Cursor, or your own agent) at a tela instance with a scoped personal access token (`tela_pat_…`, read / write / admin, pinnable to one space). The agent then reads the team's docs, writes back what it learns, searches, and comments — as a first-class participant, not a chat bolt-on.
+The MCP endpoint is `https://tela.cagdas.io/api/mcp` (Streamable HTTP). In Claude or ChatGPT, add it as a connector and sign in with OAuth — no token to paste. For code agents (Claude Code, Cursor, your own), use a scoped personal access token (`tela_pat_…`, read / write / admin, pinnable to one space) as a bearer header. Retrieve by meaning with `research` (semantic, cited) + `read_chunk`; keyword-match with `search`; write with `create_page`/`update_page`; and kick off or check a documentation run with `atlas_run` / `atlas_run_status`. The agent reads the team's docs, writes back what it learns, and the next session picks up where the last left off.
 
 ## Optional
 - [llms-full.txt](https://tela.cagdas.io/llms-full.txt): the same information with the full positioning, feature list, and FAQ.

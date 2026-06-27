@@ -10,18 +10,19 @@ import EditorMock from './EditorMock.astro';
     <div class="copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        Agent-native wiki · semantic search · in Claude &amp; ChatGPT
+        Agent-native team wiki · documents itself · in Claude &amp; ChatGPT
       </p>
 
       <h1 class="headline reveal">
-        The team wiki<br />
-        your AI can <span class="ink">read and write.</span>
+        The wiki that <span class="ink">documents itself</span> —<br />
+        and that your AI <span class="ink">reasons over.</span>
       </h1>
 
       <p class="sub reveal">
-        Connect tela to Claude and ChatGPT. The assistant searches your docs by meaning, answers
-        with the source, and edits pages when you ask. Your team gets a fast wiki with real-time
-        editing, semantic search, and content stored as plain markdown.
+        Point tela at your sources — a git repo, a Jira project — and Atlas writes a cited,
+        coverage-checked wiki, then keeps it fresh as they change. Your agents search that wiki by
+        meaning and read, write, and cite it from inside Claude and ChatGPT. Real-time editing for
+        the humans; SSO, scoped access, and an audit trail for the team.
       </p>
 
       <div class="ctas reveal">
@@ -35,7 +36,7 @@ import EditorMock from './EditorMock.astro';
       </div>
 
       <p class="proof reveal">
-        Free to start · export your markdown anytime · <code>self-host if you prefer</code>
+        Free to start · your markdown, exportable anytime · <code>self-host if you'd rather</code>
       </p>
     </div>
 
@@ -43,7 +44,7 @@ import EditorMock from './EditorMock.astro';
       <div class="art-float">
         <span class="agent-chip">
           <span class="ac-dot"></span>
-          agent retrieved <strong>incident-response</strong>
+          Atlas generated · <strong>92% covered</strong>
         </span>
       </div>
       <EditorMock class="hero-editor" />
@@ -62,7 +63,10 @@ import EditorMock from './EditorMock.astro';
     margin-inline: auto;
     padding: 4.5rem var(--space-gutter) 5rem;
     display: grid;
-    grid-template-columns: 1fr;
+    /* minmax(0,…) lets the track shrink below the editor mock's intrinsic
+       (mono chrome-url) min-content, so the copy column stays at viewport
+       width and the mock is clipped, not the page (no mobile h-scroll). */
+    grid-template-columns: minmax(0, 1fr);
     gap: 3rem;
     align-items: center;
   }
@@ -157,11 +161,11 @@ import EditorMock from './EditorMock.astro';
   }
 
   /* product art */
-  .art { position: relative; }
+  .art { position: relative; min-width: 0; }
   .art-float {
     position: absolute;
     z-index: 3;
-    right: 0.5rem;
+    left: 0.5rem;
     top: -1.1rem;
   }
   .agent-chip {
@@ -185,7 +189,7 @@ import EditorMock from './EditorMock.astro';
   }
 
   @media (min-width: 980px) {
-    .inner { grid-template-columns: 1.04fr 0.96fr; gap: 3.5rem; padding-top: 6rem; padding-bottom: 6.5rem; }
+    .inner { grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr); gap: 3.5rem; padding-top: 6rem; padding-bottom: 6.5rem; }
     .art { margin-right: -1rem; }
   }
 

@@ -1,8 +1,10 @@
 ---
-// §3 — Retrieval (the thesis, co-star). Keyword search misses; tela retrieves the
-// right SECTION by meaning. Visual: a query → ranked chunk cards with heading path,
-// snippet, score, and a hybrid (keyword + vector) badge. Then the for-humans /
-// for-agents split, and an honest note about the embedder. Token-driven, no icons-as-decor.
+// §3 — Retrieval: the shared engine, not a standalone feature. It indexes every page
+// for meaning the moment it's written — Atlas drafts against it, ask-your-docs answers
+// from it, agents call it. Keyword search misses; tela retrieves the right SECTION by
+// meaning. Visual: a query → ranked chunk cards with heading path, snippet, score, and a
+// hybrid (keyword + vector) badge. Then the for-humans / for-agents split, and an honest
+// note about the embedder. Token-driven, no icons-as-decor.
 const chunks = [
   {
     path: 'Runbooks ▸ Rollback',
@@ -32,18 +34,21 @@ const chunks = [
 ---
 <section id="search" class="rag-section">
   <div class="rag-head reveal-up">
-    <p class="kicker"><span class="kicker-dot"></span>Retrieval</p>
-    <h2 class="h2">Your agents search by meaning.</h2>
+    <p class="kicker"><span class="kicker-dot"></span>Retrieval · the engine underneath</p>
+    <h2 class="h2">The engine underneath: search by meaning.</h2>
     <p class="lede">
-      tela searches by meaning, not just keywords. A search for “rollback steps” returns the runbook
-      section that never uses the word. Keyword and semantic results are ranked together, in the
-      command palette for your team and through the connector for your agent.
+      Retrieval is the shared engine the whole AI act runs on. The moment Atlas writes a page — or a
+      human edits one — it's split into heading-aware chunks, embedded, and indexed for meaning. Atlas
+      drafts against that index, ask-your-docs answers from it, and your agents call it. A search for
+      “rollback steps” returns the runbook section that never uses the word: keyword and semantic
+      results are ranked together, in the command palette for your team and through the connector for
+      your agent.
     </p>
   </div>
 
-  <div class="rag-grid">
-    <!-- the retrieval visual -->
-    <div class="ragbox reveal-up" aria-hidden="true">
+  <!-- the engine, shown once: a query → ranked sections, then the two doors onto it -->
+  <div class="rag-engine reveal-up">
+    <div class="ragbox" aria-hidden="true">
       <div class="rag-bar">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <span class="rag-q">rollback steps<span class="rag-caret"></span></span>
@@ -64,44 +69,39 @@ const chunks = [
       </div>
     </div>
 
-    <!-- for humans / for agents -->
-    <div class="rag-split">
-      <article class="rsplit reveal-up">
+    <!-- two doors onto the same index — light, not co-star cards -->
+    <div class="rag-doors">
+      <p class="door">
         <span class="rs-tag">For your team</span>
-        <h3 class="rs-t">Command-palette search</h3>
-        <p class="rs-d">Press <kbd>⌘K</kbd> to search every space. Results are sections of pages, ranked by relevance, with the matching text highlighted.</p>
-      </article>
-
-      <article class="rsplit reveal-up">
+        <kbd>⌘K</kbd> over every space — sections ranked by relevance, matches highlighted.
+      </p>
+      <p class="door">
         <span class="rs-tag agent">For your agent</span>
-        <h3 class="rs-t">Search through the connector</h3>
-        <p class="rs-d">Claude and ChatGPT search the same way and get the matching section back with a link to the page, so answers cite a source.</p>
-      </article>
-
-      <p class="rag-honest reveal-up">
-        Semantic search is on by default on the hosted instance. When self-hosting, keyword search
-        works out of the box; semantic search needs an embedding model you point tela at.
+        Claude and ChatGPT call the same index and get the matching section back, with a link to cite.
       </p>
     </div>
   </div>
+
+  <p class="rag-honest reveal-up">
+    Semantic search is on by default on the hosted instance. When self-hosting, keyword search
+    works out of the box; semantic search needs an embedding model you point tela at.
+  </p>
 </section>
 
 <style>
+  /* Deliberately NARROWER than the col-max co-stars (Atlas, Agents): retrieval is
+     the connective engine between them, so it reads quieter and tighter, not as a
+     third full-width feature. */
   .rag-section {
-    max-width: var(--col-max);
+    max-width: 60rem;
     margin-inline: auto;
     padding: var(--section-y) var(--space-gutter);
     scroll-margin-top: 5rem;
   }
-  .rag-head { max-width: 50rem; margin-bottom: 2.5rem; }
+  .rag-head { max-width: 46rem; margin-bottom: 2rem; }
   .rag-head .lede strong { color: var(--fg); font-weight: 600; }
 
-  .rag-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1.25rem;
-    align-items: start;
-  }
+  .rag-engine { display: flex; flex-direction: column; gap: 1rem; }
 
   /* ── retrieval visual ─────────────────────────────────────────────── */
   .ragbox {
@@ -167,13 +167,19 @@ const chunks = [
     color: var(--fg-faint);
   }
 
-  /* ── for humans / for agents ──────────────────────────────────────── */
-  .rag-split { display: flex; flex-direction: column; gap: 1rem; }
-  .rsplit {
-    padding: 1.25rem 1.3rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface);
+  /* ── two doors onto the same index — lightweight, not co-star cards ── */
+  .rag-doors {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.6rem 1.5rem;
+  }
+  .door {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--fg-soft);
+    line-height: var(--leading-normal);
+    padding-left: 0.85rem;
+    border-left: 2px solid var(--border-strong);
   }
   .rs-tag {
     display: inline-block;
@@ -182,38 +188,27 @@ const chunks = [
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--accent);
-    border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
-    border-radius: var(--radius-xs);
-    padding: 0.15rem 0.5rem;
-    margin-bottom: 0.7rem;
+    margin-right: 0.5rem;
   }
-  .rs-tag.agent { color: var(--brand); border-color: var(--pill-border); background: var(--brand-wash); }
-  .rs-t {
-    font-family: var(--font-display);
-    font-size: var(--text-lg);
-    font-weight: 600;
-    color: var(--fg);
-    letter-spacing: var(--tracking-tight);
-  }
-  .rs-t code { font-family: var(--font-mono); font-size: 0.86em; color: var(--brand); }
-  .rs-d { margin-top: 0.45rem; font-size: var(--text-sm); color: var(--fg-soft); line-height: var(--leading-normal); }
-  .rs-d kbd {
+  .rs-tag.agent { color: var(--brand); }
+  .door kbd {
     font-family: var(--font-mono); font-size: 0.85em;
     padding: 1px 5px; border: 1px solid var(--border-strong);
     border-radius: var(--radius-xs); color: var(--fg-soft);
   }
   .rag-honest {
+    margin-top: 1.25rem;
+    max-width: var(--measure);
     font-size: var(--text-sm);
     color: var(--fg-faint);
     line-height: var(--leading-normal);
-    padding: 0 0.2rem;
   }
   .rag-honest code { font-family: var(--font-mono); font-size: 0.9em; color: var(--fg-soft); }
 
   @keyframes ragblink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .rag-caret { animation: none; } }
 
-  @media (min-width: 940px) {
-    .rag-grid { grid-template-columns: 1.05fr 0.95fr; gap: 1.75rem; }
+  @media (min-width: 720px) {
+    .rag-doors { grid-template-columns: 1fr 1fr; }
   }
 </style>

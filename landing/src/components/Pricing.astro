@@ -1,10 +1,12 @@
 ---
 // Pricing — plans for a personal account and for an organization. Mirrors the
 // product's tiers (backend plans table). Honest + low-hype: every plan ships the
-// whole product; tiers only change the limits — spaces, storage, members, and the
-// monthly AI-answer allowance. Indigo is earned on the one recommended org tier.
-// Numbers (incl. AI answers/month) mirror the backend plans table; keep in sync.
+// whole product; tiers only change the limits — spaces, storage, members, the
+// monthly AI-answer allowance, and the Atlas source cap. Indigo is earned on the
+// one recommended org tier, plus one earned accent on the Atlas flagship band.
+// Numbers (AI answers/month + Atlas sources) mirror the backend plans table; keep in sync.
 const includes = [
+  'Atlas — generate & refresh a cited, coverage-checked wiki from a git repo or Jira project',
   'Semantic search + ask your docs, with citations',
   'MCP connector for Claude & ChatGPT',
   'Local folder sync over WebDAV',
@@ -25,7 +27,7 @@ const personal = [
     price: '$0',
     period: 'free forever',
     blurb: 'Personal notes and trying tela.',
-    specs: ['3 spaces', '100 pages / space', '100 MB storage', '50 AI answers / month'],
+    specs: ['1 Atlas source', '3 spaces', '100 pages / space', '100 MB storage', '50 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io/register',
     action: 'app',
@@ -36,7 +38,7 @@ const personal = [
     price: '$8',
     period: 'per month',
     blurb: 'For power users who live in their wiki.',
-    specs: ['25 spaces', '1,000 pages / space', '5 GB storage', '1,000 AI answers / month'],
+    specs: ['5 Atlas sources', '25 spaces', '1,000 pages / space', '5 GB storage', '1,000 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io/register',
     action: 'trial',
@@ -50,7 +52,7 @@ const org = [
     price: '$0',
     period: 'up to 5 members',
     blurb: 'A small team getting started.',
-    specs: ['10 spaces', '500 pages / space', '1 GB storage', '5 members', '50 AI answers / month'],
+    specs: ['1 Atlas source', '10 spaces', '500 pages / space', '1 GB storage', '5 members', '50 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io/register',
     action: 'app',
@@ -61,7 +63,7 @@ const org = [
     price: '$6',
     period: 'per member / month',
     blurb: 'A growing team that runs on its docs.',
-    specs: ['100 spaces', 'Unlimited pages', '50 GB storage', '50 members', '2,000 AI answers / month'],
+    specs: ['20 Atlas sources', '100 spaces', 'Unlimited pages', '50 GB storage', '50 members', '2,000 AI answers / month'],
     cta: 'Get started',
     href: 'https://tela.cagdas.io/register',
     action: 'trial',
@@ -72,7 +74,7 @@ const org = [
     price: 'Custom',
     period: "let's talk",
     blurb: 'SSO, audit, and scale for a big team.',
-    specs: ['Unlimited spaces', 'Unlimited pages', 'Unlimited storage', 'Unlimited members', 'Unlimited AI'],
+    specs: ['Unlimited Atlas sources', 'Unlimited spaces', 'Unlimited pages', 'Unlimited storage', 'Unlimited members', 'Unlimited AI'],
     cta: 'Get in touch',
     href: `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('tela Enterprise')}`,
     action: 'contact',
@@ -85,13 +87,22 @@ const org = [
     <p class="kicker"><span class="kicker-dot"></span>Pricing</p>
     <h2 class="h2">Simple plans. Your markdown either way.</h2>
     <p class="lede">
-      A personal account and every organization carry their own tier. Tiers only change the
-      limits — spaces, storage, and how many AI answers a month — while
-      <strong>the wiki, the search, and the agent connector are the same on every plan</strong>.
+      A personal account and every organization carry their own tier.
+      <strong>Every plan includes the whole product — Atlas, semantic search, ask-your-docs, and the agent connector</strong>.
+      Tiers only change the limits: spaces, storage, how many AI answers a month, and how much Atlas generation you get.
     </p>
     <p class="trial-note">
       <span class="trial-dot"></span>
       Every new account starts on a <strong>30-day Plus trial</strong> — full AI limits, no card.
+    </p>
+  </div>
+
+  <div class="atlas-band reveal-up">
+    <p class="kicker"><span class="kicker-dot"></span>Flagship</p>
+    <p class="atlas-band-text">
+      <strong>Atlas is on every plan</strong> — point it at a git repo or Jira project and it
+      writes a cited, coverage-checked wiki and keeps it fresh. Paid tiers raise how much you
+      can generate.
     </p>
   </div>
 
@@ -250,6 +261,27 @@ const org = [
     box-shadow: var(--glow-brand);
     flex: none;
   }
+
+  /* Atlas flagship band — leads the plan ladder. Carries the section's one
+     earned indigo accent (the brand bar) so Atlas reads as the headline, without
+     out-shouting the recommended Team card below. */
+  .atlas-band {
+    margin: 2rem 0 2.5rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid var(--pill-border);
+    border-left: 2px solid var(--brand);
+    border-radius: var(--radius-lg);
+    background: var(--brand-wash);
+  }
+  .atlas-band .kicker { margin: 0 0 0.5rem; }
+  .atlas-band-text {
+    margin: 0;
+    max-width: 70ch;
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    color: var(--fg-soft);
+  }
+  .atlas-band-text strong { color: var(--fg); font-weight: 600; }
 
   .tiers { margin-bottom: 2.5rem; }
   .tiers:last-of-type { margin-bottom: 0; }
