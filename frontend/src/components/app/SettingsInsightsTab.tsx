@@ -92,9 +92,9 @@ export function SettingsInsightsTab() {
 
         {/* Growth & signups */}
         <Section title="Signups & activation" desc="Who's joining, and whether they do anything once they're in.">
-          <div className="grid gap-[var(--space-5)] lg:grid-cols-[minmax(0,16rem)_1fr]">
-            <div className="flex items-center gap-[var(--space-4)]">
-              <CoverageGauge value={activation} caption="activated" size="lg" />
+          <div className="grid gap-[var(--space-5)] lg:grid-cols-[auto_1fr] items-start">
+            <div className="flex items-center gap-[var(--space-4)] lg:flex-col lg:items-start">
+              <CoverageGauge value={activation} caption="activated" size="md" />
               <div className="flex flex-col gap-[var(--space-1)]">
                 <span className="text-[length:var(--text-sm)] text-[var(--text-primary)]">
                   <span className="font-semibold tabular-nums">{nf(s.activated)}</span>
@@ -151,9 +151,9 @@ export function SettingsInsightsTab() {
 
         {/* AI & retrieval */}
         <Section title="AI & retrieval" desc="Ask usage and the questions your docs couldn't answer — a to-do list for what to write.">
-          <div className="grid gap-[var(--space-5)] lg:grid-cols-[minmax(0,16rem)_1fr]">
-            <div className="flex items-center gap-[var(--space-4)]">
-              <CoverageGauge value={answerRate} caption="answered" size="lg" />
+          <div className="grid gap-[var(--space-5)] lg:grid-cols-[auto_1fr] items-start">
+            <div className="flex items-center gap-[var(--space-4)] lg:flex-col lg:items-start">
+              <CoverageGauge value={answerRate} caption="answered" size="md" />
               <div className="flex flex-col gap-[var(--space-1)]">
                 <span className="text-[length:var(--text-sm)] text-[var(--text-primary)]">
                   <span className="font-semibold tabular-nums">{nf(s.asks_30)}</span>
