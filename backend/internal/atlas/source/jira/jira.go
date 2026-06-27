@@ -260,7 +260,7 @@ func (c *Connector) HasChanges(ctx context.Context, src core.Source, fromRef str
 	if key == "" {
 		return false, fmt.Errorf("jira: project key required (set source subpath)")
 	}
-	jql := fmt.Sprintf("project=%s AND updated >= %q", key, jqlTime(fromRef))
+	jql := fmt.Sprintf("project=%s AND updated >= %q", key, jqlTimeAfter(fromRef))
 	n, err := c.clientFor(src).countSince(ctx, jql)
 	if err != nil {
 		return false, err
@@ -409,4 +409,19 @@ func jqlTime(ref string) string {
 		return ref[:10]
 	}
 	return ref
+}
+
+// jqlTimeAfter renders the JQL minute STRICTLY AFTER ref's minute, so an
+// `updated >= jqlTimeAfter(ref)` probe excludes ref's own boundary minute. The
+// ref is the latest issue's `updated` time and JQL is minute-precision, so a
+// plain `>= jqlTime(ref)` always re-matches the issue that defined the ref →
+// perpetual false "stale". Rounding up to the next minute fixes that; the only
+// cost is a sub-minute blind spot at the exact snapshot boundary (negligible —
+// the next probe/run catches anything later).
+func jqlTimeAfter(ref string) string {
+	r := normalizeRef(ref)
+	if t, err := time.Parse(time.RFC3339, r); err == nil {
+		return t.UTC().Truncate(time.Minute).Add(time.Minute).Format("2006-01-02 15:04")
+	}
+	return jqlTime(ref)
 }
