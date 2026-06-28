@@ -28,7 +28,7 @@ const UPGRADE_URL = 'https://telawiki.com/settings?tab=billing';
 // per-MONTH equivalent of the annual price, with "billed annually" + the full
 // yearly figure on the save line. priceYearMo = annual / 12. Free and Enterprise
 // have no yearly option (priceYearMo: null) — the toggle leaves them as-is.
-// 2 months free: Plus $80/yr → $6.67/mo (save $16); Team $60/seat/yr → $5/mo (save $12/seat).
+// Plus $72/yr → $6/mo (25% off, save $24); Team $60/seat/yr → $5/mo (2 months free, save $12/seat).
 const personal = [
   {
     name: 'Free',
@@ -48,9 +48,9 @@ const personal = [
     name: 'Plus',
     price: '$8',
     period: 'per month',
-    priceYearMo: '$6.67',
+    priceYearMo: '$6',
     periodYear: '/mo',
-    saveYear: 'Billed annually — $80/yr, save $16',
+    saveYear: 'Billed annually — $72/yr, save $24',
     blurb: 'For power users who live in their wiki.',
     specs: ['5 Atlas sources', '25 spaces', '1,000 pages / space', '5 GB storage', '1,000 AI answers / month'],
     cta: 'Get Plus',
@@ -135,7 +135,7 @@ const org = [
       <button type="button" class="billing-opt" data-period="month" role="tab" aria-selected="false">Monthly</button>
       <button type="button" class="billing-opt is-active" data-period="year" role="tab" aria-selected="true">Yearly</button>
     </div>
-    <span class="billing-save">2 months free</span>
+    <span class="billing-save">Save up to 25%</span>
   </div>
 
   <div class="tiers tiers--duo reveal-up">

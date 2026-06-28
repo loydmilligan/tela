@@ -68,8 +68,12 @@ Only mapped (tier, cadence) pairs are purchasable self-serve. Free tiers and
 (`ProductFor(planKey, interval)`, at checkout) and reverse (`PlanFor`, in
 reconciliation — it strips the `@year` suffix, so cadence is irrelevant to which
 tier a subscription grants). Yearly **display** prices live in
-`plans.price_cents_yearly` (migration `0054`); pricing is "2 months free" (10×
-the monthly), e.g. Plus `$80/yr`, Team `$60/seat/yr`.
+`plans.price_cents_yearly` (migrations `0054` + `0055`). Discounts are per-tier
+(chosen so the per-month equivalent is a clean number): Plus `$72/yr` = `$6/mo`
+(25% off `$8/mo`); Team `$60/seat/yr` = `$5/mo` (2 months free off `$6/mo`). The
+landing mirrors these. **The display price must match the Polar product price** —
+repricing a tier means editing both `plans.price_cents_yearly` *and* the tier's
+Polar product.
 
 ## Flows
 
@@ -119,7 +123,7 @@ genuine DB failure returns 500 (so Polar redelivers).
 ## Going live — operator checklist
 
 1. **Products.** In the Polar dashboard create a product+price for each paid
-   tier **and cadence**: Plus `$8/mo` + Plus (Yearly) `$80/yr`, Team `$6/seat/mo`
+   tier **and cadence**: Plus `$8/mo` + Plus (Yearly) `$72/yr`, Team `$6/seat/mo`
    + Team (Yearly) `$60/seat/yr`. A yearly product is a recurring product with the
    billing cycle set to `year`. Note each product UUID. Keep numbers in sync with
    the `plans` table (`price_cents` + `price_cents_yearly`) — the source of truth
