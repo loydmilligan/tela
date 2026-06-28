@@ -50,7 +50,7 @@ export function usePlans() {
 // Entitlement is granted later by the webhook, not this redirect.
 export function useCheckout() {
   return useMutation({
-    mutationFn: (input: { plan_key: string; org_id?: number }) =>
+    mutationFn: (input: { plan_key: string; org_id?: number; interval?: 'month' | 'year' }) =>
       api<{ url: string }>('/api/billing/checkout', {
         method: 'POST',
         body: JSON.stringify(input),

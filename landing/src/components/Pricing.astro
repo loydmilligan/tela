@@ -24,11 +24,17 @@ const CONTACT_EMAIL = 'tela@cagdas.io';
 const REGISTER_URL = 'https://tela.cagdas.io/register';
 const UPGRADE_URL = 'https://tela.cagdas.io/settings?tab=billing';
 
+// Paid tiers carry a yearly cadence (priceYear / periodYear / saveYear). Free and
+// Enterprise have no yearly option (priceYear: null) — the toggle leaves them as-is.
+// 2 months free: Plus $80/yr (save $16), Team $60/seat/yr (save $12/seat).
 const personal = [
   {
     name: 'Free',
     price: '$0',
     period: 'free forever',
+    priceYear: null,
+    periodYear: null,
+    saveYear: null,
     blurb: 'Personal notes and trying tela.',
     specs: ['1 Atlas source', '3 spaces', '100 pages / space', '100 MB storage', '50 AI answers / month'],
     cta: 'Get started',
@@ -40,6 +46,9 @@ const personal = [
     name: 'Plus',
     price: '$8',
     period: 'per month',
+    priceYear: '$80',
+    periodYear: 'per year',
+    saveYear: 'Save $16/yr',
     blurb: 'For power users who live in their wiki.',
     specs: ['5 Atlas sources', '25 spaces', '1,000 pages / space', '5 GB storage', '1,000 AI answers / month'],
     cta: 'Get Plus',
@@ -54,6 +63,9 @@ const org = [
     name: 'Free',
     price: '$0',
     period: 'up to 5 members',
+    priceYear: null,
+    periodYear: null,
+    saveYear: null,
     blurb: 'A small team getting started.',
     specs: ['1 Atlas source', '10 spaces', '500 pages / space', '1 GB storage', '5 members', '50 AI answers / month'],
     cta: 'Get started',
@@ -65,6 +77,9 @@ const org = [
     name: 'Team',
     price: '$6',
     period: 'per member / month',
+    priceYear: '$60',
+    periodYear: 'per member / year',
+    saveYear: 'Save $12/seat/yr',
     blurb: 'A growing team that runs on its docs.',
     specs: ['20 Atlas sources', '100 spaces', 'Unlimited pages', '50 GB storage', '50 members', '2,000 AI answers / month'],
     cta: 'Get Team',
@@ -76,6 +91,9 @@ const org = [
     name: 'Enterprise',
     price: 'Custom',
     period: "let's talk",
+    priceYear: null,
+    periodYear: null,
+    saveYear: null,
     blurb: 'SSO, audit, and scale for a big team.',
     specs: ['Unlimited Atlas sources', 'Unlimited spaces', 'Unlimited pages', 'Unlimited storage', 'Unlimited members', 'Unlimited AI'],
     cta: 'Get in touch',
@@ -96,6 +114,16 @@ const org = [
     </p>
   </div>
 
+  {/* Monthly/Yearly toggle — progressive enhancement: hidden until the inline
+      script wires it (no-JS sees the default monthly prices, no dead control). */}
+  <div class="billing-toggle reveal-up" role="tablist" aria-label="Billing period" hidden>
+    <div class="billing-seg">
+      <button type="button" class="billing-opt is-active" data-period="month" role="tab" aria-selected="true">Monthly</button>
+      <button type="button" class="billing-opt" data-period="year" role="tab" aria-selected="false">Yearly</button>
+    </div>
+    <span class="billing-save">2 months free</span>
+  </div>
+
   <div class="atlas-band reveal-up">
     <p class="kicker"><span class="kicker-dot"></span>Flagship</p>
     <p class="atlas-band-text">
@@ -114,7 +142,11 @@ const org = [
             <h3 class="price-name">{p.name}</h3>
             {p.featured ? <span class="price-tag">Recommended</span> : null}
           </header>
-          <p class="price-amount">{p.price}<span class="price-period">{p.period}</span></p>
+          <p class="price-amount">
+            <span class="price-amt" data-amt-month={p.price} data-amt-year={p.priceYear ?? p.price}>{p.price}</span>
+            <span class="price-period" data-per-month={p.period} data-per-year={p.periodYear ?? p.period}>{p.period}</span>
+          </p>
+          {p.saveYear ? <p class="price-save" data-save hidden>{p.saveYear}</p> : null}
           <p class="price-blurb">{p.blurb}</p>
           <ul class="price-specs">
             {p.specs.map((s) => <li>{s}</li>)}
@@ -127,6 +159,8 @@ const org = [
               class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'}
               target="_blank"
               rel="noopener"
+              data-buy-cta={p.action === 'buy' ? '' : undefined}
+              data-href-base={p.action === 'buy' ? p.href : undefined}
             >{p.cta}</a>
           )}
         </article>
@@ -143,7 +177,11 @@ const org = [
             <h3 class="price-name">{p.name}</h3>
             {p.featured ? <span class="price-tag">Recommended</span> : null}
           </header>
-          <p class="price-amount">{p.price}<span class="price-period">{p.period}</span></p>
+          <p class="price-amount">
+            <span class="price-amt" data-amt-month={p.price} data-amt-year={p.priceYear ?? p.price}>{p.price}</span>
+            <span class="price-period" data-per-month={p.period} data-per-year={p.periodYear ?? p.period}>{p.period}</span>
+          </p>
+          {p.saveYear ? <p class="price-save" data-save hidden>{p.saveYear}</p> : null}
           <p class="price-blurb">{p.blurb}</p>
           <ul class="price-specs">
             {p.specs.map((s) => <li>{s}</li>)}
@@ -156,6 +194,8 @@ const org = [
               class={p.featured ? 'price-cta price-cta--primary' : 'price-cta'}
               target="_blank"
               rel="noopener"
+              data-buy-cta={p.action === 'buy' ? '' : undefined}
+              data-href-base={p.action === 'buy' ? p.href : undefined}
             >{p.cta}</a>
           )}
         </article>
@@ -194,6 +234,40 @@ const org = [
 
 </section>
 
+<script is:inline>
+  (function () {
+    var sec = document.getElementById('pricing');
+    var toggle = sec && sec.querySelector('.billing-toggle');
+    if (!toggle) return;
+    toggle.hidden = false; // reveal only with JS — no dead control for no-JS users
+    var opts = toggle.querySelectorAll('.billing-opt');
+    function apply(period) {
+      sec.querySelectorAll('.price-amt').forEach(function (el) {
+        el.textContent = el.getAttribute('data-amt-' + period);
+      });
+      sec.querySelectorAll('.price-period').forEach(function (el) {
+        el.textContent = el.getAttribute('data-per-' + period);
+      });
+      sec.querySelectorAll('[data-save]').forEach(function (el) {
+        el.hidden = period !== 'year';
+      });
+      // Carry the cadence to the app so a yearly click lands on yearly checkout.
+      sec.querySelectorAll('[data-buy-cta]').forEach(function (a) {
+        var base = a.getAttribute('data-href-base');
+        a.href = period === 'year' ? base + '&interval=year' : base;
+      });
+      opts.forEach(function (b) {
+        var on = b.getAttribute('data-period') === period;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+    }
+    opts.forEach(function (b) {
+      b.addEventListener('click', function () { apply(b.getAttribute('data-period')); });
+    });
+  })();
+</script>
+
 <style>
   /* Trial reassurance, deliberately quiet fine-print under the tiers — the trial
      is a perk, not the headline. Purchase (the plan CTAs) leads; this reassures. */
@@ -224,6 +298,57 @@ const org = [
     color: var(--fg-soft);
   }
   .atlas-band-text strong { color: var(--fg); font-weight: 600; }
+
+  /* Monthly/Yearly segmented toggle */
+  .billing-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin: 1.75rem 0 0;
+  }
+  .billing-seg {
+    display: inline-flex;
+    padding: 0.25rem;
+    border: 1px solid var(--pill-border);
+    border-radius: var(--radius-full);
+    background: var(--brand-wash);
+  }
+  .billing-opt {
+    appearance: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.4rem 1rem;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--fg-soft);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+  }
+  .billing-opt.is-active {
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-frame, none);
+  }
+  .billing-save {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--brand-strong);
+    border: 1px solid var(--pill-border);
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.5rem;
+    white-space: nowrap;
+  }
+  .price-save {
+    margin: -0.4rem 0 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--brand-strong);
+  }
 
   .tiers { margin-bottom: 2.5rem; }
   .tiers:last-of-type { margin-bottom: 0; }

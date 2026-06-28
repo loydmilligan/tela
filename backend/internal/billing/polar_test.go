@@ -73,22 +73,36 @@ func TestVerifyWebhook(t *testing.T) {
 }
 
 func TestProductMapping(t *testing.T) {
-	cfg := Config{Products: parseProducts(" personal_plus:prod_a , org_team:prod_b ,bad,empty: ")}
+	cfg := Config{Products: parseProducts(
+		" personal_plus:prod_a , personal_plus@year:prod_ay , org_team:prod_b , org_team@year:prod_by ,bad,empty: ")}
 	c := New(cfg)
 
-	if id, ok := c.ProductFor("personal_plus"); !ok || id != "prod_a" {
-		t.Fatalf("ProductFor(personal_plus) = %q,%v", id, ok)
+	// Monthly + yearly forward lookups.
+	if id, ok := c.ProductFor("personal_plus", IntervalMonth); !ok || id != "prod_a" {
+		t.Fatalf("ProductFor(personal_plus, month) = %q,%v", id, ok)
 	}
-	if _, ok := c.ProductFor("personal_free"); ok {
+	if id, ok := c.ProductFor("personal_plus", IntervalYear); !ok || id != "prod_ay" {
+		t.Fatalf("ProductFor(personal_plus, year) = %q,%v", id, ok)
+	}
+	if id, ok := c.ProductFor("org_team", IntervalYear); !ok || id != "prod_by" {
+		t.Fatalf("ProductFor(org_team, year) = %q,%v", id, ok)
+	}
+	if _, ok := c.ProductFor("personal_free", IntervalMonth); ok {
 		t.Fatal("free tier should have no product")
 	}
+
+	// Reverse map ignores cadence — both monthly and yearly products of a tier
+	// resolve to the same plan key (the "@year" suffix is stripped).
 	if plan, ok := c.PlanFor("prod_b"); !ok || plan != "org_team" {
 		t.Fatalf("PlanFor(prod_b) = %q,%v", plan, ok)
+	}
+	if plan, ok := c.PlanFor("prod_ay"); !ok || plan != "personal_plus" {
+		t.Fatalf("PlanFor(prod_ay yearly) should map to personal_plus, got %q,%v", plan, ok)
 	}
 	if _, ok := c.PlanFor("prod_unknown"); ok {
 		t.Fatal("unknown product should not reverse-map")
 	}
-	if len(cfg.Products) != 2 {
+	if len(cfg.Products) != 4 {
 		t.Fatalf("malformed pairs should be skipped, got %v", cfg.Products)
 	}
 }

@@ -52,9 +52,13 @@ type plan struct {
 	MaxStorageBytes  *int64 `json:"max_storage_bytes"`
 	MaxMembers       *int64 `json:"max_members"`
 	Listed           bool   `json:"listed"`
-	// Display pricing (no billing engine). PriceCents nil = custom/contact, 0 = free.
-	PriceCents  *int64 `json:"price_cents"`
-	PricePeriod string `json:"price_period"`
+	// Display pricing. PriceCents nil = custom/contact, 0 = free. PriceCentsYearly
+	// is the annual amount (nil = no yearly option); the yearly cadence is sold via
+	// the `<plan>@year` Polar products (see internal/billing). Self-serve checkout
+	// is live — these drive the in-app catalog + the landing from one source.
+	PriceCents       *int64 `json:"price_cents"`
+	PricePeriod      string `json:"price_period"`
+	PriceCentsYearly *int64 `json:"price_cents_yearly"`
 	// Features is the boolean entitlement map (e.g. managed_rag, publishing).
 	// Quotas say "how many"; features say "is X allowed". Never nil after scan.
 	Features map[string]bool `json:"features"`
@@ -79,22 +83,23 @@ func nullToPtr(n sql.NullInt64) *int64 {
 // `name` column with orgs — every query selecting these must alias plans as p.
 // listed is INTEGER 0/1 (SQLite-era convention) — scanned into an int, not a
 // bool, because pgx is strict about the integer→bool mismatch.
-const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period, p.features, p.max_llm_calls_per_month, p.max_atlas_sources`
+const planCols = `p.key, p.account_kind, p.name, p.max_spaces, p.max_pages_per_space, p.max_storage_bytes, p.max_members, p.listed, p.price_cents, p.price_period, p.features, p.max_llm_calls_per_month, p.max_atlas_sources, p.price_cents_yearly`
 
 func scanPlan(row interface{ Scan(...any) error }) (plan, error) {
 	var (
-		p                                                           plan
-		spaces, pages, storage, members, cents, llmCalls, atlasSrcs sql.NullInt64
-		listed                                                      int
-		featuresRaw                                                 []byte
+		p                                                                      plan
+		spaces, pages, storage, members, cents, llmCalls, atlasSrcs, centsYear sql.NullInt64
+		listed                                                                 int
+		featuresRaw                                                            []byte
 	)
-	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod, &featuresRaw, &llmCalls, &atlasSrcs); err != nil {
+	if err := row.Scan(&p.Key, &p.AccountKind, &p.Name, &spaces, &pages, &storage, &members, &listed, &cents, &p.PricePeriod, &featuresRaw, &llmCalls, &atlasSrcs, &centsYear); err != nil {
 		return plan{}, err
 	}
 	p.MaxSpaces, p.MaxPagesPerSpace = nullToPtr(spaces), nullToPtr(pages)
 	p.MaxStorageBytes, p.MaxMembers = nullToPtr(storage), nullToPtr(members)
 	p.Listed = listed == 1
 	p.PriceCents = nullToPtr(cents)
+	p.PriceCentsYearly = nullToPtr(centsYear)
 	p.MaxLLMCallsPerMonth = nullToPtr(llmCalls)
 	p.MaxAtlasSources = nullToPtr(atlasSrcs)
 	p.Features = map[string]bool{}

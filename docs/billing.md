@@ -53,26 +53,36 @@ Polar echoes it on every webhook as `data.customer.external_id`. (We also stamp
 ## Plan ↔ product mapping
 
 Polar products are created in the Polar dashboard; tela references them by UUID.
-`TELA_POLAR_PRODUCTS` maps tela plan keys to those UUIDs:
+`TELA_POLAR_PRODUCTS` maps tela plan keys to those UUIDs. A `<plan>@year` key is
+the **yearly** product for that tier; the bare key is monthly. Each paid tier
+therefore has two Polar products (one per cadence) — both grant the same
+`plan_key`:
 
 ```
-TELA_POLAR_PRODUCTS=personal_plus:<product-uuid>,org_team:<product-uuid>
+TELA_POLAR_PRODUCTS=personal_plus:<m-uuid>,personal_plus@year:<y-uuid>,org_team:<m-uuid>,org_team@year:<y-uuid>
 ```
 
-Only mapped tiers are purchasable self-serve. Free tiers and `org_enterprise`
-(custom-priced) are intentionally unmapped — checkout for them 400s
-`plan_not_purchasable`. The map is read both ways: forward (`ProductFor`, at
-checkout) and reverse (`PlanFor`, in reconciliation).
+Only mapped (tier, cadence) pairs are purchasable self-serve. Free tiers and
+`org_enterprise` (custom-priced) are intentionally unmapped — checkout for them
+400s `plan_not_purchasable`. The map is read both ways: forward
+(`ProductFor(planKey, interval)`, at checkout) and reverse (`PlanFor`, in
+reconciliation — it strips the `@year` suffix, so cadence is irrelevant to which
+tier a subscription grants). Yearly **display** prices live in
+`plans.price_cents_yearly` (migration `0054`); pricing is "2 months free" (10×
+the monthly), e.g. Plus `$80/yr`, Team `$60/seat/yr`.
 
 ## Flows
 
 ### Checkout — `POST /api/billing/checkout`
 
-Session-authed. Body `{plan_key, org_id?}` (omit `org_id` for the personal
-account; an org upgrade requires the caller be that org's admin). Validates the
-tier exists, matches the account kind, and has a product, then creates a Polar
-checkout and returns its hosted `url`. Org checkouts seed the seat quantity from
-the current member count. The frontend redirects the browser to `url`.
+Session-authed. Body `{plan_key, org_id?, interval?}` (omit `org_id` for the
+personal account; an org upgrade requires the caller be that org's admin;
+`interval` is `month` (default) or `year`). Validates the tier exists, matches the
+account kind, and has a product for that cadence, then creates a Polar checkout
+and returns its hosted `url`. Org checkouts seed the seat quantity from the
+current member count. The frontend redirects the browser to `url`. (The landing's
+yearly toggle deep-links `?interval=year`, which the in-app billing tab honors to
+pre-select yearly.)
 
 Entitlement is **not** granted from the redirect — the user can close the tab.
 It's granted by the webhook below.
@@ -109,9 +119,11 @@ genuine DB failure returns 500 (so Polar redelivers).
 ## Going live — operator checklist
 
 1. **Products.** In the Polar dashboard create a product+price for each paid
-   tier (Plus `$8/mo`, Team `$6/seat/mo`). Note each product UUID. Keep numbers
-   in sync with the `plans` table (the source of truth — see
-   [metering](metering.md)).
+   tier **and cadence**: Plus `$8/mo` + Plus (Yearly) `$80/yr`, Team `$6/seat/mo`
+   + Team (Yearly) `$60/seat/yr`. A yearly product is a recurring product with the
+   billing cycle set to `year`. Note each product UUID. Keep numbers in sync with
+   the `plans` table (`price_cents` + `price_cents_yearly`) — the source of truth
+   (see [metering](metering.md)).
 2. **Token.** Create an Organization Access Token with scopes `checkouts:write`,
    `customer_sessions:write`, `products:read`, `subscriptions:read`,
    `orders:read` → `TELA_POLAR_TOKEN`.

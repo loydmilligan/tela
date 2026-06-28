@@ -21,8 +21,9 @@ func wiredBillingServer(t *testing.T) (*Server, *sql.DB) {
 		Token:         "test_token",
 		WebhookSecret: "test_secret",
 		Products: map[string]string{
-			"personal_plus": "prod_plus",
-			"org_team":      "prod_team",
+			"personal_plus":      "prod_plus",
+			"personal_plus@year": "prod_plus_yearly",
+			"org_team":           "prod_team",
 		},
 	})
 	return s, d
@@ -123,5 +124,21 @@ func TestReconcileUnmappedProductIsNoop(t *testing.T) {
 	}
 	if plan, _, _ := acctPlan(t, d, "users", uid); plan != "personal_free" {
 		t.Fatalf("unmapped product changed plan to %q", plan)
+	}
+}
+
+// A subscription on the YEARLY product grants the same tier as monthly — the
+// reconciler resolves product → plan ignoring cadence.
+func TestReconcileYearlyProductGrantsSameTier(t *testing.T) {
+	s, d := wiredBillingServer(t)
+	ctx := context.Background()
+	uid := seedUser(t, d, "carol", "pw123456", false)
+	ext := acctExternalID(account{Kind: accountUser, ID: uid})
+
+	if err := s.reconcileBilling(ctx, subEvent("subscription.active", ext, "prod_plus_yearly", "active", false)); err != nil {
+		t.Fatalf("yearly active: %v", err)
+	}
+	if plan, status, _ := acctPlan(t, d, "users", uid); plan != "personal_plus" || status != "active" {
+		t.Fatalf("yearly product should grant personal_plus, got plan=%q status=%q", plan, status)
 	}
 }

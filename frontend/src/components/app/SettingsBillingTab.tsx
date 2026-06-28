@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Check, HardDrive, Layers, Sparkles, Users } from 'lucide-react'
 import { useMe } from '../../lib/queries/auth'
 import { useOrgs } from '../../lib/queries/orgs'
@@ -51,6 +52,73 @@ function formatPrice(cents: number | null): string {
   return `$${Math.round(cents / 100)}`
 }
 
+type BillingPeriod = 'month' | 'year'
+
+// Price for the selected cadence. Yearly falls back to monthly when a tier has no
+// yearly option (free / custom tiers).
+function priceForPeriod(p: Plan, period: BillingPeriod): number | null {
+  if (period === 'year' && p.price_cents_yearly != null) return p.price_cents_yearly
+  return p.price_cents
+}
+
+// The qualifier under the amount. Monthly uses the DB-authored label; the yearly
+// label is derived (the only yearly tiers are the per-account paid ones).
+function periodLabel(p: Plan, period: BillingPeriod): string {
+  if (period === 'year' && p.price_cents_yearly != null) {
+    return p.account_kind === 'org' ? 'per member / year' : 'per year'
+  }
+  return p.price_period
+}
+
+// Saving vs paying monthly for a year (whole dollars), or null if no yearly price.
+function yearlySavingsDollars(p: Plan): number | null {
+  if (p.price_cents == null || p.price_cents_yearly == null) return null
+  const save = p.price_cents * 12 - p.price_cents_yearly
+  return save > 0 ? Math.round(save / 100) : null
+}
+
+// Compact price for a CTA button, e.g. "$8/mo", "$80/yr", "$6/seat/mo".
+function compactPrice(p: Plan, period: BillingPeriod): string {
+  const cents = priceForPeriod(p, period)
+  if (cents == null) return ''
+  const yearly = period === 'year' && p.price_cents_yearly != null
+  const seat = p.account_kind === 'org' ? '/seat' : ''
+  return `$${Math.round(cents / 100)}${seat}${yearly ? '/yr' : '/mo'}`
+}
+
+// Monthly/Yearly segmented control (owned primitives + tokens) with a savings pill.
+function BillingPeriodToggle({
+  value,
+  onChange,
+}: {
+  value: BillingPeriod
+  onChange: (v: BillingPeriod) => void
+}) {
+  return (
+    <div className="inline-flex items-center gap-[var(--space-2)]">
+      <div className="inline-flex gap-[var(--space-1)] rounded-[var(--radius-md)] border border-[var(--border-subtle)] p-[var(--space-1)]">
+        <Button
+          variant={value === 'month' ? 'secondary' : 'ghost'}
+          size="sm"
+          aria-pressed={value === 'month'}
+          onClick={() => onChange('month')}
+        >
+          Monthly
+        </Button>
+        <Button
+          variant={value === 'year' ? 'secondary' : 'ghost'}
+          size="sm"
+          aria-pressed={value === 'year'}
+          onClick={() => onChange('year')}
+        >
+          Yearly
+        </Button>
+      </div>
+      {value === 'year' ? <Badge variant="accent">2 months free</Badge> : null}
+    </div>
+  )
+}
+
 interface MetricProps {
   icon: React.ReactNode
   label: string
@@ -84,7 +152,15 @@ export function Metric({ icon, label, used, max, format }: MetricProps) {
 // unsubscribed, or manage/cancel (customer portal) once subscribed. Rendered for
 // the account's own controller (the user for their personal account; an org
 // admin for an org) — the backend re-checks the same authority.
-function BillingActions({ usage, plans }: { usage: Usage; plans: Plan[] }) {
+function BillingActions({
+  usage,
+  plans,
+  period,
+}: {
+  usage: Usage
+  plans: Plan[]
+  period: BillingPeriod
+}) {
   const checkout = useCheckout()
   const portal = useBillingPortal()
   const orgId = usage.account_kind === 'org' ? usage.account_id : undefined
@@ -141,17 +217,22 @@ function BillingActions({ usage, plans }: { usage: Usage; plans: Plan[] }) {
   if (targets.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-[var(--space-2)] border-t border-[var(--border-subtle)] pt-[var(--space-3)]">
-      {targets.map((p) => (
-        <Button
-          key={p.key}
-          variant="primary"
-          size="sm"
-          disabled={busy}
-          onClick={() => checkout.mutate({ plan_key: p.key, org_id: orgId }, { onError })}
-        >
-          Upgrade to {p.name}
-        </Button>
-      ))}
+      {targets.map((p) => {
+        // Bill yearly only when the tier actually has a yearly product; else the
+        // toggle is a no-op for that tier and it stays monthly.
+        const interval: BillingPeriod = period === 'year' && p.price_cents_yearly != null ? 'year' : 'month'
+        return (
+          <Button
+            key={p.key}
+            variant="primary"
+            size="sm"
+            disabled={busy}
+            onClick={() => checkout.mutate({ plan_key: p.key, org_id: orgId, interval }, { onError })}
+          >
+            Upgrade to {p.name} · {compactPrice(p, interval)}
+          </Button>
+        )
+      })}
     </div>
   )
 }
@@ -167,6 +248,7 @@ function UsageCard({
   account,
   plans,
   canManage,
+  period = 'month',
 }: {
   title: string
   subtitle?: string
@@ -176,6 +258,7 @@ function UsageCard({
   account?: { kind: 'user' | 'org'; id: number } | null
   plans?: Plan[]
   canManage?: boolean
+  period?: BillingPeriod
 }) {
   return (
     <Card className="flex flex-col gap-[var(--space-4)] p-[var(--space-5)]">
@@ -234,7 +317,7 @@ function UsageCard({
       )}
 
       {canManage && usage && plans ? (
-        <BillingActions usage={usage} plans={plans} />
+        <BillingActions usage={usage} plans={plans} period={period} />
       ) : null}
 
       {account && usage ? (
@@ -266,7 +349,15 @@ function planSpecs(p: Plan): string[] {
   return specs
 }
 
-function PlanCatalog({ plans, currentKey }: { plans: Plan[]; currentKey: string | undefined }) {
+function PlanCatalog({
+  plans,
+  currentKey,
+  period,
+}: {
+  plans: Plan[]
+  currentKey: string | undefined
+  period: BillingPeriod
+}) {
   const groups: { kind: 'user' | 'org'; label: string }[] = [
     { kind: 'user', label: 'Personal' },
     { kind: 'org', label: 'Organization' },
@@ -300,14 +391,19 @@ function PlanCatalog({ plans, currentKey }: { plans: Plan[]; currentKey: string 
                     </div>
                     <p className="m-0 flex items-baseline gap-[var(--space-2)]">
                       <span className="text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">
-                        {formatPrice(p.price_cents)}
+                        {formatPrice(priceForPeriod(p, period))}
                       </span>
-                      {p.price_period ? (
+                      {periodLabel(p, period) ? (
                         <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                          {p.price_period}
+                          {periodLabel(p, period)}
                         </span>
                       ) : null}
                     </p>
+                    {period === 'year' && yearlySavingsDollars(p) ? (
+                      <p className="m-0 text-[length:var(--text-xs)] text-[var(--accent)]">
+                        Save ${yearlySavingsDollars(p)}/yr vs monthly
+                      </p>
+                    ) : null}
                     <ul className="m-0 flex list-none flex-col gap-[var(--space-1)] p-0">
                       {planSpecs(p).map((s) => (
                         <li
@@ -335,20 +431,28 @@ export function SettingsBillingTab() {
   const myUsage = useMyUsage()
   const plans = usePlans()
   const isAdmin = me.data?.is_instance_admin ?? false
+  // Honor a ?interval=year deep-link (e.g. from the landing's yearly toggle) so a
+  // "Get Plus yearly" click lands here pre-set to yearly.
+  const [period, setPeriod] = useState<BillingPeriod>(() =>
+    new URLSearchParams(window.location.search).get('interval') === 'year' ? 'year' : 'month',
+  )
   // Orgs the caller actually belongs to (instance-admins see all orgs via the
   // list, but usage cards make sense only for orgs they're a member of).
   const myOrgs = (orgs.data ?? []).filter((o) => o.my_role != null)
 
   return (
     <div className="flex flex-col gap-[var(--space-6)]">
-      <header className="flex flex-col gap-[var(--space-1)]">
-        <h2 className="m-0 text-[length:var(--text-lg)] font-medium text-[var(--text-primary)]">
-          Plan &amp; Usage
-        </h2>
-        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] max-w-[var(--measure,60ch)]">
-          Your personal account and each organization you belong to carry their own
-          tier. Limits apply to whoever owns a space.
-        </p>
+      <header className="flex flex-col gap-[var(--space-3)]">
+        <div className="flex flex-col gap-[var(--space-1)]">
+          <h2 className="m-0 text-[length:var(--text-lg)] font-medium text-[var(--text-primary)]">
+            Plan &amp; Usage
+          </h2>
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] max-w-[var(--measure,60ch)]">
+            Your personal account and each organization you belong to carry their own
+            tier. Limits apply to whoever owns a space.
+          </p>
+        </div>
+        <BillingPeriodToggle value={period} onChange={setPeriod} />
       </header>
 
       <UsageCard
@@ -360,6 +464,7 @@ export function SettingsBillingTab() {
         account={isAdmin && me.data ? { kind: 'user', id: me.data.id } : null}
         plans={plans.data}
         canManage
+        period={period}
       />
 
       {myOrgs.length > 0 ? (
@@ -376,6 +481,7 @@ export function SettingsBillingTab() {
                 isAdmin={isAdmin}
                 canManage={o.my_role === 'admin'}
                 plans={plans.data}
+                period={period}
               />
             ))}
           </div>
@@ -387,7 +493,7 @@ export function SettingsBillingTab() {
           <h3 className="m-0 text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">
             Tiers
           </h3>
-          <PlanCatalog plans={plans.data} currentKey={myUsage.data?.plan.key} />
+          <PlanCatalog plans={plans.data} currentKey={myUsage.data?.plan.key} period={period} />
         </section>
       ) : null}
 
@@ -435,12 +541,14 @@ function OrgUsageCard({
   isAdmin,
   canManage,
   plans,
+  period,
 }: {
   orgId: number
   name: string
   isAdmin: boolean
   canManage: boolean
   plans: Plan[] | undefined
+  period: BillingPeriod
 }) {
   const usage = useOrgUsage(orgId)
   return (
@@ -453,6 +561,7 @@ function OrgUsageCard({
       account={isAdmin ? { kind: 'org', id: orgId } : null}
       plans={plans}
       canManage={canManage}
+      period={period}
     />
   )
 }

@@ -65,8 +65,9 @@ func acctTable(kind string) string {
 }
 
 type checkoutRequest struct {
-	PlanKey string `json:"plan_key"`
-	OrgID   int64  `json:"org_id"` // 0 = the caller's personal account
+	PlanKey  string `json:"plan_key"`
+	OrgID    int64  `json:"org_id"`   // 0 = the caller's personal account
+	Interval string `json:"interval"` // "month" (default) | "year"
 }
 
 // CreateCheckout starts a Polar checkout for a tier and returns its hosted URL.
@@ -116,9 +117,15 @@ func (s *Server) CreateCheckout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "plan_key does not match the account")
 		return
 	}
-	product, ok := s.billing.ProductFor(req.PlanKey)
+	// Cadence: yearly when explicitly asked, monthly otherwise. A tier may have a
+	// monthly product but no yearly one — ProductFor then 400s plan_not_purchasable.
+	interval := billing.IntervalMonth
+	if req.Interval == billing.IntervalYear {
+		interval = billing.IntervalYear
+	}
+	product, ok := s.billing.ProductFor(req.PlanKey, interval)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "plan_not_purchasable", "this plan can't be purchased self-serve")
+		writeError(w, http.StatusBadRequest, "plan_not_purchasable", "this plan can't be purchased self-serve at that cadence")
 		return
 	}
 
@@ -144,6 +151,7 @@ func (s *Server) CreateCheckout(w http.ResponseWriter, r *http.Request) {
 			"plan_key":     req.PlanKey,
 			"account_kind": acct.Kind,
 			"account_id":   strconv.FormatInt(acct.ID, 10),
+			"interval":     interval,
 		},
 	})
 	if err != nil {

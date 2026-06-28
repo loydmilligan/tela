@@ -176,9 +176,12 @@ export interface Plan {
   // false = an internal/comp tier kept out of the public catalog (still
   // admin-assignable). The plan-comparison UI shows only listed tiers.
   listed: boolean
-  // Display pricing (no billing engine). null = custom/contact, 0 = free.
+  // Display pricing. null = custom/contact, 0 = free. price_cents_yearly is the
+  // annual amount (null = no yearly option); the yearly cadence is a separate
+  // Polar product. Self-serve checkout is live (Polar).
   price_cents: number | null
   price_period: string
+  price_cents_yearly: number | null
 }
 
 // GET /api/usage and /api/orgs/{id}/usage. members is present for orgs only.

@@ -86,22 +86,39 @@ func (c *Client) Enabled() bool {
 // WebhookSecret exposes the signing secret to the handler's verify call.
 func (c *Client) WebhookSecret() string { return c.cfg.WebhookSecret }
 
-// ProductFor maps a plan key to its configured Polar product UUID. ok=false when
-// the tier has no product wired (free/enterprise/internal tiers) — i.e. not
-// purchasable self-serve.
-func (c *Client) ProductFor(planKey string) (string, bool) {
-	id, ok := c.cfg.Products[planKey]
+// Interval is a subscription billing cadence. The product map keys a yearly
+// product as "<plan>@year"; the bare plan key is monthly. Two Polar products per
+// tier (one per cadence) both grant the same plan_key.
+const (
+	IntervalMonth = "month"
+	IntervalYear  = "year"
+)
+
+func productKey(planKey, interval string) string {
+	if interval == IntervalYear {
+		return planKey + "@year"
+	}
+	return planKey
+}
+
+// ProductFor maps a (plan key, cadence) to its configured Polar product UUID.
+// ok=false when that tier+cadence has no product wired (free/enterprise/internal
+// tiers, or a tier with no yearly option) — i.e. not purchasable self-serve.
+func (c *Client) ProductFor(planKey, interval string) (string, bool) {
+	id, ok := c.cfg.Products[productKey(planKey, interval)]
 	return id, ok
 }
 
 // PlanFor is the reverse map (product UUID → plan key), used by the webhook
-// reconciler to decide which tier a subscription grants. ok=false for an unknown
-// product (e.g. a product created in Polar but never wired here) — the reconciler
-// then leaves the plan untouched rather than guessing.
+// reconciler to decide which tier a subscription grants. The cadence is
+// irrelevant there — a tier's monthly and yearly products grant the same plan —
+// so the "@year" suffix is stripped. ok=false for an unknown product (e.g. one
+// created in Polar but never wired here) — the reconciler then leaves the plan
+// untouched rather than guessing.
 func (c *Client) PlanFor(productID string) (string, bool) {
-	for plan, id := range c.cfg.Products {
+	for key, id := range c.cfg.Products {
 		if id == productID {
-			return plan, true
+			return strings.TrimSuffix(key, "@year"), true
 		}
 	}
 	return "", false
