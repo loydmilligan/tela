@@ -1,20 +1,21 @@
 ---
-// §5 — Honest comparison, as a table. Not a green-tick parity matrix: each row
-// names where tela genuinely wins AND the one thing that alternative still does
-// better. Stacks into labelled blocks on mobile.
+// §5 — Honest comparison, as a table. Not a green-tick parity matrix and not a
+// wiki-parity scorecard: tela has moved past "another wiki" — it documents
+// itself (Atlas) and your agents work it from Claude/ChatGPT. So each row
+// centers that category difference AND concedes the one thing the alternative
+// still does better. Stacks into labelled blocks on mobile.
 const rows = [
-  { n: 'Notion', edge: 'Plain markdown you own, semantic retrieval, and a real MCP connector your agent drives from Claude or ChatGPT — not a closed block store with a chat sidebar.', better: 'Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.' },
-  { n: 'Confluence', edge: 'Atlas turns a git repo or a Jira project into a cited, coverage-checked wiki, agents search and write it by meaning, and your content is portable markdown you can run yourself — no enterprise install, no per-seat pricing.', better: 'Deep two-way Jira workflow integration (tela documents from Jira; it doesn’t drive Jira), granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.' },
-  { n: 'Obsidian', edge: 'Built for a team: live multiplayer, a shared server with SSO and roles, and an agent API — not a single-player vault you sync by hand.', better: 'Local-first single-user is its whole point; the plugin library and graph view are unmatched. Solo? Hard to beat.' },
-  { n: 'A git repo of markdown', edge: 'Semantic + full-text search, block editing, comments, sharing, and an agent connector — over the same markdown, no PR to read a doc.', better: 'Pure version control, free, zero infra. If you just want files in a repo, you already have one.' },
-  { n: 'Notion AI / “AI” wikis', edge: 'Retrieval your own agent drives from Claude or ChatGPT, over markdown you can export — not a built-in chatbot you can only use in their app.', better: 'One-vendor convenience and a polished in-app assistant, with no embedder to think about. If you only want their chatbot, it’s simpler.' },
+  { n: 'Notion', edge: 'Your docs write themselves — point Atlas at a repo or Jira project and it generates a cited, coverage-checked wiki — over plain markdown you own, that your agents read and write from Claude and ChatGPT. Not a closed block store with a chat sidebar bolted on.', better: 'Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.' },
+  { n: 'Confluence', edge: 'Atlas turns a git repo or a Jira project into a cited, coverage-checked wiki and keeps it fresh; agents search and write it by meaning; and it’s portable markdown you can run yourself — no enterprise install, no per-seat pricing.', better: 'Deep two-way Jira workflow integration (tela documents from Jira; it doesn’t drive Jira), granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.' },
+  { n: 'Obsidian', edge: 'Built for a team and for agents: Atlas-written docs, semantic retrieval, live multiplayer, SSO and roles, and an MCP connector — not a single-player vault you sync by hand.', better: 'Local-first single-user is its whole point; the plugin library and graph view are unmatched. Solo? Hard to beat.' },
+  { n: 'Notion AI / “AI” wikis', edge: 'tela generates the wiki from your sources and scores its coverage, then lets your own agent retrieve and write it from Claude or ChatGPT, over markdown you can export — a chatbot bolted onto a wiki does neither, and only works inside their app.', better: 'One-vendor convenience and a polished in-app assistant, with no embedder to think about. If you only want their chatbot, it’s simpler.' },
 ];
 ---
 <section id="compare" class="section">
   <div class="section-head reveal-up">
     <p class="kicker"><span class="kicker-dot"></span>Compare</p>
-    <h2 class="h2">How does tela compare?</h2>
-    <p class="lede">Where tela differs from each — and the one thing each still does better.</p>
+    <h2 class="h2">Not just another wiki.</h2>
+    <p class="lede">tela documents itself and your agents work it from Claude and ChatGPT — so the honest question isn’t “which wiki,” it’s how it differs from each tool you’d otherwise reach for, and the one thing each still does better.</p>
   </div>
 
   <div class="cmp-wrap reveal-up">
@@ -42,8 +43,9 @@ const rows = [
   </div>
 
   <p class="synth reveal-up">
-    Only tela combines all of it: semantic search your agent uses from Claude and ChatGPT, plain
-    markdown you own, real-time editing, and SSO with roles and audit logging.
+    None of them close the loop tela does: your sources become a cited, coverage-checked wiki,
+    your agents reason over and maintain it from Claude and ChatGPT, and it’s all plain markdown
+    you own — with real-time editing, SSO, roles, and an audit trail.
   </p>
 </section>
 
