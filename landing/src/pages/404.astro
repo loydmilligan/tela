@@ -1,0 +1,109 @@
+---
+import Base from '../layouts/Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+---
+
+<Base
+  title="Page not found — tela"
+  description="This page doesn't exist. Head back to the tela homepage."
+>
+  <SiteHeader />
+  <main id="main" class="not-found">
+    <div class="inner">
+      <p class="code">404</p>
+      <h1>Page not found</h1>
+      <p class="sub">
+        This URL doesn't exist. Maybe it moved, maybe it never did.
+      </p>
+      <div class="actions">
+        <a href="/" class="btn-primary">Go home</a>
+        <a href="https://telawiki.com/spaces/docs" class="btn-ghost">Browse docs</a>
+      </div>
+    </div>
+  </main>
+  <SiteFooter />
+</Base>
+
+<style>
+  .not-found {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100dvh - 12rem);
+    padding: var(--space-16) var(--space-6);
+    text-align: center;
+  }
+
+  .inner {
+    max-width: 32rem;
+  }
+
+  .code {
+    font-size: clamp(5rem, 20vw, 9rem);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--brand);
+    opacity: 0.18;
+    margin: 0 0 var(--space-4);
+    font-family: var(--font-display);
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 5vw, 2.5rem);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    margin: 0 0 var(--space-4);
+  }
+
+  .sub {
+    font-size: var(--text-lg);
+    color: var(--fg-muted);
+    margin: 0 0 var(--space-10);
+    line-height: 1.6;
+  }
+
+  .actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-6);
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    color: var(--bg);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+  .btn-primary:hover { opacity: 0.88; }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-6);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-decoration: none;
+    transition: border-color var(--dur-fast) var(--ease-out),
+                color var(--dur-fast) var(--ease-out);
+  }
+  .btn-ghost:hover {
+    border-color: var(--border-strong);
+    color: var(--fg);
+  }
+</style>
