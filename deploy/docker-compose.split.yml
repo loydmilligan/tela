@@ -170,6 +170,7 @@ services:
       umami_db:
         condition: service_healthy
     networks:
+      - default
       - analytics
     restart: unless-stopped
 

@@ -123,6 +123,16 @@ const ogImage = new URL(ogImagePath, Astro.site).href;
     <style is:global>
       @import '../styles/global.css';
     </style>
+
+    <!-- Umami self-hosted analytics. data-host-url routes the beacon through
+         /analytics/api/send so it is proxied correctly by Caddy. -->
+    <script
+      defer
+      src="https://telawiki.com/analytics/script.js"
+      data-website-id="25ecebda-1f0f-4339-9465-b368e2d7c9a7"
+      data-host-url="https://telawiki.com/analytics"
+      is:inline
+    ></script>
   </head>
   <body>
     <a href="#main" class="skip-link">Skip to content</a>

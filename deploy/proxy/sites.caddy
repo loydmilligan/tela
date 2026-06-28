@@ -218,6 +218,17 @@
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 
+	# ── Umami analytics (dashboard + tracking) ───────────────────────────────
+	# Self-hosted Umami on loopback:3001. The tracking script is served at
+	# /analytics/script.js and the collection endpoint at /analytics/api/send so
+	# the canonical domain is used — avoiding ad-blocker domain-blocklists that
+	# target dedicated analytics subdomains. handle_path strips /analytics.
+	# route ensures this matches before the catch-all. Dashboard is Umami-auth-gated.
+	handle_path /analytics/* {
+		header X-Robots-Tag "noindex"
+		reverse_proxy http://127.0.0.1:3001
+	}
+
 	# ── Returning user: hard load of "/" → app, not the landing ─────────────
 	# A user who types the bare domain while signed in should land in the app,
 	# not the marketing page. Caddy can't VALIDATE the tela_session cookie
