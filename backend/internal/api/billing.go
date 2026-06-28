@@ -363,6 +363,32 @@ func (s *Server) reconcileBilling(ctx context.Context, evt billing.Event) error 
 	return nil
 }
 
+// syncOrgSeats best-effort updates an org's Polar subscription seat count to its
+// current member count, so a seat-billed plan (Team) invoices the real team size.
+// No-op unless billing is configured and the org has a subscription on file
+// (Free orgs / no sub → nothing to do). Called fire-and-forget from the member
+// add/remove paths; any failure is logged, never blocks the membership change.
+// Use a background context so it outlives the request that triggered it.
+func (s *Server) syncOrgSeats(ctx context.Context, orgID int64) {
+	if !s.billing.Enabled() {
+		return
+	}
+	var subID sql.NullString
+	if err := s.DB.QueryRowContext(ctx,
+		`SELECT polar_subscription_id FROM orgs WHERE id = $1`, orgID).Scan(&subID); err != nil ||
+		!subID.Valid || subID.String == "" {
+		return
+	}
+	n, err := countOrgMembers(ctx, s.DB, orgID)
+	if err != nil {
+		slog.Warn("billing: seat sync count", "org_id", orgID, "err", err)
+		return
+	}
+	if err := s.billing.UpdateSubscriptionSeats(ctx, subID.String, int(n)); err != nil {
+		slog.Warn("billing: seat sync", "org_id", orgID, "seats", n, "err", err)
+	}
+}
+
 // acctFromMetadata recovers an account from the checkout metadata we set, as a
 // fallback when external_customer_id didn't round-trip. Values arrive as JSON
 // (string or number), so handle both.

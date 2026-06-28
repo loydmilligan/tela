@@ -186,13 +186,32 @@ func (c *Client) CreateCustomerSession(ctx context.Context, externalCustomerID s
 	return out.CustomerPortalURL, nil
 }
 
+// UpdateSubscriptionSeats sets the billed seat count on a seat-based subscription
+// (the Team tier). PATCH /v1/subscriptions/{id} with the SubscriptionUpdateSeats
+// variant; Polar prorates per the org's default. Requires the token's
+// `subscriptions:write` scope. Polar rejects reducing below the assigned-seat
+// count, but we don't drive seat *assignment* (capacity-only billing), so a plain
+// decrement is accepted. seats is clamped to ≥1.
+func (c *Client) UpdateSubscriptionSeats(ctx context.Context, subscriptionID string, seats int) error {
+	if seats < 1 {
+		seats = 1
+	}
+	return c.do(ctx, http.MethodPatch, "/v1/subscriptions/"+subscriptionID, map[string]any{"seats": seats}, nil)
+}
+
 // post issues an authenticated JSON POST and decodes a 2xx body into out.
 func (c *Client) post(ctx context.Context, path string, body, out any) error {
+	return c.do(ctx, http.MethodPost, path, body, out)
+}
+
+// do issues an authenticated JSON request and decodes a 2xx body into out (out
+// may be nil to ignore the body).
+func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+path, bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, method, c.cfg.BaseURL+path, bytes.NewReader(buf))
 	if err != nil {
 		return err
 	}

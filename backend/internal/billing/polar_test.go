@@ -1,14 +1,51 @@
 package billing
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
 )
+
+func TestUpdateSubscriptionSeats(t *testing.T) {
+	var gotMethod, gotPath, gotAuth string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotAuth = r.Method, r.URL.Path, r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New(Config{Token: "tok", WebhookSecret: "s", BaseURL: srv.URL})
+
+	if err := c.UpdateSubscriptionSeats(context.Background(), "sub_123", 7); err != nil {
+		t.Fatalf("update seats: %v", err)
+	}
+	if gotMethod != http.MethodPatch || gotPath != "/v1/subscriptions/sub_123" {
+		t.Fatalf("got %s %s, want PATCH /v1/subscriptions/sub_123", gotMethod, gotPath)
+	}
+	if gotAuth != "Bearer tok" {
+		t.Fatalf("missing bearer auth, got %q", gotAuth)
+	}
+	if gotBody["seats"] != float64(7) {
+		t.Fatalf("seats body = %v, want 7", gotBody["seats"])
+	}
+
+	// Clamps to ≥1.
+	gotBody = nil
+	if err := c.UpdateSubscriptionSeats(context.Background(), "sub_123", 0); err != nil {
+		t.Fatalf("update seats 0: %v", err)
+	}
+	if gotBody["seats"] != float64(1) {
+		t.Fatalf("seats should clamp to 1, got %v", gotBody["seats"])
+	}
+}
 
 // signWebhook builds a valid Standard Webhooks header set for body, matching
 // VerifyWebhook's construction (raw secret as key, id.ts.body signed content).

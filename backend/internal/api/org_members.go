@@ -128,6 +128,8 @@ func (s *Server) AddOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(ctx, r, "org_member.add", "org", orgID, req.OrgRole+": "+dto.Username)
+	// Keep the seat-billed (Team) subscription in step with the team size.
+	go s.syncOrgSeats(context.Background(), orgID)
 	writeJSON(w, http.StatusCreated, map[string]any{"member": dto})
 }
 
@@ -280,6 +282,8 @@ func (s *Server) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(ctx, r, "org_member.remove", "org", orgID, strconv.FormatInt(targetID, 10))
+	// Keep the seat-billed (Team) subscription in step with the team size.
+	go s.syncOrgSeats(context.Background(), orgID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

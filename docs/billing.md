@@ -126,7 +126,8 @@ genuine DB failure returns 500 (so Polar redelivers).
    (see [metering](metering.md)).
 2. **Token.** Create an Organization Access Token with scopes `checkouts:write`,
    `customer_sessions:write`, `products:read`, `subscriptions:read`,
-   `orders:read` → `TELA_POLAR_TOKEN`.
+   `subscriptions:write` (for org seat re-sync), `orders:read`, `customers:read`
+   → `TELA_POLAR_TOKEN`.
 3. **Webhook.** Add an endpoint → `<PUBLIC_BASE_URL>/api/billing/webhook`,
    format **Raw**, subscribing to the `subscription.*` and `order.paid` events.
    Copy its signing secret **verbatim** → `TELA_POLAR_WEBHOOK_SECRET`.
@@ -150,8 +151,13 @@ and product UUIDs (sandbox is a fully separate environment; card `4242…`).
   or reorder events; reconciliation is idempotent and deduped on `webhook-id`.
 - **Sandbox isolation.** Separate token, secret, product UUIDs, and dashboard
   from prod — everything routes through env so it's a one-config switch.
-- **Seats.** Org checkout seeds seats from the member count at purchase time;
-  syncing seats on later member add/remove is a follow-up (not yet wired).
+- **Seats.** Org checkout seeds seats from the member count at purchase time, and
+  `syncOrgSeats` keeps them in step afterward: adding/removing an org member
+  fire-and-forget `PATCH /v1/subscriptions/{id}` `{seats}` to the live count
+  (best-effort — logged, never blocks the membership change). Needs the token's
+  **`subscriptions:write`** scope; Polar prorates per the org's default. (We bill
+  capacity only — we don't drive Polar *seat assignment* — so a decrement is never
+  blocked by an "assigned > new count" check.)
 - **Rotating `TELA_POLAR_WEBHOOK_SECRET`** invalidates in-flight signatures; the
   verifier accepts any signature in the (space-separated) header list, which
   covers Polar's own rotation window.

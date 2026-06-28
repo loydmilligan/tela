@@ -3,12 +3,56 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/zcag/tela/backend/internal/billing"
 	"github.com/zcag/tela/backend/internal/testdb"
 )
+
+// syncOrgSeats: no-op for an org with no Polar subscription; once a subscription
+// is on file, it PATCHes Polar with the live member count.
+func TestSyncOrgSeats(t *testing.T) {
+	d := testdb.New(t)
+	s := New(d)
+	var gotPath string
+	var gotSeats float64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		gotSeats, _ = b["seats"].(float64)
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	s.billing = billing.New(billing.Config{Token: "t", WebhookSecret: "s", BaseURL: srv.URL})
+
+	orgID := seedOrg(t, d, "Acme", "acme")
+
+	// No subscription → must not call Polar.
+	s.syncOrgSeats(context.Background(), orgID)
+	if gotPath != "" {
+		t.Fatalf("org with no subscription should not call Polar, hit %q", gotPath)
+	}
+
+	// Give it a subscription + 3 members → PATCH with seats=3.
+	if _, err := d.Exec(`UPDATE orgs SET polar_subscription_id='sub_x' WHERE id=$1`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"m1", "m2", "m3"} {
+		seedOrgMember(t, d, orgID, seedUser(t, d, name, "pw123456", false), "member")
+	}
+	s.syncOrgSeats(context.Background(), orgID)
+	if gotPath != "/v1/subscriptions/sub_x" {
+		t.Fatalf("expected PATCH to sub_x, got %q", gotPath)
+	}
+	if gotSeats != 3 {
+		t.Fatalf("expected seats=3 (member count), got %v", gotSeats)
+	}
+}
 
 // wiredBillingServer builds a Server with Polar mapped to two products so the
 // reconciler can resolve product → plan. No network is touched — reconcileBilling
