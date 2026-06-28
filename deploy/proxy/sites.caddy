@@ -259,7 +259,7 @@
 			header /_astro/* Cache-Control "public, max-age=31536000, immutable"
 			# HTML shell must revalidate so a redeploy/edit is picked up at once
 			# (the fingerprinted /_astro assets above stay immutable).
-			@landing_html path / /mcp /mcp/ /pricing /pricing/ /privacy /privacy/ /terms /terms/
+			@landing_html path / /mcp /mcp/ /pricing /pricing/ /privacy /privacy/ /terms /terms/ /404 /404.html
 			header @landing_html Cache-Control "no-cache"
 			file_server
 		}
@@ -293,6 +293,15 @@
 			header X-Robots-Tag "noindex"
 			reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
 		}
+	}
+
+	# Serve the landing's branded 404 page for Caddy-generated 404s.
+	# Does NOT intercept reverse_proxy upstream 404s (those pass through as-is) —
+	# only fires when Caddy itself produces a 404 (e.g. the /api/internal/* block).
+	handle_errors 404 {
+		root * {$TELA_LANDING_ROOT:/srv/landing}
+		rewrite * /404.html
+		file_server
 	}
 }
 

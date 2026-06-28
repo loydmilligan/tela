@@ -154,6 +154,48 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # ── Umami analytics ─────────────────────────────────────────────────────────
+  # Self-hosted, privacy-friendly web analytics for the landing page.
+  # Caddy reverse-proxies https://telawiki.com/analytics → http://127.0.0.1:3001.
+  # First boot: log in with admin/umami, change the password, then add the site
+  # and paste the tracking script into landing/src/layouts/Base.astro.
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    environment:
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD}@umami_db:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET}
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      umami_db:
+        condition: service_healthy
+    networks:
+      - analytics
+    restart: unless-stopped
+
+  umami_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       umami
+      POSTGRES_USER:     umami
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD}
+    volumes:
+      - umami_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - analytics
+    restart: unless-stopped
+
+networks:
+  analytics:
+    internal: true
+
 volumes:
   tela-pgdata:
   tela-deckcache:
+  umami_db_data:
