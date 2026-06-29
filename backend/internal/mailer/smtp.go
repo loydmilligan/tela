@@ -68,6 +68,9 @@ func (m *smtpMailer) Send(ctx context.Context, msg Message) error {
 		return fmt.Errorf("mailer: to %q: %w", msg.To, err)
 	}
 	mm.Subject(msg.Subject)
+	if msg.Important {
+		mm.SetImportance(mail.ImportanceHigh)
+	}
 	mm.SetBodyString(mail.TypeTextPlain, msg.Text)
 	mm.AddAlternativeString(mail.TypeTextHTML, msg.HTML)
 

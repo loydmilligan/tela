@@ -445,7 +445,7 @@ func FeedbackNotice(to, who, subject, body, kind, source, page, inboxURL string)
 		CTAURL:     inboxURL,
 		Footer:     "You're receiving this because you're a tela instance admin.",
 	}
-	return Message{To: to, Subject: "New tela feedback: " + subject, HTML: renderHTML(v), Text: renderText(v)}
+	return Message{To: to, Subject: "New tela feedback: " + subject, HTML: renderHTML(v), Text: renderText(v), Important: true}
 }
 
 // NotificationMessage builds a notification email from n. The actor anchors the

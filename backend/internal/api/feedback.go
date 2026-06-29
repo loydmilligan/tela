@@ -194,15 +194,11 @@ func feedbackMergeContext(client json.RawMessage, source, userAgent string) json
 // latency never slows the submit, and any failure is logged, never surfaced. A
 // missing relay (LogMailer) just logs.
 //
-// The submitter is excluded ONLY for web feedback (don't email someone the
-// feedback they just typed); agent/api submissions notify every admin even when
-// the owning user is an admin, so automated reports are never silently dropped.
+// Every instance admin is notified — including the submitter. On a single-admin
+// instance the admin IS the main user, so self-submitted feedback would
+// otherwise never email anyone; the receipt is wanted, not noise.
 func (s *Server) notifyNewFeedback(ctx context.Context, submitter *auth.User, subject, body, kind, source string, ctxBag json.RawMessage) {
-	excludeID := int64(0) // 0 matches no user → exclude nobody
-	if source == "web" {
-		excludeID = submitter.ID
-	}
-	emails, err := s.feedbackAdminRecipients(ctx, excludeID)
+	emails, err := s.feedbackAdminRecipients(ctx, 0) // 0 matches no user → exclude nobody
 	if err != nil {
 		slog.Error("feedback: admin lookup failed", "err", err)
 		return

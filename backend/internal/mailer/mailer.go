@@ -19,6 +19,10 @@ type Message struct {
 	Subject string
 	HTML    string
 	Text    string
+	// Important marks the message high-importance (Importance/Priority/
+	// X-Priority/X-MSMail-Priority headers) so it stands out in the inbox.
+	// Used for feedback notices; leave false for routine transactional mail.
+	Important bool
 }
 
 // Mailer sends transactional email. Implementations must be safe for
