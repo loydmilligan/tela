@@ -65,8 +65,11 @@ func isSyncJunkName(name string) bool {
 
 // detectFileMime picks a Content-Type for an arbitrary synced file: extension
 // first (covers pdf/zip/text/etc. precisely), then sniffing the bytes, then a
-// generic binary fallback. These files are served only over the PAT-gated /dav,
-// never a public origin, so X-Content-Type-Options handles the rest.
+// generic binary fallback. Note: these files ARE served publicly via
+// /api/files/{space_id}/{hash}{ext} — serve-side controls (Content-Disposition:
+// attachment + X-Content-Type-Options: nosniff, raster-only inline) prevent
+// browser XSS. Do not remove those serve-side controls; they are the safety net
+// for arbitrary content types accepted here.
 func detectFileMime(name string, data []byte) string {
 	if ext := name[strings.LastIndexByte(name, '.')+1:]; ext != "" && ext != name {
 		if m := mime.TypeByExtension("." + strings.ToLower(ext)); m != "" {

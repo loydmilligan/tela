@@ -327,11 +327,22 @@ func (f *davSpaceWriteFile) Readdir(int) ([]os.FileInfo, error) { return nil, os
 // clients from erroring, while creating no junk page (sync §14 hygiene). rclone
 // should still exclude these via filters; this is the defensive backstop.
 type davDiscardFile struct {
-	name string
-	n    int64
+	name   string
+	n      int64
+	tooBig bool
 }
 
-func (f *davDiscardFile) Write(p []byte) (int, error) { f.n += int64(len(p)); return len(p), nil }
+func (f *davDiscardFile) Write(p []byte) (int, error) {
+	if f.tooBig {
+		return 0, os.ErrInvalid
+	}
+	if f.n+int64(len(p)) > davFileMaxBytes() {
+		f.tooBig = true
+		return 0, errors.New("junk file exceeds size limit")
+	}
+	f.n += int64(len(p))
+	return len(p), nil
+}
 func (f *davDiscardFile) Close() error                { return nil }
 func (f *davDiscardFile) Read([]byte) (int, error)    { return 0, os.ErrInvalid }
 func (f *davDiscardFile) Seek(int64, int) (int64, error) {
