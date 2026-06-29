@@ -144,6 +144,13 @@ up:
 	$(EXPORT_BUILD) $(COMPOSE) up -d --build
 	$(COMPOSE) up -d --force-recreate proxy
 
+# Standalone stack WITH local AI (Ollama + auto-pulled models) — Atlas, ask, and
+# semantic search work out of the box, no external AI service. See
+# deploy/docker-compose.ai.yml. First boot pulls a few GB of models.
+up-ai:
+	$(EXPORT_BUILD) $(COMPOSE) -f deploy/docker-compose.ai.yml --profile embed up -d --build
+	$(COMPOSE) up -d --force-recreate proxy
+
 down:
 	$(COMPOSE) down
 

@@ -1,0 +1,50 @@
+# docker-compose.ai.yml — one-command "AI on" overlay for self-host.
+#
+# Layer it on the standalone stack to run a LOCAL Ollama, auto-pull the embedder
+# + a chat model, and point the backend at both — so Atlas, ask-your-docs, and
+# semantic search work out of the box with no external AI service. This is the
+# frictionless default for self-host's bring-your-own-AI: the models run on YOUR
+# box, you swap them whenever you like (the AI_* vars below), and nothing phones
+# home.
+#
+#   make up-ai
+#   # or, by hand:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ai.yml \
+#     --profile embed up -d
+#
+# First boot pulls the models (a few GB) — give it a few minutes. The backend
+# tolerates the embedder/LLM being briefly unavailable (search still works; the
+# AI tiers light up once the pull finishes). Defaults are modest + CPU-friendly;
+# override TELA_RAG_EMBED_MODEL / TELA_LLM_MODEL in deploy/.env for bigger models.
+
+services:
+  # One-shot: wait for the (embed-profile) ollama service, pull the embedder + a
+  # chat model, then exit. Re-running is cheap (already-present models no-op).
+  ollama-pull:
+    image: ollama/ollama:latest
+    profiles: ["embed"]
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      EMBED_MODEL: ${TELA_RAG_EMBED_MODEL:-qwen3-embedding:0.6b}
+      CHAT_MODEL: ${TELA_LLM_MODEL:-qwen2.5:7b}
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - |
+        until ollama list >/dev/null 2>&1; do echo "waiting for ollama…"; sleep 2; done
+        echo "pulling embedder: $$EMBED_MODEL"; ollama pull "$$EMBED_MODEL"
+        echo "pulling chat model: $$CHAT_MODEL"; ollama pull "$$CHAT_MODEL"
+        echo "models ready"
+    restart: "no"
+
+  # Point the backend at the local Ollama for BOTH embeddings and the LLM. These
+  # override whatever's in deploy/.env (the overlay is the opinionated local-AI
+  # path); drop the overlay to go back to a remote / BYO endpoint.
+  backend:
+    environment:
+      TELA_RAG_EMBED_URL: http://ollama:11434
+      TELA_RAG_EMBED_MODEL: ${TELA_RAG_EMBED_MODEL:-qwen3-embedding:0.6b}
+      TELA_RAG_EMBED_DIM: "1024"
+      TELA_LLM_URL: http://ollama:11434/v1
+      TELA_LLM_MODEL: ${TELA_LLM_MODEL:-qwen2.5:7b}

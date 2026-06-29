@@ -1,3 +1,5 @@
+// tela Enterprise Edition — NOT licensed under the AGPL. See ee/LICENSE.md.
+
 package ee
 
 import (

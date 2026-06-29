@@ -1,3 +1,7 @@
+// tela Enterprise Edition — NOT licensed under the AGPL. See ee/LICENSE.md.
+// Production use of the features this enables requires a valid license key;
+// removing or circumventing the entitlement gate is prohibited.
+
 // Package ee implements the self-host Enterprise entitlement: an offline,
 // signed license key that unlocks ee-gated features without a phone-home.
 //
