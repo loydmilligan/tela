@@ -76,6 +76,7 @@ import Prose from '../layouts/Prose.astro';
     <li>AI-generated content can be incomplete, inaccurate, or outdated. You are responsible for reviewing it before relying on it or sharing it.</li>
     <li>The source content you connect (git commits, Jira issues) is processed by a self-hosted language model on our servers — it is not sent to any third-party AI provider. See the <a href="/privacy/">privacy policy</a> for details.</li>
     <li>We grant no warranty on the accuracy or fitness of Atlas-generated content.</li>
+    <li>tela does not maintain a cloud AI fallback. When the AI service is unavailable (e.g., due to maintenance or outage), Ask and Atlas features return a service-unavailable error. This is by design — your content never leaves your tela instance.</li>
   </ul>
 
   <h2>AI agents and the MCP server</h2>
@@ -96,10 +97,18 @@ import Prose from '../layouts/Prose.astro';
   <ul>
     <li>Paid subscriptions are billed through <a href="https://polar.sh" target="_blank" rel="noopener">Polar</a>, our merchant of record. Polar's terms and privacy policy apply to payment processing.</li>
     <li>Subscription fees are charged in advance on a monthly or annual basis as you select at checkout.</li>
-    <li>You can cancel at any time. Access to paid features continues until the end of the current billing period; no partial refunds are issued for unused time unless required by applicable law.</li>
+    <li>You can cancel at any time. Access to paid features continues until the end of the current billing period.</li>
     <li>We may change plan pricing with reasonable notice. Continued use after a price change means you accept the new price.</li>
   </ul>
-  <!-- TODO: Add refund policy details once finalized, if different from the above. -->
+  <p>
+    <strong>Refunds.</strong> No partial refunds are issued for the remaining
+    days of a monthly billing period after cancellation. For annual
+    subscriptions, a pro-rata refund for unused whole months may be issued if
+    you cancel within 30 days of the annual billing date — email
+    <a href="mailto:tela@telawiki.com">tela@telawiki.com</a> for billing
+    disputes. Polar, as merchant of record, ultimately processes and approves
+    refunds in accordance with their own policies.
+  </p>
 
   <h2>Self-hosting the binary</h2>
   <p>
@@ -148,10 +157,10 @@ import Prose from '../layouts/Prose.astro';
 
   <h2>Governing law</h2>
   <p>
-    These terms are governed by the laws of <strong>[JURISDICTION]</strong>,
+    These terms are governed by the laws of <strong>Finland</strong>,
+    {/* TODO: confirm jurisdiction with legal counsel */}
     without regard to conflict-of-law principles.
   </p>
-  <!-- TODO: Fill in the governing jurisdiction (e.g. "Turkey" or a specific state/country). -->
 
   <h2>Changes</h2>
   <p>
