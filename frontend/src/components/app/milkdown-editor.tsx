@@ -645,6 +645,23 @@ function MilkdownEditorInner({
         })
         ctx.update(prosePluginsCtx, (existing) => [...existing, selectionBridge])
 
+        // Plain-text clipboard serializer. The milkdown clipboard plugin's
+        // clipboardTextSerializer serializes copied content as markdown, which
+        // causes `<br />` (emitted by the empty-paragraph serializer in
+        // remarkPreserveEmptyLinePlugin, part of the commonmark preset) to
+        // appear literally in the clipboard text/plain payload. Override it
+        // with a ProseMirror plugin that uses textBetween — same approach the
+        // clipboard plugin already uses for pure-text slices, extended to all
+        // content. Leaf nodes use their schema leafText specs (hardbreak → '\n';
+        // image → ''). Prepended so this prop wins over the clipboard plugin's.
+        const plainClipboardTextPlugin = new Plugin({
+          props: {
+            clipboardTextSerializer: (slice) =>
+              slice.content.textBetween(0, slice.content.size, '\n\n'),
+          },
+        })
+        ctx.update(prosePluginsCtx, (existing) => [plainClipboardTextPlugin, ...existing])
+
         // Paste-a-bare-URL → titled link. Prepended to `prosePluginsCtx` so
         // the plugin's `handlePaste` runs ahead of the default clipboard parse.
         // Order matters in collab mode: y-prosemirror's ySync plugin reacts to
