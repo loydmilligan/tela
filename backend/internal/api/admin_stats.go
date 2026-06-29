@@ -117,6 +117,10 @@ type adminStats struct {
 	MCPUsers     int64 `json:"mcp_users"`     // users who have ever connected an agent over MCP
 	ActivePATs   int64 `json:"active_pats"`   // live personal access tokens (not revoked/expired)
 	PublicSpaces int64 `json:"public_spaces"` // spaces published to the open web
+
+	// Billing signals — revenue visibility at a glance.
+	ActiveTrials      int64 `json:"active_trials"`       // users currently on an active (non-expired) trial
+	PaidSubscriptions int64 `json:"paid_subscriptions"`  // users on any paid plan (not free or trial)
 }
 
 func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
@@ -312,6 +316,12 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		`SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > tela_now())`).Scan(&out.ActivePATs)
 	_ = s.DB.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM spaces WHERE visibility = 'public'`).Scan(&out.PublicSpaces)
+
+	// --- Billing ---
+	_ = s.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users WHERE trial_plan_key IS NOT NULL AND trial_ends_at > tela_now() AND deleted_at IS NULL`).Scan(&out.ActiveTrials)
+	_ = s.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users WHERE plan_key NOT IN ('personal_free','plus_trial') AND deleted_at IS NULL`).Scan(&out.PaidSubscriptions)
 
 	// --- Growth / activation ---
 	_ = s.DB.QueryRowContext(ctx,
