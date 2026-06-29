@@ -71,6 +71,9 @@ export default defineConfig({
       })],
       test: {
         name: 'storybook',
+        // Editor interaction stories mount many real ProseMirror instances and
+        // drive them keystroke by keystroke; the 5s default is too tight.
+        testTimeout: 30000,
         browser: {
           enabled: true,
           headless: true,
