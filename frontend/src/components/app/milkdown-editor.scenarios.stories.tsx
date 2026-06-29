@@ -381,6 +381,100 @@ function makeRoundTripStory(cases: RoundTripCase[]): Story {
 export const RoundTripsCore = makeRoundTripStory(CORE_CASES)
 export const RoundTripsRich = makeRoundTripStory(RICH_CASES)
 
+// ── Scenario 5: a real multi-step editing flow (solo mode) ──────────────────
+// One editor, a representative sequence a user actually performs: heading via
+// markdown shortcut → paragraph → bold a selection via the bubble toolbar →
+// bullet list with a Tab-nested item → slash-insert a callout with a body. We
+// assert both the live DOM and the final serialized markdown.
+//
+// NOTE: this runs in SOLO mode only. The collab path is read-only until the
+// provider reaches 'connected' (a server sync-init), and the provider is
+// constructed internally against a real /ws URL — so it can't be driven offline
+// today. Running this same flow against the collab path is the acceptance test
+// for A1 (extracting an injectable useCollabSession).
+export const EditingFlow: Story = {
+  args: { defaultValue: '' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const pm = await getEditable(canvasElement)
+    const out = () => canvas.getByTestId('md-out').textContent ?? ''
+
+    // 1. heading via markdown shortcut — and prove onChange serializes it.
+    await userEvent.click(pm)
+    await userEvent.keyboard('# Project plan')
+    await waitFor(() => {
+      expect(pm.querySelector('h1')?.textContent).toContain('Project plan')
+    })
+    await waitFor(() => expect(out()).toContain('# Project plan'), {
+      timeout: 6000,
+    })
+
+    // 2. new paragraph, bold a selection via the bubble toolbar.
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard('Status is green')
+    const para = Array.from(pm.querySelectorAll('p')).find((p) =>
+      p.textContent?.includes('Status is green'),
+    )
+    expect(para, 'status paragraph should exist').toBeTruthy()
+    await userEvent.tripleClick(para as HTMLElement)
+    await waitFor(() => {
+      expect(document.querySelector('.tela-bubble-toolbar')).not.toBeNull()
+    })
+    await userEvent.click(
+      document.querySelector(
+        '.tela-bubble-toolbar [aria-label="Bold"]',
+      ) as HTMLElement,
+    )
+    await waitFor(() => {
+      expect(pm.querySelector('strong')?.textContent).toContain(
+        'Status is green',
+      )
+    })
+
+    // 3. a bullet list with a Tab-nested item.
+    await userEvent.click(pm.querySelector('strong') as HTMLElement)
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard('- First item{Enter}Second item{Enter}{Tab}Nested item')
+    await waitFor(() => {
+      expect(pm.querySelector('ul ul')).not.toBeNull() // nesting happened
+    })
+
+    // 4. exit the list and slash-insert a callout with a body.
+    await userEvent.keyboard('{Enter}{Enter}')
+    await userEvent.keyboard('/callout')
+    await waitFor(() => {
+      expect(document.querySelector('.tela-slash-menu')).not.toBeNull()
+    })
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(pm.querySelector('.tela-callout')).not.toBeNull()
+    })
+    await userEvent.keyboard('Heads up note')
+
+    // live DOM has every element we built.
+    expect(pm.querySelector('h1')).not.toBeNull()
+    expect(pm.querySelector('strong')).not.toBeNull()
+    expect(pm.querySelector('ul ul')).not.toBeNull()
+    expect(pm.querySelector('.tela-callout')?.textContent).toContain(
+      'Heads up note',
+    )
+
+    // final serialized markdown carries the whole flow.
+    await waitFor(
+      () => {
+        const md = out()
+        expect(md).toContain('# Project plan')
+        expect(md).toContain('**Status is green**')
+        expect(md).toContain('First item')
+        expect(md).toContain('Nested item')
+        expect(md).toContain('[!NOTE]')
+        expect(md).toContain('Heads up note')
+      },
+      { timeout: 6000 },
+    )
+  },
+}
+
 // ── Scenario 4: live markdown input rules (the editing-feel net) ─────────────
 // Typing a markdown prefix should transform the block AS YOU TYPE, the way every
 // rich block (callouts, math, highlight) already does. This pins which CommonMark
