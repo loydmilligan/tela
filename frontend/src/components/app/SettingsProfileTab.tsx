@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { LogOut } from 'lucide-react'
 import { ApiError } from '../../lib/api'
-import { useMe, useUpdateProfile } from '../../lib/queries/auth'
+import { useDeleteMyAccount, useMe, useUpdateProfile } from '../../lib/queries/auth'
 import {
   useChangePassword,
   useLogoutEverywhere,
@@ -47,6 +48,8 @@ export function SettingsProfileTab() {
       <ChangePasswordSection />
       <Separator />
       <SessionsSection />
+      <Separator />
+      <DeleteAccountSection />
     </div>
   )
 }
@@ -652,4 +655,93 @@ function describeUserAgent(ua: string): string {
   if (browser) return browser
   if (os) return os
   return ua.length > 40 ? ua.slice(0, 40) + '…' : ua
+}
+
+function DeleteAccountSection() {
+  const [open, setOpen] = useState(false)
+  return (
+    <section
+      aria-labelledby="settings-delete-account"
+      className="flex flex-col gap-[var(--space-3)]"
+    >
+      <SectionHeader
+        title="Delete account"
+        description="Permanently delete your account and remove you from all spaces."
+      />
+      <div id="settings-delete-account">
+        <Button
+          type="button"
+          variant="danger"
+          onClick={() => setOpen(true)}
+        >
+          Delete account
+        </Button>
+      </div>
+      <DeleteAccountDialog open={open} onOpenChange={setOpen} />
+    </section>
+  )
+}
+
+function DeleteAccountDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (next: boolean) => void
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const deleteAccount = useDeleteMyAccount()
+  const navigate = useNavigate()
+
+  function handleClose(next: boolean) {
+    if (!next) setError(null)
+    onOpenChange(next)
+  }
+
+  async function handleConfirm() {
+    setError(null)
+    try {
+      await deleteAccount.mutateAsync()
+      void navigate({ to: '/' })
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'org_owner') {
+        setError(err.message)
+      } else {
+        setError('Something went wrong. Try again.')
+      }
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete your account?</DialogTitle>
+          <DialogDescription>
+            This will permanently delete your account and remove you from all spaces. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? (
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+            {error}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={handleConfirm}
+            disabled={deleteAccount.isPending}
+          >
+            {deleteAccount.isPending ? 'Deleting…' : 'Delete account'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }

@@ -257,6 +257,23 @@ export function useSSOProviders() {
   })
 }
 
+// Delete the caller's account (GDPR right to erasure). Anonymises the user row,
+// wipes sessions/keys/tokens, and removes space memberships. 422 org_owner means
+// the user must transfer admin rights or delete their org(s) first.
+export function useDeleteMyAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      await api<{ ok: true }>('/api/users/me', { method: 'DELETE' })
+    },
+    onSuccess: () => {
+      qc.setQueryData(authKeys.me(), null)
+      qc.removeQueries({ queryKey: spaceKeys.all })
+      qc.removeQueries({ queryKey: pageKeys.all })
+    },
+  })
+}
+
 export function useLogout() {
   const qc = useQueryClient()
   return useMutation({
