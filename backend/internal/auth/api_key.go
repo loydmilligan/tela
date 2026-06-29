@@ -123,8 +123,14 @@ type SecretStore interface {
 // before any bearer request is served. This is what fixes the "random
 // per-process secret invalidates every PAT on restart" footgun for operators
 // who don't set TELA_API_KEY_SECRET: the generated secret is persisted once.
+const apiKeySecretPlaceholder = "replace-me-with-openssl-rand-hex-32"
+
 func InitAPIKeySecret(ctx context.Context, store SecretStore) error {
 	if v := os.Getenv("TELA_API_KEY_SECRET"); v != "" {
+		if v == apiKeySecretPlaceholder {
+			slog.Warn("SECURITY: TELA_API_KEY_SECRET is set to the public placeholder from .env.example — " +
+				"the HMAC key is publicly known. Run: openssl rand -hex 32")
+		}
 		setAPIKeySecret(decodeAPIKeySecret(v))
 		return nil
 	}

@@ -124,8 +124,15 @@ type shareAuthRequest struct {
 // env override → persisted store value → generated-and-persisted. This replaces
 // the old random-per-process fallback that invalidated outstanding share
 // cookies on every restart; the persisted secret now survives restarts.
+const shareSecretPlaceholder = "replace-me-with-openssl-rand-hex-32"
+
 func resolveShareSecret(ctx context.Context, st *settings.Store) []byte {
 	if v := os.Getenv("TELA_SHARE_SECRET"); v != "" {
+		if v == shareSecretPlaceholder {
+			slog.Warn("SECURITY: TELA_SHARE_SECRET is set to the public placeholder from .env.example — " +
+				"share cookies are FORGEABLE by anyone who has read the repo. " +
+				"Run: openssl rand -hex 32")
+		}
 		return []byte(v)
 	}
 	b, err := st.GetOrInitSecret(ctx, "share", shareSecretBytes)

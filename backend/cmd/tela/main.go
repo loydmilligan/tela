@@ -192,8 +192,8 @@ func logStartupConfig() {
 	slog.Info("config", "public_base_url", base, "cookie_secure", auth.CookieSecure())
 
 	if os.Getenv("TELA_SMTP_HOST") == "" {
-		slog.Warn("config: SMTP unset — verify/reset emails are LOGGED, not sent. " +
-			"Open self-registration needs SMTP to be usable; set TELA_SMTP_* for multi-user.")
+		slog.Warn("config: SMTP unset — verify/reset emails are LOGGED, not sent (including raw reset tokens). " +
+			"Anyone with log access can reset any account. Set TELA_SMTP_* for production.")
 	} else {
 		slog.Info("config: SMTP enabled", "host", os.Getenv("TELA_SMTP_HOST"))
 	}
