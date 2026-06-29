@@ -125,6 +125,13 @@ func (s *Server) ExportPagePDF(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireMembership(w, r, p.SpaceID); !ok {
 		return
 	}
+	// A deck's body is Slidev markdown, not prose — render it as real per-slide
+	// frames (Slidev sidecar) instead of feeding the raw source to gotenberg,
+	// which would dump headmatter + `---` separators as a wall of text.
+	if isDeckBag(p.Props) {
+		s.streamDeckPDF(w, r, p)
+		return
+	}
 	url := pdfRenderBaseURL() + "/print/" + s.mintPrintToken(id) + themeQuery(r)
 	s.streamPDF(w, r, url, p.Title)
 }

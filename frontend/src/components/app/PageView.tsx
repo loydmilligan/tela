@@ -626,6 +626,9 @@ function PageActionsMenu({
   onDelete: () => void
 }) {
   const navigate = useNavigate()
+  // /pdf is page-type aware on the backend: a deck renders to a real per-slide
+  // Slidev PDF, a doc to the gotenberg-rendered reader. So this one call is
+  // correct for both.
   const { download: downloadPdf } = useFileDownload(`/api/pages/${pageId}/pdf`, {
     themed: true,
   })

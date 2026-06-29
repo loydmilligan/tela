@@ -351,6 +351,14 @@ func (s *Server) ExportPageDeckPDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.streamDeckPDF(w, r, p)
+}
+
+// streamDeckPDF renders a deck page to a per-slide PDF via the Slidev sidecar and
+// writes it as a download. Shared by the explicit /deck.pdf route and the generic
+// /pdf route's deck branch (so /pdf produces the real slide PDF, not a gotenberg
+// wall-of-text of the Slidev source). Caller has already gated read access.
+func (s *Server) streamDeckPDF(w http.ResponseWriter, r *http.Request, p models.Page) {
 	pdf, err := deckExport(r.Context(), p.Body, s.deckThemeConfig(r.Context(), p), "pdf")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "deck_render_failed", "could not export deck")
