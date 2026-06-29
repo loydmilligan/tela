@@ -28,7 +28,7 @@ func TestDeleteMyAccount_AnonymisesUser(t *testing.T) {
 	var isActive int
 	var deletedAt *string
 	if err := d.QueryRowContext(ctx,
-		`SELECT username, COALESCE(email,''), bio, display_name, is_active, deleted_at
+		`SELECT username, email, bio, display_name, is_active, deleted_at
 		   FROM users WHERE id = $1`, userID).
 		Scan(&username, &email, &bio, &displayName, &isActive, &deletedAt); err != nil {
 		t.Fatalf("read user: %v", err)

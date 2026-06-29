@@ -115,8 +115,8 @@ func (s *Server) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 		UPDATE users SET
 		    username     = 'deleted_' || id,
 		    email        = NULL,
-		    bio          = NULL,
-		    display_name = NULL,
+		    bio          = '',
+		    display_name = '',
 		    is_active    = 0,
 		    deleted_at   = tela_now(),
 		    updated_at   = tela_now()
