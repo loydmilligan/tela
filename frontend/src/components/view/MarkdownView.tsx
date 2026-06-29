@@ -25,6 +25,7 @@ import {
 } from '../../lib/blocks/calendar-grid'
 import { accentForValue, statLineClass } from '../../lib/blocks/stat-trend'
 import { wikilinkSlug } from '../../lib/markdown/transforms/wikilink'
+import { isSafeUrl } from '../../lib/markdown/remark-safe-links'
 import { embedIframeSrc } from '../../lib/markdown/embed'
 import { isPdf, PdfPreviewDialog } from '../ui/pdf-viewer'
 import type { CommentThread } from '../../lib/comments/use-comments'
@@ -574,7 +575,7 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       return (
         <a
           key={key}
-          href={String(node.url ?? '')}
+          href={isSafeUrl(String(node.url ?? '')) ? String(node.url ?? '') : '#'}
           title={node.title ? String(node.title) : undefined}
         >
           {renderChildren(node)}
