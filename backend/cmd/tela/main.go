@@ -53,6 +53,14 @@ func fatal(msg string, args ...any) {
 func main() {
 	initLogger()
 
+	// `tela license …` (issue / verify) runs fully offline — it needs only the
+	// offline signing key, never a database. Intercept before the DATABASE_URL
+	// requirement so keys can be minted on an air-gapped ops box.
+	if len(os.Args) > 1 && os.Args[1] == "license" {
+		runLicense(os.Args[2:])
+		return
+	}
+
 	addr := ":8080"
 	if v := os.Getenv("TELA_ADDR"); v != "" {
 		addr = v

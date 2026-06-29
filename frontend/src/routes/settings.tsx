@@ -14,6 +14,7 @@ import { SettingsFollowingTab } from '../components/app/SettingsFollowingTab'
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
 import { SettingsInstanceTab } from '../components/app/SettingsInstanceTab'
+import { SettingsLicenseTab } from '../components/app/SettingsLicenseTab'
 import { SettingsSearchIndexTab } from '../components/app/SettingsSearchIndexTab'
 import { SettingsSummariesTab } from '../components/app/SettingsSummariesTab'
 import { SettingsSyncTab } from '../components/app/SettingsSyncTab'
@@ -174,6 +175,14 @@ const BILLING_TAB: SettingsTab = {
   render: () => <SettingsBillingTab />,
 }
 
+// Self-host Enterprise license — instance-admin. Install/view/remove the key that
+// unlocks ee-gated features on this instance.
+const LICENSE_TAB: SettingsTab = {
+  id: 'license',
+  label: 'License',
+  render: () => <SettingsLicenseTab />,
+}
+
 export function SettingsPage() {
   const me = useMe()
   const orgs = useOrgs()
@@ -197,7 +206,7 @@ export function SettingsPage() {
     if (me.data?.is_instance_admin) {
       return [
         { label: 'Account', tabs: account },
-        { label: 'Instance admin', tabs: [INSIGHTS_TAB, USERS_TAB, ORGS_TAB, USAGE_TAB, { ...FEEDBACK_TAB, badge: feedbackUnseen }, EVENTS_TAB, ERRORS_TAB, AUDIT_TAB, INSTANCE_TAB] },
+        { label: 'Instance admin', tabs: [INSIGHTS_TAB, USERS_TAB, ORGS_TAB, USAGE_TAB, { ...FEEDBACK_TAB, badge: feedbackUnseen }, EVENTS_TAB, ERRORS_TAB, AUDIT_TAB, LICENSE_TAB, INSTANCE_TAB] },
       ]
     }
     if (isOrgAdmin) {

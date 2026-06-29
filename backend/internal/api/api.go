@@ -203,6 +203,11 @@ func New(db *sql.DB) *Server {
 		s.recordAIUsage("embed", model, in, 0, 0)
 	})
 
+	// Resolve the self-host Enterprise license (env → persisted) into s.license,
+	// so entitled() can grant ee features without a managed-cloud plan. No-op /
+	// nil on the cloud + unlicensed self-host. See license.go.
+	s.loadLicense(ctx)
+
 	// Built after the literal so it can share the llm handle (same enablement).
 	s.summarize = summarize.NewService(db, s.llm)
 	// Agreement shares llm + rag (needs both: a model to judge, embeddings to

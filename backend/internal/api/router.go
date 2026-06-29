@@ -368,6 +368,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/feedback/seen", srv.MarkFeedbackSeen)
 	mux.HandleFunc("GET /api/admin/settings", srv.GetInstanceSettings)
 	mux.HandleFunc("PATCH /api/admin/settings", srv.PatchInstanceSettings)
+	mux.HandleFunc("GET /api/admin/license", srv.GetLicense)
+	mux.HandleFunc("PUT /api/admin/license", srv.PutLicense)
+	mux.HandleFunc("DELETE /api/admin/license", srv.DeleteLicense)
 
 	// Mention directory — active users for the @-mention picker (any member).
 	mux.HandleFunc("GET /api/users", srv.ListUsers)

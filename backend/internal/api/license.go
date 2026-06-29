@@ -1,0 +1,128 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/zcag/tela/backend/internal/ee"
+)
+
+// Self-host Enterprise licensing. A signed offline key (internal/ee) unlocks
+// ee-gated features; api.entitled() consults s.license. The key is set either by
+// env (TELA_LICENSE_KEY, takes precedence) or at runtime via this admin API,
+// persisted in instance_settings under the secret/ prefix so it stays out of the
+// general settings dump.
+
+// licenseTokenSettingKey holds the installed key. secret/ prefix → All() omits
+// it from the admin settings listing (it has its own status-only endpoint).
+const licenseTokenSettingKey = "secret/license_key"
+
+// loadLicense resolves and verifies the active Enterprise license — env first,
+// then the persisted setting — and installs it on the server. Missing/invalid
+// leaves s.license nil (no EE): fail-closed, never boot-fatal. Called at boot
+// and after the key is changed via the admin API.
+func (s *Server) loadLicense(ctx context.Context) {
+	_ = ctx
+	token := strings.TrimSpace(os.Getenv("TELA_LICENSE_KEY"))
+	if token == "" {
+		token, _ = s.settings.Get(licenseTokenSettingKey)
+		token = strings.TrimSpace(token)
+	}
+	if token == "" {
+		s.license = nil
+		return
+	}
+	lic, err := ee.Verify(token)
+	if err != nil {
+		slog.Warn("license: ignoring invalid Enterprise key", "err", err)
+		s.license = nil
+		return
+	}
+	s.license = lic
+	slog.Info("license: Enterprise key active", "customer", lic.Customer, "tier", lic.Tier)
+}
+
+// licenseStatus returns the active license summary, or a zero (invalid) status.
+func (s *Server) licenseStatus() ee.Status {
+	if l, ok := s.license.(*ee.License); ok {
+		return l.Status()
+	}
+	return ee.Status{}
+}
+
+// envLicensed reports whether the key is pinned via env (then the admin API is
+// read-only — the env value always wins on the next boot).
+func envLicensed() bool { return strings.TrimSpace(os.Getenv("TELA_LICENSE_KEY")) != "" }
+
+// GetLicense returns the active license status (never the raw token). Instance-admin.
+func (s *Server) GetLicense(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireInstanceAdmin(w, r); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"license":    s.licenseStatus(),
+		"env_locked": envLicensed(),
+	})
+}
+
+// PutLicense installs (or replaces) the license key. Instance-admin. The token
+// is verified before it's persisted, so a bad key is rejected up front rather
+// than silently disabling EE on the next boot.
+func (s *Server) PutLicense(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireInstanceAdmin(w, r)
+	if !ok {
+		return
+	}
+	if envLicensed() {
+		writeError(w, http.StatusConflict, "env_locked", "the license key is set via TELA_LICENSE_KEY and can't be changed here")
+		return
+	}
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
+		return
+	}
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "token is required")
+		return
+	}
+	lic, err := ee.Verify(token)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_license", err.Error())
+		return
+	}
+	if err := s.settings.Set(r.Context(), licenseTokenSettingKey, token, &u.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "save license failed")
+		return
+	}
+	s.loadLicense(r.Context())
+	s.audit(r.Context(), r, "license.set", "instance", 0, lic.Tier)
+	writeJSON(w, http.StatusOK, map[string]any{"license": lic.Status(), "env_locked": false})
+}
+
+// DeleteLicense removes the installed key (downgrades the instance to Community).
+// Instance-admin. No-op-safe; env-pinned keys can't be removed here.
+func (s *Server) DeleteLicense(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireInstanceAdmin(w, r)
+	if !ok {
+		return
+	}
+	if envLicensed() {
+		writeError(w, http.StatusConflict, "env_locked", "the license key is set via TELA_LICENSE_KEY and can't be changed here")
+		return
+	}
+	if err := s.settings.Set(r.Context(), licenseTokenSettingKey, "", &u.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "clear license failed")
+		return
+	}
+	s.loadLicense(r.Context())
+	s.audit(r.Context(), r, "license.clear", "instance", 0, "")
+	w.WriteHeader(http.StatusNoContent)
+}
