@@ -218,15 +218,28 @@
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 
-	# ── Umami analytics (dashboard + tracking) ───────────────────────────────
-	# Self-hosted Umami on loopback:3001. The tracking script is served at
-	# /analytics/script.js and the collection endpoint at /analytics/api/send so
-	# the canonical domain is used — avoiding ad-blocker domain-blocklists that
-	# target dedicated analytics subdomains. handle_path strips /analytics.
-	# route ensures this matches before the catch-all. Dashboard is Umami-auth-gated.
-	handle_path /analytics/* {
+	# ── Umami analytics tracking endpoints ───────────────────────────────────
+	# Only the two paths the browser needs: the tracking snippet and the collection
+	# endpoint. The Umami dashboard is NOT exposed publicly (Umami's Next.js uses
+	# root-relative paths and breaks behind a subpath proxy). Access the dashboard
+	# via SSH tunnel to loopback:3001 on the host.
+	# The bare /analytics and /analytics/ paths get a clean Caddy 404 (which
+	# handle_errors serves as the branded landing 404 page).
+	handle /analytics/script.js {
+		rewrite * /script.js
 		header X-Robots-Tag "noindex"
 		reverse_proxy http://127.0.0.1:3001
+	}
+	handle /analytics/api/send {
+		rewrite * /api/send
+		header X-Robots-Tag "noindex"
+		reverse_proxy http://127.0.0.1:3001
+	}
+	handle /analytics {
+		error 404
+	}
+	handle /analytics/ {
+		error 404
 	}
 
 	# ── Returning user: hard load of "/" → app, not the landing ─────────────
