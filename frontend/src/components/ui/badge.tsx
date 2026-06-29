@@ -30,6 +30,12 @@ const badgeVariants = cva(
           'bg-[var(--surface-2)] text-[var(--accent)]',
           'border-[var(--accent)]',
         ],
+        // Danger-tinted chip — same shape as accent but on the --danger token.
+        // Use to flag something that needs attention (e.g. a 'bug' report).
+        danger: [
+          'bg-[color-mix(in_srgb,var(--danger)_10%,var(--surface-1))] text-[var(--danger)]',
+          'border-[color-mix(in_srgb,var(--danger)_45%,transparent)]',
+        ],
       },
     },
     defaultVariants: {

@@ -17,6 +17,7 @@ import { SpaceView } from '../components/app/SpaceView'
 import { KeymapHost } from '../components/app/KeymapHost'
 import { BrandLogo } from '../components/BrandLogo'
 import { NotificationBell } from '../components/app/NotificationBell'
+import { FeedbackWidget } from '../components/app/FeedbackWidget'
 import { EmptyState } from '../components/ui/empty-state'
 const OrgManageView = lazy(() =>
   import('../components/app/OrgManageView').then((m) => ({ default: m.OrgManageView }))
@@ -173,6 +174,7 @@ const appLayoutRoute = createRoute({
               </Link>
             </h1>
             <div className="flex items-center gap-[var(--space-2)]">
+              <FeedbackWidget />
               <NotificationBell />
               <ThemeSwitcher />
             </div>

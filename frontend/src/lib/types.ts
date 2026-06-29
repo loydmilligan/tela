@@ -500,15 +500,50 @@ export interface EventEntry {
   created_at: string
 }
 
+// Optional user-chosen feedback type. Mirrors the backend's closed set; the
+// widget's chips are optional, so a row may have no kind.
+export type FeedbackKind = 'idea' | 'bug' | 'other'
+
+// Where a feedback row originated, stamped server-side.
+export type FeedbackSource = 'web' | 'mcp' | 'api'
+
+// Free-form triage context attached to a feedback row. The widget stamps the
+// client fields; the backend folds in source/app_version/app_commit/user_agent.
+// All optional — agent/api submissions carry little or none.
+export interface FeedbackContext {
+  source?: FeedbackSource | string
+  route?: string
+  page_id?: number
+  space_id?: number
+  page_title?: string
+  theme?: string
+  viewport?: string
+  locale?: string
+  app_version?: string
+  app_commit?: string
+  user_agent?: string
+}
+
 // One submitted feedback row, instance-admin read (GET /api/admin/feedback).
 export interface FeedbackEntry {
   id: number
   created_at: string
   subject: string
   body: string
+  kind: FeedbackKind | null
+  source: FeedbackSource | string
   user_id: number | null
   username: string | null
   via_api_key: boolean
+  context: FeedbackContext | null
+}
+
+// Request body for POST /api/feedback from the in-app widget. Subject is
+// omitted — the backend derives it from the body's first line.
+export interface CreateFeedbackInput {
+  body: string
+  kind?: FeedbackKind
+  context?: FeedbackContext
 }
 
 // Instance-wide usage overview (GET /api/admin/usage), instance-admin only.

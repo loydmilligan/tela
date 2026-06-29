@@ -1,8 +1,18 @@
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronUp, CreditCard, Globe, Link2, LogOut, Settings, Sparkles } from 'lucide-react'
+import {
+  ChevronUp,
+  CreditCard,
+  Globe,
+  Link2,
+  LogOut,
+  MessageSquarePlus,
+  Settings,
+  Sparkles,
+} from 'lucide-react'
 import { useLogout, useMe } from '../../lib/queries/auth'
 import { useTelaHomeHref } from '../../lib/queries/host-context'
 import { useMyUsage } from '../../lib/queries/billing'
+import { emitOpenFeedback } from '../../lib/feedbackEvent'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import {
@@ -121,6 +131,16 @@ export function UserMenu() {
                 {planName}
               </Badge>
             ) : null}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault()
+              // Close the menu, then open the shared feedback popover (anchored
+              // on the header trigger) via the event bus.
+              emitOpenFeedback()
+            }}
+          >
+            <MessageSquarePlus width={14} height={14} /> Send feedback
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

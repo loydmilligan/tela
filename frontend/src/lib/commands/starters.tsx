@@ -2,9 +2,10 @@
 // future tasks add commands by registering them in their own module and
 // importing that module at app boot.
 
-import { Folder, FolderPlus, HelpCircle, Palette } from 'lucide-react'
+import { Folder, FolderPlus, HelpCircle, MessageSquarePlus, Palette } from 'lucide-react'
 import { registerCommand } from '../commands'
 import { emitOpenNewSpace } from '../newSpaceEvent'
+import { emitOpenFeedback } from '../feedbackEvent'
 import { THEMES, type ThemeName } from '../theme'
 
 // Cycle through THEMES in declaration order: light → dark → warm → light.
@@ -56,6 +57,15 @@ registerCommand({
       })),
     })
   },
+})
+
+registerCommand({
+  id: 'tela.send-feedback',
+  title: 'Send feedback',
+  subtitle: 'Tell the tela team',
+  icon: <MessageSquarePlus width={14} height={14} />,
+  keywords: ['feedback', 'bug', 'idea', 'suggestion', 'report', 'contact'],
+  run: () => emitOpenFeedback(),
 })
 
 registerCommand({
