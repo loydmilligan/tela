@@ -336,10 +336,12 @@ func (s *Server) sendVerification(ctx context.Context, origin string, userID int
 	}
 }
 
-// allowAuth enforces the per-IP rate limit on the email-sending auth
-// endpoints. Returns false (and writes 429) when the caller is over budget.
-func (s *Server) allowAuth(w http.ResponseWriter, r *http.Request, purpose string) bool {
-	ok, retry := s.authLimiter.allow(purpose, clientIPForRateLimit(r))
+// allowRateLimit enforces rl's per-IP sliding-window budget for purpose,
+// writing 429 + Retry-After on exhaustion. Returns false when over budget.
+// purpose namespaces the bucket within the limiter so callers sharing an
+// instance don't consume each other's quota.
+func (s *Server) allowRateLimit(w http.ResponseWriter, r *http.Request, purpose string, rl *authRateLimiter) bool {
+	ok, retry := rl.allow(purpose, clientIPForRateLimit(r))
 	if !ok {
 		secs := int(retry.Seconds())
 		if secs < 1 {
@@ -350,6 +352,12 @@ func (s *Server) allowAuth(w http.ResponseWriter, r *http.Request, purpose strin
 		return false
 	}
 	return true
+}
+
+// allowAuth enforces the per-IP rate limit on the email-sending auth
+// endpoints. Returns false (and writes 429) when the caller is over budget.
+func (s *Server) allowAuth(w http.ResponseWriter, r *http.Request, purpose string) bool {
+	return s.allowRateLimit(w, r, purpose, s.authLimiter)
 }
 
 // authUserByID loads the wire DTO for a freshly-authenticated user (used by

@@ -55,6 +55,32 @@ func TestRequestPasswordReset_RateLimit(t *testing.T) {
 	}
 }
 
+// The per-IP login throttle must trip after loginRateLimit attempts.
+// Mirror of TestCloudEmbed_RateLimit: swap the limiter for a tight 3-attempt
+// one on the live server struct so we don't need loginRateLimit+ calls.
+func TestLogin_RateLimit(t *testing.T) {
+	ts, _, srv := newWiredServerOnDiskWithSrv(t)
+	srv.loginLimiter = newAuthRateLimiter(time.Minute, 3)
+
+	for i := 1; i <= 3; i++ {
+		resp := authPost(t, ts, "/api/auth/login", `{"identifier":"nobody","password":"wrongpassword"}`)
+		resp.Body.Close()
+		// 401 = the limiter passed through; the credentials are just wrong.
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: want 401 got %d", i, resp.StatusCode)
+		}
+	}
+	resp := authPost(t, ts, "/api/auth/login", `{"identifier":"nobody","password":"wrongpassword"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("attempt 4: want 429 got %d body=%s", resp.StatusCode, b)
+	}
+	if resp.Header.Get("Retry-After") == "" {
+		t.Fatalf("Retry-After header missing on 429")
+	}
+}
+
 // The per-account managed-compute budget must trip on the cloud proxies.
 // Exercised over HTTP with a fake embedder; the limiter is swapped for a
 // 3-request one so the test doesn't need 61 calls.

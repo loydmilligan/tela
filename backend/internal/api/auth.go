@@ -49,6 +49,9 @@ type trialDTO struct {
 // keep response time roughly constant). An account that has an email but hasn't
 // confirmed it gets a 403 email_unverified so the UI can offer to resend.
 func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
+	if !s.allowRateLimit(w, r, "login", s.loginLimiter) {
+		return
+	}
 	var req authLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")

@@ -40,6 +40,16 @@ type Server struct {
 	// be turned into a mail bomb.
 	authLimiter *authRateLimiter
 
+	// loginLimiter throttles POST /api/auth/login per client IP to blunt
+	// credential-stuffing and brute-force attacks. Separate from authLimiter
+	// so the two budgets are independent (a typo-locked login doesn't exhaust
+	// the password-reset budget, and vice-versa).
+	loginLimiter *authRateLimiter
+
+	// unfurlLimiter throttles GET /api/unfurl per client IP. The endpoint is
+	// session-gated but still caps outbound HTTP relaying at scale.
+	unfurlLimiter *authRateLimiter
+
 	// cloudLimiter throttles the managed-compute proxies (cloud embed/chat,
 	// ask-your-docs) per ACCOUNT so a single entitled PAT can't hammer paid
 	// LLM/embedder compute into an unbounded bill or DoS the shared clients.
@@ -164,6 +174,8 @@ func New(db *sql.DB) *Server {
 		auditWriter:        auth.NewAuditWriter(db),
 		Mailer:             mailer.FromEnv(),
 		authLimiter:        newAuthRateLimiter(authRateWindow, authRateLimit),
+		loginLimiter:       newAuthRateLimiter(loginRateWindow, loginRateLimit),
+		unfurlLimiter:      newAuthRateLimiter(unfurlRateWindow, unfurlRateLimit),
 		cloudLimiter:       newAuthRateLimiter(cloudRateWindow, cloudRateLimit),
 		clientErrorLimiter: newAuthRateLimiter(clientErrorRateWindow, clientErrorRateLimit),
 		davDeletes:         newDavDeleteGuard(),
@@ -198,6 +210,8 @@ func New(db *sql.DB) *Server {
 	// is fine: each test process is short-lived.
 	go s.shareLimiter.sweepLoop(context.Background())
 	go s.authLimiter.sweepLoop(context.Background())
+	go s.loginLimiter.sweepLoop(context.Background())
+	go s.unfurlLimiter.sweepLoop(context.Background())
 	go s.cloudLimiter.sweepLoop(context.Background())
 	go s.clientErrorLimiter.sweepLoop(context.Background())
 	go s.davDeletes.sweepLoop(context.Background())

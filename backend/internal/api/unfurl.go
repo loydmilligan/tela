@@ -110,6 +110,9 @@ func (s *Server) Unfurl(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+	if !s.allowRateLimit(w, r, "unfurl", s.unfurlLimiter) {
+		return
+	}
 	raw := strings.TrimSpace(r.URL.Query().Get("url"))
 	if raw == "" {
 		writeError(w, http.StatusBadRequest, "bad_request", "url query param required")

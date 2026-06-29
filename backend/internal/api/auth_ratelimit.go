@@ -14,6 +14,18 @@ const (
 	authRateWindow = 15 * time.Minute
 	authRateLimit  = 6
 
+	// Login is throttled per IP to blunt credential-stuffing and brute-force
+	// attacks. The window is short (1 min) so a lock from a typo clears
+	// quickly; 5 attempts per minute is generous for interactive use.
+	loginRateWindow = 1 * time.Minute
+	loginRateLimit  = 5
+
+	// URL unfurl (GET /api/unfurl) makes an outbound HTTP request per call.
+	// Session-gated, but bounded per IP so a misbehaving client can't abuse
+	// tela as an HTTP relay at scale.
+	unfurlRateWindow = 1 * time.Minute
+	unfurlRateLimit  = 20
+
 	// Managed-compute proxies (cloud embed/chat, ask-your-docs) are keyed per
 	// ACCOUNT, not per IP, and need a far more generous budget than the email
 	// endpoints — but still bounded so a single entitled PAT can't hammer paid
