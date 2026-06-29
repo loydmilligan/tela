@@ -103,7 +103,7 @@ func LoadSessionAndSlide(ctx context.Context, d *sql.DB, sessionID string) (*Use
 	if _, err := d.ExecContext(ctx,
 		`UPDATE sessions SET expires_at = $1, last_seen_at = tela_now() WHERE id = $2`,
 		newExpires, sessionID); err != nil {
-		slog.Error("auth: session slide failed", "session_id", sessionID, "err", err)
+		slog.Error("auth: session slide failed", "err", err)
 	}
 
 	return &User{ID: userID, Username: username, Email: email.String, IsInstanceAdmin: isAdmin == 1}, nil
