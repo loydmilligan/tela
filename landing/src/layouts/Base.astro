@@ -133,6 +133,27 @@ const ogImage = new URL(ogImagePath, Astro.site).href;
       data-host-url="https://telawiki.com/analytics"
       is:inline
     ></script>
+    <!-- Scroll-depth tracking — fires once per threshold (25/50/75/100%). -->
+    <script is:inline>
+      (function () {
+        var fired = {};
+        var thresholds = [25, 50, 75, 100];
+        function check() {
+          var doc = document.documentElement;
+          var scrolled = doc.scrollTop || document.body.scrollTop;
+          var total = doc.scrollHeight - doc.clientHeight;
+          if (!total) return;
+          var pct = Math.round((scrolled / total) * 100);
+          thresholds.forEach(function (t) {
+            if (!fired[t] && pct >= t) {
+              fired[t] = true;
+              if (window.umami) window.umami.track('scroll-depth', { percent: t });
+            }
+          });
+        }
+        window.addEventListener('scroll', check, { passive: true });
+      })();
+    </script>
   </head>
   <body>
     <a href="#main" class="skip-link">Skip to content</a>

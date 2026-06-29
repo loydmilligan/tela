@@ -34,6 +34,19 @@ const qs = [
   </div>
 </section>
 
+<script is:inline>
+  (function () {
+    document.querySelectorAll('.faq .qa').forEach(function (details) {
+      details.addEventListener('toggle', function () {
+        if (details.open && window.umami) {
+          var q = details.querySelector('.q span');
+          window.umami.track('faq-open', { question: q ? q.textContent.trim() : '' });
+        }
+      });
+    });
+  })();
+</script>
+
 <style>
   .faq { border-top: 1px solid var(--border); max-width: 52rem; }
   .qa { border-bottom: 1px solid var(--border); }

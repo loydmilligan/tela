@@ -232,7 +232,8 @@ const org = [
         your markdown. No seats to buy and no limits but the ones you set.
       </p>
     </div>
-    <a href="https://github.com/zcag/tela" class="selfhost-cta" target="_blank" rel="noopener">
+    <a href="https://github.com/zcag/tela" class="selfhost-cta" target="_blank" rel="noopener"
+       data-umami-event="outbound-link" data-umami-event-destination="github" data-umami-event-location="pricing-selfhost">
       Self-host it <span class="arr" aria-hidden="true">→</span>
     </a>
   </div>
@@ -268,7 +269,23 @@ const org = [
       });
     }
     opts.forEach(function (b) {
-      b.addEventListener('click', function () { apply(b.getAttribute('data-period')); });
+      b.addEventListener('click', function () {
+        var period = b.getAttribute('data-period');
+        apply(period);
+        if (window.umami) window.umami.track('pricing-period-toggle', { period: period });
+      });
+    });
+    // Track plan CTA clicks, injecting the current billing period at click time.
+    sec.querySelectorAll('.price-cta').forEach(function (a) {
+      a.addEventListener('click', function () {
+        var card = a.closest('.price-card');
+        var plan = card ? card.querySelector('.price-name') : null;
+        var activePeriod = toggle.querySelector('.billing-opt.is-active');
+        if (window.umami) window.umami.track('pricing-cta', {
+          plan: plan ? plan.textContent.trim().toLowerCase() : 'unknown',
+          period: activePeriod ? activePeriod.getAttribute('data-period') : 'year',
+        });
+      });
     });
     apply('year'); // yearly is the default cadence — sync prices, hrefs, and state
   })();

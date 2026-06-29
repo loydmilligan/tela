@@ -2,9 +2,9 @@
 // §10 — Credibility. Transparency as proof: open code, live instance, npm package.
 // No fabricated logos, no "trusted by thousands" — honest v0.
 const tiles = [
-  { t: 'Open code', d: 'Backend, frontend, and the MCP server are open. See exactly what runs.', cta: 'GitHub →', href: 'https://github.com/zcag/tela', i: 'code' },
-  { t: 'Live instance', d: 'telawiki.com runs the same code. Use it before you commit.', cta: 'Open it →', href: 'https://telawiki.com', i: 'globe' },
-  { t: 'A connector you can add', d: 'A real MCP connector, submitted to the Claude and ChatGPT directories and versioned against the backend.', cta: 'How it works →', href: '/mcp', i: 'package' },
+  { t: 'Open code', d: 'Backend, frontend, and the MCP server are open. See exactly what runs.', cta: 'GitHub →', href: 'https://github.com/zcag/tela', i: 'code', event: 'outbound-link', eventDestination: 'github', eventLocation: 'credibility' },
+  { t: 'Live instance', d: 'telawiki.com runs the same code. Use it before you commit.', cta: 'Open it →', href: 'https://telawiki.com', i: 'globe', event: 'credibility-tile', eventLabel: 'live-instance' },
+  { t: 'A connector you can add', d: 'A real MCP connector, submitted to the Claude and ChatGPT directories and versioned against the backend.', cta: 'How it works →', href: '/mcp', i: 'package', event: 'credibility-tile', eventLabel: 'mcp-connector' },
 ];
 const icons: Record<string, string> = {
   code: 'm16 18 6-6-6-6M8 6l-6 6 6 6',
@@ -19,7 +19,11 @@ const icons: Record<string, string> = {
   </div>
   <div class="tgrid">
     {tiles.map((t) => (
-      <a class="tile reveal-up" href={t.href} target="_blank" rel="noopener">
+      <a class="tile reveal-up" href={t.href} target="_blank" rel="noopener"
+         data-umami-event={t.event}
+         data-umami-event-destination={t.eventDestination}
+         data-umami-event-location={t.eventLocation}
+         data-umami-event-label={t.eventLabel}>
         <span class="tile-ic" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d={icons[t.i]} /></svg>
         </span>
