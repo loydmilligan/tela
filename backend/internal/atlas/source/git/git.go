@@ -59,11 +59,18 @@ func authURL(src core.Source) string {
 
 // redactSecret blanks the token in a string (git command output can echo the
 // auth'd URL on failure) so it never surfaces in a run error / log / event.
+// Both the raw token and its URL-percent-encoded form are replaced: authURL
+// passes the token through url.User / url.UserPassword, which percent-encodes
+// special characters (e.g. "@" → "%40"), so git may echo the encoded form.
 func redactSecret(s, secret string) string {
 	if secret == "" {
 		return s
 	}
-	return strings.ReplaceAll(s, secret, "***")
+	s = strings.ReplaceAll(s, secret, "***")
+	if enc := url.PathEscape(secret); enc != secret {
+		s = strings.ReplaceAll(s, enc, "***")
+	}
+	return s
 }
 
 // Acquire clones the repo into workdir/repo and pins HEAD. Local paths and
