@@ -49,9 +49,11 @@ func TestMCP_AtlasTools(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	// Admin with a write key; member with a read key.
+	// Both with write keys: atlas_run is write-scoped, so a read key would be
+	// stopped at the scope gate before the manage gate — to prove the manage gate
+	// rejects a non-admin (below), the member must clear scope first.
 	adminSess := mcpSession(t, ctx, ts, seedReadKey(t, d, admin, auth.ScopeWrite))
-	memberSess := mcpSession(t, ctx, ts, seedReadKey(t, d, member, auth.ScopeRead))
+	memberSess := mcpSession(t, ctx, ts, seedReadKey(t, d, member, auth.ScopeWrite))
 
 	// atlas_list_projects (admin): the project, can_manage true, with the latest-run
 	// status and last must-cover rate (4/5 = 0.8).
@@ -94,8 +96,9 @@ func TestMCP_AtlasTools(t *testing.T) {
 		t.Fatalf("atlas_run_status stats: %+v", rs.Run.Stats)
 	}
 
-	// atlas_run manage-gate: the member is rejected with the forbidden code, BEFORE
-	// any run is attempted (no ai_unavailable leak).
+	// atlas_run manage-gate: the member (write scope, but org member not admin) is
+	// rejected with the forbidden code, BEFORE any run is attempted (no
+	// ai_unavailable leak).
 	res, err := memberSess.CallTool(ctx, &mcp.CallToolParams{Name: "atlas_run", Arguments: map[string]any{"project_id": pid}})
 	if err != nil {
 		t.Fatalf("member atlas_run call: %v", err)

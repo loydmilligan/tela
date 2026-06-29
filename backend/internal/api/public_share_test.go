@@ -17,14 +17,24 @@ import (
 func TestPublicShare_FullFlow(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
-	space := seedSpace(t, d, "Engineering", "engineering", admin)
 
-	// Seed a vanilla page.
+	// A PUBLIC space + page drives the bot OG-card assertions: the /p/{id} card
+	// now renders only for a public space.
+	pubSpace := seedPublicSpace(t, d, "Engineering", "engineering", admin)
 	var pageID int64
 	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
-	                    VALUES ($1, NULL, 'Welcome', 'hello world body', 0) RETURNING id`, space).Scan(&pageID)
+	                    VALUES ($1, NULL, 'Welcome', 'hello world body', 0) RETURNING id`, pubSpace).Scan(&pageID)
 	if err != nil {
 		t.Fatalf("seed page: %v", err)
+	}
+
+	// A PRIVATE space + page drives the human-redirect-to-in-app branch and the
+	// bot-must-404 privacy gate (a crawler must not learn a private page's title).
+	privSpace := seedSpace(t, d, "Internal", "internal", admin)
+	var privPageID int64
+	if err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
+	                       VALUES ($1, NULL, 'Secret', 'classified', 0) RETURNING id`, privSpace).Scan(&privPageID); err != nil {
+		t.Fatalf("seed private page: %v", err)
 	}
 
 	// Cookie-less client whose redirects are surfaced rather than followed,
@@ -94,15 +104,29 @@ func TestPublicShare_FullFlow(t *testing.T) {
 		t.Fatalf("generic bot UA status=%d want 200", resp.StatusCode)
 	}
 
-	// 5. Non-bot UA (Chrome) → 302 to the in-app SPA route
-	//    /spaces/{spaceID}/pages/{id}/{slug}.
+	// 5. Non-bot UA (Chrome) on a PUBLIC page → 302 to the no-login public reader.
 	resp, _ = get("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0", fmt.Sprintf("/p/%d", pageID))
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("Chrome UA status=%d want 302", resp.StatusCode)
 	}
-	wantLoc := pageAppPath(space, pageID, "Welcome")
-	if loc := resp.Header.Get("Location"); loc != wantLoc {
-		t.Fatalf("Chrome UA Location=%q want %q", loc, wantLoc)
+	if wantLoc, loc := publicReaderPath(pubSpace, pageID, "Welcome"), resp.Header.Get("Location"); loc != wantLoc {
+		t.Fatalf("Chrome UA (public) Location=%q want %q", loc, wantLoc)
+	}
+
+	// 5b. Non-bot UA on a PRIVATE page → 302 to the in-app SPA route
+	//     /spaces/{spaceID}/pages/{id}/{slug} (the SPA gates it on a session).
+	resp, _ = get("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0", fmt.Sprintf("/p/%d", privPageID))
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("Chrome UA (private) status=%d want 302", resp.StatusCode)
+	}
+	if wantLoc, loc := pageAppPath(privSpace, privPageID, "Secret"), resp.Header.Get("Location"); loc != wantLoc {
+		t.Fatalf("Chrome UA (private) Location=%q want %q", loc, wantLoc)
+	}
+
+	// 5c. Bot UA on a PRIVATE page → 404: a crawler must not learn the title of a
+	//     page in a private space (mirrors the og_space.go gate).
+	if respPriv, _ := get("Slackbot-LinkExpanding 1.0", fmt.Sprintf("/p/%d", privPageID)); respPriv.StatusCode != http.StatusNotFound {
+		t.Fatalf("bot on private page status=%d want 404", respPriv.StatusCode)
 	}
 
 	// 6. Missing UA → 302 (treated as human; no UA, no allowlist match).
@@ -150,7 +174,7 @@ func TestPublicShare_BrandsCustomDomain(t *testing.T) {
 	ts, d := newWiredServer(t)
 	owner := seedUser(t, d, "owner", "ownerpw12", true)
 	org := seedOrg(t, d, "Acme", "acme")
-	space := seedSpace(t, d, "Docs", "docs", owner)
+	space := seedPublicSpace(t, d, "Docs", "docs", owner)
 	if _, err := d.Exec(`UPDATE spaces SET org_id = $1 WHERE id = $2`, org, space); err != nil {
 		t.Fatalf("set space org: %v", err)
 	}
@@ -196,7 +220,7 @@ func TestPublicShare_BrandsRequestHost(t *testing.T) {
 	owner := seedUser(t, d, "owner", "ownerpw12", true)
 	org := seedOrg(t, d, "Acme", "acme")
 	// Space deliberately NOT linked to the org (org_id stays NULL).
-	space := seedSpace(t, d, "Personal", "personal", owner)
+	space := seedPublicSpace(t, d, "Personal", "personal", owner)
 	if _, err := d.Exec(
 		`INSERT INTO org_hostnames (hostname, org_id, status, verify_token) VALUES ($1,$2,'active',$3)`,
 		"wiki.acme.example", org, "tok"); err != nil {
@@ -236,7 +260,7 @@ func TestPublicShare_BrandsRequestHost(t *testing.T) {
 func TestPublicShare_XSSGuards(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
-	space := seedSpace(t, d, "Engineering", "engineering", admin)
+	space := seedPublicSpace(t, d, "Engineering", "engineering", admin)
 
 	var pageID int64
 	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
@@ -275,7 +299,7 @@ func TestPublicShare_XSSGuards(t *testing.T) {
 func TestPublicShare_DescriptionIsTitleOnly(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
-	space := seedSpace(t, d, "Engineering", "engineering", admin)
+	space := seedPublicSpace(t, d, "Engineering", "engineering", admin)
 
 	// A long body that, under the old behaviour, would have leaked as a 200-char
 	// excerpt. It must NOT appear in the envelope now.

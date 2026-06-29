@@ -56,6 +56,19 @@ func seedSpace(t *testing.T, d *sql.DB, name, slug string, ownerID int64) int64 
 	return id
 }
 
+// seedPublicSpace seeds a space and flips it to visibility='public'. Crawler OG
+// surfaces (/p/{id}, /spaces/{id}) now gate on a public space, so tests that
+// assert a rendered card must publish the space first.
+func seedPublicSpace(t *testing.T, d *sql.DB, name, slug string, ownerID int64) int64 {
+	t.Helper()
+	id := seedSpace(t, d, name, slug, ownerID)
+	if _, err := d.ExecContext(context.Background(),
+		`UPDATE spaces SET visibility = 'public' WHERE id = $1`, id); err != nil {
+		t.Fatalf("publish space: %v", err)
+	}
+	return id
+}
+
 func seedMember(t *testing.T, d *sql.DB, spaceID, userID int64, role string) {
 	t.Helper()
 	if _, err := d.ExecContext(context.Background(),
