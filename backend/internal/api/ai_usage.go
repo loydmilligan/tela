@@ -14,9 +14,11 @@ import (
 // Token counts are length-based ESTIMATES (see EstimateTokens) — fine for the
 // cost-estimation use case, not exact billing.
 
-// recordAIUsage appends one usage row. Best-effort: detached context (some
-// callers are background workers) and errors are logged, never propagated.
+// recordAIUsage appends one usage row and increments the Prometheus token
+// counter. Best-effort: detached context (some callers are background workers)
+// and errors are logged, never propagated.
 func (s *Server) recordAIUsage(kind, model string, inTokens, outTokens, units int) {
+	aiTokens.WithLabelValues(kind).Add(float64(inTokens + outTokens))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := s.DB.ExecContext(ctx,

@@ -52,6 +52,18 @@ var (
 		},
 		[]string{"kind"},
 	)
+
+	// aiTokens counts estimated token consumption at the LLM service chokepoints
+	// (chat, embed, image). Input + output tokens are summed for each call so
+	// increase() over a window gives the total token rate — the alertable signal
+	// for a runaway Atlas run or Ask loop exhausting the LLM budget.
+	aiTokens = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tela_ai_tokens_total",
+			Help: "Estimated AI tokens consumed by kind (chat|embed|image).",
+		},
+		[]string{"kind"},
+	)
 )
 
 func init() {
@@ -59,6 +71,7 @@ func init() {
 		httpRequests,
 		httpDuration,
 		clientErrors,
+		aiTokens,
 		// Go runtime + process collectors (goroutines, GC, memory, open FDs,
 		// CPU, etc.).
 		collectors.NewGoCollector(),
