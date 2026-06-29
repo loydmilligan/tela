@@ -242,6 +242,13 @@
 		error 404
 	}
 
+	# Prometheus metrics — backend-authenticated (admin PAT required by the handler).
+	# NOT on auth.IsPublicPath so the backend session middleware runs. noindex.
+	handle /metrics {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
 	# ── Returning user: hard load of "/" → app, not the landing ─────────────
 	# A user who types the bare domain while signed in should land in the app,
 	# not the marketing page. Caddy can't VALIDATE the tela_session cookie
