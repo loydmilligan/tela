@@ -81,7 +81,7 @@ import { mermaidPlugin } from './milkdown-mermaid'
 import { chartPlugin } from './milkdown-chart'
 import { typographyInputRules } from './milkdown-typography'
 import { listIndentKeymap } from './milkdown-list-indent'
-import { directiveRemarkPlugin } from './milkdown-directives'
+import { directiveRemarkPlugin, unknownDirectiveFallbackPlugin } from './milkdown-directives'
 import { tabSchema, tabsNodeView, tabsSchema } from './milkdown-tabs'
 import {
   kanbanColumnSchema,
@@ -764,6 +764,10 @@ function MilkdownEditorInner({
       .use(chartPlugin)
       // Container directives (:::name) + the tabs block built on them.
       .use(directiveRemarkPlugin)
+      // Unwrap any directive without a dedicated schema (below) to its nested
+      // content, so a foreign/typo'd `:::name` can't reach the strict parser
+      // and crash the editor. Must follow directiveRemarkPlugin (the parser).
+      .use(unknownDirectiveFallbackPlugin)
       .use(tabSchema)
       .use(tabsSchema)
       .use(tabsNodeView)

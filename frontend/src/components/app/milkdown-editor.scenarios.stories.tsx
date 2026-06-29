@@ -84,6 +84,42 @@ export const RendersRichBlocks: Story = {
   },
 }
 
+// ── Scenario 1b: an unknown `:::name` directive must NOT crash the mount ─────
+// Regression: remark-directive parses ANY `:::name`, but Milkdown's strict
+// mdast→PM parser throws parserMatchError on a directive without a schema,
+// aborting the whole editor mount (blank, uneditable body). The fallback
+// transform (unknownDirectiveFallbackPlugin) unwraps unknown directives to
+// their nested content first. Here a foreign `:::callout-box` wraps real text
+// between two known blocks — the editor must still mount and keep all content.
+export const UnknownDirectiveDoesNotCrash: Story = {
+  args: {
+    defaultValue: [
+      '# Before',
+      '',
+      ':::callout-box',
+      'Surviving body text.',
+      ':::',
+      '',
+      '> [!NOTE]',
+      '> After note.',
+    ].join('\n'),
+  },
+  play: async ({ canvasElement }) => {
+    // The editor mounts at all — pre-fix this throws and never renders.
+    const pm = await getEditable(canvasElement)
+    await waitFor(() => {
+      expect(pm.querySelector('h1')?.textContent).toContain('Before')
+      // unknown directive unwrapped → its body survives as plain content
+      expect(pm.textContent).toContain('Surviving body text.')
+      // the known block after the unknown one still parses
+      expect(pm.querySelector('.tela-callout')).not.toBeNull()
+      expect(pm.querySelector('.tela-callout')?.textContent).toContain(
+        'After note.',
+      )
+    })
+  },
+}
+
 // ── Scenario 2: slash-insert a callout, then type into its body ──────────────
 export const SlashInsertCallout: Story = {
   args: { defaultValue: '' },
