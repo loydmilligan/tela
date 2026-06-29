@@ -15,22 +15,27 @@ import (
 // auth.IsPublicPath via isSpaceOGPath.
 
 // loadSpaceForOG reads the space's name/description/owning-org by id, writing an
-// HTML 404/500 and returning ok=false on miss/error.
+// HTML 404/500 and returning ok=false on miss/error or when the space is private.
 func (s *Server) loadSpaceForOG(w http.ResponseWriter, r *http.Request) (id, orgID int64, name, desc string, ok bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeNotFoundHTML(w)
 		return
 	}
+	var visibility string
 	err = s.DB.QueryRowContext(r.Context(),
-		`SELECT name, COALESCE(description, ''), COALESCE(org_id, 0) FROM spaces WHERE id = $1`, id).
-		Scan(&name, &desc, &orgID)
+		`SELECT name, COALESCE(description, ''), COALESCE(org_id, 0), visibility FROM spaces WHERE id = $1`, id).
+		Scan(&name, &desc, &orgID, &visibility)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeNotFoundHTML(w)
 		return
 	}
 	if err != nil {
 		writeInternalHTML(w)
+		return
+	}
+	if visibility != spaceVisibilityPublic {
+		writeNotFoundHTML(w)
 		return
 	}
 	ok = true
