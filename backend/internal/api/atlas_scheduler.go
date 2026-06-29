@@ -38,6 +38,12 @@ func (m *atlasManager) startScheduler(ctx context.Context, paused func() bool) {
 	}()
 }
 
+// atlasRunTimeout is the wall-clock budget for a single Atlas run. A run that
+// exceeds it is almost certainly hung (dead LLM endpoint, infinite clone, etc.)
+// and is failed by the watchdog. Generous to accommodate large mono-repos on
+// slow hardware; typical runs finish in 10–20 minutes.
+const atlasRunTimeout = 4 * time.Hour
+
 // tick runs detection then regeneration (detection first so a freshly-detected
 // drift can regen in the same tick). No-op when AI is unconfigured or paused.
 func (m *atlasManager) tick(ctx context.Context) {
@@ -47,8 +53,56 @@ func (m *atlasManager) tick(ctx context.Context) {
 	if m.paused != nil && m.paused() {
 		return
 	}
+	m.killStuckRuns(ctx)
 	m.detectStaleness(ctx)
 	m.pollRegen(ctx)
+}
+
+// killStuckRuns fails any run that has been status='running' for more than
+// atlasRunTimeout. The in-process goroutine is cancelled first (so LLM/network
+// calls unblock); the DB row is then marked failed so the next scheduler tick
+// can start a fresh run for the same source if it is still stale.
+func (m *atlasManager) killStuckRuns(ctx context.Context) {
+	rows, err := m.s.DB.QueryContext(ctx,
+		`SELECT r.id, s.id AS source_id, r.started_at
+		   FROM atlas_runs r JOIN atlas_sources s ON s.id = r.source_id
+		  WHERE r.status = 'running'`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	type stuck struct {
+		runID, sourceID int64
+		startedAt       string
+	}
+	var hits []stuck
+	for rows.Next() {
+		var h stuck
+		if err := rows.Scan(&h.runID, &h.sourceID, &h.startedAt); err == nil {
+			hits = append(hits, h)
+		}
+	}
+	rows.Close()
+
+	now := time.Now()
+	for _, h := range hits {
+		t, err := time.Parse(atlasTSLayout, h.startedAt)
+		if err != nil || now.Sub(t) < atlasRunTimeout {
+			continue
+		}
+		slog.Warn("atlas: killing stuck run", "run", h.runID, "source", h.sourceID, "age", now.Sub(t).Round(time.Minute))
+		// Cancel the in-process goroutine if still alive.
+		m.mu.Lock()
+		if cancel, ok := m.active[h.sourceID]; ok {
+			cancel()
+			delete(m.active, h.sourceID)
+		}
+		m.mu.Unlock()
+		_, _ = m.s.DB.ExecContext(ctx,
+			`UPDATE atlas_runs SET status='failed', err='timed out after 4h', finished_at=tela_now() WHERE id=$1`,
+			h.runID)
+	}
 }
 
 // detectStaleness runs the cheap no-clone drift probe for every source whose
