@@ -106,6 +106,25 @@ function OrgSSODirect({ next, orgName }: { next: string; orgName: string | null 
   )
 }
 
+// postOrgSSOStart hard-navigates to the org SSO start via a POST form so the
+// work email rides in the request body, never a GET URL. A login URL carrying
+// an email + a next-to-login redirect is the classic phishing shape that gets a
+// domain flagged by Safe Browsing — keep it out of the URL/history.
+function postOrgSSOStart(email: string, next: string) {
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = '/api/auth/sso/org/start'
+  for (const [name, value] of Object.entries({ email, next })) {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = name
+    input.value = value
+    form.appendChild(input)
+  }
+  document.body.appendChild(form)
+  form.submit()
+}
+
 // OrgSSO bounces to the org connection mapped to a work email's domain. The
 // backend 404s a domain with no SSO; we surface that inline.
 function OrgSSO({
@@ -122,9 +141,7 @@ function OrgSSO({
   const go = (value: string) => {
     const v = value.trim()
     if (!v) return
-    window.location.assign(
-      `/api/auth/sso/org/start?email=${encodeURIComponent(v)}&next=${encodeURIComponent(next)}`,
-    )
+    postOrgSSOStart(v, next)
   }
 
   // Password sign-in ON: there's already an "Email or username" field above, so

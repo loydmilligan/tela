@@ -122,6 +122,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// provider segment is shared by all org connections (org id rides in state).
 	mux.HandleFunc("GET /api/auth/sso/providers", srv.SSOProviders)
 	mux.HandleFunc("GET /api/auth/sso/{provider}/start", srv.SSOStart)
+	// POST variant: the org email-prompt submits the work email in the body so it
+	// stays out of the URL (Safe Browsing phishing-shape avoidance; see SSOStart).
+	mux.HandleFunc("POST /api/auth/sso/{provider}/start", srv.SSOStart)
 	mux.HandleFunc("GET /api/auth/sso/{provider}/callback", srv.SSOCallback)
 
 	mux.HandleFunc("GET /api/spaces", srv.ListSpaces)

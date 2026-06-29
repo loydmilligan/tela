@@ -76,7 +76,11 @@ func (s *Server) SSOProviders(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SSOStart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	provider := r.PathValue("provider")
-	next := sanitizeNext(r.URL.Query().Get("next"))
+	// r.FormValue reads query (GET: social buttons, custom-domain direct) OR POST
+	// body. The org email-prompt POSTs so the work email never lands in a GET URL
+	// — a login URL carrying an email + a next-to-login redirect is the textbook
+	// phishing shape that gets the domain flagged by Safe Browsing.
+	next := sanitizeNext(r.FormValue("next"))
 
 	var (
 		p                *ssoProvider
@@ -95,9 +99,9 @@ func (s *Server) SSOStart(w http.ResponseWriter, r *http.Request) {
 		if oc, hasOrg := auth.OrgContextFromContext(ctx); hasOrg {
 			conn, ok, err = s.orgSSOByID(ctx, oc.OrgID)
 		} else {
-			domain := normalizeDomain(r.URL.Query().Get("domain"))
+			domain := normalizeDomain(r.FormValue("domain"))
 			if domain == "" {
-				domain = emailDomain(normalizeEmail(r.URL.Query().Get("email")))
+				domain = emailDomain(normalizeEmail(r.FormValue("email")))
 			}
 			if domain == "" {
 				writeError(w, http.StatusBadRequest, "bad_request", "a domain or email is required")
