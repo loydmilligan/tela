@@ -196,15 +196,29 @@ type davWriteFile struct {
 	filename string
 
 	buf     bytes.Buffer
+	tooBig  bool
 	flushed bool
 	result  models.Page
 	err     error
 }
 
-func (f *davWriteFile) Write(p []byte) (int, error) { return f.buf.Write(p) }
+func (f *davWriteFile) Write(p []byte) (int, error) {
+	if f.tooBig {
+		return 0, os.ErrInvalid
+	}
+	if int64(f.buf.Len()+len(p)) > davFileMaxBytes() {
+		f.tooBig = true
+		f.err = errors.New("markdown file exceeds size limit")
+		return 0, f.err
+	}
+	return f.buf.Write(p)
+}
 
 func (f *davWriteFile) flush() error {
 	if f.flushed {
+		return f.err
+	}
+	if f.tooBig {
 		return f.err
 	}
 	f.flushed = true
