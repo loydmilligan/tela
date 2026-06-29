@@ -49,6 +49,14 @@ POST /api/pages/{id}/deck/parse           parse a draft (editor outline)
 GET  /api/pages/{id}/deck.pdf | .pptx     export (Chromium)
 ```
 
+The **generic page-export routes are deck-aware**: `GET /api/pages/{id}/pdf` and
+the share-link `GET /api/share/{token}/pdf` (`pdf_export.go`) detect a deck
+(`isDeckBag`) and route to the Slidev export (`streamDeckPDF`, shared with
+`/deck.pdf`) instead of feeding the Slidev source to gotenberg — so "Export PDF"
+from anywhere yields real per-slide frames, never a wall of `---`-separated YAML.
+(A public-space deck has no PDF route at all — it renders `PublicDeckView` /
+Present, not a prose reader.)
+
 Public (`/api/deck/` + `/api/public/` are in `IsPublicPath`) — content-addressed
 or visibility-gated, self-authenticating:
 

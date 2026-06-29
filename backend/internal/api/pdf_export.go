@@ -202,13 +202,21 @@ func (s *Server) ExportSharePDF(w http.ResponseWriter, r *http.Request) {
 		target = pid
 	}
 
+	// A shared deck exports as real per-slide frames too (same reasoning as the
+	// authed /pdf route) — the share token already gated scope above.
+	p, err := selectPageByID(r.Context(), s.DB, target)
+	if err == nil && isDeckBag(p.Props) {
+		s.streamDeckPDF(w, r, p)
+		return
+	}
+
 	url := pdfRenderBaseURL() + "/share/" + share.Token
 	if target != share.PageID {
 		url += "/p/" + strconv.FormatInt(target, 10)
 	}
 	url += themeQuery(r)
 	title := ""
-	if p, err := selectPageByID(r.Context(), s.DB, target); err == nil {
+	if err == nil {
 		title = p.Title
 	}
 	s.streamPDF(w, r, url, title)
