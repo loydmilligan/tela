@@ -95,6 +95,12 @@ func (s *Server) ListOrgAudit(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOrgAdmin(w, r, orgID) {
 		return
 	}
+	// The org-scoped audit log is an Enterprise feature (entitled via plan on
+	// cloud, or a license key on self-host).
+	if !s.entitled(r.Context(), account{Kind: accountOrg, ID: orgID}, "audit") {
+		writeError(w, http.StatusPaymentRequired, "upgrade_required", "the audit log is an Enterprise feature — move this org to the Enterprise plan to view it")
+		return
+	}
 	limit := clampLimit(r.URL.Query().Get("limit"), 100, 200)
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT a.id, a.actor_user_id, u.username, a.action, a.target_kind, a.target_id, a.detail, a.created_at

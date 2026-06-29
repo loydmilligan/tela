@@ -23,6 +23,11 @@ func TestOrgAudit_OrgAdminScopedView(t *testing.T) {
 	if err := d.QueryRowContext(ctx, `INSERT INTO orgs (name, slug) VALUES ('Other', 'other') RETURNING id`).Scan(&otherOrg); err != nil {
 		t.Fatalf("insert other org: %v", err)
 	}
+	// The org audit log is an Enterprise feature (migration 0059) — entitle Acme
+	// so the view is reachable. The access checks below are independent of it.
+	if _, err := d.ExecContext(ctx, `UPDATE orgs SET plan_key='org_enterprise' WHERE id=$1`, orgID); err != nil {
+		t.Fatalf("entitle org: %v", err)
+	}
 	if _, err := d.ExecContext(ctx, `INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1, $2, 'admin')`, orgID, admin); err != nil {
 		t.Fatalf("insert org admin: %v", err)
 	}
@@ -70,5 +75,28 @@ func TestOrgAudit_OrgAdminScopedView(t *testing.T) {
 		userRequest(http.MethodGet, "/api/orgs/"+intStr(orgID)+"/audit", "", authUser(super, "super", true)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("instance-admin org audit: code=%d body=%q want 200", rec.Code, rec.Body.String())
+	}
+}
+
+// TestOrgAudit_RequiresEntitlement — the audit view is gated on the Enterprise
+// "audit" entitlement: an org admin of a non-Enterprise org gets 402.
+func TestOrgAudit_RequiresEntitlement(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	ctx := context.Background()
+
+	admin := seedUser(t, d, "freeadmin", "adminpw123", false)
+	var orgID int64
+	if err := d.QueryRowContext(ctx, `INSERT INTO orgs (name, slug) VALUES ('Free Co', 'freeco') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	if _, err := d.ExecContext(ctx, `INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1, $2, 'admin')`, orgID, admin); err != nil {
+		t.Fatalf("insert org admin: %v", err)
+	}
+	// org_free (default) — no audit entitlement.
+	rec := routedRecorder("GET /api/orgs/{id}/audit", srv.ListOrgAudit,
+		userRequest(http.MethodGet, "/api/orgs/"+intStr(orgID)+"/audit", "", authUser(admin, "freeadmin", false)))
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("unentitled org audit: code=%d body=%q want 402", rec.Code, rec.Body.String())
 	}
 }

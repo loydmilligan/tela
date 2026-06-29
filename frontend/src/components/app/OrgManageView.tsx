@@ -1566,11 +1566,19 @@ function LoginMethodsSection({ orgId }: { orgId: number }) {
 // /api/orgs/{id}/audit; reuses AuditRow from the instance-wide audit tab.
 function OrgActivityPanel({ orgId }: { orgId: number }) {
   const audit = useOrgAudit(orgId)
+  // The audit log is Enterprise-gated; the backend returns 402 upgrade_required
+  // for a non-Enterprise org. Show that as an upgrade nudge, not a hard error.
+  const needsUpgrade = audit.error instanceof ApiError && audit.error.code === 'upgrade_required'
   return (
     <div className="flex flex-col gap-[var(--space-3)]">
       {audit.isLoading ? (
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
           Loading activity…
+        </p>
+      ) : needsUpgrade ? (
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          The audit log is an Enterprise feature. Upgrade this organization's plan to see its
+          access history — who added whom, what was shared, which domains were mapped.
         </p>
       ) : audit.isError ? (
         <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
