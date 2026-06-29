@@ -24,6 +24,12 @@ export default defineConfig({
     // files.
     alias: [{ find: /^refractor$/, replacement: 'refractor/core' }],
   },
+  // Pre-bundle the Storybook interaction-test API so the browser test runner
+  // doesn't discover + optimize it mid-run (which reloads Vite and fails the
+  // in-flight test with "Failed to fetch dynamically imported module").
+  optimizeDeps: {
+    include: ['storybook/test'],
+  },
   server: {
     // When running an isolated verify backend (TELA_PROXY_TARGET set), also
     // expose the dev server on the LAN/tailnet and accept any Host header so it

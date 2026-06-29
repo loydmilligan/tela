@@ -5,6 +5,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
 import { buildChartWidget } from '../../lib/diagrams/chart'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // The chart render core lives in lib/diagrams/chart.ts (Milkdown-free, shared
 // with the view renderer). This file keeps the editor decoration + slash insert.
@@ -69,6 +70,5 @@ export function insertChart(ctx: Ctx) {
     { language: 'chart' },
     view.state.schema.text(starter),
   )
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

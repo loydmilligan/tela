@@ -5,6 +5,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
 import { buildMermaidElement } from '../../lib/diagrams/mermaid'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // Mermaid diagrams: a ` ```mermaid ` code block renders its diagram beneath the
 // (still-editable) source. Canonical markdown — GitHub renders the same fence
@@ -57,6 +58,5 @@ export function insertMermaid(ctx: Ctx) {
   if (!codeType) return
   const starter = 'graph TD\n  A[Start] --> B[End]'
   const node = codeType.create({ language: 'mermaid' }, view.state.schema.text(starter))
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

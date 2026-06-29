@@ -8,6 +8,7 @@ import {
   CALENDAR_EVENT_RE,
   pad2,
 } from '../../lib/blocks/calendar-grid'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // M19 — calendar: a `:::calendar{month=YYYY-MM}` container directive over a
 // bullet list of `YYYY-MM-DD Title` events. tela renders a month grid with the
@@ -183,6 +184,5 @@ export function insertCalendar(ctx: Ctx) {
     paraType.create(null, schema.text(`${today} An event`)),
   )
   const node = calType.create({ month }, listType.create(null, [item]))
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

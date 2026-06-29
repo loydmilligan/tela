@@ -3,6 +3,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { Ctx } from '@milkdown/ctx'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 import {
   CALLOUT_LABELS,
   CALLOUT_TYPE_SET,
@@ -170,24 +171,12 @@ export const calloutSchema = $nodeSchema('callout', () => ({
 // so it behaves like the other block inserts.
 export function insertCallout(ctx: Ctx) {
   const view = ctx.get(editorViewCtx)
-  const { state } = view
-  const calloutType = state.schema.nodes.callout
-  const paragraphType = state.schema.nodes.paragraph
+  const { schema } = view.state
+  const calloutType = schema.nodes.callout
+  const paragraphType = schema.nodes.paragraph
   if (!calloutType || !paragraphType) return
   const callout = calloutType.create({ type: 'note' }, paragraphType.create())
-  const tr = state.tr.replaceSelectionWith(callout)
-  // Find the inserted callout (last one whose body is an empty paragraph) and
-  // place the caret inside it: callout open (+1) + paragraph open (+1).
-  let targetPos = -1
-  tr.doc.descendants((node, pos) => {
-    if (node.type === calloutType && node.textContent === '') targetPos = pos
-    return true
-  })
-  if (targetPos !== -1) {
-    tr.setSelection(TextSelection.create(tr.doc, targetPos + 2))
-  }
-  view.dispatch(tr.scrollIntoView())
-  view.focus()
+  insertBlock(view, callout)
 }
 
 // Live conversion: user types `> [!NOTE]` (or any of the 5 types) on the

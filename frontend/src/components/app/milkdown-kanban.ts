@@ -4,6 +4,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // Kanban board: a `:::kanban` container whose `### Column` sections each hold a
 // checklist — rendered as a draggable board in tela, degrading to plain
@@ -285,6 +286,5 @@ export function insertKanban(ctx: Ctx) {
     mkColumn('In progress', 'Second task'),
     mkColumn('Done', 'Third task'),
   ])
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

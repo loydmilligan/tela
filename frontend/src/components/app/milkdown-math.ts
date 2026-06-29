@@ -7,6 +7,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import katex from 'katex'
 import remarkMath from 'remark-math'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // Math / LaTeX. `$inline$` and `$$block$$` round-trip as canonical markdown:
 // remark-math parses them into mdast `inlineMath` / `math` nodes (and its
@@ -236,6 +237,5 @@ export const mathBlockInputRule = $inputRule((ctx) => {
 export function insertMathBlock(ctx: Ctx) {
   const view = ctx.get(editorViewCtx)
   const node = mathBlockSchema.type(ctx).create({ value: '' })
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

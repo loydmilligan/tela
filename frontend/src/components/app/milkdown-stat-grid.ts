@@ -5,6 +5,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
 import { accentForValue, statLineClass } from '../../lib/blocks/stat-trend'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // M19 — stat grid: a `:::stats` container directive whose `### Label` sections
 // become KPI tiles (label + a big value, with an optional trend). tela renders
@@ -284,6 +285,5 @@ export function insertStatGrid(ctx: Ctx) {
     mkTile('Active users', '12,400', '', '↑ 3% MoM', 'monthly actives'),
     mkTile('Avg. response', '142', 'ms', '↓ 12%', 'p95 latency'),
   ])
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

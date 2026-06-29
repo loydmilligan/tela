@@ -4,7 +4,6 @@ import { usePluginViewContext } from '@prosemirror-adapter/react'
 import { useInstance } from '@milkdown/react'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
-import { TextSelection } from '@milkdown/kit/prose/state'
 import {
   createCodeBlockCommand,
   insertHrCommand,
@@ -21,6 +20,7 @@ import { insertTaskList } from './milkdown-task-list'
 import { insertMathBlock } from './milkdown-math'
 import { TEMPLATES, insertTemplate } from './milkdown-templates'
 import { setPos, setShow } from './milkdown-floating'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 import { insertMermaid } from './milkdown-mermaid'
 import { insertChart } from './milkdown-chart'
 import { insertTabs } from './milkdown-tabs'
@@ -161,52 +161,23 @@ function filterCommands(query: string): SlashCommand[] {
 }
 
 // Insert a fresh `details > details_summary("Click to expand") + paragraph("")`
-// node at the cursor and land the caret inside the empty body paragraph so
-// the user can immediately start typing. The replacement uses
-// `replaceSelectionWith`, which has subtle positioning semantics (replaces an
-// empty enclosing textblock; splits non-empty; appends at the closest valid
-// level otherwise) — instead of computing the new details' start position
-// arithmetically, we walk the post-replacement doc for a details node whose
-// summary equals our placeholder. Robust to PM's positioning quirks at the
-// cost of one O(doc) walk (negligible).
+// node at the cursor and land the caret inside the empty body paragraph so the
+// user can immediately start typing. `caret: 'inside'` resolves to the details'
+// LAST child — the body paragraph after the summary — via insertBlock.
 function insertCollapsible(ctx: Ctx) {
   const view = ctx.get(editorViewCtx)
-  const { state } = view
-  const detailsType = state.schema.nodes.details
-  const summaryType = state.schema.nodes.details_summary
-  const paragraphType = state.schema.nodes.paragraph
+  const { schema } = view.state
+  const detailsType = schema.nodes.details
+  const summaryType = schema.nodes.details_summary
+  const paragraphType = schema.nodes.paragraph
   if (!detailsType || !summaryType || !paragraphType) return
   const summary = summaryType.create(
     null,
-    state.schema.text(COLLAPSIBLE_DEFAULT_SUMMARY),
+    schema.text(COLLAPSIBLE_DEFAULT_SUMMARY),
   )
   const body = paragraphType.create()
   const details = detailsType.create(null, [summary, body])
-  const tr = state.tr.replaceSelectionWith(details)
-  // Find the LAST details whose summary matches the placeholder — assumed to be
-  // the one we just inserted. (A user can't realistically have a pre-existing
-  // details with the exact placeholder text below the insertion point during
-  // the same tick; even if they do, the cursor still lands inside a valid
-  // collapsible body and the worst case is a one-keystroke nuisance.)
-  let targetPos = -1
-  tr.doc.descendants((node, pos) => {
-    if (node.type === detailsType) {
-      const sm = node.firstChild
-      if (sm && sm.textContent === COLLAPSIBLE_DEFAULT_SUMMARY) {
-        targetPos = pos
-      }
-    }
-    return true
-  })
-  if (targetPos !== -1) {
-    // Inside the inserted details, the body paragraph sits right after the
-    // summary. Caret = detailsStart + 1 (enter details) + summary.nodeSize
-    // (skip summary) + 1 (enter body paragraph).
-    const caret = targetPos + 1 + summary.nodeSize + 1
-    tr.setSelection(TextSelection.create(tr.doc, caret))
-  }
-  view.dispatch(tr.scrollIntoView())
-  view.focus()
+  insertBlock(view, details)
 }
 
 // Delete the `/query` text in the current paragraph before running a command.

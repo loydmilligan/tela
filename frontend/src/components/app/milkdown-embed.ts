@@ -2,6 +2,7 @@ import { $nodeSchema } from '@milkdown/kit/utils'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
 import { embedIframeSrc } from '../../lib/markdown/embed'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 // Provider resolution lives in lib/markdown/embed.ts (Milkdown-free, shared with
 // the view renderer); re-export so existing importers (the story) keep working.
 export { embedIframeSrc }
@@ -130,6 +131,5 @@ export function insertEmbed(ctx: Ctx) {
   const embedType = view.state.schema.nodes.embed
   if (!embedType) return
   const node = embedType.create({ url: trimmed })
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

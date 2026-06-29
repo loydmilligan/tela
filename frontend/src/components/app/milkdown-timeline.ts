@@ -1,6 +1,7 @@
 import { $nodeSchema } from '@milkdown/kit/utils'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // M19 — timeline: a `:::timeline` container directive wrapping a bullet list of
 // dated events. tela renders a vertical rail with a marker dot per event and
@@ -76,6 +77,5 @@ export function insertTimeline(ctx: Ctx) {
     mkItem('2026-06-01', 'v2.0 — planned'),
   ])
   const node = timelineType.create(null, list)
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node, { caret: 'none' })
 }

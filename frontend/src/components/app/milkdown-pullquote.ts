@@ -2,6 +2,7 @@ import { $nodeSchema, $prose } from '@milkdown/kit/utils'
 import { Plugin } from '@milkdown/kit/prose/state'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/ctx'
+import { insertBlock } from '../../lib/milkdown/insert-block'
 
 // Pull-quote: a `:::quote` container directive that renders as an elevated,
 // large-type quotation with an optional attribution line. Round-trips through
@@ -165,6 +166,5 @@ export function insertPullquote(ctx: Ctx) {
   const paraType = schema.nodes.paragraph
   if (!pullquoteType || !paraType) return
   const node = pullquoteType.create(null, paraType.create())
-  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
-  view.focus()
+  insertBlock(view, node)
 }
