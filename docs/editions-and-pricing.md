@@ -80,8 +80,24 @@ self-host they need BYO inference (a cost the operator already pays), so they ar
 to meter there; keeping them free is what makes the community edition spread. We monetize
 that AI through **cloud (managed/included)**, not by crippling self-host.
 
-> **Change from today:** SSO + audit currently read as "on every plan." In this model they
-> move into Enterprise. Basic orgs + per-space roles stay in core.
+> **Change from today (verified against code, 2026-06-30):** SSO (social + per-org OIDC,
+> `sso_handlers.go`/`org_sso.go`/migration `0016`) and audit (`events` feed + `access_audit`/
+> `api_key_audit`, migration `0033`) are **already built and ungated** — free to everyone
+> today. The work is to put them behind the **unified entitlement** below, not to build them.
+> tela is **pre-release with no self-serve customers**, so this is a clean greenfield gating
+> change — no grandfathering, no rug-pull. Basic orgs + per-space roles stay in core.
+
+### One entitlement, two unlock paths
+
+A single `entitled(ctx, acct, feature)` gates every paid feature (`sso`, `audit`, `scim`,
+`premium_connectors`, `retention`, …). It returns true if **either**:
+- **cloud:** the account's plan grants it (`plans.features[feature]`, the existing
+  `featureEnabled` path), **or**
+- **self-host:** a valid installed **license key** grants it.
+
+So the same feature code is gated once; cloud unlocks via the plan, self-host via the key.
+No duplicate gating, no `ee/`-only forks of feature logic — just where the entitlement
+comes from.
 
 ## 5. AI packaging
 
@@ -161,16 +177,38 @@ compliant reseller. A source-available core (BSL/FSL, time-converting) would for
 the cost of OSI "open source" cred + goodwill. For a wiki this size the reseller risk is
 low → **stay AGPL-dual**, accept it. Revisit only if a reseller actually appears.
 
-## 10. Build order (when implementing)
+## 10. Build order (phased)
 
-1. Backend `plans` rework — collapse split ladder to the unified cloud ladder; drop
-   storage/page gates as headline; AI allowance + Atlas cap + seats stay; add credit
-   top-ups. Reprice Polar products (Team $6→$10).
-2. `ee/` module scaffold + offline license-key verification + seat enforcement;
-   visible-but-locked UI for EE features; self-serve key issuance + trial keys.
-3. First EE features: SSO/SAML/OIDC, audit log (then SCIM, advanced RBAC, premium
-   connectors, retention, HA, white-label).
-4. `docker-compose.ai.yml` one-command BYO-AI default for self-host.
-5. Commercial-license SKU + AGPL-relief terms; dual-license docs.
-6. Landing: rewrite `CONTENT.md` §8 + §8b to this model; cloud ladder in the on-page
-   Pricing section; full detail (incl. self-host editions) on `/pricing`.
+Landing copy is **done** (`CONTENT.md` §8b, `Pricing.astro`, `SelfHostPricing.astro`).
+SSO + audit + feature-flag infra + Polar + quotas already exist — see §4 note. Remaining:
+
+**Phase 1 — Cloud ladder + entitlement gating (unblocks the landing deploy).**
+- Migration: rationalize the `plans` catalog — rename `personal_plus`→Personal, `org_team`→
+  Team at **$10/$8**; raise storage/page caps off the headline (keep as anti-abuse); set
+  `features = {sso, audit}` true on Enterprise; confirm AI caps (Free 50/1 · Personal 1000/5
+  · Team 2000/20 · Ent ∞).
+- Add `entitled()` wrapping `featureEnabled` (cloud path; key path stubbed for now).
+- Gate SSO config/use + the audit screen behind `entitled(…, 'sso'/'audit')`.
+- Polar: repriced Team products ($10/mo, $96/yr); swap `TELA_POLAR_PRODUCTS` on the box.
+- Frontend: collapse the hardcoded personal/org grouping into the 4-tier ladder; drop SSO
+  from "every plan includes"; scaffold the visible-but-locked affordance.
+- Verify checkout end-to-end → **`make deploy-landing`** (cloud half of the site is now true).
+
+**Phase 2 — License keys + `ee/` module (self-host capture infra).**
+- Signed offline key (Ed25519: tier + seat cap + expiry + `features[]`); embedded public
+  key; one binary, key-gated (no build tags). Admin "License" tab: paste → verify → unlock.
+- Wire the key path into `entitled()`; seat enforcement vs the key.
+
+**Phase 3 — Net-new EE features + self-serve keys.**
+- The clean greenfield EE: **SCIM**, **premium Atlas connectors** (Slack/Drive/GitHub/
+  Confluence), retention/legal-hold, white-label polish.
+- Self-serve key issuance (Polar product → webhook mints + emails a key) + trial keys;
+  visible-but-locked EE UI fully wired.
+
+**Phase 4 — Commercial license + BYO-AI + docs + full deploy.**
+- Published commercial-license (AGPL-relief) SKU + terms; dual-license docs.
+- `docker-compose.ai.yml` one-command BYO-AI default for self-host.
+- Update `docs/` + tela Docs space 16; deploy the self-host half of `/pricing`.
+
+**Follow-on (not blocking):** AI credit top-ups for cloud overage (a Polar one-time product
++ `cloud_usage` credit balance) — slots after Phase 1 whenever overage volume justifies it.
