@@ -1,4 +1,17 @@
 @layer components {
+  /* Empty-line discoverability hint (milkdown-placeholder.ts) — a muted
+     "Type / for commands" on the focused empty top-level paragraph; the
+     no-toolbar way to surface the slash menu. Render-only (a node decoration),
+     never part of the document or canonical markdown. float + height:0 keeps the
+     caret at the line start while the hint shows. */
+  .tela-placeholder::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    pointer-events: none;
+    height: 0;
+    float: left;
+  }
+
   /* Upload placeholder (milkdown-upload-placeholder.ts) — an inline pill shown
      at the insert point while an attachment uploads, swapped for the real node
      on success. */
