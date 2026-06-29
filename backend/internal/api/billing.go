@@ -276,6 +276,7 @@ func (s *Server) PolarWebhook(w http.ResponseWriter, r *http.Request) {
 		eventID, evt.Type); err != nil {
 		slog.Error("billing: record webhook id", "event_id", eventID, "err", err)
 	}
+	polarLastWebhook.SetToCurrentTime()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

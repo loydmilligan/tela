@@ -62,6 +62,16 @@ var (
 		Help: "Atlas runs killed by the 4h stuck-run watchdog.",
 	})
 
+	// polarLastWebhook tracks the Unix timestamp of the last successfully
+	// processed Polar webhook. Alertable when it's been silent for >24h while
+	// active subscriptions exist (possible Polar delivery outage or misconfigured
+	// endpoint). Set to 0 on boot (never received); the alert rule must account
+	// for this with a noDataState=OK posture.
+	polarLastWebhook = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "tela_polar_last_webhook_timestamp_seconds",
+		Help: "Unix timestamp of the last successfully processed Polar webhook. 0 = never received.",
+	})
+
 	// aiTokens counts estimated token consumption at the LLM service chokepoints
 	// (chat, embed, image). Input + output tokens are summed for each call so
 	// increase() over a window gives the total token rate — the alertable signal
@@ -82,6 +92,7 @@ func init() {
 		clientErrors,
 		aiTokens,
 		atlasKills,
+		polarLastWebhook,
 		// Go runtime + process collectors (goroutines, GC, memory, open FDs,
 		// CPU, etc.).
 		collectors.NewGoCollector(),
