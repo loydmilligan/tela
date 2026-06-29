@@ -1,7 +1,7 @@
 # tela — Claude connector directory submission
 
 Ready-to-paste payload for `https://clau.de/mcp-directory-submission`.
-Values verified live 2026-06-05. `‹TODO›` marks anything Cagdas still has to fill or confirm.
+Values verified live 2026-06-05; tool table updated 2026-06-29 to reflect 39-tool surface. `‹TODO›` marks anything Cagdas still has to fill or confirm.
 
 ---
 
@@ -32,7 +32,7 @@ Concrete agent workflows, each grounded in the actual tools:
 2. **Draft a runbook from a deploy log.** Given a deploy or incident log in the conversation, an agent writes a structured runbook and persists it with `create_page` in the relevant space, so the next session (human or agent) starts from durable team memory instead of re-pasting context.
 3. **Keep a doc current after a change.** An agent that just shipped a change finds the affected page via `search`, patches the body with `update_page` (which auto-snapshots a revision), and leaves an anchored note with `add_comment`.
 4. **Audit what links to a page before editing it.** Before a rename or restructure, an agent calls `list_backlinks` to see every page that references the target, then uses `move_page` / `update_page` without breaking references.
-5. **Pull an external doc into the wiki.** An agent imports an external page into a space with `import_mira` (server-side fetch, https-only, allowlisted hosts), turning a one-off link into a durable, searchable page.
+5. **Attach a file to a page and make it searchable.** An agent uploads a PDF with `upload_attachment` — it renders inline on the page and is immediately indexed so `research` can cite it in answers alongside page content.
 
 ---
 
@@ -43,8 +43,8 @@ Concrete agent workflows, each grounded in the actual tools:
 | **Endpoint URL** | `https://telawiki.com/api/mcp` |
 | **Transport** | Streamable HTTP (current MCP transport; SSE not used) |
 | **Auth type** | OAuth 2.1 — WorkOS AuthKit, issuer `https://decisive-relation-32-staging.authkit.app`; PKCE S256 + Dynamic Client Registration. Personal Access Token bearer also accepted. |
-| **Read capabilities** | List/read spaces and pages, list backlinks, read page chunks, full-text search, body search, semantic search, document fetch (Deep Research). |
-| **Write capabilities** | Create/update/delete pages and spaces, move/reparent pages, add comments, import external pages, submit feedback. Write tools require editor+ scope on the target space; the token's permissions gate every call. |
+| **Read capabilities** | List/read spaces and pages, list backlinks and shares, read page chunks, full-text and semantic search, Atlas project listing and run status, deck guide/lint/preview, file listings, knowledge hygiene (related, overlaps, gaps), document fetch (Deep Research). |
+| **Write capabilities** | Create/update/patch/delete pages and spaces, move pages, add comments, share/revoke links, upload/delete files, trigger Atlas runs, author deck images, submit feedback. All write tools require editor+ scope on the target space; token permissions gate every call. |
 | **Allowed Link URIs** | `https://telawiki.com/*` (the app surfaces page/space deep links under this origin). `‹TODO: confirm whether the form wants this populated; otherwise leave blank›` |
 
 ---
@@ -53,48 +53,68 @@ Concrete agent workflows, each grounded in the actual tools:
 
 - **Third-party connections:**
   - **WorkOS AuthKit** — OAuth 2.1 identity provider for the Connect flow (issuer `decisive-relation-32-staging.authkit.app`). Handles sign-in/consent; tela receives the resulting identity.
-  - **External URL fetch (optional, `import_mira`)** — when an agent imports a page, tela fetches the `source_url` server-side. https-only, no redirects followed, restricted to an operator-configured host allowlist (`TELA_MIRA_ALLOWED_HOSTS`). Off the path unless `import_mira` is called.
+  - **Remote embedder (optional, `research`)** — see embedder note below.
   - **Remote embedder (optional, `research`)** — semantic retrieval embeds query/content via an operator-configured Ollama instance (`TELA_RAG_EMBED_URL`); on the public instance this is a dedicated, isolated embed-only endpoint. If unconfigured the tool no-ops (503). No content leaves the operator's infrastructure beyond this embedder.
 - **Health data (PHI):** No. tela collects no PHI, PCI, government-ID, or secrets.
 - **Data category:** Productivity / knowledge management (team wiki content — markdown documents, comments, space metadata).
 - **What is read:** spaces, pages (markdown bodies + metadata), backlinks, comments, and search indexes the authenticated account can access.
-- **What is written:** pages (create/update/delete), spaces (create/update/delete), comments, imported pages, and free-text feedback — all under the account's permissions; body changes auto-snapshot a revision.
+- **What is written:** pages (create/update/patch/delete), spaces (create/update/delete), comments, uploaded files, share links (mint/revoke), Atlas documentation runs, and free-text feedback — all under the account's permissions; body changes auto-snapshot a revision.
 - **What is stored:** content the agent creates/edits is stored in the operator's PostgreSQL database on the operator's server. tela is self-hosted; on the public instance, data lives on `telawiki.com`'s host. No agent chat history or host memory is read or stored.
 
 ---
 
 ## 5. Tools, resources, widgets
 
-**Every tool carries a human-readable `title` and read/write annotations** (`readOnlyHint` on reads; `destructiveHint` on deletes; `openWorldHint` on `import_mira`). Names are ≤ 15 chars; read and write are cleanly separated. 20 tools total (10 read / 10 write).
+**Every tool carries a human-readable `title` and read/write annotations** (`readOnlyHint`, `destructiveHint`, `openWorldHint`) set explicitly on every tool. Read and write are cleanly separated. **39 tools total (20 read / 19 write)** — updated 2026-06-29 to reflect the current surface.
 
-### Read tools (`readOnlyHint: true`)
+### Read tools (`readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false` unless noted)
 
 | Tool | Title | Description |
 |---|---|---|
-| `list_spaces` | List spaces | List every space the API key can access (id, name, slug). |
-| `get_space` | Get space | Fetch a single space's metadata (id, name, slug) by id. |
-| `list_pages` | List pages | Flat page listing in a space; optional `parent_id` for direct children. |
-| `get_page` | Get page | Full markdown body + metadata for a numeric page id. |
-| `list_backlinks` | List backlinks | Pages that link to the given page via `[[wikilink]]` / `tela://page/{id}`. |
-| `search` | Search | Keyword (full-text) lookup over title + body, snippet-highlighted; optional `space_id`. Always available (no embedder). |
-| `research` | Research the wiki | Semantic, answer-oriented retrieval: assembles answer-ready grounding for a question (full relevant page bodies, cited `sources` with `chunk_id` for drill-in, flagged `disagreements`, `low_confidence`). The agent writes the answer and cites by `[n]`. Requires a configured embedder. |
-| `read_chunk` | Read chunk | Fetch one chunk's full section text by `chunk_id` (from a `research` source). |
-| `fetch` | Fetch document | Fetch a page's full text by id (from a search result). The ChatGPT Deep Research `fetch` tool. |
+| `list_spaces` | List spaces | List every space the caller can access (id, name, slug, visibility). |
+| `get_space` | Get space | Fetch a single space's metadata by id. |
+| `list_pages` | List pages | Flat or child-filtered page listing in a space. |
+| `get_page` | Get page | Full markdown body + metadata for a page id. Optional `format: map` returns section paths for `patch_page`. |
+| `list_backlinks` | List backlinks | Pages that link to the given page via `[[wikilink]]` or `tela://page/{id}`. |
+| `list_shares` | List shares | Active public share links for a page. |
+| `search` | Search | Keyword (full-text) lookup over title + body, snippet-highlighted. Always available (no embedder). |
+| `research` | Research wiki | Semantic, answer-oriented retrieval: assembled grounding (full relevant page bodies, cited `sources`, flagged `disagreements`, `low_confidence`). Requires a configured embedder. |
+| `read_chunk` | Read chunk | Fetch one chunk's full section text by `chunk_id` (from a `research` source). Spans pages and uploaded files. |
+| `fetch` | Fetch document | Fetch a page's full text by id. Paired with `search` for ChatGPT Deep Research. |
+| `related_pages` | Related pages | Semantic nearest-neighbor lookup from a page's chunks. |
+| `suggest_links` | Suggest links | Pages whose content strongly overlaps a given page — link opportunities. |
+| `find_overlaps` | Find overlaps | Near-duplicate page detection across a space. |
+| `knowledge_gaps` | Knowledge gaps | Topic areas mentioned but not covered in depth (admin-scoped). |
+| `list_attachments` | List attachments | Uploaded files on a page (id, name, mime, size, url). |
+| `deck_authoring_guide` | Deck guide | Returns the full slide-authoring guide (layouts, fields, variants). Read before authoring a deck. |
+| `lint_deck` | Lint deck | Validate a deck body's frontmatter, layouts, and field values before saving. |
+| `preview_deck` | Preview deck | Render a live preview URL for a deck body — confirm appearance before committing. |
+| `atlas_list_projects` | List Atlas | List Atlas projects the caller can see (id, name, source type, last-run status). |
+| `atlas_run_status` | Atlas status | Read an Atlas run's current stage, coverage metrics, and statistics. |
 
-### Write tools
+### Write tools (`readOnlyHint: false`; `openWorldHint` noted where true)
 
-| Tool | Title | Annotation | Description |
+| Tool | Title | `destructiveHint` | Description |
 |---|---|---|---|
-| `create_space` | Create space | write | Create a space; caller becomes owner. Slug derived from name when omitted. |
-| `update_space` | Update space | write | Patch a space's name and/or slug (editor+). |
-| `delete_space` | Delete space | `destructiveHint` | Delete a space and all its pages, comments, revisions, share links. Owner only. Irreversible. |
-| `create_page` | Create page | write | Create a page in a space (editor+). Body is markdown; `tela://page/{id}` links index as backlinks. |
-| `update_page` | Update page | write | Patch a page's title and/or body (editor+). Body change auto-snapshots a revision. |
-| `move_page` | Move page | write | Reparent, detach to top-level, reorder, and/or relocate a page to another space (editor+ both sides). |
-| `delete_page` | Delete page | `destructiveHint` | Delete a page (editor+). Backlinks preserved with last-known title. |
-| `add_comment` | Add comment | write | Attach a root comment anchored by a `{prefix, exact, suffix}` text triplet (editor+). |
-| `import_mira` | Import mira page | `openWorldHint` | Import an external mira page into a space (editor+). Server-side https fetch from an allowlisted host, or an inline payload. |
-| `submit_feedback` | Submit feedback | write | Submit free-text feedback about tela / tela-mcp itself (not page content). |
+| `create_page` | Create page | false | Create a page in a space (editor+). Body is markdown; `tela://page/{id}` links index as backlinks. |
+| `update_page` | Update page | false | Patch a page's title and/or body (editor+). Body change auto-snapshots a revision. Idempotent. |
+| `patch_page` | Patch page | false | Surgically edit ONE section of a page by heading path — cheaper and safer than rewriting the full body. |
+| `move_page` | Move page | false | Reparent, reorder, or relocate a page to another space (editor+ on both sides). |
+| `delete_page` | Delete page | **true** | Delete a page (editor+). Backlinks preserved with last-known title. |
+| `add_comment` | Add comment | false | Attach a root comment anchored by a `{prefix, exact, suffix}` text triplet (editor+). |
+| `create_space` | Create space | false | Create a space; caller becomes owner. Slug derived from name when omitted. |
+| `update_space` | Update space | false | Patch a space's name and/or slug (editor+). Idempotent. |
+| `delete_space` | Delete space | **true** | Delete a space and all its pages, comments, revisions, share links. Owner only. Irreversible. |
+| `share_page` | Share page | false | Mint a scoped public share link for a page (read-only or editor). |
+| `revoke_share` | Revoke share | **true** | Revoke a public share link — link stops working immediately. |
+| `upload_attachment` | Upload file | false | Upload a file and attach it to a page. Images render inline; PDFs are indexed for `research`. |
+| `request_attachment_upload` | Request upload | false | Get a pre-signed URL for large-file upload (call `confirm_attachment_upload` after). |
+| `confirm_attachment_upload` | Confirm upload | false | Confirm a pre-signed upload completed and register the attachment. |
+| `delete_attachment` | Delete file | **true** | Delete an uploaded file from a page. |
+| `atlas_run` | Run Atlas | false | Trigger a full Atlas documentation run for a project (management access required). |
+| `generate_deck_image` | Gen deck image | false | Raster-image generation for slide assets (advanced; most decks don't need this directly). |
+| `treat_deck_image` | Treat deck img | false | Post-process / composite a generated deck slide image. |
+| `submit_feedback` | Submit feedback | false | Submit free-text feedback about tela itself (not page content). |
 
 ### Resources (2 templates)
 
@@ -137,7 +157,7 @@ A reviewer connects via OAuth and exercises a read→write round-trip in a demo 
 
 1. **Connect.** Add tela as a custom connector pointing at `https://telawiki.com/api/mcp`. Claude runs the OAuth flow.
 2. **Sign in.** The flow opens the tela login screen. Sign in with the demo credentials above (no MFA, no email step). Consent on the WorkOS consent screen.
-3. **Tools appear.** After consent the 20 tools become available in chat.
+3. **Tools appear.** After consent the 39 tools become available in chat.
 4. **Try, in order:**
    - `list_spaces` → confirm the demo space is listed.
    - `search` for `deploy` → confirm ranked, snippet-highlighted hits.

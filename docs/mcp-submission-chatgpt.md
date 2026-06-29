@@ -9,7 +9,7 @@ package plus the answers to the items that file flagged for live verification.
 **Hard facts (verified 2026-06-05).** Endpoint `https://telawiki.com/api/mcp` ·
 transport Streamable HTTP · auth OAuth 2.1 via WorkOS AuthKit (issuer
 `https://decisive-relation-32-staging.authkit.app`, PKCE S256, DCR) **or** a Personal
-Access Token bearer header · 20 tools (10 read / 10 write), all with title + hints +
+Access Token bearer header · **39 tools** (20 read / 19 write — updated 2026-06-29), all with title + hints +
 `outputSchema` · 2 resource templates (`tela://page/{id}`, `tela://space/{id}`) · 2
 interactive widgets (page-reader, search-results cards) · `search` + `fetch` Deep
 Research pair present · docs `https://telawiki.com/mcp` · privacy
