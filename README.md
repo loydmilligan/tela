@@ -5,9 +5,18 @@
 
 # tela
 
+[![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![npm](https://img.shields.io/npm/v/tela-mcp?label=tela-mcp&color=7C3AED)](https://www.npmjs.com/package/tela-mcp)
+[![MCP server](https://img.shields.io/badge/MCP-server-7C3AED)](mcp/README.md)
+
 A self-hostable, markdown-native team wiki — spaces, nested pages, a Milkdown editor, ranked full-text + semantic search, live collaboration, comments, page history, public sharing, and a first-class MCP server so AI agents are first-class citizens alongside humans.
 
 Public instance: **https://telawiki.com**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/submission-assets/tela-page-dark.png">
+  <img alt="tela page view" src="docs/submission-assets/tela-page-light.png" width="820">
+</picture>
 
 ## Stack
 
