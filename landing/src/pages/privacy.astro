@@ -4,24 +4,23 @@ import Prose from '../layouts/Prose.astro';
 
 <Prose
   title="Privacy Policy — tela"
-  description="How the hosted tela instance and its MCP server collect, use, share and retain data."
+  description="How telawiki.com collects, uses, and protects your data — including how Atlas processes connected sources using a self-hosted AI model."
   kicker="Legal"
   heading="Privacy Policy"
-  updated="June 5, 2026"
+  updated="June 29, 2026"
 >
   <p class="lead">
-    This policy covers the hosted tela instance at <code>telawiki.com</code> and
-    its built-in MCP server at <code>telawiki.com/api/mcp</code>. tela is a
-    markdown-native team wiki that AI agents can read and write through the
-    Model Context Protocol.
+    This policy covers the hosted tela service at <code>telawiki.com</code>. tela
+    is a markdown-native team wiki with AI-powered features, an MCP server for
+    agents, and a billing service for paid plans.
   </p>
 
   <div class="note">
     <p>
       <strong>Self-hosted deployments.</strong> tela is open-source and
       self-hostable. If you run your own instance, <strong>you</strong> are the
-      data controller for it — this policy describes only the operator-run
-      instance at <code>telawiki.com</code>.
+      data controller — this policy covers only the operator-run service at
+      <code>telawiki.com</code>.
     </p>
   </div>
 
@@ -30,74 +29,116 @@ import Prose from '../layouts/Prose.astro';
     <dt>Account data</dt>
     <dd>
       Email address, username, and a hashed (never plaintext) password. Used to
-      authenticate you and to send account email (verification, password reset).
+      authenticate you and to send account emails (verification, password reset).
     </dd>
     <dt>Content you create</dt>
     <dd>
-      Spaces, pages (markdown bodies), comments, backlinks, and feedback you
-      submit. This is the wiki content itself — stored so you and your team can
-      read and edit it.
+      Spaces, pages (markdown bodies), comments, attached files, and feedback you
+      submit. This is your wiki content — stored so you and your team can read
+      and edit it.
+    </dd>
+    <dt>Atlas source data</dt>
+    <dd>
+      When you connect a git repository or Jira project to an Atlas project,
+      tela reads that source to generate documentation. This content is processed
+      entirely by our self-hosted language model — it is not sent to any
+      third-party AI provider. See <a href="#atlas">the Atlas section below</a>.
+    </dd>
+    <dt>API keys</dt>
+    <dd>
+      Personal Access Tokens you create are stored hashed. The raw token is shown
+      once on creation and never stored in readable form.
     </dd>
     <dt>MCP / agent activity</dt>
     <dd>
-      When you connect an AI host (e.g. Claude or ChatGPT) via OAuth, that host
-      calls tela's tools on your behalf to read, search, create, update, move,
-      or delete the content your account can access. Tool calls run with your
-      account's permissions.
+      When you connect an AI host (e.g. Claude or ChatGPT) via OAuth or a
+      Personal Access Token, it calls tela's tools on your behalf to read,
+      search, create, update, or delete content your account can access. Tool
+      calls run with your account's permissions.
     </dd>
     <dt>Operational data</dt>
     <dd>
       Standard request metadata (IP address, timestamps, user agent) used for
       rate-limiting, security, and debugging.
     </dd>
+    <dt>Analytics</dt>
+    <dd>
+      Page-view and interaction data collected by our self-hosted Umami instance.
+      Umami uses no cookies and anonymizes IP addresses before storing them. No
+      data is sent to third-party analytics services.
+    </dd>
   </dl>
 
   <div class="note">
     <p>
-      <strong>We do not collect</strong> payment-card data, health records,
-      government-ID numbers, or third-party secrets. Do not store such data in
-      tela.
+      <strong>We do not collect</strong> payment-card data, health records, or
+      government-ID numbers. Do not store such data in tela.
     </p>
   </div>
 
   <h2>How we use it</h2>
   <ul>
     <li>To operate the wiki — store, render, search, and sync your content.</li>
-    <li>To authenticate you and authorize agent tool calls via OAuth.</li>
-    <li>To power semantic search — page text is sent to a self-hosted embedding model to build search vectors (see below).</li>
-    <li>To send transactional email (verification, password reset).</li>
+    <li>To authenticate you and authorize MCP tool calls on your behalf.</li>
+    <li>To power semantic search and Ask — page text is sent to a self-hosted embedding model on our infrastructure to build search vectors.</li>
+    <li>To run Atlas — git and Jira source content is processed by a self-hosted language model on our infrastructure to generate documentation pages.</li>
+    <li>To send transactional email (verification, password reset, account notices).</li>
+    <li>To process subscription payments through our billing provider.</li>
     <li>To protect the service — rate-limiting, abuse prevention, and debugging.</li>
+    <li>To understand aggregate usage patterns via our self-hosted, cookie-free analytics.</li>
   </ul>
   <p>
     We do <strong>not</strong> sell your data, serve ads, or use your content to
-    train third-party models.
+    train any AI model — including our own.
   </p>
 
-  <h2>Who we share it with</h2>
-  <p>tela relies on a small set of processors to run:</p>
+  <h2 id="atlas">How Atlas processes your sources</h2>
+  <p>
+    Atlas is tela's AI knowledge-generation feature. You connect a source (a git
+    repository or a Jira project), and Atlas runs an 8-stage pipeline to produce
+    structured documentation pages in your wiki.
+  </p>
+  <p>
+    <strong>Your source content never leaves our servers.</strong> The language
+    model that powers Atlas is self-hosted on operator-controlled infrastructure.
+    We do not send your repository content, Jira issues, or any Atlas-processed
+    data to OpenAI, Anthropic, or any other third-party AI service.
+  </p>
+  <p>
+    Atlas-generated pages are labeled with <code>generator=atlas</code> in their
+    metadata so you can always identify AI-generated content. You are responsible
+    for reviewing it before relying on it.
+  </p>
+
+  <h2>Who we share data with</h2>
+  <p>tela relies on a small set of processors to operate:</p>
   <dl>
-    <dt>WorkOS (authentication)</dt>
+    <dt>Polar (billing)</dt>
     <dd>
-      The OAuth 2.1 authorization flow for MCP connections is handled by WorkOS
-      AuthKit. Your email and authentication events pass through WorkOS to issue
-      access tokens.
+      Paid subscriptions are handled by <a href="https://polar.sh" target="_blank" rel="noopener">Polar</a>,
+      which acts as our merchant of record. Polar processes payment information
+      and issues invoices. We do not receive or store your card details. Polar's
+      own privacy policy governs how they handle billing data.
+    </dd>
+    <dt>SMTP2GO (transactional email)</dt>
+    <dd>
+      Verification emails, password-reset emails, and account notices are
+      delivered via SMTP2GO. Your email address passes through SMTP2GO for
+      delivery. SMTP2GO does not receive your wiki content.
+    </dd>
+    <dt>WorkOS (MCP OAuth)</dt>
+    <dd>
+      The OAuth 2.1 authorization flow for MCP connections (connecting Claude,
+      ChatGPT, or another AI host) is handled by WorkOS AuthKit. Your email
+      address and authentication events pass through WorkOS to issue access
+      tokens for MCP clients.
     </dd>
     <dt>The AI host you connect</dt>
     <dd>
       When you connect Claude, ChatGPT, or another MCP client, the content
-      returned by tool calls is sent to that host so the agent can use it. Their
-      handling of that content is governed by their own privacy policies.
-    </dd>
-    <dt>Email provider</dt>
-    <dd>
-      Transactional email (verification, password reset) is delivered through an
-      SMTP email provider.
-    </dd>
-    <dt>Embedding model (self-hosted)</dt>
-    <dd>
-      Semantic search embeds page text with a self-hosted model on
-      operator-controlled infrastructure. Content is not sent to a third-party
-      embedding API.
+      returned by tool calls is sent to that host so the agent can read and use
+      it. Their handling of that content is governed by their own privacy
+      policies.
     </dd>
   </dl>
   <p>
@@ -108,34 +149,57 @@ import Prose from '../layouts/Prose.astro';
   <h2>Retention</h2>
   <ul>
     <li>Account and content data is retained while your account is active.</li>
-    <li>Deleting a page or space removes it from the live service; deleting your account removes your account data.</li>
-    <li>Authentication tokens and share links can be revoked at any time and expire on rotation of the server's secrets.</li>
+    <li>Deleting a page or space removes it from the live service. Deleting your account removes your account data and content.</li>
+    <li>Personal Access Tokens and share links can be revoked at any time and expire when the server's secrets rotate.</li>
+    <li>Billing records are retained as required by Polar and applicable financial regulations.</li>
     <li>Operational logs are kept only as long as needed for security and debugging.</li>
+    <li>Analytics data (self-hosted Umami, no cookies) is retained on our infrastructure for as long as we operate the service.</li>
   </ul>
+  <!-- TODO: Add specific retention periods if/when defined (e.g. "operational logs kept for 30 days"). -->
+
+  <h2>Your rights (GDPR and similar)</h2>
+  <p>
+    If you are in the EU, UK, or another jurisdiction with data-subject rights
+    legislation, you have the right to:
+  </p>
+  <ul>
+    <li><strong>Access</strong> — request a copy of the personal data we hold about you.</li>
+    <li><strong>Rectification</strong> — correct inaccurate account information (email, username) in the app at any time.</li>
+    <li><strong>Erasure</strong> — request deletion of your account. Deleting your account removes your profile and content from the live service. Residual copies in backups are overwritten as backups cycle.</li>
+    <li><strong>Portability</strong> — export your wiki content at any time as a zip archive of plain markdown files. Note: attachments are not currently included in the zip export. To request an export that includes attachments, email us.</li>
+    <li><strong>Object</strong> — object to processing where we rely on legitimate interests as a legal basis.</li>
+  </ul>
+  <p>
+    To exercise any of these rights, email
+    <a href="mailto:tela@telawiki.com">tela@telawiki.com</a>.
+  </p>
 
   <h2>Your choices</h2>
   <ul>
-    <li><strong>Access &amp; edit</strong> — your content is yours; read, edit, export, or delete it in the app at any time.</li>
-    <li><strong>Disconnect agents</strong> — revoke an MCP connection from the connected host, or rotate your access token, to cut off agent access.</li>
-    <li><strong>Delete your account</strong> — contact us to delete your account and associated data.</li>
+    <li><strong>Content</strong> — your content is yours; read, edit, export, or delete it in the app at any time.</li>
+    <li><strong>Disconnect agents</strong> — revoke an MCP connection from the connected host, or rotate your Personal Access Token, to cut off agent access.</li>
+    <li><strong>Delete your account</strong> — contact us at <a href="mailto:tela@telawiki.com">tela@telawiki.com</a> to delete your account and associated data.</li>
+    <li><strong>Analytics</strong> — our self-hosted Umami analytics use no cookies and do not track you across sites. You can block the analytics script in your browser without affecting any functionality.</li>
     <li><strong>Self-host</strong> — run your own instance to keep all data on infrastructure you control.</li>
   </ul>
 
   <h2>Security</h2>
   <p>
-    Traffic is served over HTTPS. Passwords are hashed, authentication tokens
-    and share secrets are stored hashed (the raw value lives only in the link),
-    and the MCP endpoint authenticates every request. No system is perfectly
-    secure, but we take reasonable measures to protect your data.
+    Traffic is served over HTTPS. Passwords are hashed; authentication tokens and
+    share secrets are stored hashed (the raw value lives only in the link or
+    token shown at creation). API keys are hashed. The MCP endpoint authenticates
+    every request. No system is perfectly secure, but we take reasonable measures
+    to protect your data.
   </p>
 
-  <h2>Contact &amp; security</h2>
+  <h2>Contact</h2>
   <p>
     Questions about this policy or your data? Email
-    <a href="mailto:tela@telawiki.com">tela@telawiki.com</a>. To report a security
-    vulnerability, email <a href="mailto:tela@telawiki.com">tela@telawiki.com</a>
-    privately rather than opening a public issue — we investigate reports in
-    good faith. The source for tela is public at
+    <a href="mailto:tela@telawiki.com">tela@telawiki.com</a>. To report a
+    security vulnerability, email
+    <a href="mailto:tela@telawiki.com">tela@telawiki.com</a> privately rather
+    than opening a public issue — we investigate reports in good faith. The
+    source for tela is public at
     <a href="https://github.com/zcag/tela">github.com/zcag/tela</a>.
   </p>
 

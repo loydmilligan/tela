@@ -4,98 +4,139 @@ import Prose from '../layouts/Prose.astro';
 
 <Prose
   title="Terms of Service — tela"
-  description="Terms governing use of the hosted tela instance and its MCP server."
+  description="Terms governing use of the hosted tela service at telawiki.com — accounts, acceptable use, billing, AI-generated content, and self-hosting."
   kicker="Legal"
   heading="Terms of Service"
-  updated="June 5, 2026"
+  updated="June 29, 2026"
 >
   <p class="lead">
-    These terms govern your use of the hosted tela instance at
-    <code>telawiki.com</code> and its built-in MCP server at
-    <code>telawiki.com/api/mcp</code> ("the Service"). By creating an account
-    or connecting an AI agent, you agree to these terms.
+    These terms govern your use of the hosted tela service at
+    <code>telawiki.com</code> ("the Service"). By creating an account or using
+    the Service, you agree to these terms.
   </p>
 
   <div class="note">
     <p>
       <strong>Self-hosted deployments.</strong> tela is open-source software you
       can run yourself. If you operate your own instance, these terms cover only
-      the operator-run instance at <code>telawiki.com</code>; your own
-      deployment is governed by you. The software itself is provided under its
+      the operator-run service at <code>telawiki.com</code>; your own deployment
+      is governed by you and the
       <a href="https://github.com/zcag/tela/blob/main/LICENSE">open-source license</a>.
     </p>
   </div>
 
-  <h2>The Service</h2>
+  <h2>What the Service is</h2>
   <p>
-    tela is a markdown-native team wiki that people and AI agents can read,
-    search, and write through the Model Context Protocol. The hosted instance is
-    offered free of charge and as-is, primarily as a public demonstration and
-    for personal use. We may change, suspend, or discontinue any part of it at
-    any time.
+    tela is a markdown-native team wiki. The hosted service at
+    <code>telawiki.com</code> includes a wiki editor with real-time collaboration,
+    an MCP server so AI agents can read and write your wiki, semantic search and
+    Ask (Q&A over your pages), Atlas (AI knowledge generation from connected
+    sources), deck presentations, WebDAV sync, and space sharing. We may add,
+    change, or remove features at any time.
   </p>
 
-  <h2>Accounts</h2>
+  <h2>Accounts and eligibility</h2>
   <ul>
-    <li>You are responsible for activity under your account and for keeping your credentials and access tokens secure.</li>
-    <li>Provide accurate registration information and a valid email you control.</li>
-    <li>You must be able to form a binding agreement to use the Service; do not use it if you cannot.</li>
-    <li>We may suspend or terminate accounts that violate these terms or put the Service or its users at risk.</li>
+    <li>You must be able to form a binding agreement to use the Service. If you are under 18, you need a parent or guardian's consent.</li>
+    <li>Provide accurate registration information and a valid email address you control. Confirm your email to activate your account.</li>
+    <li>You are responsible for all activity under your account and for keeping your credentials and access tokens secure.</li>
+    <li>We may suspend or terminate accounts that violate these terms, threaten the Service or its users, or remain inactive for an extended period.</li>
   </ul>
 
   <h2>Acceptable use</h2>
   <p>You agree not to:</p>
   <ul>
-    <li>Break the law, infringe others' rights, or store content you have no right to store.</li>
-    <li>Upload malware, attempt to gain unauthorized access, probe, or disrupt the Service or its infrastructure.</li>
+    <li>Break the law, infringe others' intellectual property or privacy rights, or store content you have no right to store.</li>
+    <li>Upload malware, attempt unauthorized access, probe vulnerabilities, or disrupt the Service or its infrastructure.</li>
     <li>Abuse, overload, or circumvent rate limits, quotas, or access controls.</li>
-    <li>Use the Service to store secrets, payment-card data, health records, or government-ID numbers (see the <a href="/privacy/">privacy policy</a>).</li>
+    <li>Use the Service to store payment-card data, health records, government-ID numbers, or third-party secrets (see the <a href="/privacy/">privacy policy</a>).</li>
     <li>Misrepresent your identity or an agent's authority to act on your behalf.</li>
+    <li>Use the Atlas AI feature to generate content that is deceptive, harmful, or illegal.</li>
   </ul>
 
   <h2>Your content</h2>
   <p>
-    You retain ownership of the content you create. You grant us the limited
-    right to store, process, and display it solely to operate the Service for
-    you (including indexing it for search and embedding it for semantic search).
-    You are responsible for your content and for having the rights to it. Page
-    bodies are plain markdown — you can export your content at any time, and
-    deleting it removes it from the live Service.
+    You retain ownership of the content you create. You grant us a limited,
+    non-exclusive right to store, process, search, and display it solely to
+    operate the Service for you — including indexing it for full-text and semantic
+    search, embedding it for retrieval, and serving it to your team and to AI
+    agents you authorize. You are responsible for your content and for having the
+    rights to post it. You can export your content as plain markdown or delete it
+    at any time.
   </p>
+
+  <h2>AI-generated content (Atlas)</h2>
+  <p>
+    Atlas is tela's knowledge-generation feature: you connect a git repository
+    or Jira project, and Atlas runs an automated pipeline to draft documentation
+    pages in your wiki. A few things to know:
+  </p>
+  <ul>
+    <li>Atlas-generated pages are labeled with <code>generator=atlas</code> metadata so you can identify them.</li>
+    <li>AI-generated content can be incomplete, inaccurate, or outdated. You are responsible for reviewing it before relying on it or sharing it.</li>
+    <li>The source content you connect (git commits, Jira issues) is processed by a self-hosted language model on our servers — it is not sent to any third-party AI provider. See the <a href="/privacy/">privacy policy</a> for details.</li>
+    <li>We grant no warranty on the accuracy or fitness of Atlas-generated content.</li>
+  </ul>
 
   <h2>AI agents and the MCP server</h2>
   <p>
-    When you connect an AI host (such as Claude or ChatGPT), it acts on your
-    behalf with your account's permissions. You are responsible for the actions
-    you authorize an agent to take, including content it creates, edits, or
-    deletes. Connected hosts are third parties governed by their own terms and
-    privacy policies.
+    When you connect an AI host (such as Claude or ChatGPT) via OAuth or a
+    Personal Access Token, it acts on your behalf with your account's
+    permissions. You are responsible for the actions you authorize an agent to
+    take, including content it creates, edits, or deletes. Connected AI hosts are
+    third parties governed by their own terms and privacy policies.
   </p>
 
-  <h2>Availability and data</h2>
+  <h2>Plans, billing, and trials</h2>
   <p>
-    The hosted instance is provided without any uptime, durability, or backup
-    guarantee. It is pre-1.0 software and its data is treated as disposable —
-    keep your own copies of anything important (your content exports as plain
-    markdown). We are not liable for lost or corrupted data.
+    tela offers a free Personal plan and paid plans with higher limits. New
+    accounts start on a 30-day Plus trial — no card required. After the trial
+    ends your account moves to the free Personal plan unless you subscribe.
+  </p>
+  <ul>
+    <li>Paid subscriptions are billed through <a href="https://polar.sh" target="_blank" rel="noopener">Polar</a>, our merchant of record. Polar's terms and privacy policy apply to payment processing.</li>
+    <li>Subscription fees are charged in advance on a monthly or annual basis as you select at checkout.</li>
+    <li>You can cancel at any time. Access to paid features continues until the end of the current billing period; no partial refunds are issued for unused time unless required by applicable law.</li>
+    <li>We may change plan pricing with reasonable notice. Continued use after a price change means you accept the new price.</li>
+  </ul>
+  <!-- TODO: Add refund policy details once finalized, if different from the above. -->
+
+  <h2>Self-hosting the binary</h2>
+  <p>
+    The tela binary is open-source and free to run on your own infrastructure.
+    When you self-host:
+  </p>
+  <ul>
+    <li>The software is provided as-is, without warranty of any kind.</li>
+    <li>You are responsible for your instance, its configuration, security, data, and compliance.</li>
+    <li>You are the data controller for any personal data your instance processes.</li>
+    <li>These service terms do not apply to your self-hosted instance — the open-source license does.</li>
+  </ul>
+
+  <h2>Availability</h2>
+  <p>
+    We aim to keep the hosted service available and reliable, but we do not offer
+    a formal uptime guarantee. We may perform maintenance, push updates, or
+    temporarily restrict access. Keep your own backups of anything important —
+    your content exports as plain markdown at any time.
   </p>
 
   <h2>Disclaimer of warranties</h2>
   <p>
-    The Service is provided "as is" and "as available," without warranties of
-    any kind, express or implied, including merchantability, fitness for a
-    particular purpose, and non-infringement. We do not warrant that the Service
-    will be uninterrupted, secure, or error-free.
+    The Service is provided "as is" and "as available," without warranties of any
+    kind, express or implied, including merchantability, fitness for a particular
+    purpose, and non-infringement. We do not warrant that the Service will be
+    uninterrupted, secure, or error-free, or that AI-generated content will be
+    accurate or complete.
   </p>
 
   <h2>Limitation of liability</h2>
   <p>
     To the maximum extent permitted by law, we will not be liable for any
-    indirect, incidental, special, consequential, or punitive damages, or for
-    any loss of data, profits, or goodwill, arising from your use of the
-    Service. Because the hosted instance is provided free of charge, our total
-    liability for any claim is limited to the amount you paid to use it — which
-    is zero.
+    indirect, incidental, special, consequential, or punitive damages, or for any
+    loss of data, profits, or goodwill, arising from your use of the Service. Our
+    total liability for any claim arising from these terms or the Service is
+    limited to the amount you paid us in the twelve months before the claim arose.
   </p>
 
   <h2>Indemnification</h2>
@@ -105,19 +146,26 @@ import Prose from '../layouts/Prose.astro';
     violation of these terms or the rights of others.
   </p>
 
+  <h2>Governing law</h2>
+  <p>
+    These terms are governed by the laws of <strong>[JURISDICTION]</strong>,
+    without regard to conflict-of-law principles.
+  </p>
+  <!-- TODO: Fill in the governing jurisdiction (e.g. "Turkey" or a specific state/country). -->
+
   <h2>Changes</h2>
   <p>
     We may update these terms as the Service evolves. Material changes will be
-    reflected by the "last updated" date above; continued use after a change
-    means you accept the updated terms.
+    reflected by the "last updated" date above; continued use of the Service
+    after a change means you accept the updated terms.
   </p>
 
   <h2>Contact</h2>
   <p>
     Questions about these terms? Email
     <a href="mailto:tela@telawiki.com">tela@telawiki.com</a>. Security issues:
-    <a href="mailto:tela@telawiki.com">tela@telawiki.com</a> (see also the
-    <a href="/privacy/">privacy policy</a>). Source:
+    email <a href="mailto:tela@telawiki.com">tela@telawiki.com</a> privately
+    (see also the <a href="/privacy/">privacy policy</a>). Source code:
     <a href="https://github.com/zcag/tela">github.com/zcag/tela</a>.
   </p>
 </Prose>
