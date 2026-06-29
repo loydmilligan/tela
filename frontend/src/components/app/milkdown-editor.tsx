@@ -146,6 +146,7 @@ import {
 import { createAttachmentDropPlugin } from './milkdown-image-upload'
 import { uploadPlaceholderPlugin } from './milkdown-upload-placeholder'
 import { placeholderPlugin } from './milkdown-placeholder'
+import { linkPopoverPlugin } from './milkdown-link-popover'
 import { fileSchema } from './milkdown-file'
 import { createUrlUnfurlPlugin } from './milkdown-url-unfurl'
 import { createTableEdgeSelectPlugin } from './milkdown-table-select'
@@ -739,6 +740,8 @@ function MilkdownEditorInner({
       // Empty-line "Type / for commands" discoverability hint. See
       // milkdown-placeholder.ts.
       .use(placeholderPlugin)
+      // Hover-a-link → open/copy/edit/remove popover. See milkdown-link-popover.ts.
+      .use(linkPopoverPlugin)
       // Math / LaTeX: remark-math parse + `$inline$` / `$$block$$` schemas +
       // KaTeX nodeView (click-to-edit) + autoformat input rules. See
       // milkdown-math.ts. KaTeX stylesheet imported in main.tsx.

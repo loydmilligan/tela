@@ -1468,6 +1468,71 @@
   /* Selection bubble-toolbar. Same fixed-floating-card family as the slash
      menu; positioned above the selection via JS (left/top inline). A compact
      horizontal row of icon buttons for inline marks + link. */
+  /* Link hover popover (milkdown-link-popover.ts) — open/copy/edit/remove a link
+     on hover without selecting it. Same chrome as the bubble toolbar. */
+  .tela-link-popover {
+    position: fixed;
+    z-index: 50;
+    display: none;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 22rem;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-1);
+    box-shadow: 0 10px 30px -8px
+      color-mix(in srgb, var(--text-primary) 25%, transparent);
+  }
+  .tela-link-popover[data-show='true'] {
+    display: flex;
+  }
+  .tela-link-popover-row {
+    display: none;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .tela-link-popover[data-mode='view'] .tela-link-popover-view {
+    display: flex;
+  }
+  .tela-link-popover[data-mode='edit'] .tela-link-popover-edit {
+    display: flex;
+  }
+  .tela-link-popover-url {
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 var(--space-2);
+    color: var(--text-link, var(--accent-11));
+    font-size: var(--text-sm);
+  }
+  .tela-link-popover-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    background: transparent;
+  }
+  .tela-link-popover-btn:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
+  .tela-link-popover-input {
+    width: 14rem;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    outline: none;
+  }
+
   .tela-bubble-toolbar {
     position: fixed;
     z-index: 50;

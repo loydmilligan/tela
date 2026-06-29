@@ -643,3 +643,24 @@ export const LiveMarkdownShortcuts: Story = {
     expect(problems, `\n${problems.join('\n')}\n`).toEqual([])
   },
 }
+
+// ── Scenario 6: link hover popover (Tier 1.5) ───────────────────────────────
+// Hovering a link surfaces the open/copy/edit/remove popover without selecting.
+export const LinkHoverPopover: Story = {
+  args: { defaultValue: 'See [the example](https://example.com) here.' },
+  play: async ({ canvasElement }) => {
+    const pm = await getEditable(canvasElement)
+    const link = pm.querySelector('a')
+    expect(link, 'link should render').toBeTruthy()
+    await userEvent.hover(link as HTMLElement)
+    await waitFor(() => {
+      const pop = document.querySelector('.tela-link-popover[data-show="true"]')
+      expect(pop, 'popover should show on hover').not.toBeNull()
+      const txt = pop?.textContent ?? ''
+      expect(txt).toContain('https://example.com')
+      expect(txt).toContain('Copy')
+      expect(txt).toContain('Edit')
+      expect(txt).toContain('Remove')
+    })
+  },
+}
