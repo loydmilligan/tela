@@ -284,6 +284,14 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /graph/og.png", srv.HandleFeatureOGImage)
 	mux.HandleFunc("GET /discover", srv.HandleFeatureOG)
 	mux.HandleFunc("GET /discover/og.png", srv.HandleFeatureOGImage)
+	mux.HandleFunc("GET /atlas", srv.HandleFeatureOG)
+	mux.HandleFunc("GET /atlas/og.png", srv.HandleFeatureOGImage)
+	// Root card for an org's white-label apex (e.g. a bot pasting tela.ngss.io/):
+	// org-branded card instead of the bare SPA shell. Only the custom-domain Caddy
+	// block routes "/" (bot-gated) + "/og.png" here; the canonical apex keeps its
+	// marketing-landing OG. {$} matches ONLY "/", not a catch-all. See og_root.go.
+	mux.HandleFunc("GET /{$}", srv.HandleRootOG)
+	mux.HandleFunc("GET /og.png", srv.HandleRootOGImage)
 	// Space overview card (entity, like /p): name-only, branded by the owning org.
 	mux.HandleFunc("GET /spaces/{id}", srv.HandleSpaceOG)
 	mux.HandleFunc("GET /spaces/{id}/og.png", srv.HandleSpaceOGImage)

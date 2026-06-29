@@ -52,10 +52,37 @@ func TestFeatureOG_GraphDiscover(t *testing.T) {
 	}
 }
 
+func TestRootOG(t *testing.T) {
+	ts, _ := newWiredServer(t)
+
+	// No custom-domain org on the request → the generic tela apex card. (The
+	// org-branded variant is exercised by the host→org middleware in prod; here
+	// we pin the envelope + that "/" is public and renders an image.)
+	resp, body := ogGet(t, ts.URL, "/")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("root OG status=%d want 200 (must bypass auth)", resp.StatusCode)
+	}
+	s := string(body)
+	for _, want := range []string{`og:title" content="tela`, `og:image" content=`, "/og.png", `og:type" content="website"`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("root OG missing %q\n%s", want, s)
+		}
+	}
+	assertPNG(t, ts.URL, "/og.png")
+}
+
 func TestSpaceOG(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
 	sid := seedSpace(t, d, "Engineering Wiki", "engineering-wiki", admin)
+
+	// A private space (the default) must NOT leak an OG card to crawlers.
+	if respPriv, _ := ogGet(t, ts.URL, fmt.Sprintf("/spaces/%d", sid)); respPriv.StatusCode != http.StatusNotFound {
+		t.Fatalf("private space OG status=%d want 404", respPriv.StatusCode)
+	}
+	if _, err := d.Exec(`UPDATE spaces SET visibility = 'public' WHERE id = $1`, sid); err != nil {
+		t.Fatalf("publish space: %v", err)
+	}
 
 	resp, body := ogGet(t, ts.URL, fmt.Sprintf("/spaces/%d", sid))
 	if resp.StatusCode != http.StatusOK {

@@ -353,7 +353,12 @@ func IsPublicPath(p string) bool {
 	// bot-gates the HTML; the og.png is fetched by arbitrary-UA link-preview bots.
 	// All self-contained (name/copy only, no private contents).
 	switch p {
-	case "/ask", "/ask/og.png", "/graph", "/graph/og.png", "/discover", "/discover/og.png":
+	case "/ask", "/ask/og.png", "/graph", "/graph/og.png", "/discover", "/discover/og.png",
+		"/atlas", "/atlas/og.png",
+		// Root card for an org's white-label apex (og_root.go). Only the
+		// custom-domain Caddy block routes "/" + "/og.png" to the backend; on the
+		// canonical host the landing owns "/", so this never overrides it.
+		"/", "/og.png":
 		return true
 	}
 	// Space overview card: /spaces/{id} and /spaces/{id}/og.png (id numeric). The

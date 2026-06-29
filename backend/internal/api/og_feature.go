@@ -46,6 +46,11 @@ var featureCards = map[string]featureCard{
 		subtitle: "Public spaces & people",
 		desc:     "Browse the public spaces and authors published here.",
 	},
+	"/atlas": {
+		title:    "Atlas",
+		subtitle: "Docs that write themselves, from your source",
+		desc:     "Point Atlas at a git repo or project and it drafts a cited, coverage-audited wiki — and keeps it fresh.",
+	},
 }
 
 // HandleFeatureOG emits the OG HTML envelope for a feature route (bot-gated by

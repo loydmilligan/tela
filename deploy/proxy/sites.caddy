@@ -198,13 +198,13 @@
 	# OG card, humans fall through to the app SPA below. noindex (app routes). Keep
 	# the path list + UA regex in sync with featureCards in og_feature.go and
 	# botUASubstrings in backend/internal/api/public_share.go.
-	@feature_og path /ask/og.png /graph/og.png
+	@feature_og path /ask/og.png /graph/og.png /atlas/og.png
 	handle @feature_og {
 		header X-Robots-Tag "noindex"
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 	@feature_bots {
-		path /ask /graph
+		path /ask /graph /atlas
 		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @feature_bots {
@@ -293,7 +293,7 @@
 		# mistaken for a {handle}. Mirror of the top-level routes in
 		# frontend/src/routes/router.tsx (and nginx.conf's allowlist). /share, /public,
 		# /u, /discover are noindex'd or indexable upstream and never reach here.
-		@app_routes path /login /register /verify-email /forgot-password /reset-password /settings /settings/* /spaces /spaces/* /search /print/* /graph /graph/* /n /n/* /ask /setup
+		@app_routes path /login /register /verify-email /forgot-password /reset-password /settings /settings/* /spaces /spaces/* /search /print/* /graph /graph/* /n /n/* /ask /atlas /atlas/* /setup
 		handle @app_routes {
 			header X-Robots-Tag "noindex"
 			reverse_proxy {$TELA_UPSTREAM_FRONTEND:frontend:80}
@@ -425,15 +425,31 @@ https:// {
 	# domain: the og.png card → backend for all UAs; the HTML envelope is bot-gated
 	# (humans get the SPA). Backend brands the card to this org via the request host.
 	# Mirror of the canonical block; keep in sync with featureCards (og_feature.go).
-	@feature_og path /ask/og.png /graph/og.png /discover/og.png
+	@feature_og path /ask/og.png /graph/og.png /discover/og.png /atlas/og.png
 	handle @feature_og {
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 	@feature_bots {
-		path /ask /graph /discover
+		path /ask /graph /discover /atlas
 		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
 	}
 	handle @feature_bots {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
+	# White-label apex card: a bot pasting the bare org domain (e.g. tela.ngss.io)
+	# gets the org-branded root card instead of the empty SPA shell; the og.png →
+	# backend for all UAs; humans fall through to the app SPA below. Backend brands
+	# via the request host (og_root.go). The canonical apex is NOT here — its block
+	# keeps the marketing-landing OG. Block-scoped noindex already applies.
+	handle /og.png {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	@root_bots {
+		path /
+		header_regexp User-Agent "(?i)(slackbot-linkexpanding|twitterbot|facebookexternalhit|facebookcatalog|discordbot|telegrambot|linkedinbot|whatsapp|mastodon|cardyb|slack-imgproxy|pinterest|skypeuripreview|embedly|iframely|bot/|bot\s)"
+	}
+	handle @root_bots {
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 

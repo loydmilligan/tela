@@ -46,6 +46,22 @@ func TestFeatureOG_Ask(t *testing.T) {
 		}
 	})
 
+	t.Run("atlas_card", func(t *testing.T) {
+		resp, body := get("/atlas")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status=%d want 200 (must bypass auth)", resp.StatusCode)
+		}
+		s := string(body)
+		for _, want := range []string{`og:title" content="Atlas`, `/atlas/og.png`} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("Atlas OG HTML missing %q\n%s", want, s)
+			}
+		}
+		if resp2, _ := get("/atlas/og.png"); resp2.Header.Get("Content-Type") != "image/png" {
+			t.Fatalf("/atlas/og.png Content-Type=%q want image/png", resp2.Header.Get("Content-Type"))
+		}
+	})
+
 	t.Run("og_png", func(t *testing.T) {
 		resp, body := get("/ask/og.png")
 		if resp.StatusCode != http.StatusOK {
