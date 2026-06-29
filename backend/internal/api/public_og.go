@@ -346,6 +346,7 @@ func (s *Server) HandlePublicSpaceOGImage(w http.ResponseWriter, r *http.Request
 }
 
 // HandlePublicUserOGImage — GET /api/public/users/{username}/og.png.
+// 404 unless the user exists and has at least one public space (mirrors HandlePublicUserOG).
 func (s *Server) HandlePublicUserOGImage(w http.ResponseWriter, r *http.Request) {
 	username := r.PathValue("username")
 	var name, bio string
@@ -357,6 +358,17 @@ func (s *Server) HandlePublicUserOGImage(w http.ResponseWriter, r *http.Request)
 	}
 	if err != nil {
 		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	var hasPublic bool
+	_ = s.DB.QueryRowContext(r.Context(),
+		`SELECT EXISTS(
+		   SELECT 1 FROM spaces sp
+		     JOIN space_members m ON m.space_id = sp.id
+		    WHERE m.user_id = (SELECT id FROM users WHERE LOWER(username) = LOWER($1))
+		      AND sp.visibility = 'public')`, name).Scan(&hasPublic)
+	if !hasPublic {
+		http.NotFound(w, r)
 		return
 	}
 	sub := bio
