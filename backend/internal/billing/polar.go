@@ -186,6 +186,15 @@ func (c *Client) CreateCustomerSession(ctx context.Context, externalCustomerID s
 	return out.CustomerPortalURL, nil
 }
 
+// CancelSubscription immediately cancels a Polar subscription. Used during
+// account deletion (GDPR erasure) so the customer isn't billed after their
+// data is wiped. Polar fires a subscription.revoked webhook which the
+// reconciler uses to clear plan_key; the best-effort fire-and-forget call
+// site doesn't need to wait on that.
+func (c *Client) CancelSubscription(ctx context.Context, subscriptionID string) error {
+	return c.do(ctx, http.MethodDelete, "/v1/subscriptions/"+subscriptionID, map[string]any{}, nil)
+}
+
 // UpdateSubscriptionSeats sets the billed seat count on a seat-based subscription
 // (the Team tier). PATCH /v1/subscriptions/{id} with the SubscriptionUpdateSeats
 // variant; Polar prorates per the org's default. Requires the token's
