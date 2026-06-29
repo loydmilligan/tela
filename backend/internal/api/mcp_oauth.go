@@ -113,18 +113,49 @@ func (o *mcpOAuth) resourceMetadataURL() string {
 // verifyJWT validates a WorkOS access token against the JWKS, enforcing issuer,
 // audience (== resource; RFC 8707 replay defense), signing alg, and a small
 // clock-skew leeway. Returns the claims on success.
+//
+// It accepts the configured resource URL and any legacy aliases in
+// mcpResourceAliases — both resolve to the same instance, so accepting older
+// audience values is safe and allows clients holding pre-rename tokens to keep
+// working until they re-authenticate.
 func (o *mcpOAuth) verifyJWT(token string) (jwt.MapClaims, error) {
-	claims := jwt.MapClaims{}
-	tok, err := jwt.ParseWithClaims(token, claims, o.keyfunc.Keyfunc,
-		jwt.WithIssuer(o.issuer),
-		jwt.WithAudience(o.resource),
-		jwt.WithValidMethods([]string{"RS256", "ES256"}),
-		jwt.WithLeeway(60*time.Second),
-	)
-	if err != nil || !tok.Valid {
-		return nil, err
+	audiences := append([]string{o.resource}, mcpResourceAliases...)
+	for _, aud := range audiences {
+		claims := jwt.MapClaims{}
+		tok, err := jwt.ParseWithClaims(token, claims, o.keyfunc.Keyfunc,
+			jwt.WithIssuer(o.issuer),
+			jwt.WithAudience(aud),
+			jwt.WithValidMethods([]string{"RS256", "ES256"}),
+			jwt.WithLeeway(60*time.Second),
+		)
+		if err == nil && tok.Valid {
+			if aud != o.resource {
+				slog.Warn("mcp oauth: accepted legacy-domain audience; update WorkOS resource URL to match TELA_MCP_RESOURCE", "legacy_aud", aud, "current_resource", o.resource)
+			}
+			return claims, nil
+		}
 	}
-	return claims, nil
+	// All audiences failed; log what we can for diagnosis.
+	diagClaims := jwt.MapClaims{}
+	jwt.ParseWithClaims(token, diagClaims, o.keyfunc.Keyfunc, jwt.WithValidMethods([]string{"RS256", "ES256"})) //nolint:errcheck
+	slog.Warn("mcp oauth: JWT verify failed", "aud", diagClaims["aud"], "iss", diagClaims["iss"], "sub", diagClaims["sub"], "token_prefix", safePrefix(token, 20))
+	return nil, sdkauth.ErrInvalidToken
+}
+
+// mcpResourceAliases lists historical resource URLs that are aliases for this
+// instance. Tokens bearing these audiences are accepted alongside the primary
+// TELA_MCP_RESOURCE value — they refer to the same backend, just under an old
+// domain name. Remove entries once all clients have re-authenticated.
+var mcpResourceAliases = []string{
+	"https://tela.cagdas.io/api/mcp", // pre-June-2026 domain, renamed to telawiki.com
+}
+
+// safePrefix returns the first n chars of s or s itself when len(s)<n.
+func safePrefix(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // verifyWorkOSToken resolves a validated WorkOS JWT to a tela identity. In the
