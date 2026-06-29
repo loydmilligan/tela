@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import {
   createRootRoute,
   createRoute,
@@ -18,7 +18,7 @@ import { KeymapHost } from '../components/app/KeymapHost'
 import { BrandLogo } from '../components/BrandLogo'
 import { NotificationBell } from '../components/app/NotificationBell'
 import { EmptyState } from '../components/ui/empty-state'
-const OrgManageView = React.lazy(() =>
+const OrgManageView = lazy(() =>
   import('../components/app/OrgManageView').then((m) => ({ default: m.OrgManageView }))
 )
 import { PageView } from '../components/app/PageView'
@@ -314,7 +314,11 @@ const orgManageRoute = createRoute({
   stringifyParams: (params) => ({ orgId: String(params.orgId) }),
   component: function OrgManageRouteComponent() {
     const { orgId } = useParams({ from: '/_app/settings/orgs/$orgId' })
-    return <OrgManageView orgId={orgId} />
+    return (
+      <Suspense fallback={null}>
+        <OrgManageView orgId={orgId} />
+      </Suspense>
+    )
   },
 })
 
