@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.zcag/tela",
+  "description": "Self-hostable markdown team wiki: agents search, read, and write your wiki pages.",
+  "repository": {
+    "url": "https://github.com/zcag/tela",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "version": "0.7.4",
+  "websiteUrl": "https://telawiki.com",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "tela-mcp",
+      "version": "0.7.4",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "TELA_BASE_URL",
+          "description": "Origin of the Tela instance the proxy connects to, e.g. https://telawiki.com",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "TELA_API_KEY",
+          "description": "Personal access token (tela_pat_...), forwarded as Authorization: Bearer. Create one in Settings -> API Keys.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://telawiki.com/api/mcp"
+    }
+  ]
+}
