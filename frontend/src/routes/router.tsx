@@ -18,7 +18,9 @@ import { KeymapHost } from '../components/app/KeymapHost'
 import { BrandLogo } from '../components/BrandLogo'
 import { NotificationBell } from '../components/app/NotificationBell'
 import { EmptyState } from '../components/ui/empty-state'
-import { OrgManageView } from '../components/app/OrgManageView'
+const OrgManageView = React.lazy(() =>
+  import('../components/app/OrgManageView').then((m) => ({ default: m.OrgManageView }))
+)
 import { PageView } from '../components/app/PageView'
 import { Sidebar } from '../components/app/Sidebar'
 import { TrialBanner } from '../components/app/TrialBanner'
@@ -46,13 +48,6 @@ import { api } from '../lib/api'
 import { writeLastPage } from '../lib/lastPage'
 import { prefetchPage, useCreatePage, usePages } from '../lib/queries/pages'
 import { prefetchPublicSpacePage } from '../lib/queries/public'
-import { LoginPage } from './login'
-import { RegisterPage } from './register'
-import { SetupPage } from './setup'
-import { VerifyEmailPage } from './verify-email'
-import { ForgotPasswordPage } from './forgot-password'
-import { ResetPasswordPage } from './reset-password'
-import { SettingsPage } from './settings'
 import type { Page, PageTreeNode, Space } from '../lib/types'
 
 // Resolve the session once and cache it; both AppLayout and LoginRoute reuse
@@ -224,7 +219,7 @@ const loginRoute = createRoute({
     // Cast: `next` is a validated in-app path string, not a typed route.
     throw redirect({ to: next as never })
   },
-  component: LoginPage,
+  component: lazyRouteComponent(() => import('./login'), 'LoginPage'),
 })
 
 // First-run setup wizard (/setup). Public, like /login. Gate order: an
@@ -239,7 +234,7 @@ const setupRoute = createRoute({
     if (user) throw redirect({ to: '/' })
     if (!(await ensureSetupStatus())) throw redirect({ to: '/login' })
   },
-  component: SetupPage,
+  component: lazyRouteComponent(() => import('./setup'), 'SetupPage'),
 })
 
 // Self-registration. Like /login, an already-authenticated visitor is bounced
@@ -251,7 +246,7 @@ const registerRoute = createRoute({
     const user = await ensureMe()
     if (user) throw redirect({ to: '/' })
   },
-  component: RegisterPage,
+  component: lazyRouteComponent(() => import('./register'), 'RegisterPage'),
 })
 
 // Email confirmation landing. Reads `?token=` and confirms on mount; no auth
@@ -261,7 +256,7 @@ const verifyEmailRoute = createRoute({
   path: '/verify-email',
   validateSearch: (search: Record<string, unknown>): { token?: string } =>
     typeof search.token === 'string' ? { token: search.token } : {},
-  component: VerifyEmailPage,
+  component: lazyRouteComponent(() => import('./verify-email'), 'VerifyEmailPage'),
 })
 
 const forgotPasswordRoute = createRoute({
@@ -271,7 +266,7 @@ const forgotPasswordRoute = createRoute({
     const user = await ensureMe()
     if (user) throw redirect({ to: '/' })
   },
-  component: ForgotPasswordPage,
+  component: lazyRouteComponent(() => import('./forgot-password'), 'ForgotPasswordPage'),
 })
 
 // Password-reset landing. Reads `?token=`; no auth gate (the token authorizes).
@@ -280,7 +275,7 @@ const resetPasswordRoute = createRoute({
   path: '/reset-password',
   validateSearch: (search: Record<string, unknown>): { token?: string } =>
     typeof search.token === 'string' ? { token: search.token } : {},
-  component: ResetPasswordPage,
+  component: lazyRouteComponent(() => import('./reset-password'), 'ResetPasswordPage'),
 })
 
 // Home dashboard at `/` — the app's landing surface (recent changes, your
@@ -305,7 +300,7 @@ const settingsRoute = createRoute({
   // back to the right tab. SettingsPage reads it for the initial selection.
   validateSearch: (search: Record<string, unknown>): { tab?: string } =>
     typeof search.tab === 'string' ? { tab: search.tab } : {},
-  component: SettingsPage,
+  component: lazyRouteComponent(() => import('./settings'), 'SettingsPage'),
 })
 
 // Dedicated per-org management page. Its own route (not a Settings tab) so each

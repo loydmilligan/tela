@@ -21,7 +21,7 @@ import {
 } from '@milkdown/kit/core'
 import { commonmark, imageAttr } from '@milkdown/kit/preset/commonmark'
 import { gfm } from '@milkdown/kit/preset/gfm'
-import { remarkSafeLinks } from '@/lib/markdown/remark-safe-links'
+import { remarkSafeLinks } from '../../lib/markdown/remark-safe-links'
 // gapcursor + dropcursor. Gapcursor lets the caret sit in the gaps around block
 // atoms (Excalidraw, images, tables, code) where a text caret can't go — so you
 // can click above/below a diagram and start typing. Styling lives in editor.css
