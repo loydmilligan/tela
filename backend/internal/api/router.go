@@ -512,6 +512,16 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)
 	mux.HandleFunc("DELETE /api/orgs/{id}/members/{user_id}", srv.DeleteOrgMember)
 
+	// Email invitations (self-serve teams). Admin manages pending invites here;
+	// the invitee accepts via POST /api/me/accept-invite (session) or auto-joins
+	// on email verify. GET /api/invites/{token} is public (self-auth via token,
+	// for the logged-out accept page) — see org_invites.go + auth.IsPublicPath.
+	mux.HandleFunc("GET /api/orgs/{id}/invites", srv.ListOrgInvites)
+	mux.HandleFunc("POST /api/orgs/{id}/invites", srv.CreateOrgInvite)
+	mux.HandleFunc("DELETE /api/orgs/{id}/invites/{inviteId}", srv.RevokeOrgInvite)
+	mux.HandleFunc("GET /api/invites/{token}", srv.GetInvite)
+	mux.HandleFunc("POST /api/me/accept-invite", srv.AcceptInvite)
+
 	// Org-scoped access audit: a company's own admin sees the membership / group
 	// / grant / domain history for THEIR org (not the whole instance). Org-admin
 	// gated via requireOrgAdmin — the same primitive future org-admin

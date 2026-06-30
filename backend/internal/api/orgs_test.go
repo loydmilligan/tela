@@ -110,15 +110,39 @@ func TestDeleteOrg_RemovesGrantsAndAccess(t *testing.T) {
 	}
 }
 
-func TestCreateOrg_InstanceAdminOnly(t *testing.T) {
+func TestCreateOrg_SelfServe(t *testing.T) {
 	d := newAPITestDB(t)
-	srv := New(d)
-	nonAdmin := authUser(seedUser(t, d, "bob", "bobpw1234", false), "bob", false)
-	rec := recordHandler(srv.CreateOrg, userRequest(http.MethodPost, "/api/orgs", `{"name":"Acme"}`, nonAdmin))
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("non-admin create org = %d; want 403", rec.Code)
+	srv := New(d) // managedCloud=true under TELA_CLOUD=1 → self-serve enabled
+	ctx := context.Background()
+	bobID := seedUser(t, d, "bob", "bobpw1234", false)
+	nonAdmin := authUser(bobID, "bob", false)
+
+	// Self-serve: a regular user can create a team and becomes its admin.
+	rec := recordHandler(srv.CreateOrg, userRequest(http.MethodPost, "/api/orgs", `{"name":"Bob Team"}`, nonAdmin))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("self-serve create org = %d; want 201 (%s)", rec.Code, rec.Body)
+	}
+	var created struct {
+		Org struct {
+			ID int64 `json:"id"`
+		} `json:"org"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &created)
+	var role string
+	if err := d.QueryRow(`SELECT org_role FROM org_members WHERE org_id=$1 AND user_id=$2`, created.Org.ID, bobID).Scan(&role); err != nil || role != "admin" {
+		t.Fatalf("creator should be org admin, got role=%q err=%v", role, err)
 	}
 
+	// With self-serve disabled, a non-admin is refused.
+	if err := srv.settings.Set(ctx, "allow_org_self_serve", "0", nil); err != nil {
+		t.Fatal(err)
+	}
+	rec = recordHandler(srv.CreateOrg, userRequest(http.MethodPost, "/api/orgs", `{"name":"Nope"}`, nonAdmin))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("self-serve disabled non-admin = %d; want 403", rec.Code)
+	}
+
+	// An instance admin is exempt from the flag and derives the slug.
 	admin := authUser(seedUser(t, d, "admin", "adminpw12", true), "admin", true)
 	rec = recordHandler(srv.CreateOrg, userRequest(http.MethodPost, "/api/orgs", `{"name":"Acme Inc"}`, admin))
 	if rec.Code != http.StatusCreated {

@@ -413,6 +413,30 @@ func ResetPassword(to, username, resetURL string, brand Brand) Message {
 	return Message{To: to, Subject: "Reset your " + name + " password", HTML: renderHTML(v), Text: renderText(v)}
 }
 
+// OrgInvite builds the "you've been invited to a team" message addressed to
+// `to`. inviteURL carries the raw token to the accept page. inviter is the
+// inviting person's label (may be empty). brand white-labels the mail to the org.
+func OrgInvite(to, orgName, inviter, inviteURL string, brand Brand) Message {
+	name := cmp.Or(strings.TrimSpace(brand.Name), "tela")
+	by := strings.TrimSpace(inviter)
+	intro := fmt.Sprintf("You've been invited to join the **%s** organization on %s", orgName, name)
+	if by != "" {
+		intro = fmt.Sprintf("%s invited you to join the **%s** organization on %s", by, orgName, name)
+	}
+	intro += ". Accept the invitation to collaborate with the team."
+	v := emailView{
+		LogoOrigin: originOf(inviteURL),
+		Heading:    "Join " + orgName,
+		Intro:      intro,
+		CTALabel:   "Accept invitation",
+		CTAURL:     inviteURL,
+		ShowPaste:  true,
+		Footer:     "This invitation expires in 14 days. If you weren't expecting it, you can ignore this email.",
+	}
+	v.applyBrand(brand)
+	return Message{To: to, Subject: "You're invited to " + orgName + " on " + name, HTML: renderHTML(v), Text: renderText(v)}
+}
+
 // FeedbackNotice tells an instance admin that new feedback landed. `who` is the
 // submitter label, `subject`/`body` the feedback content, kind/source/page are
 // optional metadata (kind: idea|bug|other|""; source: web|api|mcp; page: page

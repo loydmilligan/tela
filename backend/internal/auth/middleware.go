@@ -228,6 +228,13 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/api/auth/") {
 		return true
 	}
+	// Org invitation lookup (api/org_invites.go). GET /api/invites/{token} renders
+	// the accept page for a possibly-logged-out invitee, self-authenticating via
+	// the unguessable token. Accepting (POST /api/me/accept-invite) is NOT here —
+	// it requires a session. No write route lives under /api/invites/.
+	if strings.HasPrefix(p, "/api/invites/") {
+		return true
+	}
 	// First-run setup wizard (api/setup.go). Public because a fresh instance has
 	// no users (so no session can exist yet). GET /api/setup/status reports
 	// emptiness; POST /api/setup creates the first admin and self-gates by only

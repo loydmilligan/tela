@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,7 +16,22 @@ import (
 const (
 	maxOrgNameLen = 200
 	maxOrgSlugLen = 100
+	// maxSelfServeOrgs caps how many orgs a non-admin user can create (counted as
+	// org-admin memberships). Beyond it they're pointed at sales — keeps casual
+	// abuse bounded while letting a real user spin up a team or two.
+	maxSelfServeOrgs = 3
 )
+
+// orgSelfServeEnabled reports whether non-admins may create organizations. The
+// `allow_org_self_serve` instance setting overrides; unset → defaults to the
+// managed cloud (on for telawiki.com, off for a self-host instance, which keeps
+// the curated-tenant posture unless an operator opts in).
+func (s *Server) orgSelfServeEnabled() bool {
+	if v, ok := s.settings.Get("allow_org_self_serve"); ok {
+		return v == "1" || v == "true"
+	}
+	return s.managedCloud
+}
 
 // orgDTO is the wire shape for org listings. MyRole is the caller's org_role,
 // or null when they administer the org as an instance-admin without a
@@ -91,8 +107,30 @@ func (s *Server) ListOrgs(w http.ResponseWriter, r *http.Request) {
 // CreateOrg provisions a new org. Instance-admin only (curated multi-tenant
 // rollout). The org starts empty — members are added via the members endpoint.
 func (s *Server) CreateOrg(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireInstanceAdmin(w, r); !ok {
+	u, ok := requireUser(w, r)
+	if !ok {
 		return
+	}
+	ctx := r.Context()
+	// Self-serve: any authenticated (hence email-verified) user can create a team,
+	// gated by the instance flag and a per-user cap. Instance admins are exempt —
+	// they provision tenants without limit.
+	if !u.IsInstanceAdmin {
+		if !s.orgSelfServeEnabled() {
+			writeError(w, http.StatusForbidden, "forbidden", "creating organizations is disabled on this instance")
+			return
+		}
+		var owned int
+		if err := s.DB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM org_members WHERE user_id = $1 AND org_role = 'admin'`, u.ID).Scan(&owned); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "check org limit failed")
+			return
+		}
+		if owned >= maxSelfServeOrgs {
+			writeError(w, http.StatusPaymentRequired, "org_limit",
+				fmt.Sprintf("you can create up to %d organizations — contact tela@telawiki.com for more", maxSelfServeOrgs))
+			return
+		}
 	}
 	var req orgCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -116,10 +154,16 @@ func (s *Server) CreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var id int64
-	err := s.DB.QueryRowContext(r.Context(),
-		`INSERT INTO orgs(name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id)
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "begin tx failed")
+		return
+	}
+	defer tx.Rollback()
+
+	var id int64
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO orgs(name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&id); err != nil {
 		if isUniqueConstraintErr(err) {
 			writeError(w, http.StatusConflict, "slug_conflict", "an org with that slug already exists")
 			return
@@ -127,7 +171,18 @@ func (s *Server) CreateOrg(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "create org failed")
 		return
 	}
-	org, err := selectOrgByID(r.Context(), s.DB, id)
+	// The creator is the org's first admin — this is what makes self-serve work
+	// (otherwise only an instance admin could administer the org afterward).
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1, $2, 'admin')`, id, u.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "add creator failed")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "commit failed")
+		return
+	}
+	org, err := selectOrgByID(ctx, s.DB, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "fetch created org failed")
 		return

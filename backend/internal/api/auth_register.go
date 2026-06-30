@@ -164,6 +164,9 @@ func (s *Server) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		// Enroll into any org whose auto-join domain matches the just-confirmed
 		// address (#153).
 		applyAutoJoin(ctx, s.DB, userID, email)
+		// And into any org that emailed this address an invitation — so a signup
+		// that came in through an invite link lands in the team automatically.
+		s.applyPendingInvites(ctx, userID, email)
 		// Tell the instance admins a new account went live (first confirmation only).
 		if !alreadyVerified {
 			s.notifyUserRegistered(ctx, userID, username, displayName, email)
