@@ -128,6 +128,46 @@ self-hosted-$0). That price table + the $ view is the next layer; the capture
 here is the prerequisite, so it only reflects usage **from when it shipped
 onward**.
 
+## AI reliability & failover
+
+tela's AI is a set of external endpoints — the chat model (`TELA_LLM_URL`), the
+embedder (`TELA_RAG_EMBED_URL`), and image generation. Each is a single endpoint
+by default: if it clogs (rate-limited, slow, down), the dependent features
+degrade. Two layers make this robust and visible.
+
+**Relief proxy (failover).** The opt-in overlay `deploy/docker-compose.relief.yml`
+(`make up-relief`) runs a [LiteLLM](https://docs.litellm.ai) proxy in front of
+chat **and** embeddings. Each virtual model (`tela-chat`, `tela-embed`) has a
+**primary** and a **relief** deployment sharing one name, so the router
+load-balances and, when the primary errors/times-out, retries on the relief and
+cools the bad one down — traffic shifts automatically when an endpoint clogs.
+Endpoints/keys are env-driven in `deploy/.env` (see the *AI relief proxy* block in
+`.env.example`); routing/retries/cooldown live in `deploy/litellm/config.yaml`.
+The overlay repoints `TELA_LLM_URL`/`TELA_RAG_EMBED_URL` at the proxy (`/v1`),
+which is why tela has an OpenAI-shaped embedder (`internal/rag/embed_openai.go`,
+auto-selected on a `/v1` base) alongside the native Ollama one — LiteLLM speaks
+OpenAI, not Ollama's `/api/embed`. A relief **embedder must output the same
+dimension** (1024) as the primary; mismatched vectors aren't interchangeable in
+`page_chunks`.
+
+**Per-service health + the admin breakdown.** A background prober
+(`internal/api/ai_health.go`) pings the chat and embed endpoints separately every
+30s (cheap metadata calls, never inference), tracking up/down, probe latency, and
+time-in-state. It feeds the `tela_ai_service_up{service}` /
+`tela_ai_probe_latency_seconds{service}` gauges and `GET /api/admin/ai-endpoints`,
+which powers the **AI endpoints & reliability** card in *Settings → Insights*:
+each service's live status, redacted endpoint host, model, whether it's behind a
+relief pool, latency, and last-reachable time. Set `TELA_GRAFANA_AI_URL` to
+deep-link the card to your Grafana failover dashboard.
+
+**Grafana + alerts.** Point your Prometheus at `/metrics` (above). The
+per-backend failover detail — which relief endpoint served, fallback counts,
+per-deployment latency — is exported by LiteLLM's own `/metrics` (the
+`prometheus` callback; some counters are LiteLLM-enterprise), published per
+`LITELLM_METRICS_BIND`. A ready dashboard + alert rules (AI service down,
+endpoint-slow/clogging, token runaway) ship for the maintainer's Grafana; adapt
+the PromQL (`tela_ai_*`, `litellm_*`) to your stack.
+
 ## Insights dashboard
 
 **Settings → Insights** (instance-admin) is the instance-analytics overview,
@@ -143,6 +183,8 @@ aggregated server-side from existing tables (`GET /api/admin/stats`,
 - **AI, errors & health** — ask volume + answer rate (`ask_log`), client errors
   by kind, and knowledge health: stale pages (90d+ untouched), orphans (no
   inbound `page_links`), and agreement contradictions.
+- **AI endpoints & reliability** — per-service (chat/embed) live health, latency,
+  relief-pool status, and token volume (see *AI reliability & failover*).
 
 It's an admin screen, not a hot path (~12 aggregations over a 30-day window); at
 larger event volumes the scans want a nightly rollup table — the scale follow-up.
@@ -154,8 +196,15 @@ It is **instance-admin gated** — a scraper authenticates with an admin-scoped 
 (`Authorization: Bearer tela_pat_<key>`). Exported series include
 `tela_http_requests_total{method,route,status}`,
 `tela_http_request_duration_seconds{method,route}`,
-`tela_client_errors_total{kind}` (see below), and the standard Go runtime +
-process collectors.
+`tela_client_errors_total{kind}` (see below),
+`tela_ai_tokens_total{kind}`, `tela_ai_service_up{service}` +
+`tela_ai_probe_latency_seconds{service}` (AI reliability, below),
+`tela_atlas_stuck_runs_killed_total`, `tela_polar_last_webhook_timestamp_seconds`,
+and the standard Go runtime + process collectors.
+
+Behind the bundled edge, `/metrics` is **not** forwarded to the backend by
+default — set `TELA_METRICS_ALLOW` (deploy/.env) to your scraper's source CIDR so
+the edge routes it (the PAT gate still applies); see `deploy/proxy/sites.caddy`.
 
 ## Client-side errors
 

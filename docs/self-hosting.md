@@ -115,6 +115,16 @@ proxy instead of a local Ollama. Your instance stays fully open-source; only the
 embedding compute is offloaded. Everything else (search, indexing, storage) runs
 locally as before.
 
+### Failover with a relief endpoint — optional
+
+To keep AI working when an endpoint clogs (rate-limited / slow / down), put the
+opt-in **LiteLLM relief proxy** in front of chat + embeddings: each gets a
+primary and a relief endpoint, and traffic fails over automatically. Set the
+endpoints in `deploy/.env` (the *AI relief proxy* block in `.env.example`), then
+`make up-relief`. The admin **Settings → Insights → AI endpoints & reliability**
+card shows each service's live health and whether it's behind a relief pool. Full
+detail: [operations.md → AI reliability & failover](operations.md).
+
 ## Backups
 
 The sanctioned backup path dumps Postgres (all your wiki data lives there):
