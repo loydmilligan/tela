@@ -46,6 +46,26 @@
 	handle /ws/* {
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
+
+	# Prometheus app /metrics. The backend already gates this to instance-admins
+	# (PAT bearer) — it's off auth.IsPublicPath — but we ALSO restrict the source
+	# here so the admin metrics surface is never reachable from the open web: only
+	# TELA_METRICS_ALLOW CIDRs reach the backend, everything else 404s. Set it in
+	# deploy/.env to your Prometheus source (e.g. a tailnet range, "100.64.0.0/10");
+	# default loopback only. NOTE: behind an IP-rewriting proxy (Cloudflare
+	# orange-cloud) the source IP is the proxy's — widen this to it, or scrape the
+	# origin directly. Scrape with: Authorization: Bearer <admin-scoped tela PAT>.
+	@metrics_allowed {
+		path /metrics
+		remote_ip {$TELA_METRICS_ALLOW:127.0.0.1/8 ::1}
+	}
+	handle @metrics_allowed {
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+	handle /metrics {
+		respond 404
+	}
+
 	handle /p/* {
 		header X-Robots-Tag "noindex"
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
