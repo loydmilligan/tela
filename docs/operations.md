@@ -135,27 +135,36 @@ embedder (`TELA_RAG_EMBED_URL`), and image generation. Each is a single endpoint
 by default: if it clogs (rate-limited, slow, down), the dependent features
 degrade. Two layers make this robust and visible.
 
-**Relief proxy (failover).** A profile-gated [LiteLLM](https://docs.litellm.ai)
-`litellm` service (in both compose files; `COMPOSE_PROFILES=relief`, or
-`make up-relief` for the standalone stack) sits in front of chat **and**
-embeddings as the virtual models `tela-chat` / `tela-embed`. Its config is
-**rendered from env** by `deploy/litellm/gen-config.py` at start, so the routing
-mode is fully configurable (`TELA_AI_ROUTING`):
+**Relief proxy (chat failover chain).** A profile-gated
+[LiteLLM](https://docs.litellm.ai) `litellm` service (in both compose files;
+`COMPOSE_PROFILES=relief`, or `make up-relief` for the standalone stack) fronts
+chat as an **ordered overflow chain** `L1 → L2 → L3`. Its config is **rendered
+from env** by `deploy/litellm/gen-config.py` at start: each layer
+(`TELA_LLM_{1,2,3}_URL/MODEL/KEY/PROVIDER`) is its own model group, wired with
+ordered `fallbacks`. A request hits L1; when L1 is **erroring / cooled-down /
+times out**, LiteLLM cascades to L2, then L3 — so a layer going down never cuts
+off service. tela calls the chain by L1's model name, so set `TELA_LLM_MODEL =
+TELA_LLM_1_MODEL` (and point `TELA_LLM_URL` at `http://litellm:4000/v1`).
 
-- `single` — primary only, no fallback (a plain pass-through).
-- `failover` — only-**down** fallback: the primary is always used; the relief is
-  hit only when the primary errors/times-out (a separate model group via
-  `fallbacks`, so normal traffic never spreads to it).
-- `loadbalance` — throughput relief: primary + relief share one group and the
-  router spreads load (`TELA_AI_LB_STRATEGY`), failing over on error too.
+> [!IMPORTANT]
+> LiteLLM `fallbacks` are **failure-based, not load-based** — they trigger when a
+> layer errors/cools down, *not* when it's merely busy (load-balancing strategies
+> spread load but don't "fill L1 then spill"). The per-layer
+> `TELA_LLM_{i}_MAX_PARALLEL` / `_RPM` are an optional concurrency cap, not a
+> fill-then-overflow knob. In practice the local model handles concurrency fine;
+> the chain's job is resilience when a layer actually fails.
 
-Endpoints/keys/provider are env-driven in `deploy/.env` (see the *AI relief
-proxy* block in `.env.example`); you point `TELA_LLM_URL`/`TELA_RAG_EMBED_URL` at
-`http://litellm:4000/v1`. That `/v1` base is why tela has an OpenAI-shaped
-embedder (`internal/rag/embed_openai.go`, auto-selected on a `/v1` base) alongside
-the native Ollama one — LiteLLM speaks OpenAI, not Ollama's `/api/embed`. A relief
-**embedder must output the same dimension** (1024) as the primary; mismatched
-vectors aren't interchangeable in `page_chunks`.
+A natural ladder: **L1** local model (free, fast), **L2** a subscription-backed
+Claude wrapper (free, OpenAI-shaped), **L3** an elastic cloud (e.g. Groq) as the
+final backstop. Each spill *down* the chain is a real degradation signal — see
+**Grafana + alerts** below.
+
+**Embeddings stay single.** They also ride the proxy (`TELA_RAG_EMBED_URL` →
+`http://litellm:4000/v1`), which is why tela has an OpenAI-shaped embedder
+(`internal/rag/embed_openai.go`, auto-selected on a `/v1` base) alongside the
+native Ollama one — LiteLLM speaks OpenAI, not Ollama's `/api/embed`. There's no
+embed chain: a relief embedder would have to be the **same 1024-d model** on a
+second host (different-dim vectors aren't interchangeable in `page_chunks`).
 
 **Per-service health + the admin breakdown.** A background prober
 (`internal/api/ai_health.go`) pings the chat and embed endpoints separately every
@@ -167,13 +176,17 @@ each service's live status, redacted endpoint host, model, whether it's behind a
 relief pool, latency, and last-reachable time. Set `TELA_GRAFANA_AI_URL` to
 deep-link the card to your Grafana failover dashboard.
 
-**Grafana + alerts.** Point your Prometheus at `/metrics` (admin PAT bearer). The
-per-backend failover detail — which relief endpoint served, fallback counts,
-per-deployment latency — is exported by LiteLLM's own `/metrics` (the
-`prometheus` callback; some counters are LiteLLM-enterprise), published per
-`LITELLM_METRICS_BIND`. A ready dashboard + alert rules (AI service down,
-endpoint-slow/clogging, token runaway) ship for the maintainer's Grafana; adapt
-the PromQL (`tela_ai_*`, `litellm_*`) to your stack.
+**Grafana + alerts.** Point your Prometheus at tela `/metrics` (admin PAT bearer)
+**and** at LiteLLM's `/metrics/` (the master key as Bearer; published per
+`LITELLM_METRICS_BIND`). LiteLLM exports per-deployment series —
+`litellm_deployment_success_responses_total` / `_failure_responses_total` (keyed
+by `api_base` + `requested_model`), `litellm_deployment_state` (0 healthy / 1
+partial / 2 outage), `litellm_deployment_cooled_down_total` — so you can alarm
+precisely on a **spill down the chain**: any success on the L2/L3 `api_base` means
+the layer above it failed (a real degradation), and `deployment_state > 0` means a
+layer is down. Treat L2 engaging as a warning and L3 (the paid backstop) as a
+higher-severity page. A ready dashboard + alert rules ship for the maintainer's
+Grafana; adapt the PromQL (`tela_ai_*`, `litellm_*`) to your stack.
 
 ## Insights dashboard
 

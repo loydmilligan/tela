@@ -237,28 +237,35 @@ services:
       # Plain :- (not :?) so a non-relief `up` never trips on it (compose still
       # interpolates profiled-out services); gen-config.py errors if it's blank.
       LITELLM_MASTER_KEY:    ${LITELLM_MASTER_KEY:-}
-      TELA_AI_ROUTING:       ${TELA_AI_ROUTING:-single}
-      TELA_AI_LB_STRATEGY:   ${TELA_AI_LB_STRATEGY:-}
       TELA_AI_NUM_RETRIES:   ${TELA_AI_NUM_RETRIES:-}
       TELA_AI_ALLOWED_FAILS: ${TELA_AI_ALLOWED_FAILS:-}
       TELA_AI_COOLDOWN:      ${TELA_AI_COOLDOWN:-}
       TELA_AI_TIMEOUT:       ${TELA_AI_TIMEOUT:-}
-      TELA_LLM_PRIMARY_URL:       ${TELA_LLM_PRIMARY_URL:-}
-      TELA_LLM_PRIMARY_MODEL:     ${TELA_LLM_PRIMARY_MODEL:-}
-      TELA_LLM_PRIMARY_KEY:       ${TELA_LLM_PRIMARY_KEY:-}
-      TELA_LLM_PRIMARY_PROVIDER:  ${TELA_LLM_PRIMARY_PROVIDER:-}
-      TELA_LLM_RELIEF_URL:        ${TELA_LLM_RELIEF_URL:-}
-      TELA_LLM_RELIEF_MODEL:      ${TELA_LLM_RELIEF_MODEL:-}
-      TELA_LLM_RELIEF_KEY:        ${TELA_LLM_RELIEF_KEY:-}
-      TELA_LLM_RELIEF_PROVIDER:   ${TELA_LLM_RELIEF_PROVIDER:-}
+      # Chat overflow chain: L1 (primary) → L2 → L3, cascading on failure/cooldown
+      # (set TELA_LLM_MODEL = TELA_LLM_1_MODEL). Optional per-layer caps.
+      TELA_LLM_1_URL:          ${TELA_LLM_1_URL:-}
+      TELA_LLM_1_MODEL:        ${TELA_LLM_1_MODEL:-}
+      TELA_LLM_1_KEY:          ${TELA_LLM_1_KEY:-}
+      TELA_LLM_1_PROVIDER:     ${TELA_LLM_1_PROVIDER:-}
+      TELA_LLM_1_MAX_PARALLEL: ${TELA_LLM_1_MAX_PARALLEL:-}
+      TELA_LLM_1_RPM:          ${TELA_LLM_1_RPM:-}
+      TELA_LLM_2_URL:          ${TELA_LLM_2_URL:-}
+      TELA_LLM_2_MODEL:        ${TELA_LLM_2_MODEL:-}
+      TELA_LLM_2_KEY:          ${TELA_LLM_2_KEY:-}
+      TELA_LLM_2_PROVIDER:     ${TELA_LLM_2_PROVIDER:-}
+      TELA_LLM_2_MAX_PARALLEL: ${TELA_LLM_2_MAX_PARALLEL:-}
+      TELA_LLM_2_RPM:          ${TELA_LLM_2_RPM:-}
+      TELA_LLM_3_URL:          ${TELA_LLM_3_URL:-}
+      TELA_LLM_3_MODEL:        ${TELA_LLM_3_MODEL:-}
+      TELA_LLM_3_KEY:          ${TELA_LLM_3_KEY:-}
+      TELA_LLM_3_PROVIDER:     ${TELA_LLM_3_PROVIDER:-}
+      TELA_LLM_3_MAX_PARALLEL: ${TELA_LLM_3_MAX_PARALLEL:-}
+      TELA_LLM_3_RPM:          ${TELA_LLM_3_RPM:-}
+      # Embed: single (a relief embedder must be the same 1024-d model on a 2nd host).
       TELA_EMBED_PRIMARY_URL:      ${TELA_EMBED_PRIMARY_URL:-}
       TELA_EMBED_PRIMARY_MODEL:    ${TELA_EMBED_PRIMARY_MODEL:-}
       TELA_EMBED_PRIMARY_KEY:      ${TELA_EMBED_PRIMARY_KEY:-}
       TELA_EMBED_PRIMARY_PROVIDER: ${TELA_EMBED_PRIMARY_PROVIDER:-}
-      TELA_EMBED_RELIEF_URL:       ${TELA_EMBED_RELIEF_URL:-}
-      TELA_EMBED_RELIEF_MODEL:     ${TELA_EMBED_RELIEF_MODEL:-}
-      TELA_EMBED_RELIEF_KEY:       ${TELA_EMBED_RELIEF_KEY:-}
-      TELA_EMBED_RELIEF_PROVIDER:  ${TELA_EMBED_RELIEF_PROVIDER:-}
     # /metrics for Prometheus. Default loopback; set LITELLM_METRICS_BIND to a
     # tailnet IP (e.g. 100.x.y.z:4000) to let an off-box Prometheus scrape it.
     ports:
