@@ -50,6 +50,14 @@ make up
 
 The stack comes up behind Caddy on **http://localhost:8780**. On first boot tela runs its embedded migrations automatically and lands you on the `/setup` wizard to create the first admin — unless you set `TELA_ADMIN_PASSWORD` in `deploy/.env`, which bootstraps the admin non-interactively.
 
+### One-click cloud deploy
+
+Prefer managed hosting over running Compose? Deploy the published multi-arch images straight to a platform:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/zcag/tela) &nbsp; [![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/zcag/tela/tree/main)
+
+> After the first deploy, enable pgvector on the managed database once — `CREATE EXTENSION IF NOT EXISTS vector;` — then point the backend's `TELA_PUBLIC_BASE_URL` at your app's public URL. Or skip ops entirely with the [free cloud tier](https://telawiki.com).
+
 Common targets:
 
 ```bash

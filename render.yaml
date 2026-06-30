@@ -1,0 +1,77 @@
+# One-click "Deploy to Render" blueprint for tela.
+# Uses the published multi-arch GHCR images (smoke-tested at v0.7.0).
+#
+# After the first deploy, enable pgvector on the managed database ONCE so the
+# semantic-search migration can run:
+#   CREATE EXTENSION IF NOT EXISTS vector;
+# (Render's managed Postgres supports it; it isn't auto-enabled.) Then set the
+# backend's TELA_PUBLIC_BASE_URL to the proxy service's public URL.
+databases:
+  - name: tela-db
+    plan: basic-256mb
+    postgresMajorVersion: "17"
+
+services:
+  # The only web-exposed service — Caddy splits /api → backend, everything else → SPA.
+  - type: web
+    name: tela
+    runtime: image
+    image:
+      url: ghcr.io/zcag/tela-proxy:0.7.0
+    plan: starter
+    envVars:
+      - key: TELA_SITE_ADDRESS
+        value: ":80"
+      - key: TELA_UPSTREAM_BACKEND
+        value: tela-backend:8080
+      - key: TELA_UPSTREAM_FRONTEND
+        value: tela-frontend:80
+
+  - type: pserv
+    name: tela-backend
+    runtime: image
+    image:
+      url: ghcr.io/zcag/tela-backend:0.7.0
+    plan: starter
+    envVars:
+      - key: TELA_PUBLIC_BASE_URL
+        sync: false # set to the tela (proxy) service's public URL after first deploy
+      - key: TELA_SHARE_SECRET
+        generateValue: true
+      - key: TELA_API_KEY_SECRET
+        generateValue: true
+      - key: TELA_DATABASE_URL
+        fromDatabase:
+          name: tela-db
+          property: connectionString
+      - key: TELA_DECK_URL
+        value: http://tela-deck:3344
+      - key: TELA_GOTENBERG_URL
+        value: http://tela-gotenberg:3000
+      - key: TELA_PDF_RENDER_BASE_URL
+        value: http://tela:80
+
+  - type: pserv
+    name: tela-frontend
+    runtime: image
+    image:
+      url: ghcr.io/zcag/tela-frontend:0.7.0
+    plan: starter
+
+  - type: pserv
+    name: tela-deck
+    runtime: image
+    image:
+      url: ghcr.io/zcag/tela-deck:0.7.0
+    plan: starter
+    disk:
+      name: tela-deckcache
+      mountPath: /data
+      sizeGB: 1
+
+  - type: pserv
+    name: tela-gotenberg
+    runtime: image
+    image:
+      url: gotenberg/gotenberg:8
+    plan: starter
