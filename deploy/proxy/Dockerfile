@@ -22,3 +22,10 @@ RUN npm run build
 # ── Stage 2: Caddy serving the built landing ────────────────────────────────
 FROM caddy:2-alpine
 COPY --from=landing /landing/dist /srv/landing
+# Bake the config as a DEFAULT so the published image is self-contained for
+# image-only deploys (one-click app stores: Umbrel/CasaOS/Render/DO/etc.) that
+# can't bind-mount the repo. The standalone compose bind-mounts ./proxy/Caddyfile
+# + ./proxy/sites.caddy read-only over these, so `make up` is unchanged — the
+# bind-mount wins; this only takes effect when nothing is mounted.
+COPY deploy/proxy/Caddyfile /etc/caddy/Caddyfile
+COPY deploy/proxy/sites.caddy /etc/caddy/sites.caddy
