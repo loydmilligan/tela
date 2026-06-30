@@ -333,14 +333,8 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		`SELECT COUNT(*) FROM users WHERE plan_key NOT IN ('personal_free','plus_trial') AND deleted_at IS NULL`).Scan(&out.PaidSubscriptions)
 
 	// --- AI health (last probe verdict from StartAIHealthProbe) ---
-	s.aiHealth.mu.RLock()
-	if s.aiHealth.checked {
-		out.AIHealthy = s.aiHealth.healthy
-		out.AIReason = s.aiHealth.reason
-	} else {
-		out.AIHealthy = s.aiEnabled() // unchecked yet — report configured status
-	}
-	s.aiHealth.mu.RUnlock()
+	out.AIHealthy = s.aiHealthy()
+	out.AIReason = s.aiHealthReason()
 
 	// --- Growth / activation ---
 	_ = s.DB.QueryRowContext(ctx,

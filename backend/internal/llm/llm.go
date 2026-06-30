@@ -182,6 +182,15 @@ func (s *Service) Model() string {
 	return s.cl.Model()
 }
 
+// Endpoint reports the configured chat base URL and model for the admin
+// AI-endpoints breakdown. Empty url when disabled.
+func (s *Service) Endpoint() (url, model string) {
+	if !s.Enabled() {
+		return "", ""
+	}
+	return s.cfg.URL, s.Model()
+}
+
 func getenv(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v

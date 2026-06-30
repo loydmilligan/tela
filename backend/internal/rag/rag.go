@@ -131,7 +131,13 @@ func (s *Service) isPaused() bool { return s.paused != nil && s.paused() }
 func NewService(db *sql.DB, cfg Config) *Service {
 	s := &Service{db: db, cfg: cfg}
 	if cfg.EmbedURL != "" {
-		s.emb = NewOllamaEmbedder(cfg.EmbedURL, cfg.EmbedModel, cfg.EmbedToken)
+		// A /v1 base speaks the OpenAI /embeddings shape (e.g. a LiteLLM proxy
+		// fronting a primary+relief pool); anything else is native Ollama.
+		if isOpenAIBase(cfg.EmbedURL) {
+			s.emb = NewOpenAIEmbedder(cfg.EmbedURL, cfg.EmbedModel, cfg.EmbedToken)
+		} else {
+			s.emb = NewOllamaEmbedder(cfg.EmbedURL, cfg.EmbedModel, cfg.EmbedToken)
+		}
 	}
 	if cfg.RerankURL != "" {
 		s.rr = NewHTTPReranker(cfg.RerankURL, cfg.RerankModel, cfg.RerankToken)
@@ -155,6 +161,16 @@ func (s *Service) EmbedModel() string {
 		return ""
 	}
 	return s.emb.Model()
+}
+
+// EmbedEndpoint reports the configured embed base URL, model, and whether it's
+// routed through an OpenAI /v1 proxy (a LiteLLM relief pool, vs native Ollama) —
+// for the admin AI-endpoints breakdown. Empty url when disabled.
+func (s *Service) EmbedEndpoint() (url, model string, proxied bool) {
+	if s == nil || s.emb == nil {
+		return "", "", false
+	}
+	return s.cfg.EmbedURL, s.emb.Model(), isOpenAIBase(s.cfg.EmbedURL)
 }
 
 var errEmbedderDisabled = errors.New("rag: embedder disabled")

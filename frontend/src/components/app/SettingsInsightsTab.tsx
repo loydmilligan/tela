@@ -1,6 +1,7 @@
-import { ArrowDownRight, ArrowUpRight, Info } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, ExternalLink, Info } from 'lucide-react'
 import { navigateToPage } from '../../lib/pageHitItem'
 import { useAIUsage } from '../../lib/queries/ai-usage'
+import { useAIEndpoints, type AIEndpointHealth } from '../../lib/queries/ai-endpoints'
 import {
   useAdminStats,
   type StatsSignup,
@@ -189,6 +190,8 @@ export function SettingsInsightsTab() {
             </Panel>
           </div>
         </Section>
+
+        <AIReliabilitySection />
 
         <AIUsageSection />
 
@@ -440,6 +443,101 @@ function UnansweredRow({ a }: { a: StatsUnanswered }) {
         {relativeTimeFromSqlite(a.created_at)}
       </span>
     </li>
+  )
+}
+
+// --- AI endpoints & reliability — per-service health + relief topology -------
+
+function AIReliabilitySection() {
+  const q = useAIEndpoints()
+  if (q.isLoading || q.isError || !q.data) return null
+  const d = q.data
+  const configured = d.services.filter((s) => s.configured)
+  if (configured.length === 0) {
+    return (
+      <Section
+        title="AI endpoints & reliability"
+        desc="The backing model services and whether they're reachable."
+      >
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          No AI service is configured. Set <code>TELA_LLM_URL</code> and{' '}
+          <code>TELA_RAG_EMBED_URL</code> to enable chat and embeddings — point them at a relief
+          proxy (LiteLLM) for automatic failover when an endpoint is overloaded.
+        </p>
+      </Section>
+    )
+  }
+  return (
+    <Section
+      title="AI endpoints & reliability"
+      desc="Live reachability of each backing model service. Route them through a relief proxy (LiteLLM) so traffic fails over automatically when an endpoint clogs."
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-3)]">
+        {configured.map((s) => (
+          <EndpointCard key={s.service} s={s} probed={d.probed} />
+        ))}
+      </div>
+      {d.grafana_url ? (
+        <a
+          href={d.grafana_url}
+          target="_blank"
+          rel="noreferrer"
+          className="reader-meta-link mt-[var(--space-3)] inline-flex items-center gap-[var(--space-1)] text-[length:var(--text-sm)]"
+        >
+          Failover & per-endpoint detail in Grafana
+          <ExternalLink width={13} height={13} aria-hidden="true" />
+        </a>
+      ) : null}
+    </Section>
+  )
+}
+
+function EndpointCard({ s, probed }: { s: AIEndpointHealth; probed: boolean }) {
+  const label = s.service === 'embed' ? 'Embeddings' : 'Chat & generation'
+  const tone = !probed ? 'neutral' : s.healthy ? 'positive' : 'negative'
+  const statusText = !probed ? 'Checking…' : s.healthy ? 'Up' : 'Down'
+  return (
+    <div className="flex flex-col gap-[var(--space-2)] rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface-1)] p-[var(--space-3)]">
+      <div className="flex items-center justify-between gap-[var(--space-2)]">
+        <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">{label}</span>
+        <StatusBadge tone={tone} dot>
+          {statusText}
+        </StatusBadge>
+      </div>
+      <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+        <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]" title={s.endpoint}>
+          {s.endpoint || '—'}
+        </span>
+        {s.proxied ? (
+          <StatusBadge tone="info">relief pool</StatusBadge>
+        ) : (
+          <StatusBadge tone="neutral">single endpoint</StatusBadge>
+        )}
+      </div>
+      <dl className="m-0 grid grid-cols-2 gap-x-[var(--space-3)] gap-y-[var(--space-1)]">
+        <EndpointField label="Model" value={s.model || '(default)'} />
+        <EndpointField label="Probe latency" value={probed ? `${s.latency_ms} ms` : '—'} />
+        <EndpointField
+          label={s.healthy ? 'Up for' : 'Down for'}
+          value={s.since ? relativeTimeFromSqlite(s.since) : '—'}
+        />
+        <EndpointField label="Last reachable" value={s.last_ok ? relativeTimeFromSqlite(s.last_ok) : 'never'} />
+      </dl>
+      {probed && !s.healthy && s.reason ? (
+        <p className="m-0 text-[length:var(--text-xs)] text-[var(--danger)] break-words">{s.reason}</p>
+      ) : null}
+    </div>
+  )
+}
+
+function EndpointField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-[1px] min-w-0">
+      <dt className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{label}</dt>
+      <dd className="m-0 truncate text-[length:var(--text-sm)] tabular-nums text-[var(--text-primary)]" title={value}>
+        {value}
+      </dd>
+    </div>
   )
 }
 

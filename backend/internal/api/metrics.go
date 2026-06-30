@@ -83,6 +83,31 @@ var (
 		},
 		[]string{"kind"},
 	)
+
+	// aiUp reports each backing AI service's reachability as seen by the
+	// background health prober: 1 = reachable, 0 = down, absent = not configured.
+	// service is "embed" or "chat". This is the alertable up/down signal (a
+	// LiteLLM relief pool can mask single-backend outages, so this only fires
+	// when the WHOLE service — proxy included — is unreachable). Per-backend /
+	// fallback detail comes from LiteLLM's own /metrics, not here.
+	aiUp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "tela_ai_service_up",
+			Help: "AI service reachability from the health prober (1=up,0=down) by service (embed|chat).",
+		},
+		[]string{"service"},
+	)
+
+	// aiProbeLatency observes how long the last liveness probe took per service —
+	// a slow-but-up backend (the early sign of clogging, before it fails outright)
+	// shows here as rising latency while aiUp is still 1.
+	aiProbeLatency = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "tela_ai_probe_latency_seconds",
+			Help: "Duration of the last AI liveness probe in seconds by service (embed|chat).",
+		},
+		[]string{"service"},
+	)
 )
 
 func init() {
@@ -91,6 +116,8 @@ func init() {
 		httpDuration,
 		clientErrors,
 		aiTokens,
+		aiUp,
+		aiProbeLatency,
 		atlasKills,
 		polarLastWebhook,
 		// Go runtime + process collectors (goroutines, GC, memory, open FDs,

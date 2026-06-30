@@ -364,6 +364,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// AI usage log (ai_usage.go): weekly token totals + per-model breakdown, the
 	// raw material for cost estimates.
 	mux.HandleFunc("GET /api/admin/ai-usage", srv.AdminAIUsage)
+	// AI endpoints & reliability (ai_endpoints.go): per-service health, latency,
+	// and the relief-proxy topology — the in-app failover breakdown.
+	mux.HandleFunc("GET /api/admin/ai-endpoints", srv.AdminAIEndpoints)
 	mux.HandleFunc("GET /api/admin/feedback", srv.ListFeedback)
 	mux.HandleFunc("POST /api/admin/feedback/seen", srv.MarkFeedbackSeen)
 	mux.HandleFunc("GET /api/admin/settings", srv.GetInstanceSettings)

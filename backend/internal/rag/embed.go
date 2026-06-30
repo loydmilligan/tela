@@ -82,10 +82,7 @@ func (e *OllamaEmbedder) Live(ctx context.Context) error {
 // query side only; the corpus is never re-embedded with the prefix. With no
 // instruction configured it degrades to a plain Embed.
 func (e *OllamaEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
-	if e.instruct == "" {
-		return e.Embed(ctx, query)
-	}
-	return e.Embed(ctx, "Instruct: "+e.instruct+"\nQuery:"+query)
+	return e.Embed(ctx, queryInstruct(e.instruct, query))
 }
 
 // maxEmbedChars is the initial rune cap on embed input — a first-pass guard so
@@ -122,9 +119,20 @@ func clampRunes(text string, n int) string {
 // content + lexical index keep the full text, and the contextual prefix sits at
 // the head, so we only ever drop the tail of an over-long section.
 func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	return shrinkToFit(text, func(in string) ([]float32, bool, error) {
+		return e.embedOnce(ctx, in)
+	})
+}
+
+// shrinkToFit runs once(input) and, on a context-overflow rejection (overflow
+// true), shrinks the input 25% and retries down to embedMinChars. Shared by
+// every Embedder (Ollama + OpenAI) so the overflow handling lives in one place;
+// only the embedded text shrinks, never the stored chunk. once returns
+// (vec, overflow, err).
+func shrinkToFit(text string, once func(string) ([]float32, bool, error)) ([]float32, error) {
 	input := clampRunes(text, maxEmbedChars)
 	for {
-		vec, overflow, err := e.embedOnce(ctx, input)
+		vec, overflow, err := once(input)
 		if err == nil {
 			return vec, nil
 		}
@@ -134,6 +142,16 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 		}
 		input = clampRunes(input, n*3/4)
 	}
+}
+
+// queryInstruct wraps a search query with the asymmetric instruction prefix per
+// the Qwen3-Embedding model card ("Instruct: {task}\nQuery:{q}"); a blank
+// instruction returns the query unchanged. Shared by both embedders' EmbedQuery.
+func queryInstruct(instruct, query string) string {
+	if instruct == "" {
+		return query
+	}
+	return "Instruct: " + instruct + "\nQuery:" + query
 }
 
 // embedOnce does a single embed request. overflow is true when the model
