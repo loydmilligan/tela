@@ -138,8 +138,8 @@ const shareTools = [
       "command": "npx",
       "args": ["-y", "tela-mcp"],
       "env": {
-        "TELA_URL": "https://telawiki.com",
-        "TELA_TOKEN": "<your personal access token>"
+        "TELA_BASE_URL": "https://telawiki.com",
+        "TELA_API_KEY": "<your personal access token>"
       }
     }
   }
@@ -243,7 +243,7 @@ const shareTools = [
     <dt>Connect fails / "couldn't register"</dt>
     <dd>The host couldn't complete OAuth. Re-add the connector with the exact URL <code>https://telawiki.com/api/mcp</code>, then sign in and consent when the tela login screen appears.</dd>
     <dt>401 / tools don't appear</dt>
-    <dd>The token is missing or invalid. For the OAuth flow, reconnect; for the npm proxy, check <code>TELA_TOKEN</code> is a current Personal Access Token.</dd>
+    <dd>The token is missing or invalid. For the OAuth flow, reconnect; for the npm proxy, check <code>TELA_API_KEY</code> is a current Personal Access Token.</dd>
     <dt>Tool returns <code>503 rag_disabled</code></dt>
     <dd>Semantic retrieval isn't configured on this instance — use keyword <code>search</code> instead.</dd>
     <dt>A page comes back truncated</dt>
