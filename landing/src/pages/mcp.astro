@@ -149,6 +149,81 @@ const shareTools = [
     <code>/api/mcp</code> directly.
   </p>
 
+  <h2>Install</h2>
+
+  <h3>One-click</h3>
+  <p>
+    Add the HTTP endpoint to an editor in one click — OAuth handles sign-in on
+    first use, so no token goes in the link:
+  </p>
+  <div class="install-buttons" role="group" aria-label="One-click MCP install">
+    <a
+      class="install-btn"
+      href="cursor://anysphere.cursor-deeplink/mcp/install?name=tela&config=eyJ1cmwiOiJodHRwczovL3RlbGF3aWtpLmNvbS9hcGkvbWNwIn0="
+      >Add to Cursor</a
+    >
+    <a
+      class="install-btn"
+      href="https://insiders.vscode.dev/redirect/mcp/install?name=tela&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Ftelawiki.com%2Fapi%2Fmcp%22%7D"
+      >Add to VS Code</a
+    >
+  </div>
+
+  <h3>Per-client setup</h3>
+  <p>
+    HTTP-transport hosts connect to the endpoint directly and sign in via OAuth;
+    stdio-only hosts use the <code>tela-mcp</code> proxy with a PAT
+    (<code>TELA_BASE_URL</code> + <code>TELA_API_KEY</code>).
+  </p>
+
+  <h4>Claude Code (CLI, HTTP)</h4>
+  <pre tabindex="0" aria-label="Claude Code install command"><code>{`claude mcp add --transport http tela https://telawiki.com/api/mcp`}</code></pre>
+
+  <h4>Cursor (HTTP)</h4>
+  <p>Use the button above, or add to <code>~/.cursor/mcp.json</code>:</p>
+  <pre tabindex="0" aria-label="Cursor configuration"><code>{`{ "mcpServers": { "tela": { "url": "https://telawiki.com/api/mcp" } } }`}</code></pre>
+
+  <h4>VS Code (HTTP)</h4>
+  <p>Use the button above, or from the command line:</p>
+  <pre tabindex="0" aria-label="VS Code install command"><code>{`code --add-mcp '{"name":"tela","type":"http","url":"https://telawiki.com/api/mcp"}'`}</code></pre>
+
+  <h4>ChatGPT / Claude.ai (OAuth connector)</h4>
+  <p>Add a custom connector, paste the URL, and complete the sign-in:</p>
+  <pre tabindex="0" aria-label="OAuth connector URL"><code>{`https://telawiki.com/api/mcp`}</code></pre>
+
+  <h4>Claude Desktop (stdio proxy)</h4>
+  <p>In <code>claude_desktop_config.json</code>:</p>
+  <pre tabindex="0" aria-label="Claude Desktop configuration"><code>{`{
+  "mcpServers": {
+    "tela": {
+      "command": "npx",
+      "args": ["-y", "tela-mcp"],
+      "env": {
+        "TELA_BASE_URL": "https://telawiki.com",
+        "TELA_API_KEY": "<your personal access token>"
+      }
+    }
+  }
+}`}</code></pre>
+
+  <h4>Windsurf (stdio proxy)</h4>
+  <p>
+    In <code>~/.codeium/windsurf/mcp_config.json</code>, using the same
+    <code>mcpServers</code> shape as Claude Desktop above.
+  </p>
+
+  <h4>Codex (stdio proxy)</h4>
+  <p>In <code>~/.codex/config.toml</code>:</p>
+  <pre tabindex="0" aria-label="Codex configuration"><code>{`[mcp_servers.tela]
+command = "npx"
+args = ["-y", "tela-mcp"]
+env = { TELA_BASE_URL = "https://telawiki.com", TELA_API_KEY = "<your personal access token>" }`}</code></pre>
+
+  <p>
+    A machine-discovery manifest is published at
+    <a href="/.well-known/mcp.json"><code>/.well-known/mcp.json</code></a>.
+  </p>
+
   <h2>Tools</h2>
   <p>
     Thirty-nine tools, grouped by what they touch, with read and write cleanly

@@ -228,6 +228,68 @@ For hosts that can't speak HTTP transport (or want a stdio bridge), the [`tela-m
 
 Point `TELA_BASE_URL` at your own origin to use a self-hosted instance. Generate a PAT in **Settings → API tokens**; per-tool write permission is enforced server-side. The proxy requires **Node ≥ 20**. See [`mcp/README.md`](mcp/README.md) for the full tool catalog and troubleshooting.
 
+### One-click install
+
+[![Add to Cursor](https://img.shields.io/badge/Add%20to-Cursor-000000?logo=cursor&logoColor=white)](cursor://anysphere.cursor-deeplink/mcp/install?name=tela&config=eyJ1cmwiOiJodHRwczovL3RlbGF3aWtpLmNvbS9hcGkvbWNwIn0=)
+[![Add to VS Code](https://img.shields.io/badge/Add%20to-VS%20Code-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=tela&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Ftelawiki.com%2Fapi%2Fmcp%22%7D)
+
+Both buttons add the HTTP endpoint; auth is handled by OAuth on first use, so no token goes in the link.
+
+### Per-client setup
+
+HTTP-transport hosts connect to the endpoint directly and sign in via OAuth. stdio-only hosts use the `tela-mcp` proxy with a PAT (`TELA_BASE_URL` + `TELA_API_KEY`).
+
+**Claude Code** (CLI, HTTP):
+
+```bash
+claude mcp add --transport http tela https://telawiki.com/api/mcp
+```
+
+**Cursor** (HTTP) — use the button above, or add to `~/.cursor/mcp.json`:
+
+```jsonc
+{ "mcpServers": { "tela": { "url": "https://telawiki.com/api/mcp" } } }
+```
+
+**VS Code** (HTTP) — use the button above, or:
+
+```bash
+code --add-mcp '{"name":"tela","type":"http","url":"https://telawiki.com/api/mcp"}'
+```
+
+**ChatGPT / Claude.ai** (OAuth connector) — add a custom connector and paste the URL; complete the sign-in:
+
+```
+https://telawiki.com/api/mcp
+```
+
+**Claude Desktop** (stdio proxy) — `claude_desktop_config.json`:
+
+```jsonc
+{
+  "mcpServers": {
+    "tela": {
+      "command": "npx",
+      "args": ["-y", "tela-mcp"],
+      "env": { "TELA_BASE_URL": "https://telawiki.com", "TELA_API_KEY": "tela_pat_xxxxxxxx" }
+    }
+  }
+}
+```
+
+**Windsurf** (stdio proxy) — `~/.codeium/windsurf/mcp_config.json`, same `mcpServers` shape as Claude Desktop above.
+
+**Codex** (stdio proxy) — `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.tela]
+command = "npx"
+args = ["-y", "tela-mcp"]
+env = { TELA_BASE_URL = "https://telawiki.com", TELA_API_KEY = "tela_pat_xxxxxxxx" }
+```
+
+A machine-discovery manifest is published at [`/.well-known/mcp.json`](https://telawiki.com/.well-known/mcp.json).
+
 ## Screenshots
 
 <picture>

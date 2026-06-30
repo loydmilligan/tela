@@ -176,4 +176,36 @@ const { title, description, heading, kicker, updated, ogImagePath } = Astro.prop
   .prose :where(dl) { margin-bottom: 1.25rem; }
   .prose :where(dt) { color: var(--fg); font-weight: 600; margin-top: 1rem; }
   .prose :where(dd) { margin-left: 0; margin-bottom: 0.5rem; }
+  .prose :where(h4) {
+    font-size: var(--text-base);
+    color: var(--fg);
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+  }
+  /* One-click install buttons — bordered token surface, matching the ghost CTA. */
+  .prose :where(.install-buttons) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+  }
+  .prose :where(.install-btn) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+  }
+  .prose :where(.install-btn:hover) {
+    color: var(--fg);
+    border-color: var(--brand);
+    background: var(--surface-sunk);
+  }
 </style>

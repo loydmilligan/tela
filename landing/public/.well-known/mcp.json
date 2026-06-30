@@ -1,0 +1,42 @@
+{
+  "name": "io.github.zcag/tela",
+  "title": "tela",
+  "description": "Self-hostable markdown team wiki: agents search, read, and write your wiki pages over MCP.",
+  "websiteUrl": "https://telawiki.com",
+  "documentationUrl": "https://telawiki.com/mcp/",
+  "repository": {
+    "url": "https://github.com/zcag/tela",
+    "source": "github"
+  },
+  "endpoint": "https://telawiki.com/api/mcp",
+  "transport": "streamable-http",
+  "auth": {
+    "types": ["oauth", "pat"],
+    "oauth": {
+      "type": "oauth2.1",
+      "description": "OAuth 2.1 with PKCE via WorkOS AuthKit. HTTP-transport hosts run the flow automatically — no manual token handling."
+    },
+    "pat": {
+      "type": "bearer",
+      "description": "Personal access token sent as an Authorization: Bearer header. Create one in Settings -> API Keys."
+    }
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://telawiki.com/api/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "tela-mcp",
+      "transport": { "type": "stdio" },
+      "description": "Thin stdio<->HTTP proxy for stdio-only hosts. Set TELA_BASE_URL and TELA_API_KEY.",
+      "environmentVariables": [
+        { "name": "TELA_BASE_URL", "description": "Origin of the tela instance, e.g. https://telawiki.com", "isRequired": true },
+        { "name": "TELA_API_KEY", "description": "Personal access token (tela_pat_...).", "isRequired": true, "isSecret": true }
+      ]
+    }
+  ]
+}
