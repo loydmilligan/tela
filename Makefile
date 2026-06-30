@@ -153,11 +153,12 @@ up-ai:
 
 # Standalone stack WITH the AI relief proxy (LiteLLM) — chat + embeddings fail
 # over to a relief endpoint when the primary clogs. Set the primary/relief
-# endpoints + LITELLM_MASTER_KEY in deploy/.env first. See
-# deploy/docker-compose.relief.yml + docs/observability.md.
+# endpoints + LITELLM_MASTER_KEY + TELA_LLM_URL/TELA_RAG_EMBED_URL=http://litellm:4000/v1
+# in deploy/.env first (the relief block in .env.example). The `litellm` service
+# is profile-gated, so this just turns the profile on. See docs/operations.md.
 up-relief:
-	$(EXPORT_BUILD) $(COMPOSE) -f deploy/docker-compose.relief.yml up -d --build
-	$(COMPOSE) up -d --force-recreate proxy
+	$(EXPORT_BUILD) COMPOSE_PROFILES=relief $(COMPOSE) up -d --build
+	COMPOSE_PROFILES=relief $(COMPOSE) up -d --force-recreate proxy
 
 down:
 	$(COMPOSE) down

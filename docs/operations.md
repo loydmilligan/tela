@@ -135,20 +135,27 @@ embedder (`TELA_RAG_EMBED_URL`), and image generation. Each is a single endpoint
 by default: if it clogs (rate-limited, slow, down), the dependent features
 degrade. Two layers make this robust and visible.
 
-**Relief proxy (failover).** The opt-in overlay `deploy/docker-compose.relief.yml`
-(`make up-relief`) runs a [LiteLLM](https://docs.litellm.ai) proxy in front of
-chat **and** embeddings. Each virtual model (`tela-chat`, `tela-embed`) has a
-**primary** and a **relief** deployment sharing one name, so the router
-load-balances and, when the primary errors/times-out, retries on the relief and
-cools the bad one down — traffic shifts automatically when an endpoint clogs.
-Endpoints/keys are env-driven in `deploy/.env` (see the *AI relief proxy* block in
-`.env.example`); routing/retries/cooldown live in `deploy/litellm/config.yaml`.
-The overlay repoints `TELA_LLM_URL`/`TELA_RAG_EMBED_URL` at the proxy (`/v1`),
-which is why tela has an OpenAI-shaped embedder (`internal/rag/embed_openai.go`,
-auto-selected on a `/v1` base) alongside the native Ollama one — LiteLLM speaks
-OpenAI, not Ollama's `/api/embed`. A relief **embedder must output the same
-dimension** (1024) as the primary; mismatched vectors aren't interchangeable in
-`page_chunks`.
+**Relief proxy (failover).** A profile-gated [LiteLLM](https://docs.litellm.ai)
+`litellm` service (in both compose files; `COMPOSE_PROFILES=relief`, or
+`make up-relief` for the standalone stack) sits in front of chat **and**
+embeddings as the virtual models `tela-chat` / `tela-embed`. Its config is
+**rendered from env** by `deploy/litellm/gen-config.py` at start, so the routing
+mode is fully configurable (`TELA_AI_ROUTING`):
+
+- `single` — primary only, no fallback (a plain pass-through).
+- `failover` — only-**down** fallback: the primary is always used; the relief is
+  hit only when the primary errors/times-out (a separate model group via
+  `fallbacks`, so normal traffic never spreads to it).
+- `loadbalance` — throughput relief: primary + relief share one group and the
+  router spreads load (`TELA_AI_LB_STRATEGY`), failing over on error too.
+
+Endpoints/keys/provider are env-driven in `deploy/.env` (see the *AI relief
+proxy* block in `.env.example`); you point `TELA_LLM_URL`/`TELA_RAG_EMBED_URL` at
+`http://litellm:4000/v1`. That `/v1` base is why tela has an OpenAI-shaped
+embedder (`internal/rag/embed_openai.go`, auto-selected on a `/v1` base) alongside
+the native Ollama one — LiteLLM speaks OpenAI, not Ollama's `/api/embed`. A relief
+**embedder must output the same dimension** (1024) as the primary; mismatched
+vectors aren't interchangeable in `page_chunks`.
 
 **Per-service health + the admin breakdown.** A background prober
 (`internal/api/ai_health.go`) pings the chat and embed endpoints separately every
