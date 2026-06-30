@@ -221,6 +221,11 @@ func New(db *sql.DB) *Server {
 	s.loadLicense(ctx)
 	s.warnSelfHostSSO(ctx)
 
+	// Guard against a Polar reprice silently diverging from the plans table (we'd
+	// charge a price the UI never shows). Background — a few API calls, advisory
+	// (logs loud on mismatch), never blocks or fails boot. See billing_priceguard.go.
+	go s.verifyBillingPrices(context.Background())
+
 	// Built after the literal so it can share the llm handle (same enablement).
 	s.summarize = summarize.NewService(db, s.llm)
 	// Agreement shares llm + rag (needs both: a model to judge, embeddings to

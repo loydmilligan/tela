@@ -47,6 +47,46 @@ func TestUpdateSubscriptionSeats(t *testing.T) {
 	}
 }
 
+func TestGetProduct(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotContentLen int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotContentLen = r.Method, r.URL.Path, r.ContentLength
+		w.Write([]byte(`{
+			"id": "prod_abc",
+			"name": "Team (Yearly)",
+			"recurring_interval": "year",
+			"prices": [{"amount_type": "fixed", "price_amount": 9600}]
+		}`))
+	}))
+	defer srv.Close()
+	c := New(Config{Token: "tok", WebhookSecret: "s", BaseURL: srv.URL})
+
+	prod, err := c.GetProduct(context.Background(), "prod_abc")
+	if err != nil {
+		t.Fatalf("get product: %v", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/v1/products/prod_abc" {
+		t.Fatalf("got %s %s, want GET /v1/products/prod_abc", gotMethod, gotPath)
+	}
+	if gotContentLen > 0 {
+		t.Fatalf("GET should send no body, got content-length %d", gotContentLen)
+	}
+	if prod.RecurringInterval != "year" {
+		t.Fatalf("interval = %q, want year", prod.RecurringInterval)
+	}
+	cents, ok := prod.FixedPriceCents()
+	if !ok || cents != 9600 {
+		t.Fatalf("price = %d (ok=%v), want 9600", cents, ok)
+	}
+
+	// A product with no fixed price reports not-ok.
+	empty := &ProductInfo{Prices: []ProductPrice{{AmountType: "metered_unit", AmountCents: 0}}}
+	if _, ok := empty.FixedPriceCents(); ok {
+		t.Fatalf("metered product should have no fixed price")
+	}
+}
+
 // signWebhook builds a valid Standard Webhooks header set for body, matching
 // VerifyWebhook's construction (raw secret as key, id.ts.body signed content).
 func signWebhook(secret, id string, ts time.Time, body []byte) http.Header {

@@ -124,6 +124,54 @@ func (c *Client) PlanFor(productID string) (string, bool) {
 	return "", false
 }
 
+// ConfiguredProducts returns a copy of the wired productKey→productID map, where
+// productKey is "<plan>" (monthly) or "<plan>@year". For the boot price guard.
+func (c *Client) ConfiguredProducts() map[string]string {
+	out := make(map[string]string, len(c.cfg.Products))
+	for k, v := range c.cfg.Products {
+		out[k] = v
+	}
+	return out
+}
+
+// ProductPrice is one configured price on a Polar product. AmountCents is the
+// fixed amount (price_amount); AmountType distinguishes fixed from metered/free.
+type ProductPrice struct {
+	AmountCents int    `json:"price_amount"`
+	AmountType  string `json:"amount_type"`
+}
+
+// ProductInfo is the subset of a Polar product we read for the price guard. The
+// billing cadence (month/year) is a product-level field; the amount lives on the
+// price.
+type ProductInfo struct {
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	RecurringInterval string         `json:"recurring_interval"`
+	Prices            []ProductPrice `json:"prices"`
+}
+
+// FixedPriceCents returns the product's fixed price amount, ok=false when it has
+// no fixed price (free/metered).
+func (p *ProductInfo) FixedPriceCents() (int, bool) {
+	for _, pr := range p.Prices {
+		if pr.AmountType == "fixed" || pr.AmountCents > 0 {
+			return pr.AmountCents, true
+		}
+	}
+	return 0, false
+}
+
+// GetProduct fetches a product (GET /v1/products/{id}) so the boot guard can
+// compare its live price against the plans table. Needs `products:read`.
+func (c *Client) GetProduct(ctx context.Context, productID string) (*ProductInfo, error) {
+	var out ProductInfo
+	if err := c.do(ctx, http.MethodGet, "/v1/products/"+productID, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ── checkout ────────────────────────────────────────────────────────────────
 
 // CheckoutInput is the subset of Polar's checkout fields we set.
@@ -214,18 +262,24 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 }
 
 // do issues an authenticated JSON request and decodes a 2xx body into out (out
-// may be nil to ignore the body).
+// may be nil to ignore the body). A nil request body sends no payload (GETs).
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return err
+	var reader io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(buf)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.cfg.BaseURL+path, bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, method, c.cfg.BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.cfg.Token)
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
