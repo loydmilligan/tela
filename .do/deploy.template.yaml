@@ -1,0 +1,83 @@
+# One-click "Deploy to DigitalOcean" template for tela.
+# Powers the Deploy-to-DO button (cloud.digitalocean.com/apps/new?repo=...).
+# Uses the published multi-arch GHCR images (smoke-tested at v0.7.0).
+#
+# After provisioning, enable pgvector on the managed DB ONCE so the RAG
+# migration can run:  CREATE EXTENSION IF NOT EXISTS vector;
+spec:
+  name: tela
+  region: nyc
+  databases:
+    - name: tela-db
+      engine: PG
+      version: "17"
+      production: false
+  services:
+    # Public ingress — Caddy fronts the whole app on port 80.
+    - name: proxy
+      image:
+        registry_type: GHCR
+        registry: zcag
+        repository: tela-proxy
+        tag: "0.7.0"
+      http_port: 80
+      instance_size_slug: basic-xs
+      instance_count: 1
+      routes:
+        - path: /
+      envs:
+        - { key: TELA_SITE_ADDRESS, value: ":80" }
+        - { key: TELA_UPSTREAM_BACKEND, value: backend:8080 }
+        - { key: TELA_UPSTREAM_FRONTEND, value: frontend:80 }
+
+    - name: backend
+      image:
+        registry_type: GHCR
+        registry: zcag
+        repository: tela-backend
+        tag: "0.7.0"
+      http_port: 8080
+      internal_ports: [8080]
+      instance_size_slug: basic-xs
+      instance_count: 1
+      envs:
+        - { key: TELA_PUBLIC_BASE_URL, scope: RUN_TIME, value: "${APP_URL}" }
+        - { key: TELA_SHARE_SECRET, scope: RUN_TIME, type: SECRET, value: "REPLACE_WITH_openssl_rand_hex_32" }
+        - { key: TELA_API_KEY_SECRET, scope: RUN_TIME, type: SECRET, value: "REPLACE_WITH_openssl_rand_hex_32" }
+        - { key: TELA_DATABASE_URL, scope: RUN_TIME, value: "${tela-db.DATABASE_URL}" }
+        - { key: TELA_DECK_URL, scope: RUN_TIME, value: "http://deck:3344" }
+        - { key: TELA_GOTENBERG_URL, scope: RUN_TIME, value: "http://gotenberg:3000" }
+        - { key: TELA_PDF_RENDER_BASE_URL, scope: RUN_TIME, value: "http://proxy:80" }
+
+    - name: frontend
+      image:
+        registry_type: GHCR
+        registry: zcag
+        repository: tela-frontend
+        tag: "0.7.0"
+      http_port: 80
+      internal_ports: [80]
+      instance_size_slug: basic-xxs
+      instance_count: 1
+
+    - name: deck
+      image:
+        registry_type: GHCR
+        registry: zcag
+        repository: tela-deck
+        tag: "0.7.0"
+      http_port: 3344
+      internal_ports: [3344]
+      instance_size_slug: basic-xs
+      instance_count: 1
+
+    - name: gotenberg
+      image:
+        registry_type: DOCKER_HUB
+        registry: gotenberg
+        repository: gotenberg
+        tag: "8"
+      http_port: 3000
+      internal_ports: [3000]
+      instance_size_slug: basic-xs
+      instance_count: 1
