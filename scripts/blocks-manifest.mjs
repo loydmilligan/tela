@@ -33,8 +33,10 @@ const INFRA = new Set([
   'milkdown-editor', // the editor host component
   'milkdown-floating', // slash/bubble positioning helper
   'milkdown-image-upload', // upload transport for the `image` block (markdown is plain)
+  'milkdown-link-popover', // hover popover (open/copy/edit/remove) for a link (no node)
   'milkdown-list-indent', // Tab/Shift-Tab list nest/un-nest keymap (no node)
   'milkdown-modifier-click', // cmd/ctrl-click navigation
+  'milkdown-placeholder', // empty-editor placeholder text (no node)
   'milkdown-plain-paste', // Cmd/Ctrl+Shift+V paste-as-plain-text keymap (no node)
   'milkdown-slash', // the slash menu itself
   'milkdown-table-select', // table cell-selection behavior (no node)
