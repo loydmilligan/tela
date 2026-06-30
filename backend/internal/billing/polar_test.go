@@ -75,15 +75,21 @@ func TestGetProduct(t *testing.T) {
 	if prod.RecurringInterval != "year" {
 		t.Fatalf("interval = %q, want year", prod.RecurringInterval)
 	}
-	cents, ok := prod.FixedPriceCents()
+	cents, ok := prod.PriceCents()
 	if !ok || cents != 9600 {
 		t.Fatalf("price = %d (ok=%v), want 9600", cents, ok)
 	}
 
-	// A product with no fixed price reports not-ok.
+	// Seat-based pricing (the Team tier) reports the per-seat cents.
+	seat := &ProductInfo{Prices: []ProductPrice{{AmountType: "seat_based", PricePerSeat: 1000}}}
+	if c, ok := seat.PriceCents(); !ok || c != 1000 {
+		t.Fatalf("seat price = %d (ok=%v), want 1000", c, ok)
+	}
+
+	// A metered product with no comparable price reports not-ok.
 	empty := &ProductInfo{Prices: []ProductPrice{{AmountType: "metered_unit", AmountCents: 0}}}
-	if _, ok := empty.FixedPriceCents(); ok {
-		t.Fatalf("metered product should have no fixed price")
+	if _, ok := empty.PriceCents(); ok {
+		t.Fatalf("metered product should have no comparable price")
 	}
 }
 

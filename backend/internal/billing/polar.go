@@ -134,11 +134,13 @@ func (c *Client) ConfiguredProducts() map[string]string {
 	return out
 }
 
-// ProductPrice is one configured price on a Polar product. AmountCents is the
-// fixed amount (price_amount); AmountType distinguishes fixed from metered/free.
+// ProductPrice is one configured price on a Polar product. The comparable cents
+// figure is price_amount for a flat price or price_per_seat for seat-based
+// pricing (the Team tier); AmountType says which.
 type ProductPrice struct {
-	AmountCents int    `json:"price_amount"`
-	AmountType  string `json:"amount_type"`
+	AmountCents  int    `json:"price_amount"`
+	PricePerSeat int    `json:"price_per_seat"`
+	AmountType   string `json:"amount_type"`
 }
 
 // ProductInfo is the subset of a Polar product we read for the price guard. The
@@ -151,12 +153,21 @@ type ProductInfo struct {
 	Prices            []ProductPrice `json:"prices"`
 }
 
-// FixedPriceCents returns the product's fixed price amount, ok=false when it has
-// no fixed price (free/metered).
-func (p *ProductInfo) FixedPriceCents() (int, bool) {
+// PriceCents returns the product's comparable price in cents — the flat amount
+// for a fixed price, or the per-seat amount for seat-based pricing — matching how
+// the plans table stores it (org tiers store the per-seat price). ok=false when
+// the product has no priced component (free/metered).
+func (p *ProductInfo) PriceCents() (int, bool) {
 	for _, pr := range p.Prices {
-		if pr.AmountType == "fixed" || pr.AmountCents > 0 {
-			return pr.AmountCents, true
+		switch pr.AmountType {
+		case "seat_based":
+			if pr.PricePerSeat > 0 {
+				return pr.PricePerSeat, true
+			}
+		default: // "fixed" / "" / legacy
+			if pr.AmountCents > 0 {
+				return pr.AmountCents, true
+			}
 		}
 	}
 	return 0, false

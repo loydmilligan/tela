@@ -53,9 +53,9 @@ func (s *Server) verifyBillingPrices(ctx context.Context) {
 			slog.Error("billing price guard: product cadence mismatch — wrong product wired",
 				"plan", plan, "wired_as", interval, "polar_interval", prod.RecurringInterval, "product", productID)
 		}
-		actual, ok := prod.FixedPriceCents()
+		actual, ok := prod.PriceCents()
 		if !ok {
-			slog.Warn("billing price guard: Polar product has no fixed price",
+			slog.Warn("billing price guard: Polar product has no comparable price",
 				"plan", plan, "interval", interval, "product", productID)
 			continue
 		}
