@@ -160,7 +160,7 @@ each service's live status, redacted endpoint host, model, whether it's behind a
 relief pool, latency, and last-reachable time. Set `TELA_GRAFANA_AI_URL` to
 deep-link the card to your Grafana failover dashboard.
 
-**Grafana + alerts.** Point your Prometheus at `/metrics` (above). The
+**Grafana + alerts.** Point your Prometheus at `/metrics` (admin PAT bearer). The
 per-backend failover detail — which relief endpoint served, fallback counts,
 per-deployment latency — is exported by LiteLLM's own `/metrics` (the
 `prometheus` callback; some counters are LiteLLM-enterprise), published per
@@ -200,11 +200,9 @@ It is **instance-admin gated** — a scraper authenticates with an admin-scoped 
 `tela_ai_tokens_total{kind}`, `tela_ai_service_up{service}` +
 `tela_ai_probe_latency_seconds{service}` (AI reliability, below),
 `tela_atlas_stuck_runs_killed_total`, `tela_polar_last_webhook_timestamp_seconds`,
-and the standard Go runtime + process collectors.
-
-Behind the bundled edge, `/metrics` is **not** forwarded to the backend by
-default — set `TELA_METRICS_ALLOW` (deploy/.env) to your scraper's source CIDR so
-the edge routes it (the PAT gate still applies); see `deploy/proxy/sites.caddy`.
+and the standard Go runtime + process collectors. The edge forwards `/metrics`
+to the backend; the admin-PAT bearer is the access gate (it's off
+`auth.IsPublicPath`, so the session middleware runs).
 
 ## Client-side errors
 
