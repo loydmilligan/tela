@@ -69,10 +69,18 @@ export function SettingsLicenseTab() {
               <KeyRound width={18} height={18} className="text-[var(--text-muted)]" aria-hidden />
             )}
             <span className="font-medium text-[var(--text-primary)]">
-              {active ? `Enterprise — ${lic?.tier}` : 'Community edition'}
+              {info.isPending
+                ? 'Checking license…'
+                : active
+                  ? `Enterprise — ${lic?.tier}`
+                  : 'Community edition'}
             </span>
           </div>
-          {active ? <Badge variant="accent">Active</Badge> : <Badge>Free</Badge>}
+          {info.isPending ? null : active ? (
+            <Badge variant="accent">Active</Badge>
+          ) : (
+            <Badge>Free</Badge>
+          )}
         </div>
 
         {active && lic ? (

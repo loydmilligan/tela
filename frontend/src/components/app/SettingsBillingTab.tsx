@@ -56,7 +56,10 @@ function formatCount(max: number | null): string {
 // null cents = custom/contact tier; otherwise a whole-dollar amount ($0 for free).
 function formatPrice(cents: number | null): string {
   if (cents == null) return 'Custom'
-  return `$${Math.round(cents / 100)}`
+  const dollars = cents / 100
+  // Whole dollars render clean ($8); fractional prices keep the cents ($7.50)
+  // instead of rounding to a wrong figure.
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`
 }
 
 type BillingPeriod = 'month' | 'year'
