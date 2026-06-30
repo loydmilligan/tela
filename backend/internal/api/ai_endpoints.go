@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -25,18 +26,21 @@ type aiEndpointHealth struct {
 	Reason     string `json:"reason,omitempty"` // when unhealthy
 	Endpoint   string `json:"endpoint"`         // redacted scheme://host[:port] — never a path or secret
 	Model      string `json:"model"`
-	Proxied    bool   `json:"proxied"` // via an OpenAI /v1 proxy (a relief pool is possible)
 	LatencyMs  int64  `json:"latency_ms"`
 	LastOK     string `json:"last_ok,omitempty"` // sqlite-format UTC ts (FE relativeTimeFromSqlite)
 	Since      string `json:"since,omitempty"`   // when the current up/down state began
 }
 
 type aiEndpointsOut struct {
-	Enabled    bool               `json:"enabled"` // configured + not admin-disabled
-	Probed     bool               `json:"probed"`  // the background prober has a verdict yet
-	Healthy    bool               `json:"healthy"` // overall (every configured service up)
-	Services   []aiEndpointHealth `json:"services"`
-	GrafanaURL string             `json:"grafana_url,omitempty"`
+	Enabled bool `json:"enabled"` // configured + not admin-disabled
+	Probed  bool `json:"probed"`  // the background prober has a verdict yet
+	Healthy bool `json:"healthy"` // overall (every configured service up)
+	// ReliefProxy is true when a failover proxy fronts the endpoints — set
+	// explicitly by the relief overlay (TELA_AI_RELIEF), since a /v1 URL alone
+	// can't distinguish a LiteLLM pool from a single direct OpenAI endpoint.
+	ReliefProxy bool               `json:"relief_proxy"`
+	Services    []aiEndpointHealth `json:"services"`
+	GrafanaURL  string             `json:"grafana_url,omitempty"`
 }
 
 // AdminAIEndpoints serves the per-service AI reliability breakdown.
@@ -47,32 +51,41 @@ func (s *Server) AdminAIEndpoints(w http.ResponseWriter, r *http.Request) {
 
 	checked, embed, chat := s.aiHealthSnapshot()
 
-	embedURL, embedModel, embedProxied := s.rag.EmbedEndpoint()
+	embedURL, embedModel, _ := s.rag.EmbedEndpoint()
 	chatURL, chatModel := s.llm.Endpoint()
 
 	out := aiEndpointsOut{
-		Enabled:    s.aiEnabled(),
-		Probed:     checked,
-		Healthy:    s.aiHealthy(),
-		GrafanaURL: os.Getenv("TELA_GRAFANA_AI_URL"),
+		Enabled:     s.aiEnabled(),
+		Probed:      checked,
+		Healthy:     s.aiHealthy(),
+		ReliefProxy: envTrue("TELA_AI_RELIEF"),
+		GrafanaURL:  os.Getenv("TELA_GRAFANA_AI_URL"),
 		Services: []aiEndpointHealth{
-			aiEndpointRow("embed", embedURL != "", embed, embedURL, embedModel, embedProxied, checked),
-			aiEndpointRow("chat", chatURL != "", chat, chatURL, chatModel, chatURL != "", checked),
+			aiEndpointRow("embed", embedURL != "", embed, embedURL, embedModel, checked),
+			aiEndpointRow("chat", chatURL != "", chat, chatURL, chatModel, checked),
 		},
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
+// envTrue reports whether an env var is set to a truthy value (1/true/yes/on).
+func envTrue(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 // aiEndpointRow assembles one service row. Before the first probe (checked
 // false) it reports the configured-but-unverified state optimistically, matching
 // aiHealthy()'s boot posture.
-func aiEndpointRow(service string, configured bool, h aiServiceHealth, endpoint, model string, proxied, checked bool) aiEndpointHealth {
+func aiEndpointRow(service string, configured bool, h aiServiceHealth, endpoint, model string, checked bool) aiEndpointHealth {
 	row := aiEndpointHealth{
 		Service:    service,
 		Configured: configured,
 		Endpoint:   redactEndpoint(endpoint),
 		Model:      model,
-		Proxied:    proxied,
 	}
 	if !configured {
 		return row

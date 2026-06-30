@@ -55,5 +55,8 @@ services:
       TELA_RAG_EMBED_MODEL: tela-embed
       TELA_RAG_EMBED_TOKEN: ${LITELLM_MASTER_KEY}
       TELA_RAG_EMBED_DIM:   ${TELA_RAG_EMBED_DIM:-1024}
+      # Tells the admin reliability card a failover proxy fronts the endpoints
+      # (a /v1 URL alone can't prove a pool vs a single direct endpoint).
+      TELA_AI_RELIEF: "1"
     depends_on:
       - litellm

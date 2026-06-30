@@ -474,7 +474,7 @@ function AIReliabilitySection() {
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-3)]">
         {configured.map((s) => (
-          <EndpointCard key={s.service} s={s} probed={d.probed} />
+          <EndpointCard key={s.service} s={s} probed={d.probed} relief={d.relief_proxy} />
         ))}
       </div>
       {d.grafana_url ? (
@@ -492,7 +492,7 @@ function AIReliabilitySection() {
   )
 }
 
-function EndpointCard({ s, probed }: { s: AIEndpointHealth; probed: boolean }) {
+function EndpointCard({ s, probed, relief }: { s: AIEndpointHealth; probed: boolean; relief: boolean }) {
   const label = s.service === 'embed' ? 'Embeddings' : 'Chat & generation'
   const tone = !probed ? 'neutral' : s.healthy ? 'positive' : 'negative'
   const statusText = !probed ? 'Checking…' : s.healthy ? 'Up' : 'Down'
@@ -508,7 +508,7 @@ function EndpointCard({ s, probed }: { s: AIEndpointHealth; probed: boolean }) {
         <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]" title={s.endpoint}>
           {s.endpoint || '—'}
         </span>
-        {s.proxied ? (
+        {relief ? (
           <StatusBadge tone="info">relief pool</StatusBadge>
         ) : (
           <StatusBadge tone="neutral">single endpoint</StatusBadge>

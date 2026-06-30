@@ -73,6 +73,9 @@ services:
       # Optional deep-link from the admin AI-reliability card to the Grafana
       # failover dashboard. Unset → no link shown.
       TELA_GRAFANA_AI_URL: ${TELA_GRAFANA_AI_URL:-}
+      # Set to 1 when a failover proxy fronts AI (auto-set by the relief overlay)
+      # so the admin reliability card shows "relief pool" vs "single endpoint".
+      TELA_AI_RELIEF: ${TELA_AI_RELIEF:-}
       # Deck image generation (MCP generate_deck_image) — OpenAI-compatible Images
       # endpoint incl. /v1. Unset → 503. Use the overlay IP from Docker, not a name.
       TELA_IMAGE_GEN_URL:    ${TELA_IMAGE_GEN_URL:-}

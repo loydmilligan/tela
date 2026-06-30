@@ -13,7 +13,6 @@ export interface AIEndpointHealth {
   reason?: string
   endpoint: string // redacted scheme://host
   model: string
-  proxied: boolean // routed via an OpenAI /v1 relief proxy
   latency_ms: number
   last_ok?: string // sqlite-format ts
   since?: string
@@ -23,6 +22,7 @@ export interface AIEndpoints {
   enabled: boolean
   probed: boolean
   healthy: boolean
+  relief_proxy: boolean // a failover proxy fronts the endpoints (TELA_AI_RELIEF)
   services: AIEndpointHealth[]
   grafana_url?: string
 }
