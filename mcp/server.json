@@ -1,13 +1,13 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.zcag/tela",
-  "description": "Self-hostable markdown team wiki: agents search, read, and write your wiki pages.",
+  "description": "Self-hostable team wiki; agents read & write it via MCP; Atlas turns your repo into a cited wiki.",
   "repository": {
     "url": "https://github.com/zcag/tela",
     "source": "github",
     "subfolder": "mcp"
   },
-  "version": "0.7.4",
+  "version": "0.7.5",
   "websiteUrl": "https://telawiki.com",
   "packages": [
     {
