@@ -16,7 +16,16 @@ function getMermaid(): Promise<MermaidApi> {
   if (!mermaidPromise) {
     mermaidPromise = import('mermaid').then((m) => {
       const api = m.default as unknown as MermaidApi
-      api.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' })
+      // suppressErrorRendering: on a parse error mermaid otherwise injects its own
+      // "Syntax error in text" bomb SVG into the DOM (orphaned to <body> when it
+      // can't find its temp container). We want render() to just throw so our
+      // catch shows a clean inline message in the block instead.
+      api.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: 'neutral',
+        suppressErrorRendering: true,
+      })
       return api
     })
   }
