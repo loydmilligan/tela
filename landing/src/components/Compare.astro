@@ -4,13 +4,15 @@
 // itself (Atlas) and your agents work it from Claude/ChatGPT. So each row
 // centers that category difference AND concedes the one thing the alternative
 // still does better. Stacks into labelled blocks on mobile.
+// `slug` links the row to its full /compare/<slug> page (omitted where there's
+// no single page, e.g. the "AI wikis" category row).
 const rows = [
-  { n: 'Notion', edge: 'Your docs write themselves — point Atlas at a repo or Jira project and it generates a cited, coverage-checked wiki — over plain markdown you own, that your agents read and write from Claude and ChatGPT. Not a closed block store with a chat sidebar bolted on.', better: 'Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.' },
-  { n: 'Confluence', edge: 'Atlas turns a git repo or a Jira project into a cited, coverage-checked wiki and keeps it fresh; agents search and write it by meaning; and it\'s portable markdown you can run yourself — no enterprise install, no per-seat pricing.', better: 'Deep two-way Jira workflow integration (tela documents from Jira; it doesn\'t drive Jira), granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.' },
-  { n: 'Obsidian', edge: 'Built for a team and for agents: Atlas-written docs, semantic retrieval, live multiplayer, SSO and roles, and an MCP connector — not a single-player vault you sync by hand.', better: 'Local-first single-user is its whole point; the plugin library and graph view are unmatched. Solo? Hard to beat.' },
+  { n: 'Notion', slug: 'notion', edge: 'Your docs write themselves — point Atlas at a repo or Jira project and it generates a cited, coverage-checked wiki — over plain markdown you own, that your agents read and write from Claude and ChatGPT. Not a closed block store with a chat sidebar bolted on.', better: 'Databases, templates, and all-round polish are years ahead. Want a relational workspace, not a wiki? Use Notion.' },
+  { n: 'Confluence', slug: 'confluence', edge: 'Atlas turns a git repo or a Jira project into a cited, coverage-checked wiki and keeps it fresh; agents search and write it by meaning; and it\'s portable markdown you can run yourself — no enterprise install, no per-seat pricing.', better: 'Deep two-way Jira workflow integration (tela documents from Jira; it doesn\'t drive Jira), granular permissions, and governance at thousand-user scale. Atlassian shops have reasons to stay.' },
+  { n: 'Obsidian', slug: 'obsidian', edge: 'Built for a team and for agents: Atlas-written docs, semantic retrieval, live multiplayer, SSO and roles, and an MCP connector — not a single-player vault you sync by hand.', better: 'Local-first single-user is its whole point; the plugin library and graph view are unmatched. Solo? Hard to beat.' },
   { n: 'Notion AI / “AI” wikis', edge: 'tela generates the wiki from your sources and scores its coverage, then lets your own agent retrieve and write it from Claude or ChatGPT, over markdown you can export — a chatbot bolted onto a wiki does neither, and only works inside their app.', better: 'One-vendor convenience and a polished in-app assistant, with no embedder to think about. If you only want their chatbot, it\'s simpler.' },
-  { n: 'GitBook', edge: 'Atlas generates and keeps cited docs current from your repo automatically; an MCP server so Claude can search and write pages natively; and fully self-hostable under AGPL with plain markdown output you control.', better: 'Developer-doc polish and multi-version publication for open-source libraries are its strong suit. Public-facing product docs with a clean public URL? GitBook is hard to beat.' },
-  { n: 'Outline', edge: 'Atlas turns a git repo or Jira project into a cited, coverage-checked wiki and keeps it fresh automatically; semantic search and ask-your-docs with paragraph citations; and an MCP server so agents are first-class team members alongside humans.', better: 'A polished, well-maintained self-hosted wiki with a strong community and a clean UI. If you want a great self-hosted wiki without AI generation, Outline is excellent.' },
+  { n: 'GitBook', slug: 'gitbook', edge: 'Atlas generates and keeps cited docs current from your repo automatically; an MCP server so Claude can search and write pages natively; and fully self-hostable under AGPL with plain markdown output you control.', better: 'Developer-doc polish and multi-version publication for open-source libraries are its strong suit. Public-facing product docs with a clean public URL? GitBook is hard to beat.' },
+  { n: 'Outline', slug: 'outline', edge: 'Atlas turns a git repo or Jira project into a cited, coverage-checked wiki and keeps it fresh automatically; semantic search and ask-your-docs with paragraph citations; and an MCP server so agents are first-class team members alongside humans.', better: 'A polished, well-maintained self-hosted wiki with a strong community and a clean UI. If you want a great self-hosted wiki without AI generation, Outline is excellent.' },
 ];
 ---
 <section id="compare" class="section">
@@ -32,7 +34,10 @@ const rows = [
       <tbody>
         {rows.map((r) => (
           <tr>
-            <th scope="row" class="cmp-name">{r.n}</th>
+            <th scope="row" class="cmp-name">
+              {r.n}
+              {r.slug && <a class="cmp-more" href={`/compare/${r.slug}/`}>Full comparison →</a>}
+            </th>
             <td class="cmp-edge" data-label="Where tela wins">
               <svg class="tick" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
               <span>{r.edge}</span>
@@ -93,6 +98,16 @@ const rows = [
     width: 18%;
     min-width: 8rem;
   }
+  .cmp-more {
+    display: block;
+    margin-top: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 400;
+    color: var(--brand);
+    text-decoration: none;
+  }
+  .cmp-more:hover { color: var(--brand-strong); text-decoration: underline; }
   .cmp-edge {
     color: var(--fg);
     width: 45%;
