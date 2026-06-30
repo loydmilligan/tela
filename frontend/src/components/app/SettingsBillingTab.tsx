@@ -67,9 +67,14 @@ function priceForPeriod(p: Plan, period: BillingPeriod): number | null {
 // The qualifier under the amount. Monthly uses the DB-authored label; the yearly
 // label is derived (the only yearly tiers are the per-account paid ones).
 function periodLabel(p: Plan, period: BillingPeriod): string {
+  // Paid org tiers are billed per seat — say "seat" consistently (matches the
+  // CTA button, the landing, and the Polar checkout). Free/custom keep their
+  // DB-authored label ("up to 5 members", "let's talk").
+  const orgSeat = p.account_kind === 'org' && p.price_cents != null && p.price_cents > 0
   if (period === 'year' && p.price_cents_yearly != null) {
-    return p.account_kind === 'org' ? 'per member / year' : 'per year'
+    return p.account_kind === 'org' ? 'per seat / year' : 'per year'
   }
+  if (orgSeat) return 'per seat / month'
   return p.price_period
 }
 
@@ -117,7 +122,7 @@ function BillingPeriodToggle({
           Yearly
         </Button>
       </div>
-      {value === 'year' ? <Badge variant="accent">2 months free</Badge> : null}
+      {value === 'year' ? <Badge variant="accent">Save up to 25%</Badge> : null}
     </div>
   )
 }
@@ -437,7 +442,7 @@ export function SettingsBillingTab() {
   const plans = usePlans()
   const isAdmin = me.data?.is_instance_admin ?? false
   // Honor a ?interval=year deep-link (e.g. from the landing's yearly toggle) so a
-  // "Get Plus yearly" click lands here pre-set to yearly.
+  // "Get Personal yearly" click lands here pre-set to yearly.
   const [period, setPeriod] = useState<BillingPeriod>(() =>
     new URLSearchParams(window.location.search).get('interval') === 'year' ? 'year' : 'month',
   )

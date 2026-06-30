@@ -54,7 +54,7 @@ export function SettingsLicenseTab() {
       </header>
 
       {info.isError ? (
-        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-danger,var(--accent))]">
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
           Could not load license status.
         </p>
       ) : null}
@@ -137,7 +137,7 @@ export function SettingsLicenseTab() {
             className="font-mono text-[length:var(--text-xs)]"
           />
           {error ? (
-            <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-danger,var(--accent))]">{error}</p>
+            <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">{error}</p>
           ) : null}
           <div>
             <Button onClick={install} disabled={setLicense.isPending || token.trim() === ''}>

@@ -395,6 +395,13 @@ func (s *Server) checkSeatQuota(ctx context.Context, orgID int64) *apiErr {
 // check-and-record has no TOCTOU window. A no-row result = the cap was already
 // reached → 402.
 func (s *Server) checkAndRecordLLMCall(ctx context.Context, acct account) *apiErr {
+	// Self-host AI is BYO — the operator runs their own LLM, so it's not ours to
+	// meter. The monthly cap is a managed-cloud abuse guard only; mirror the
+	// entitled() posture (self-host plan flags aren't authoritative) and don't
+	// throttle off-cloud, where every account otherwise sits on personal_free's 50.
+	if !s.managedCloud {
+		return nil
+	}
 	p, err := planFor(ctx, s.DB, acct)
 	if err != nil {
 		return internalQuotaErr()

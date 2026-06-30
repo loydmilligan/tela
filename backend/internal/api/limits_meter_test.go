@@ -41,3 +41,22 @@ func TestCheckAndRecordLLMCall_MonthlyCap(t *testing.T) {
 		t.Fatalf("unlimited tier should never cap: %+v", ae)
 	}
 }
+
+// On self-host (managedCloud=false) the monthly LLM cap is NOT enforced — AI is
+// BYO there, so it's not ours to meter, even on a capped plan.
+func TestCheckAndRecordLLMCall_SelfHostUnmetered(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	srv.managedCloud = false // self-host (New() sets true under TELA_CLOUD=1 in tests)
+	uid := seedUser(t, d, "selfhost", "selfhostpw", false)
+	if _, err := d.Exec(`UPDATE plans SET max_llm_calls_per_month=1 WHERE key='personal_free'`); err != nil {
+		t.Fatalf("set cap: %v", err)
+	}
+	ctx := context.Background()
+	acct := account{Kind: accountUser, ID: uid}
+	for i := 0; i < 5; i++ {
+		if ae := srv.checkAndRecordLLMCall(ctx, acct); ae != nil {
+			t.Fatalf("self-host call %d should never be metered, got %+v", i+1, ae)
+		}
+	}
+}

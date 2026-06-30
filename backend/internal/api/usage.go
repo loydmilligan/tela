@@ -195,11 +195,17 @@ func (s *Server) SetAccountPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	table := "users"
+	set := "plan_key = $1, updated_at = tela_now()"
 	if req.AccountKind == accountOrg {
 		table = "orgs"
+	} else {
+		// Clear any active trial so the admin's assignment takes effect now —
+		// otherwise the trial CASE in planFor overrides it for up to ~37 days
+		// (mirrors how the billing webhook clears the trial on subscribe).
+		set += ", trial_plan_key = NULL, trial_ends_at = NULL"
 	}
 	res, err := s.DB.ExecContext(ctx,
-		`UPDATE `+table+` SET plan_key = $1, updated_at = tela_now() WHERE id = $2`, req.PlanKey, req.AccountID)
+		`UPDATE `+table+` SET `+set+` WHERE id = $2`, req.PlanKey, req.AccountID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "set plan failed")
 		return
