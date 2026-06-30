@@ -219,6 +219,7 @@ func New(db *sql.DB) *Server {
 	// so entitled() can grant ee features without a managed-cloud plan. No-op /
 	// nil on the cloud + unlicensed self-host. See license.go.
 	s.loadLicense(ctx)
+	s.warnSelfHostSSO(ctx)
 
 	// Built after the literal so it can share the llm handle (same enablement).
 	s.summarize = summarize.NewService(db, s.llm)

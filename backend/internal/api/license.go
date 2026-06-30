@@ -46,6 +46,24 @@ func (s *Server) loadLicense(ctx context.Context) {
 	slog.Info("license: Enterprise key active", "customer", lic.Customer, "tier", lic.Tier)
 }
 
+// warnSelfHostSSO logs a prominent boot notice when a self-host instance has SSO
+// configured but isn't entitled to it (post-editions, SSO is Enterprise) — so an
+// operator who upgraded sees why SSO stopped working, with the recovery path.
+// Managed cloud is exempt (plan flags grant there).
+func (s *Server) warnSelfHostSSO(ctx context.Context) {
+	if s.managedCloud {
+		return
+	}
+	if lic := s.license.Load(); lic != nil && lic.Grants("sso") {
+		return
+	}
+	var n int
+	if err := s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM org_sso`).Scan(&n); err == nil && n > 0 {
+		slog.Warn("SSO is configured but this instance isn't entitled to it — SSO is now an Enterprise feature requiring a license key (Settings → License). Until a key is installed, affected users can sign in via password reset.",
+			"orgs_with_sso", n)
+	}
+}
+
 // licenseStatus returns the active license summary, or a zero (invalid) status.
 func (s *Server) licenseStatus() ee.Status {
 	return s.license.Load().Status() // Load()==nil → nil-receiver Status() → zero

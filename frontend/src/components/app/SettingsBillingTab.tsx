@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Check, HardDrive, Layers, Sparkles, Users } from 'lucide-react'
 import { useMe } from '../../lib/queries/auth'
 import { useOrgs } from '../../lib/queries/orgs'
 import {
+  billingKeys,
   useBillingPortal,
   useCheckout,
   useMyUsage,
@@ -450,6 +452,27 @@ export function SettingsBillingTab() {
   // list, but usage cards make sense only for orgs they're a member of).
   const myOrgs = (orgs.data ?? []).filter((o) => o.my_role != null)
 
+  // Post-checkout: Polar redirects back with ?checkout=… The plan is granted
+  // asynchronously by the webhook, so refetch usage now and a couple more times
+  // (covering webhook latency) and reassure the user — instead of landing them on
+  // a stale "still Free / Upgrade" screen the moment after they paid.
+  const qc = useQueryClient()
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).get('checkout')) return
+    toast({
+      title: 'Payment received',
+      description: 'Finalizing your plan — this can take a few seconds.',
+    })
+    const refetch = () => void qc.invalidateQueries({ queryKey: billingKeys.all })
+    refetch()
+    const t1 = setTimeout(refetch, 4000)
+    const t2 = setTimeout(refetch, 9000)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [qc])
+
   return (
     <div className="flex flex-col gap-[var(--space-6)]">
       <header className="flex flex-col gap-[var(--space-3)]">
@@ -495,6 +518,27 @@ export function SettingsBillingTab() {
               />
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {/* Team plans run on an organization, which is provisioned for you (not
+          self-serve). Without this, a user who clicked "Get Team" on the landing
+          and has no org would hit a dead-end with no actionable next step. */}
+      {!myOrgs.some((o) => o.my_role === 'admin') ? (
+        <div className="flex flex-col gap-[var(--space-2)] rounded-[var(--radius-md)] border border-[var(--border-subtle)] p-[var(--space-4)]">
+          <p className="m-0 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+            Looking for the Team plan?
+          </p>
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] max-w-[var(--measure,60ch)]">
+            Team plans run on an organization. Tell us about your team and we’ll set one up so you
+            can add members and subscribe.
+          </p>
+          <a
+            href="mailto:tela@telawiki.com?subject=tela%20Team%20plan"
+            className="text-[length:var(--text-sm)] font-medium text-[var(--accent)] no-underline hover:underline"
+          >
+            Contact us about Team →
+          </a>
         </div>
       ) : null}
 

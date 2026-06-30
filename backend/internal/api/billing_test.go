@@ -186,3 +186,43 @@ func TestReconcileYearlyProductGrantsSameTier(t *testing.T) {
 		t.Fatalf("yearly product should grant personal_plus, got plan=%q status=%q", plan, status)
 	}
 }
+
+// TestReconcileStaleRevokeIgnored — H2 regression: a late/reordered `revoked`
+// for a SUPERSEDED subscription must not downgrade an account that has since
+// resubscribed; only a revoke for the CURRENT subscription downgrades.
+func TestReconcileStaleRevokeIgnored(t *testing.T) {
+	s, d := wiredBillingServer(t)
+	ctx := context.Background()
+	uid := seedUser(t, d, "bob", "pw123456", false)
+	ext := acctExternalID(account{Kind: accountUser, ID: uid})
+
+	// Current subscription is sub_2 (active).
+	ev := subEvent("subscription.active", ext, "prod_plus", "active", false)
+	ev.Data.ID = "sub_2"
+	if err := s.reconcileBilling(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	if plan, _, _ := acctPlan(t, d, "users", uid); plan != "personal_plus" {
+		t.Fatalf("after active: plan=%q", plan)
+	}
+
+	// A stale revoked for the OLD sub_1 must be ignored (account keeps paying plan).
+	stale := subEvent("subscription.revoked", ext, "prod_plus", "canceled", false)
+	stale.Data.ID = "sub_1"
+	if err := s.reconcileBilling(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+	if plan, _, _ := acctPlan(t, d, "users", uid); plan != "personal_plus" {
+		t.Fatalf("stale revoke for an old sub must NOT downgrade: plan=%q", plan)
+	}
+
+	// Revoking the CURRENT sub_2 downgrades.
+	cur := subEvent("subscription.revoked", ext, "prod_plus", "canceled", false)
+	cur.Data.ID = "sub_2"
+	if err := s.reconcileBilling(ctx, cur); err != nil {
+		t.Fatal(err)
+	}
+	if plan, _, _ := acctPlan(t, d, "users", uid); plan != "personal_free" {
+		t.Fatalf("revoke for the current sub should downgrade: plan=%q", plan)
+	}
+}

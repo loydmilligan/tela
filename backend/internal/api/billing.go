@@ -342,16 +342,23 @@ func (s *Server) reconcileBilling(ctx context.Context, evt billing.Event) error 
 
 	case "subscription.canceled":
 		// Cancellation scheduled — access continues to period end. Flag it (the UI
-		// shows "cancels on <date>"); do NOT downgrade here.
+		// shows "cancels on <date>"); do NOT downgrade here. Scope to the account's
+		// CURRENT subscription so a stale/reordered event for an OLD sub (after a
+		// cancel-then-resubscribe) can't flag a healthy active subscription.
 		_, err := s.DB.ExecContext(ctx, `UPDATE `+table+` SET
 			subscription_cancel_at_period_end = 1,
 			subscription_period_end = COALESCE($1, subscription_period_end),
 			updated_at = tela_now()
-			WHERE id = $2`, fmtPolarTime(evt.Data.CurrentPeriodEnd), acct.ID)
+			WHERE id = $2 AND polar_subscription_id = $3`,
+			fmtPolarTime(evt.Data.CurrentPeriodEnd), acct.ID, evt.Data.ID)
 		return err
 
 	case "subscription.revoked":
 		// Period actually ended → downgrade to the free tier and clear sub state.
+		// Scoped to the CURRENT subscription: a late/reordered `revoked` for a
+		// superseded OLD sub must NOT downgrade an account that has since
+		// resubscribed (created/active already moved polar_subscription_id to the
+		// new sub). Without this guard the user pays but sits on Free.
 		_, err := s.DB.ExecContext(ctx, `UPDATE `+table+` SET
 			plan_key = $1,
 			subscription_status = 'canceled',
@@ -359,7 +366,8 @@ func (s *Server) reconcileBilling(ctx context.Context, evt billing.Event) error 
 			polar_subscription_id = NULL,
 			subscription_period_end = NULL,
 			updated_at = tela_now()
-			WHERE id = $2`, freePlanKey(acct.Kind), acct.ID)
+			WHERE id = $2 AND polar_subscription_id = $3`,
+			freePlanKey(acct.Kind), acct.ID, evt.Data.ID)
 		return err
 
 	case "order.paid":
@@ -369,6 +377,12 @@ func (s *Server) reconcileBilling(ctx context.Context, evt billing.Event) error 
 		_, err := s.DB.ExecContext(ctx, `UPDATE `+table+` SET
 			subscription_status = 'active', updated_at = tela_now()
 			WHERE id = $1 AND polar_subscription_id IS NOT NULL`, acct.ID)
+		// Self-heal seat drift: reconcile the org's billed seats to its current
+		// membership on every payment, bounding any missed fire-and-forget sync to
+		// one billing period. Fire-and-forget; never blocks the webhook ack.
+		if err == nil && acct.Kind == accountOrg {
+			go s.syncOrgSeats(context.Background(), acct.ID)
+		}
 		return err
 	}
 	return nil

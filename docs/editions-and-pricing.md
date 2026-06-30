@@ -88,6 +88,12 @@ that AI through **cloud (managed/included)**, not by crippling self-host.
 > today. The work is to put them behind the **unified entitlement** below, not to build them.
 > tela is **pre-release with no self-serve customers**, so this is a clean greenfield gating
 > change — no grandfathering, no rug-pull. Basic orgs + per-space roles stay in core.
+>
+> **Self-host upgrade note:** an instance that used free SSO before this change loses it
+> until an Enterprise license key is installed (Settings → License). The backend logs a
+> prominent boot warning when `org_sso` rows exist but the instance isn't sso-entitled, and
+> affected SSO-provisioned users (random password) can recover via password reset. Call this
+> out in self-host release notes.
 
 ### One entitlement, two unlock paths
 
