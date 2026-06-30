@@ -219,7 +219,7 @@ For hosts that can't speak HTTP transport (or want a stdio bridge), the [`tela-m
       "args": ["-y", "tela-mcp"],
       "env": {
         "TELA_BASE_URL": "https://telawiki.com",
-        "TELA_TOKEN": "tela_pat_xxxxxxxx"
+        "TELA_API_KEY": "tela_pat_xxxxxxxx"
       }
     }
   }
