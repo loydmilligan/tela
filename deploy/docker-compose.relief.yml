@@ -1,0 +1,59 @@
+# docker-compose.relief.yml — AI relief/failover overlay.
+#
+# Layer this on the standalone stack to run a LiteLLM proxy in front of tela's
+# chat + embedding endpoints, so traffic fails over to a relief endpoint when the
+# primary clogs (rate-limited / slow / down). Routing, retries, and cooldown live
+# in deploy/litellm/config.yaml; the actual primary+relief URLs/keys are in
+# deploy/.env (see .env.example → "AI relief proxy").
+#
+#   make up-relief
+#   # or, by hand:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.relief.yml up -d
+#
+# This overlay just adds the proxy and repoints the backend at it — your primary
+# stays the primary; the relief only takes over on failure. Drop the overlay to
+# go back to a single direct endpoint. LiteLLM's /metrics (failover, latency,
+# tokens) is published per LITELLM_METRICS_BIND for the central Prometheus to
+# scrape; default loopback-only.
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm/config.yaml:/etc/litellm/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in deploy/.env}
+      # Primary + relief endpoints (blank relief = primary-only until you add one).
+      TELA_LLM_PRIMARY_URL:    ${TELA_LLM_PRIMARY_URL:-}
+      TELA_LLM_PRIMARY_MODEL:  ${TELA_LLM_PRIMARY_MODEL:-}
+      TELA_LLM_PRIMARY_KEY:    ${TELA_LLM_PRIMARY_KEY:-none}
+      TELA_LLM_RELIEF_URL:     ${TELA_LLM_RELIEF_URL:-}
+      TELA_LLM_RELIEF_MODEL:   ${TELA_LLM_RELIEF_MODEL:-}
+      TELA_LLM_RELIEF_KEY:     ${TELA_LLM_RELIEF_KEY:-none}
+      TELA_EMBED_PRIMARY_URL:   ${TELA_EMBED_PRIMARY_URL:-}
+      TELA_EMBED_PRIMARY_MODEL: ${TELA_EMBED_PRIMARY_MODEL:-}
+      TELA_EMBED_PRIMARY_KEY:   ${TELA_EMBED_PRIMARY_KEY:-none}
+      TELA_EMBED_RELIEF_URL:    ${TELA_EMBED_RELIEF_URL:-}
+      TELA_EMBED_RELIEF_MODEL:  ${TELA_EMBED_RELIEF_MODEL:-}
+      TELA_EMBED_RELIEF_KEY:    ${TELA_EMBED_RELIEF_KEY:-none}
+    # /metrics for Prometheus. Default loopback; set LITELLM_METRICS_BIND to a
+    # tailnet IP (e.g. 100.x.y.z:4000) to let an off-box Prometheus scrape it.
+    ports:
+      - "${LITELLM_METRICS_BIND:-127.0.0.1:4000}:4000"
+    restart: unless-stopped
+
+  backend:
+    environment:
+      # Route both chat and embeddings through the proxy. The /v1 suffix makes
+      # tela use its OpenAI-shaped client for embeddings (LiteLLM speaks OpenAI,
+      # not Ollama's /api/embed), so the relief pool covers embeddings too.
+      TELA_LLM_URL:    http://litellm:4000/v1
+      TELA_LLM_MODEL:  tela-chat
+      TELA_LLM_TOKEN:  ${LITELLM_MASTER_KEY}
+      TELA_RAG_EMBED_URL:   http://litellm:4000/v1
+      TELA_RAG_EMBED_MODEL: tela-embed
+      TELA_RAG_EMBED_TOKEN: ${LITELLM_MASTER_KEY}
+      TELA_RAG_EMBED_DIM:   ${TELA_RAG_EMBED_DIM:-1024}
+    depends_on:
+      - litellm

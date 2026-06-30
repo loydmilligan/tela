@@ -151,6 +151,14 @@ up-ai:
 	$(EXPORT_BUILD) $(COMPOSE) -f deploy/docker-compose.ai.yml --profile embed up -d --build
 	$(COMPOSE) up -d --force-recreate proxy
 
+# Standalone stack WITH the AI relief proxy (LiteLLM) — chat + embeddings fail
+# over to a relief endpoint when the primary clogs. Set the primary/relief
+# endpoints + LITELLM_MASTER_KEY in deploy/.env first. See
+# deploy/docker-compose.relief.yml + docs/observability.md.
+up-relief:
+	$(EXPORT_BUILD) $(COMPOSE) -f deploy/docker-compose.relief.yml up -d --build
+	$(COMPOSE) up -d --force-recreate proxy
+
 down:
 	$(COMPOSE) down
 

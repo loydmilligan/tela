@@ -64,6 +64,9 @@ services:
       # Completion length cap (0/unset → in-code default 1024). Raise for long
       # table/enumeration answers that otherwise truncate mid-stream.
       TELA_LLM_MAX_TOKENS: ${TELA_LLM_MAX_TOKENS:-}
+      # Optional deep-link from the admin AI-reliability card to the Grafana
+      # failover dashboard. Unset → no link shown.
+      TELA_GRAFANA_AI_URL: ${TELA_GRAFANA_AI_URL:-}
       # Deck image generation (MCP generate_deck_image). OpenAI-compatible Images
       # endpoint incl. /v1 (e.g. an mflux/FLUX box). Unset → the tool 503s. From a
       # Docker backend use the host's overlay IP, not its name (RAG-embed gotcha).
