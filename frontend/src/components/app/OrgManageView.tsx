@@ -29,6 +29,7 @@ import {
   useRemoveOrgMember,
   useUpdateOrgMember,
 } from '../../lib/queries/orgs'
+import { useCreateOrgInvite, useOrgInvites, useRevokeOrgInvite } from '../../lib/queries/invites'
 import {
   useAddGroupMember,
   useCreateGroup,
@@ -283,6 +284,86 @@ function MembersPanel({ org }: { org: Org }) {
         </p>
       )}
       <AddOrgMemberForm orgId={org.id} />
+      <OrgInvitesSection orgId={org.id} orgName={org.name} />
+    </div>
+  )
+}
+
+// Invite teammates by email — the self-serve onboarding path. They get a link to
+// join and land in the org once they accept or sign up with the invited address.
+function OrgInvitesSection({ orgId, orgName }: { orgId: number; orgName: string }) {
+  const invites = useOrgInvites(orgId)
+  const createInvite = useCreateOrgInvite(orgId)
+  const revoke = useRevokeOrgInvite(orgId)
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<OrgRole>('member')
+  const [error, setError] = useState<string | null>(null)
+  const [sent, setSent] = useState<string | null>(null)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setSent(null)
+    const em = email.trim()
+    if (!em) return
+    try {
+      await createInvite.mutateAsync({ email: em, org_role: role })
+      setSent(em)
+      setEmail('')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send the invitation.')
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-[var(--space-3)] border-t border-[var(--border-subtle)] pt-[var(--space-4)]">
+      <div className="flex flex-col gap-[var(--space-1)]">
+        <h3 className="m-0 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+          Invite teammates
+        </h3>
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          Invite by email — they'll get a link to join {orgName}, even if they don't have a tela
+          account yet.
+        </p>
+      </div>
+      <form onSubmit={submit} className="flex flex-wrap items-center gap-[var(--space-2)]">
+        <Input
+          type="email"
+          placeholder="teammate@company.com"
+          value={email}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+          className="flex-1 min-w-[12rem]"
+        />
+        <Select value={role} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setRole(e.target.value as OrgRole)}>
+          <option value="member">Member</option>
+          <option value="admin">Admin</option>
+        </Select>
+        <Button type="submit" variant="secondary" size="sm" disabled={createInvite.isPending || email.trim() === ''}>
+          Send invite
+        </Button>
+      </form>
+      {error ? <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">{error}</p> : null}
+      {sent ? (
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">Invitation sent to {sent}.</p>
+      ) : null}
+      {invites.data && invites.data.length > 0 ? (
+        <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
+          {invites.data.map((inv) => (
+            <li
+              key={inv.id}
+              className="m-0 flex items-center gap-[var(--space-2)] px-[var(--space-3)] py-[var(--space-2)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface-1)]"
+            >
+              <span className="flex-1 min-w-0 truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">
+                {inv.email}
+                <span className="text-[var(--text-muted)]"> · invited · {inv.org_role}</span>
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => revoke.mutate(inv.id)}>
+                Revoke
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   )
 }

@@ -244,6 +244,8 @@ const setupRoute = createRoute({
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/register',
+  validateSearch: (search: Record<string, unknown>): { email?: string } =>
+    typeof search.email === 'string' ? { email: search.email } : {},
   beforeLoad: async () => {
     const user = await ensureMe()
     if (user) throw redirect({ to: '/' })
@@ -259,6 +261,14 @@ const verifyEmailRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): { token?: string } =>
     typeof search.token === 'string' ? { token: search.token } : {},
   component: lazyRouteComponent(() => import('./verify-email'), 'VerifyEmailPage'),
+})
+
+// Organization invitation landing. Works logged-in or not (the page handles
+// both); the token in the path is the capability.
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/invite/$token',
+  component: lazyRouteComponent(() => import('./invite'), 'InvitePage'),
 })
 
 const forgotPasswordRoute = createRoute({
@@ -777,6 +787,7 @@ const routeTree = rootRoute.addChildren([
   verifyEmailRoute,
   forgotPasswordRoute,
   resetPasswordRoute,
+  inviteRoute,
   shareRootRoute,
   shareSlugRoute,
   shareDescendantRoute,

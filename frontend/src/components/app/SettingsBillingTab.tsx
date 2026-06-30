@@ -14,6 +14,7 @@ import {
 import type { Plan, Usage } from '../../lib/types'
 import { ApiError } from '../../lib/api'
 import { DOCS } from '../../lib/docs'
+import { CreateTeamDialog } from './CreateTeamDialog'
 import { formatBytes } from '../../lib/format'
 import { localDateFromSqlite } from '../../lib/relativeTime'
 import { PlanTierSelect } from './PlanTierSelect'
@@ -530,24 +531,32 @@ export function SettingsBillingTab() {
         </div>
       ) : null}
 
-      {/* Team plans run on an organization, which is provisioned for you (not
-          self-serve). Without this, a user who clicked "Get Team" on the landing
-          and has no org would hit a dead-end with no actionable next step. */}
+      {/* Team plans run on an organization. A user with no org they admin can
+          create one here (self-serve) — invite teammates and upgrade in place. */}
       {!myOrgs.some((o) => o.my_role === 'admin') ? (
         <div className="flex flex-col gap-[var(--space-2)] rounded-[var(--radius-md)] border border-[var(--border-subtle)] p-[var(--space-4)]">
           <p className="m-0 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
             Looking for the Team plan?
           </p>
           <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] max-w-[var(--measure,60ch)]">
-            Team plans run on an organization. Tell us about your team and we’ll set one up so you
-            can add members and subscribe.
+            Team plans run on an organization. Create one for free, invite your teammates, and
+            upgrade to Team when you're ready.
           </p>
-          <a
-            href="mailto:tela@telawiki.com?subject=tela%20Team%20plan"
-            className="text-[length:var(--text-sm)] font-medium text-[var(--accent)] no-underline hover:underline"
-          >
-            Contact us about Team →
-          </a>
+          <div className="flex items-center gap-[var(--space-3)]">
+            <CreateTeamDialog
+              trigger={
+                <Button variant="secondary" size="sm">
+                  Create a team
+                </Button>
+              }
+            />
+            <a
+              href="mailto:tela@telawiki.com?subject=tela%20Team%20plan"
+              className="text-[length:var(--text-sm)] text-[var(--text-muted)] no-underline hover:underline"
+            >
+              or contact us
+            </a>
+          </div>
         </div>
       ) : null}
 

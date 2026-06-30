@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 import { ApiError } from '../lib/api'
 import { useRegister, useResendVerification } from '../lib/queries/auth'
 import { Button } from '../components/ui/button'
@@ -14,7 +14,9 @@ import { Input } from '../components/ui/input'
 import { AuthShell, AuthField, AuthFooterLink } from '../components/app/AuthShell'
 
 export function RegisterPage() {
-  const [email, setEmail] = useState('')
+  // Pre-fill the email when arriving from an invite link (/register?email=…).
+  const { email: invitedEmail } = useSearch({ from: '/register' })
+  const [email, setEmail] = useState(invitedEmail ?? '')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
