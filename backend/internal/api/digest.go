@@ -555,21 +555,16 @@ func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.Di
 	return out, rows.Err()
 }
 
-// cleanReason strips the "target" artifact the agreement prompt emits while
-// keeping the substance — the "X vs Y" comparison IS the conflict.
-func cleanReason(s string) string {
-	s = oneLine(s)
-	s = strings.ReplaceAll(s, "target ", "")
-	return strings.TrimSpace(strings.ReplaceAll(s, "  ", " "))
-}
-
 // digestConflicts surfaces REAL doc contradictions — two pages that disagree,
 // scoped to the SAME source/repo (same parent). Cross-repo pairs (two repos that
 // merely share a section title, e.g. each documenting its own Main.java) are
-// excluded: those are false positives, not contradictions. Best-effort.
+// excluded: those are false positives, not contradictions. The card shows the
+// agreement engine's reason VERBATIM (it's purpose-written to name the shared
+// subject and the two conflicting values) plus the page it conflicts with —
+// no reprocessing. Best-effort.
 func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.DigestAttention {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT DISTINCT ON (p.id) p.id, p.space_id, p.title, e->>'reason'
+		SELECT DISTINCT ON (p.id) p.id, p.space_id, p.title, e->>'reason', COALESCE(e->>'title', '')
 		  FROM page_agreement a
 		  JOIN pages p ON p.id = a.page_id
 		  CROSS JOIN LATERAL jsonb_array_elements(a.disputes::jsonb) e
@@ -587,19 +582,22 @@ func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.Dig
 	var out []mailer.DigestAttention
 	for rows.Next() {
 		var pageID, spaceID int64
-		var title, reason string
-		if err := rows.Scan(&pageID, &spaceID, &title, &reason); err != nil {
+		var title, reason, otherTitle string
+		if err := rows.Scan(&pageID, &spaceID, &title, &reason, &otherTitle); err != nil {
 			return out
 		}
-		detail := cleanReason(reason)
+		detail := strings.TrimSpace(reason) // engine's text, verbatim
 		if detail == "" {
 			detail = "Contradicts another page in the same source."
+		}
+		if otherTitle != "" && otherTitle != title {
+			detail += " — conflicts with “" + otherTitle + "”"
 		}
 		out = append(out, mailer.DigestAttention{
 			Kind:   "CONFLICT",
 			Tone:   "warn",
 			Title:  title,
-			Detail: digestTruncate(detail, 150),
+			Detail: detail,
 			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
 		})
 	}
