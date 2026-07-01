@@ -30,14 +30,18 @@ type DigestUpdate struct {
 	URL       string
 }
 
-// DigestAttention is one housekeeping item — an open question (info) or a stale
-// doc (warn). Kind is the pill label; Tone is "info" or "warn".
+// DigestAttention is one "needs attention" item. Kind is the pill label; Tone is
+// "info" or "warn". Title/URL is the primary page; Title2/URL2 is an optional
+// second page (a conflict names BOTH pages that disagree), rendered as two links.
 type DigestAttention struct {
-	Kind   string
-	Tone   string
-	Title  string
-	Detail string
-	URL    string
+	Kind    string
+	Tone    string
+	Title   string
+	URL     string
+	Title2  string
+	URL2    string
+	Context string // where it lives, e.g. "Macellan Wiki · services" (space · source)
+	Detail  string
 }
 
 // DigestData is the full model for one recipient.
@@ -224,13 +228,15 @@ var digestTmpl = template.Must(template.New("digest").Parse(`<!doctype html>
         {{if eq .Tone "warn"}}
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fdf9f1;border:1px solid #f0e4cc;border-left:3px solid #d99a2b;border-radius:8px;"><tr><td style="padding:12px 14px;">
           <span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9a6a00;background:#f9ecd2;padding:3px 8px;border-radius:5px;">{{.Kind}}</span>
-          <div style="margin-top:7px;"><a href="{{.URL}}" style="font-size:14px;font-weight:600;color:{{$.Text}};text-decoration:none;">{{.Title}}</a></div>
+          <div style="margin-top:7px;font-size:14px;font-weight:600;line-height:1.4;"><a href="{{.URL}}" style="color:{{$.Indigo}};text-decoration:none;">{{.Title}}</a>{{if .Title2}} <span style="color:{{$.Faint}};font-weight:400;">&#8596;</span> <a href="{{.URL2}}" style="color:{{$.Indigo}};text-decoration:none;">{{.Title2}}</a>{{end}}</div>
+          {{if .Context}}<div style="font-size:11.5px;color:{{$.Faint}};margin-top:2px;">{{.Context}}</div>{{end}}
           {{if .Detail}}<div style="font-size:12.5px;color:{{$.Muted}};margin-top:3px;line-height:1.45;">{{.Detail}}</div>{{end}}
         </td></tr></table>
         {{else}}
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6ff;border:1px solid #e2e4ff;border-left:3px solid {{$.Indigo}};border-radius:8px;"><tr><td style="padding:12px 14px;">
           <span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;color:{{$.Indigo}};background:#e8eaff;padding:3px 8px;border-radius:5px;">{{.Kind}}</span>
-          <div style="margin-top:7px;"><a href="{{.URL}}" style="font-size:14px;font-weight:600;color:{{$.Text}};text-decoration:none;">{{.Title}}</a></div>
+          <div style="margin-top:7px;font-size:14px;font-weight:600;line-height:1.4;"><a href="{{.URL}}" style="color:{{$.Text}};text-decoration:none;">{{.Title}}</a>{{if .Title2}} <span style="color:{{$.Faint}};font-weight:400;">&#8596;</span> <a href="{{.URL2}}" style="color:{{$.Text}};text-decoration:none;">{{.Title2}}</a>{{end}}</div>
+          {{if .Context}}<div style="font-size:11.5px;color:{{$.Faint}};margin-top:2px;">{{.Context}}</div>{{end}}
           {{if .Detail}}<div style="font-size:12.5px;color:{{$.Muted}};margin-top:3px;line-height:1.45;">{{.Detail}}</div>{{end}}
         </td></tr></table>
         {{end}}

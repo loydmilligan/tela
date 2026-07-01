@@ -499,31 +499,67 @@ func (s *Server) digestForYou(ctx context.Context, userID int64, sinceStr string
 	return out
 }
 
-// digestAtlasLine rolls all this week's Atlas auto-generation into one honest
-// line ("" when there was none), so bulk output is acknowledged without being
-// mistaken for human activity.
+// digestAtlasLine rolls this week's Atlas generation into one honest line ("" if
+// none) — total docs plus the named sources (the repos/projects it wrote from),
+// so bulk output is acknowledged and legible without being mistaken for human
+// work. Sources are the parent pages the generated docs hang under.
 func (s *Server) digestAtlasLine(ctx context.Context, userID int64, sinceStr string) string {
-	var pages, sources int
-	err := s.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*), COUNT(DISTINCT parent_id) FROM pages p
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT COALESCE(par.title, 'a source'), COUNT(*)
+		   FROM pages p
+		   LEFT JOIN pages par ON par.id = p.parent_id
 		  WHERE p.`+digestSpaceScope+` AND p.deleted_at IS NULL
-		    AND p.updated_at >= $2 AND p.props->>'generator' = 'atlas'`,
-		userID, sinceStr).Scan(&pages, &sources)
-	if err != nil || pages == 0 {
+		    AND p.updated_at >= $2 AND p.props->>'generator' = 'atlas'
+		  GROUP BY par.title
+		  ORDER BY COUNT(*) DESC`, userID, sinceStr)
+	if err != nil {
 		return ""
 	}
-	if sources <= 1 {
-		return fmt.Sprintf("Atlas refreshed %d page%s this week.", pages, plural(pages))
+	defer rows.Close()
+	total := 0
+	var names []string
+	for rows.Next() {
+		var name string
+		var n int
+		if err := rows.Scan(&name, &n); err != nil {
+			break
+		}
+		total += n
+		names = append(names, atlasSourceName(name))
 	}
-	return fmt.Sprintf("Atlas refreshed %d pages across %d sources this week.", pages, sources)
+	if total == 0 {
+		return ""
+	}
+	shown := names
+	extra := 0
+	if len(shown) > 3 {
+		shown, extra = names[:3], len(names)-3
+	}
+	line := fmt.Sprintf("Atlas refreshed %d doc%s from %s", total, plural(total), joinAnd(shown))
+	if extra > 0 {
+		line += fmt.Sprintf(" and %d other source%s", extra, plural(extra))
+	}
+	return line + " this week."
+}
+
+// atlasSourceName trims the boilerplate suffix Atlas appends to source pages
+// ("radius-flink - repo" → "radius-flink", "COM - Jira" → "COM").
+func atlasSourceName(s string) string {
+	for _, suf := range []string{" - repo", " - Jira", " — repo", " — Jira"} {
+		if strings.HasSuffix(s, suf) {
+			return strings.TrimSpace(strings.TrimSuffix(s, suf))
+		}
+	}
+	return s
 }
 
 func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.DigestAttention, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT c.body, p.id, p.space_id, p.title,
+		SELECT c.body, p.id, p.space_id, p.title, sp.name,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, '')
 		  FROM comments c
 		  JOIN pages p ON p.id = c.page_id
+		  JOIN spaces sp ON sp.id = p.space_id
 		  JOIN users u ON u.id = c.author_id
 		 WHERE c.parent_id IS NULL AND c.resolved = 0 AND c.deleted_at IS NULL
 		   AND p.deleted_at IS NULL AND p.`+digestSpaceScope+`
@@ -536,37 +572,49 @@ func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.Di
 	base := strings.TrimRight(canonicalBaseURL(), "/")
 	var out []mailer.DigestAttention
 	for rows.Next() {
-		var body, title, actor string
+		var body, title, spaceName, actor string
 		var pageID, spaceID int64
-		if err := rows.Scan(&body, &pageID, &spaceID, &title, &actor); err != nil {
+		if err := rows.Scan(&body, &pageID, &spaceID, &title, &spaceName, &actor); err != nil {
 			return nil, err
 		}
 		if actor == "" {
 			actor = "Someone"
 		}
 		out = append(out, mailer.DigestAttention{
-			Kind:   "QUESTION",
-			Tone:   "info",
-			Title:  digestTruncate(oneLine(body), 90),
-			Detail: fmt.Sprintf("Asked by %s on %s · no answer yet.", actor, title),
-			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
+			Kind:    "QUESTION",
+			Tone:    "info",
+			Title:   digestTruncate(oneLine(body), 90),
+			Context: digestContext(spaceName, title),
+			Detail:  fmt.Sprintf("Asked by %s · no answer yet.", actor),
+			URL:     fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
 		})
 	}
 	return out, rows.Err()
 }
 
+// cleanReason drops the engine's "target" attribution word (it labels the
+// analyzed page, which the card already names as the first link) and collapses
+// whitespace. The "X vs Y" substance is kept.
+func cleanReason(s string) string {
+	s = oneLine(s)
+	s = strings.ReplaceAll(s, "target ", "")
+	return strings.TrimSpace(strings.ReplaceAll(s, "  ", " "))
+}
+
 // digestConflicts surfaces REAL doc contradictions — two pages that disagree,
 // scoped to the SAME source/repo (same parent). Cross-repo pairs (two repos that
 // merely share a section title, e.g. each documenting its own Main.java) are
-// excluded: those are false positives, not contradictions. The card shows the
-// agreement engine's reason VERBATIM (it's purpose-written to name the shared
-// subject and the two conflicting values) plus the page it conflicts with —
-// no reprocessing. Best-effort.
+// false positives and excluded. The card links BOTH pages and shows the
+// engine's reason (its purpose-written "subject: X vs Y"). Best-effort.
 func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.DigestAttention {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT DISTINCT ON (p.id) p.id, p.space_id, p.title, e->>'reason', COALESCE(e->>'title', '')
+		SELECT DISTINCT ON (p.id) p.id, p.space_id, p.title, e->>'reason',
+		       po.id, po.space_id, COALESCE(po.title, ''),
+		       sp.name, COALESCE(par.title, '')
 		  FROM page_agreement a
 		  JOIN pages p ON p.id = a.page_id
+		  JOIN spaces sp ON sp.id = p.space_id
+		  LEFT JOIN pages par ON par.id = p.parent_id
 		  CROSS JOIN LATERAL jsonb_array_elements(a.disputes::jsonb) e
 		  JOIN pages po ON po.id = (e->>'page_id')::bigint
 		 WHERE a.dispute > 0 AND a.last_error = '' AND p.deleted_at IS NULL
@@ -581,42 +629,47 @@ func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.Dig
 	base := strings.TrimRight(canonicalBaseURL(), "/")
 	var out []mailer.DigestAttention
 	for rows.Next() {
-		var pageID, spaceID int64
-		var title, reason, otherTitle string
-		if err := rows.Scan(&pageID, &spaceID, &title, &reason, &otherTitle); err != nil {
+		var pageID, spaceID, otherID, otherSpace int64
+		var title, reason, otherTitle, spaceName, source string
+		if err := rows.Scan(&pageID, &spaceID, &title, &reason, &otherID, &otherSpace, &otherTitle, &spaceName, &source); err != nil {
 			return out
 		}
-		detail := strings.TrimSpace(reason) // engine's text, verbatim
+		detail := cleanReason(reason)
 		if detail == "" {
-			detail = "Contradicts another page in the same source."
+			detail = "These two pages state conflicting values for the same thing."
 		}
-		if otherTitle != "" && otherTitle != title {
-			detail += " — conflicts with “" + otherTitle + "”"
+		item := mailer.DigestAttention{
+			Kind:    "CONFLICT",
+			Tone:    "warn",
+			Title:   title,
+			URL:     fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
+			Context: digestContext(spaceName, source),
+			Detail:  detail,
 		}
-		out = append(out, mailer.DigestAttention{
-			Kind:   "CONFLICT",
-			Tone:   "warn",
-			Title:  title,
-			Detail: detail,
-			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
-		})
+		if otherID > 0 && otherTitle != "" {
+			item.Title2 = otherTitle
+			item.URL2 = fmt.Sprintf("%s/spaces/%d/pages/%d", base, otherSpace, otherID)
+		}
+		out = append(out, item)
 	}
 	return out
 }
 
-// digestStale surfaces Atlas docs behind upstream — but ONLY for manual-cadence
-// projects (empty cadence = "off"). Scheduled projects (hourly/daily/…)
-// regenerate themselves, so their drift self-heals and needs nothing from a
-// human — flagging it would be noise. Best-effort.
+// digestStale surfaces Atlas docs behind upstream — but ONLY for projects with
+// auto_update OFF, which is exactly the flag the regen scheduler gates on
+// (SELECT … WHERE auto_update = 1). Auto-update projects regenerate themselves,
+// so their drift self-heals and needs nothing from a human. Best-effort.
 func (s *Server) digestStale(ctx context.Context, userID int64) []mailer.DigestAttention {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT p.id, p.space_id, p.title
+		SELECT p.id, p.space_id, p.title, sp.name, COALESCE(par.title, '')
 		  FROM atlas_page_map m
 		  JOIN atlas_sources src ON src.id = m.source_id
 		  JOIN atlas_projects pr ON pr.id = src.project_id
 		  JOIN pages p ON p.id = m.page_id
+		  JOIN spaces sp ON sp.id = p.space_id
+		  LEFT JOIN pages par ON par.id = p.parent_id
 		 WHERE src.stale_since <> '' AND p.deleted_at IS NULL
-		   AND pr.cadence NOT IN ('hourly', 'daily', 'weekly', 'monthly')
+		   AND pr.auto_update = 0
 		   AND p.`+digestSpaceScope+`
 		 ORDER BY src.stale_since ASC
 		 LIMIT 2`, userID)
@@ -628,19 +681,30 @@ func (s *Server) digestStale(ctx context.Context, userID int64) []mailer.DigestA
 	var out []mailer.DigestAttention
 	for rows.Next() {
 		var pageID, spaceID int64
-		var title string
-		if err := rows.Scan(&pageID, &spaceID, &title); err != nil {
+		var title, spaceName, source string
+		if err := rows.Scan(&pageID, &spaceID, &title, &spaceName, &source); err != nil {
 			return out
 		}
 		out = append(out, mailer.DigestAttention{
-			Kind:   "STALE",
-			Tone:   "warn",
-			Title:  title,
-			Detail: "Its source moved on and this project doesn't auto-refresh — regenerate when you can.",
-			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
+			Kind:    "STALE",
+			Tone:    "warn",
+			Title:   title,
+			Context: digestContext(spaceName, source),
+			Detail:  "Its source moved on and this project doesn't auto-refresh — regenerate when you can.",
+			URL:     fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
 		})
 	}
 	return out
+}
+
+// digestContext formats the "where it lives" line for an attention card:
+// "Space · source" (source = the Atlas repo/parent, trimmed), or just the space.
+func digestContext(space, source string) string {
+	source = atlasSourceName(source)
+	if source != "" && source != space {
+		return space + " · " + source
+	}
+	return space
 }
 
 const digestGistSystem = `You write the one-sentence opener of a team wiki's weekly digest email. From the brief, say what MATTERS to the reader this week — what's waiting on them, the notable pages or decisions, anything needing attention. IGNORE routine bulk / auto-generated content; never credit it to a person. Concrete and specific, plain language, no greeting, no raw counts, no markdown. One sentence, ~30 words max.`
