@@ -531,15 +531,10 @@ func (s *Server) digestAtlasLine(ctx context.Context, userID int64, sinceStr str
 		return ""
 	}
 	shown := names
-	extra := 0
-	if len(shown) > 3 {
-		shown, extra = names[:3], len(names)-3
+	if len(names) > 3 {
+		shown = append(names[:3:3], fmt.Sprintf("%d other source%s", len(names)-3, plural(len(names)-3)))
 	}
-	line := fmt.Sprintf("Atlas refreshed %d doc%s from %s", total, plural(total), joinAnd(shown))
-	if extra > 0 {
-		line += fmt.Sprintf(" and %d other source%s", extra, plural(extra))
-	}
-	return line + " this week."
+	return fmt.Sprintf("Atlas refreshed %d doc%s from %s this week.", total, plural(total), joinAnd(shown))
 }
 
 // atlasSourceName trims the boilerplate suffix Atlas appends to source pages
