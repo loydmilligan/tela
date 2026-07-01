@@ -199,9 +199,9 @@
       "category": "Media & diagrams",
       "slash": true,
       "agent": true,
-      "keywords": ["mermaid", "diagram", "flowchart", "graph", "sequence"],
+      "keywords": ["mermaid", "diagram", "flowchart", "graph", "sequence", "handdrawn", "elk"],
       "syntax": "```mermaid\ngraph TD\n  A[Start] --> B[End]\n```",
-      "when": "Flowcharts, sequence/state/ER diagrams, pie charts — anything Mermaid supports."
+      "when": "Flowcharts, sequence/class/state/ER/gantt/pie/git/journey — anything Mermaid supports. Colours follow the page theme automatically. Opt into extras with YAML frontmatter at the top of the diagram body: `---\\nconfig:\\n  look: handDrawn\\n---` for a hand-drawn sketch style, or `layout: elk` for tighter routing on dense graphs."
     },
     {
       "id": "excalidraw",

@@ -16,14 +16,26 @@ const svgCache = new Map<string, string>()
 type MermaidApi = {
   initialize: (config: Record<string, unknown>) => void
   render: (id: string, code: string) => Promise<{ svg: string }>
+  registerLayoutLoaders?: (loaders: unknown) => void
 }
 let mermaidPromise: Promise<MermaidApi> | null = null
 
 function getMermaid(): Promise<MermaidApi> {
   if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then(
-      (m) => m.default as unknown as MermaidApi,
-    )
+    // Register the ELK layout engine alongside mermaid so a diagram can opt into
+    // tighter routing on dense graphs with `layout: elk` in its frontmatter
+    // (dagre stays the default — elk regresses simple diagrams). Both land in the
+    // lazy mermaid chunk, so pages without a diagram still pay nothing.
+    mermaidPromise = Promise.all([
+      import('mermaid'),
+      import('@mermaid-js/layout-elk'),
+    ]).then(([m, elk]) => {
+      const api = m.default as unknown as MermaidApi
+      api.registerLayoutLoaders?.(
+        (elk as { default: unknown }).default,
+      )
+      return api
+    })
   }
   return mermaidPromise
 }
@@ -44,7 +56,21 @@ function readTheme() {
     textPrimary: g('--text-primary', '#16161a'),
     textMuted: g('--text-muted', '#5b5b66'),
     border: g('--border-subtle', '#e4e4e9'),
+    borderStrong: g('--border-strong', '#c8c8d0'),
+    success: g('--success', '#16a34a'),
+    warning: g('--warning', '#d97706'),
+    danger: g('--danger', '#dc2626'),
     font: g('--font-sans', 'ui-sans-serif, system-ui, sans-serif'),
+    // Categorical palette (pie slices, git branches, journey scores) — the same
+    // --chart-* tokens the chart block uses, so diagrams and charts stay in sync.
+    chart: [
+      g('--chart-1', '#4f46e5'),
+      g('--chart-2', '#0d9488'),
+      g('--chart-3', '#d97706'),
+      g('--chart-4', '#db2777'),
+      g('--chart-5', '#2563eb'),
+      g('--chart-6', '#65a30d'),
+    ],
   }
 }
 
@@ -54,11 +80,25 @@ function readTheme() {
 // out of stock-mermaid territory. suppressErrorRendering keeps a parse error from
 // injecting mermaid's own bomb SVG into the DOM (we show a clean inline message).
 function buildConfig(tk: ReturnType<typeof readTheme>): Record<string, unknown> {
+  const c = tk.chart
+  const cyc = (i: number) => c[i % c.length]
+  // Categorical vars mermaid indexes by number, spread into themeVariables below:
+  // pie slices, git branches/labels, and user-journey scores all cycle the chart
+  // palette so every diagram type stays on-brand and theme-aware.
+  const categorical: Record<string, string> = {}
+  for (let i = 0; i < 12; i++) categorical['pie' + (i + 1)] = cyc(i)
+  for (let i = 0; i < 8; i++) {
+    categorical['git' + i] = cyc(i)
+    categorical['gitBranchLabel' + i] = tk.textPrimary
+    categorical['fillType' + i] = cyc(i)
+    categorical['cScale' + i] = cyc(i)
+  }
   return {
     startOnLoad: false,
     securityLevel: 'strict',
     suppressErrorRendering: true,
     theme: 'base',
+    look: 'classic', // per-diagram `look: handDrawn` frontmatter flips this
     fontFamily: tk.font,
     themeVariables: {
       fontFamily: tk.font,
@@ -68,7 +108,11 @@ function buildConfig(tk: ReturnType<typeof readTheme>): Record<string, unknown> 
       primaryBorderColor: tk.accent,
       primaryTextColor: tk.textPrimary,
       secondaryColor: tk.surface2,
+      secondaryBorderColor: tk.border,
+      secondaryTextColor: tk.textPrimary,
       tertiaryColor: tk.surface1,
+      tertiaryBorderColor: tk.border,
+      tertiaryTextColor: tk.textPrimary,
       mainBkg: tk.surface3,
       nodeBorder: tk.accent,
       nodeTextColor: tk.textPrimary,
@@ -95,6 +139,48 @@ function buildConfig(tk: ReturnType<typeof readTheme>): Record<string, unknown> 
       noteBkgColor: tk.surface2,
       noteBorderColor: tk.border,
       noteTextColor: tk.textPrimary,
+      // class diagrams
+      classText: tk.textPrimary,
+      // state diagrams
+      labelColor: tk.textPrimary,
+      // entity-relationship diagrams
+      attributeBackgroundColorOdd: tk.surface1,
+      attributeBackgroundColorEven: tk.surface2,
+      // pie charts
+      pieTitleTextColor: tk.textPrimary,
+      pieSectionTextColor: tk.accentFg,
+      pieLegendTextColor: tk.textPrimary,
+      pieStrokeColor: tk.surface1,
+      pieOuterStrokeColor: tk.borderStrong,
+      pieStrokeWidth: '1px',
+      pieOuterStrokeWidth: '1px',
+      // gitgraph
+      commitLabelColor: tk.textPrimary,
+      commitLabelBackground: tk.surface2,
+      tagLabelColor: tk.textPrimary,
+      tagLabelBackground: tk.surface3,
+      tagLabelBorder: tk.accent,
+      // gantt — tasks are distinguished by border colour (active=accent,
+      // crit=danger, done=muted), not by a saturated fill, so the dark label
+      // text stays readable on every theme.
+      taskBkgColor: tk.surface3,
+      taskBorderColor: tk.borderStrong,
+      taskTextColor: tk.textPrimary,
+      taskTextOutsideColor: tk.textPrimary,
+      taskTextLightColor: tk.textPrimary,
+      taskTextDarkColor: tk.textPrimary,
+      activeTaskBkgColor: tk.surface3,
+      activeTaskBorderColor: tk.accent,
+      doneTaskBkgColor: tk.surface2,
+      doneTaskBorderColor: tk.border,
+      critBkgColor: tk.surface3,
+      critBorderColor: tk.danger,
+      sectionBkgColor: tk.surface2,
+      altSectionBkgColor: tk.surface1,
+      sectionBkgColor2: tk.surface3,
+      gridColor: tk.border,
+      todayLineColor: tk.accent,
+      ...categorical,
     },
     flowchart: {
       curve: 'basis',
