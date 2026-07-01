@@ -90,7 +90,7 @@ Do not include any other text outside the page itself.`
 // from the body and stamps it as the page's summary (locked), so the auto-
 // summarizer never has to re-derive it. Shared by the narrative + reference
 // draft prompts.
-const summaryDirective = `7. On the VERY LAST line, output a one-sentence plain-text summary of THIS page for someone browsing a list of pages — grounded only in what the page says, no markdown — wrapped exactly as: <!-- SUMMARY: your sentence -->`
+const summaryDirective = `7. On the VERY LAST line, output a one-sentence plain-text summary of THIS page for someone browsing a list of pages — grounded only in what the page says, no markdown, and stating the substance directly (do NOT open with "This page…" / "This document…") — wrapped exactly as: <!-- SUMMARY: your sentence -->`
 
 // draftUserCode is the git/code draft prompt: the base draft + the code-density
 // rule (no rationale-essay filler). The jira path uses draftUserJira instead.
