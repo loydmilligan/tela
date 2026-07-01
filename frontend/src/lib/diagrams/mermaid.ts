@@ -104,10 +104,17 @@ function buildConfig(tk: ReturnType<typeof readTheme>): Record<string, unknown> 
       htmlLabels: true,
       useMaxWidth: true,
     },
-    // themeVariables can't express corner radius / shadow; inject them once here.
+    // mermaid id-scopes every themeCSS selector (`#<id> .node rect …`), so these
+    // win over page CSS without !important. themeVariables can't express corner
+    // radius / shadow — inject them. The foreignObject rule is load-bearing: with
+    // htmlLabels the label text is a <p>, and our prose `p { font-size / margin }`
+    // leaks in and renders it larger than the box mermaid measured (at the label
+    // container's size) → text overflows / clips. Reset it back to the container's
+    // metrics so rendered == measured.
     themeCSS:
       '.node rect,.node polygon{rx:6px;ry:6px}' +
-      '.node rect,.node polygon,.node circle,.node ellipse,.node path{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.10))}',
+      '.node rect,.node polygon,.node circle,.node ellipse,.node path{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.10))}' +
+      'foreignObject p{font-size:inherit;line-height:inherit;margin:0;padding:0}',
   }
 }
 
