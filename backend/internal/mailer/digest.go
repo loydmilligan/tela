@@ -233,14 +233,24 @@ var digestTmpl = template.Must(template.New("digest").Parse(`<!doctype html>
   {{end}}
 
   {{if .D.Attention}}
-  <tr><td style="padding:24px 32px 0 32px;">
-    <div style="font-size:13px;font-weight:600;color:{{.Text}};text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #eee;padding-bottom:8px;">Needs your eyes</div>
+  <tr><td style="padding:26px 32px 0 32px;">
+    <div style="font-size:13px;font-weight:600;color:{{.Text}};text-transform:uppercase;letter-spacing:.05em;padding-bottom:4px;">Needs your eyes</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       {{range .D.Attention}}
-      <tr><td style="padding:12px 0 10px 0;border-bottom:1px solid #f2f2f6;">
-        {{if eq .Tone "warn"}}<span style="display:inline-block;font-size:10px;font-weight:600;color:#9a6a00;background:#fdf3e2;padding:2px 7px;border-radius:20px;">{{.Kind}}</span>{{else}}<span style="display:inline-block;font-size:10px;font-weight:600;color:{{$.Indigo}};background:#eef0ff;padding:2px 7px;border-radius:20px;">{{.Kind}}</span>{{end}}
-        <a href="{{.URL}}" style="font-size:14px;font-weight:600;color:{{$.Text}};text-decoration:none;margin-left:8px;">{{.Title}}</a>
-        {{if .Detail}}<div style="font-size:13px;color:{{$.Faint}};margin-top:3px;">{{.Detail}}</div>{{end}}
+      <tr><td style="padding:8px 0 0 0;">
+        {{if eq .Tone "warn"}}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fdf9f1;border:1px solid #f0e4cc;border-left:3px solid #d99a2b;border-radius:8px;"><tr><td style="padding:12px 14px;">
+          <span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;color:#9a6a00;background:#f9ecd2;padding:3px 8px;border-radius:5px;">{{.Kind}}</span>
+          <div style="margin-top:7px;"><a href="{{.URL}}" style="font-size:14px;font-weight:600;color:{{$.Text}};text-decoration:none;">{{.Title}}</a></div>
+          {{if .Detail}}<div style="font-size:12.5px;color:{{$.Muted}};margin-top:3px;line-height:1.45;">{{.Detail}}</div>{{end}}
+        </td></tr></table>
+        {{else}}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6ff;border:1px solid #e2e4ff;border-left:3px solid {{$.Indigo}};border-radius:8px;"><tr><td style="padding:12px 14px;">
+          <span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;color:{{$.Indigo}};background:#e8eaff;padding:3px 8px;border-radius:5px;">{{.Kind}}</span>
+          <div style="margin-top:7px;"><a href="{{.URL}}" style="font-size:14px;font-weight:600;color:{{$.Text}};text-decoration:none;">{{.Title}}</a></div>
+          {{if .Detail}}<div style="font-size:12.5px;color:{{$.Muted}};margin-top:3px;line-height:1.45;">{{.Detail}}</div>{{end}}
+        </td></tr></table>
+        {{end}}
       </td></tr>
       {{end}}
     </table>

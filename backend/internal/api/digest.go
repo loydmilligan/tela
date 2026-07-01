@@ -435,7 +435,7 @@ func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.Di
 			actor = "Someone"
 		}
 		out = append(out, mailer.DigestAttention{
-			Kind:   "OPEN Q",
+			Kind:   "QUESTION",
 			Tone:   "info",
 			Title:  digestTruncate(oneLine(body), 90),
 			Detail: fmt.Sprintf("Asked by %s on %s · no answer yet.", actor, title),
@@ -477,18 +477,20 @@ func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.Dig
 			Reason string `json:"reason"`
 		}
 		_ = json.Unmarshal([]byte(disputesRaw), &disputes)
-		detail := plural(count) // "s" or ""
-		detail = fmt.Sprintf("Contradicts %d page%s", count, detail)
+		// Lead with the reason (the substance) — the CONFLICT badge already says
+		// what kind. Fall back to a plain count when there's no reason.
+		detail := fmt.Sprintf("Contradicts %d other page%s in this space.", count, plural(count))
 		if len(disputes) > 0 && disputes[0].Reason != "" {
-			detail += " — " + oneLine(disputes[0].Reason)
-		} else if len(disputes) > 0 && disputes[0].Title != "" {
-			detail += " (e.g. " + disputes[0].Title + ")"
+			detail = cleanReason(disputes[0].Reason)
+			if count > 1 {
+				detail = fmt.Sprintf("Contradicts %d pages — %s", count, detail)
+			}
 		}
 		out = append(out, mailer.DigestAttention{
 			Kind:   "CONFLICT",
 			Tone:   "warn",
 			Title:  title,
-			Detail: digestTruncate(detail, 120),
+			Detail: digestTruncate(detail, 110),
 			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
 		})
 	}
@@ -668,6 +670,20 @@ func joinAnd(parts []string) string {
 func oneLine(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// cleanReason tidies an LLM-written dispute reason for a one-line card: collapse
+// whitespace and drop trailing file-path noise (e.g. "... location: target
+// src/main/java/…") that reads as clutter in a digest.
+func cleanReason(s string) string {
+	s = oneLine(s)
+	for _, m := range []string{" target src/", " target /", " src/main/", " src/", " (target "} {
+		if i := strings.Index(s, m); i > 0 {
+			s = s[:i]
+			break
+		}
+	}
+	return strings.TrimRight(s, " :;,-—")
 }
 
 func digestTruncate(s string, n int) string {
