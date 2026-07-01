@@ -89,9 +89,11 @@ func (s *Server) buildDigest(ctx context.Context, u *auth.User, since time.Time)
 		d.MoreCount = total - len(updates)
 	}
 
-	// Needs your eyes — Atlas-stale pages first (best-effort), then unresolved
-	// comment threads (oldest first), capped so the section stays scannable.
-	d.Attention = s.digestStale(ctx, u.ID)
+	// Needs your eyes — contradictions first (a page disputed by another is the
+	// most urgent), then Atlas-stale pages, then unresolved comment threads.
+	// Each sub-query is best-effort; the section is capped to stay scannable.
+	d.Attention = s.digestConflicts(ctx, u.ID)
+	d.Attention = append(d.Attention, s.digestStale(ctx, u.ID)...)
 	open, err := s.digestAttention(ctx, u.ID)
 	if err != nil {
 		return d, err
@@ -246,9 +248,12 @@ func digestSubject(d mailer.DigestData) string {
 	return "Your week in tela · " + d.DateRange
 }
 
+// digestEmpty is true when there's nothing worth mailing: no pages to list AND
+// nothing in "needs your eyes". A comments-only week (no listed updates) doesn't
+// send; a week with only a conflict/stale alert still does — that's worth
+// knowing even with zero page changes.
 func digestEmpty(d mailer.DigestData) bool {
-	return len(d.Updates) == 0 && len(d.Attention) == 0 &&
-		d.Stats.New == 0 && d.Stats.Updated == 0 && d.Stats.Comments == 0
+	return len(d.Updates) == 0 && len(d.Attention) == 0
 }
 
 // sendDueDigests sends the weekly digest to every opted-in user whose last send
@@ -438,6 +443,56 @@ func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.Di
 		})
 	}
 	return out, rows.Err()
+}
+
+// digestConflicts surfaces pages that another page contradicts (page_agreement
+// disputes) — tela's "discrepancies" signal. Best-effort: any error yields no
+// rows and never breaks the digest.
+func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.DigestAttention {
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT p.id, p.space_id, p.title, a.dispute, a.disputes
+		  FROM page_agreement a
+		  JOIN pages p ON p.id = a.page_id
+		 WHERE a.dispute > 0 AND a.last_error = '' AND p.deleted_at IS NULL
+		   AND p.`+digestSpaceScope+`
+		 ORDER BY a.dispute DESC
+		 LIMIT 2`, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	base := strings.TrimRight(canonicalBaseURL(), "/")
+	var out []mailer.DigestAttention
+	for rows.Next() {
+		var pageID, spaceID int64
+		var count int
+		var title, disputesRaw string
+		if err := rows.Scan(&pageID, &spaceID, &title, &count, &disputesRaw); err != nil {
+			return out
+		}
+		// disputes JSON: [{page_id,title,reason}] — lead with the first one's
+		// reason; note the total if there are more.
+		var disputes []struct {
+			Title  string `json:"title"`
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal([]byte(disputesRaw), &disputes)
+		detail := plural(count) // "s" or ""
+		detail = fmt.Sprintf("Contradicts %d page%s", count, detail)
+		if len(disputes) > 0 && disputes[0].Reason != "" {
+			detail += " — " + oneLine(disputes[0].Reason)
+		} else if len(disputes) > 0 && disputes[0].Title != "" {
+			detail += " (e.g. " + disputes[0].Title + ")"
+		}
+		out = append(out, mailer.DigestAttention{
+			Kind:   "CONFLICT",
+			Tone:   "warn",
+			Title:  title,
+			Detail: digestTruncate(detail, 120),
+			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
+		})
+	}
+	return out
 }
 
 // digestStale surfaces Atlas-generated pages whose upstream has moved past the
