@@ -100,7 +100,8 @@ func renderDigestText(d DigestData) string {
 	if d.Greeting != "" {
 		b.WriteString("Hi " + d.Greeting + ",\n\n")
 	}
-	b.WriteString("Your week — " + d.DateRange + "\n\n")
+	b.WriteString("Your weekly report on what's happening across your spaces — and anything that needs you.\n")
+	b.WriteString("Week of " + d.DateRange + "\n\n")
 	if d.Gist != "" {
 		b.WriteString(d.Gist + "\n\n")
 	}
@@ -184,7 +185,8 @@ var digestTmpl = template.Must(template.New("digest").Parse(`<!doctype html>
   </td></tr>
 
   <tr><td style="padding:14px 32px 0 32px;">
-    <h1 style="margin:0 0 6px 0;font-size:22px;line-height:1.25;font-weight:700;color:{{.Text}};letter-spacing:-.02em;">{{if .D.Greeting}}Hi {{.D.Greeting}},{{else}}Your week{{end}}</h1>
+    <h1 style="margin:0 0 5px 0;font-size:22px;line-height:1.25;font-weight:700;color:{{.Text}};letter-spacing:-.02em;">{{if .D.Greeting}}Hi {{.D.Greeting}},{{else}}Your week{{end}}</h1>
+    <p style="margin:0 0 8px 0;font-size:13px;line-height:1.5;color:{{.Faint}};">Your weekly report on what's happening across your spaces — and anything that needs you.</p>
     {{if .D.Gist}}<p style="margin:0;font-size:15px;line-height:1.5;color:{{.Muted}};">{{.D.Gist}}</p>{{end}}
   </td></tr>
 
