@@ -256,16 +256,58 @@ func digestEmpty(d mailer.DigestData) bool {
 	return len(d.Updates) == 0 && len(d.Attention) == 0
 }
 
-// sendDueDigests sends the weekly digest to every opted-in user whose last send
-// was ≥7 days ago (or never). Per-user cadence is gated on digest_last_sent_at,
-// so this is safe to run on any schedule and across restarts. Empty digests
-// (no activity) are skipped. dryRun builds + counts without sending.
+// digestJobLock is the fixed key for the advisory lock that serializes the send
+// job across the whole deployment (every backend instance shares one Postgres).
+const digestJobLock int64 = 4088231755
+
+// SendDueDigests sends the weekly digest to every opted-in user who is due
+// (never sent, or last send ≥7 days ago). It is engineered to NEVER double-send,
+// through redeploys, crashes, concurrent CLI runs, or multiple instances:
+//
+//   - A Postgres advisory lock serializes the whole job. A second run — another
+//     tick, a `tela digest run`, another instance — that can't grab the lock
+//     just returns, so runs never overlap.
+//   - Each user is CLAIMED with one atomic conditional UPDATE that stamps
+//     digest_last_sent_at only while the user is still due. Two racers can't both
+//     match, so at most one claims a given week.
+//   - The claim (stamp) commits BEFORE the email is sent. A crash or redeploy
+//     between claim and send makes the user MISS this week — never receive it
+//     twice. A miss is recoverable next week; a duplicate isn't.
+//   - Empty digests are skipped BEFORE claiming, so a quiet week doesn't burn the
+//     slot.
+//
+// dryRun builds + counts without claiming or sending.
 func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err error) {
+	now := time.Now().UTC()
+	nowStr := now.Format(tsLayout)
+	cutoff := now.AddDate(0, 0, -7).Format(tsLayout) // due when last_sent <= cutoff
+
+	// Serialize the whole job on a single connection's session advisory lock.
+	conn, err := s.DB.Conn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+	var locked bool
+	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, digestJobLock).Scan(&locked); err != nil {
+		return 0, err
+	}
+	if !locked {
+		slog.Info("digest: another send run holds the lock — skipping")
+		return 0, nil
+	}
+	// Session advisory locks outlive a pool checkout, so release explicitly
+	// before conn.Close() returns it (deferred second → LIFO runs it first).
+	defer func() { _, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, digestJobLock) }()
+
+	// Candidate set: opted in, active, verified email, and due. The per-user
+	// claim below re-checks dueness atomically, so this is only a starting list.
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT id, username, COALESCE(email, ''), digest_last_sent_at
 		  FROM users
 		 WHERE digest_frequency = 'weekly' AND is_active = 1
-		   AND email IS NOT NULL AND email <> '' AND email_verified_at IS NOT NULL`)
+		   AND email IS NOT NULL AND email <> '' AND email_verified_at IS NOT NULL
+		   AND (digest_last_sent_at = '' OR digest_last_sent_at <= $1)`, cutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -284,14 +326,10 @@ func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err
 	}
 	rows.Close()
 
-	now := time.Now().UTC()
 	for _, d := range users {
 		since := now.AddDate(0, 0, -7)
 		if d.lastSent != "" {
 			if t, e := time.Parse(tsLayout, d.lastSent); e == nil {
-				if now.Sub(t) < 7*24*time.Hour {
-					continue // not due yet
-				}
 				since = t
 			}
 		}
@@ -301,19 +339,32 @@ func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err
 			continue
 		}
 		if digestEmpty(data) {
-			continue // nothing to say — don't send a hollow email
+			continue // quiet week — skip WITHOUT claiming, so the slot is preserved
 		}
 		if dryRun {
 			sent++
 			continue
 		}
-		msg := mailer.Digest(d.u.Email, digestSubject(data), data)
-		if e := s.Mailer.Send(ctx, msg); e != nil {
-			slog.Error("digest: send failed", "user_id", d.u.ID, "err", e)
+		// Atomic claim: stamp now only if still due. 0 rows → another run already
+		// took this week. This conditional UPDATE is the duplicate guard.
+		res, e := s.DB.ExecContext(ctx, `
+			UPDATE users SET digest_last_sent_at = $1
+			 WHERE id = $2 AND digest_frequency = 'weekly'
+			   AND (digest_last_sent_at = '' OR digest_last_sent_at <= $3)`,
+			nowStr, d.u.ID, cutoff)
+		if e != nil {
+			slog.Error("digest: claim failed", "user_id", d.u.ID, "err", e)
 			continue
 		}
-		_, _ = s.DB.ExecContext(ctx,
-			`UPDATE users SET digest_last_sent_at = $1 WHERE id = $2`, now.Format(tsLayout), d.u.ID)
+		if n, _ := res.RowsAffected(); n == 0 {
+			continue // already claimed elsewhere — never double-send
+		}
+		// Stamp is committed. Now send; a failure here means this user misses THIS
+		// week (logged), never a duplicate.
+		if e := s.Mailer.Send(ctx, mailer.Digest(d.u.Email, digestSubject(data), data)); e != nil {
+			slog.Error("digest: send failed after claim (user misses this week)", "user_id", d.u.ID, "err", e)
+			continue
+		}
 		sent++
 	}
 	return sent, nil
