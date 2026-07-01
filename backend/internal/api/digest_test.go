@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -114,63 +115,98 @@ func setDigestLastSent(t *testing.T, d *sql.DB, userID int64, ts string) {
 	}
 }
 
-// A recipient's link base is their org's active custom domain when they have
-// one, else the canonical host; a pending (unverified) domain never counts, and
-// the earliest-created active hostname wins a tie.
-func TestUserDigestBase(t *testing.T) {
+// mkOrg / joinOrg / addHostname seed the org + custom-domain rows the link
+// resolvers read.
+func mkOrg(t *testing.T, d *sql.DB, name, slug string) int64 {
+	t.Helper()
+	var id int64
+	if err := d.QueryRow(`INSERT INTO orgs (name, slug) VALUES ($1,$2) RETURNING id`, name, slug).Scan(&id); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	return id
+}
+func joinOrg(t *testing.T, d *sql.DB, userID, orgID int64) {
+	t.Helper()
+	if _, err := d.Exec(`INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1,$2,'member')`, orgID, userID); err != nil {
+		t.Fatalf("join org: %v", err)
+	}
+}
+func addHostname(t *testing.T, d *sql.DB, orgID int64, hostname, status, createdAt string) {
+	t.Helper()
+	if _, err := d.Exec(
+		`INSERT INTO org_hostnames (hostname, org_id, status, verify_token, created_at) VALUES ($1,$2,$3,'tok',$4)`,
+		hostname, orgID, status, createdAt); err != nil {
+		t.Fatalf("seed hostname: %v", err)
+	}
+}
+
+// recipientHomeBase (non-page chrome links): custom domain only when the user
+// is in exactly ONE org that has an active domain; canonical otherwise. A
+// pending (unverified) domain never counts.
+func TestRecipientHomeBase(t *testing.T) {
 	_, d, srv := newWiredServerOnDiskWithSrv(t)
 	ctx := context.Background()
 
-	mkOrg := func(name, slug string) int64 {
-		var id int64
-		if err := d.QueryRow(`INSERT INTO orgs (name, slug) VALUES ($1,$2) RETURNING id`, name, slug).Scan(&id); err != nil {
-			t.Fatalf("seed org: %v", err)
-		}
-		return id
-	}
-	join := func(userID, orgID int64) {
-		if _, err := d.Exec(`INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1,$2,'member')`, orgID, userID); err != nil {
-			t.Fatalf("join org: %v", err)
-		}
-	}
-	host := func(orgID int64, hostname, status, createdAt string) {
-		if _, err := d.Exec(
-			`INSERT INTO org_hostnames (hostname, org_id, status, verify_token, created_at) VALUES ($1,$2,$3,'tok',$4)`,
-			hostname, orgID, status, createdAt); err != nil {
-			t.Fatalf("seed hostname: %v", err)
-		}
-	}
-
-	// No org → canonical host (empty in tests, TELA_PUBLIC_BASE_URL unset).
+	// No org → canonical (empty in tests, TELA_PUBLIC_BASE_URL unset).
 	loner := seedUser(t, d, "loner", "lonerpw12", false)
-	if got := srv.userDigestBase(ctx, loner); got != canonicalBaseURL() {
-		t.Fatalf("no-org base = %q, want canonical %q", got, canonicalBaseURL())
+	if got := srv.recipientHomeBase(ctx, loner); got != canonicalBaseURL() {
+		t.Fatalf("no-org home = %q, want canonical %q", got, canonicalBaseURL())
 	}
 
-	// Org with only a PENDING domain → still canonical (a pending host can't
-	// serve the app, so it must not scope links).
+	// Single org, only a PENDING domain → canonical (pending can't serve the app).
 	pend := seedUser(t, d, "pend", "pendpw123", false)
-	po := mkOrg("Pending Org", "pending-org")
-	join(pend, po)
-	host(po, "pending.example.com", "pending", "2026-01-01 00:00:00")
-	if got := srv.userDigestBase(ctx, pend); got != canonicalBaseURL() {
-		t.Fatalf("pending-domain base = %q, want canonical %q", got, canonicalBaseURL())
+	po := mkOrg(t, d, "Pending Org", "pending-org")
+	joinOrg(t, d, pend, po)
+	addHostname(t, d, po, "pending.example.com", "pending", "2026-01-01 00:00:00")
+	if got := srv.recipientHomeBase(ctx, pend); got != canonicalBaseURL() {
+		t.Fatalf("pending-domain home = %q, want canonical %q", got, canonicalBaseURL())
 	}
 
-	// Org with an ACTIVE domain → that white-label host.
-	member := seedUser(t, d, "member", "memberpw1", false)
-	ao := mkOrg("Active Org", "active-org")
-	join(member, ao)
-	host(ao, "wiki.acme.test", "active", "2026-02-01 00:00:00")
-	if got := srv.userDigestBase(ctx, member); got != "https://wiki.acme.test" {
-		t.Fatalf("active-domain base = %q, want https://wiki.acme.test", got)
+	// Single org with an ACTIVE domain → that white-label host.
+	solo := seedUser(t, d, "solo", "solopw123", false)
+	ao := mkOrg(t, d, "Active Org", "active-org")
+	joinOrg(t, d, solo, ao)
+	addHostname(t, d, ao, "wiki.acme.test", "active", "2026-02-01 00:00:00")
+	if got := srv.recipientHomeBase(ctx, solo); got != "https://wiki.acme.test" {
+		t.Fatalf("single-org active home = %q, want https://wiki.acme.test", got)
 	}
 
-	// A second, later active hostname on the same org must not win: earliest
-	// created is the canonical white-label host.
-	host(ao, "aaa.acme.test", "active", "2026-03-01 00:00:00")
-	if got := srv.userDigestBase(ctx, member); got != "https://wiki.acme.test" {
-		t.Fatalf("multi-domain base = %q, want earliest https://wiki.acme.test", got)
+	// Multiple orgs (even though one has a domain) → canonical: no single home.
+	multi := seedUser(t, d, "multi", "multipw12", false)
+	bo := mkOrg(t, d, "Bare Org", "bare-org") // no domain
+	joinOrg(t, d, multi, ao)
+	joinOrg(t, d, multi, bo)
+	if got := srv.recipientHomeBase(ctx, multi); got != canonicalBaseURL() {
+		t.Fatalf("multi-org home = %q, want canonical %q", got, canonicalBaseURL())
+	}
+}
+
+// pageLink (per-page deep links): the page's owning-org custom domain when that
+// org has an active one, else canonical — so one digest can mix hosts.
+func TestPageLink(t *testing.T) {
+	_, d, srv := newWiredServerOnDiskWithSrv(t)
+	ctx := context.Background()
+	owner := seedUser(t, d, "owner", "ownerpw12", false)
+
+	// A space with no org → canonical host.
+	personal := seedSpace(t, d, "Personal", "personal-s", owner)
+	pPage := seedPageInSpace(t, d, personal, nil, "Note", "body")
+	want := fmt.Sprintf("%s/spaces/%d/pages/%d", canonicalBaseURL(), personal, pPage)
+	if got := srv.digestPageLink(ctx, personal, pPage); got != want {
+		t.Fatalf("personal page link = %q, want %q", got, want)
+	}
+
+	// A space owned by an org with an active domain → the white-label host.
+	org := mkOrg(t, d, "Acme", "acme")
+	addHostname(t, d, org, "wiki.acme.test", "active", "2026-02-01 00:00:00")
+	orgSpace := seedSpace(t, d, "Acme Space", "acme-s", owner)
+	if _, err := d.Exec(`UPDATE spaces SET org_id = $1 WHERE id = $2`, org, orgSpace); err != nil {
+		t.Fatalf("set space org: %v", err)
+	}
+	oPage := seedPageInSpace(t, d, orgSpace, nil, "Doc", "body")
+	want = fmt.Sprintf("https://wiki.acme.test/spaces/%d/pages/%d", orgSpace, oPage)
+	if got := srv.digestPageLink(ctx, orgSpace, oPage); got != want {
+		t.Fatalf("org page link = %q, want %q", got, want)
 	}
 }
 
