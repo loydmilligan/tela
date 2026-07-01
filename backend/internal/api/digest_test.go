@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zcag/tela/backend/internal/mailer"
 )
@@ -104,4 +105,69 @@ type failMailer struct{}
 
 func (failMailer) Send(_ context.Context, _ mailer.Message) error {
 	return context.DeadlineExceeded
+}
+
+func setDigestLastSent(t *testing.T, d *sql.DB, userID int64, ts string) {
+	t.Helper()
+	if _, err := d.Exec(`UPDATE users SET digest_last_sent_at = $1 WHERE id = $2`, ts, userID); err != nil {
+		t.Fatalf("set last_sent: %v", err)
+	}
+}
+
+// The anchor must always be a Monday 08:00 UTC, at/before now, within the past
+// week — swept across two weeks so the Monday-before/after-08:00 boundary is hit.
+func TestDigestWeekAnchor(t *testing.T) {
+	start := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
+	for h := 0; h < 24*14; h++ {
+		now := start.Add(time.Duration(h) * time.Hour)
+		a := digestWeekAnchor(now)
+		if a.Weekday() != time.Monday || a.Hour() != 8 || a.Minute() != 0 {
+			t.Fatalf("now=%s → anchor=%s is not Monday 08:00", now, a)
+		}
+		if a.After(now) {
+			t.Fatalf("now=%s → anchor=%s is in the future", now, a)
+		}
+		if now.Sub(a) >= 7*24*time.Hour {
+			t.Fatalf("now=%s → anchor=%s is more than a week back", now, a)
+		}
+	}
+}
+
+// The weekly gate: a user already sent since this week's Monday anchor is NOT due;
+// one last sent before it (i.e. last week) IS due. Uses the real anchor so it's
+// timezone/clock-honest.
+func TestSendDueDigests_MondayWeeklyGate(t *testing.T) {
+	_, d, srv := newWiredServerOnDiskWithSrv(t)
+	fake := &countingMailer{}
+	srv.Mailer = fake
+	anchor := digestWeekAnchor(time.Now().UTC())
+
+	// A: sent AFTER this week's anchor → already got it → not due.
+	a := seedUser(t, d, "amy", "amypw1234", false)
+	sa := seedSpace(t, d, "Amy", "amy-s", a)
+	seedPageInSpace(t, d, sa, nil, "Fresh", "content")
+	enableWeeklyDigest(t, d, a, "amy@example.com")
+	setDigestLastSent(t, d, a, anchor.Add(time.Hour).Format(tsLayout))
+
+	// B: sent BEFORE the anchor (last week) → due now.
+	b := seedUser(t, d, "ben", "benpw1234", false)
+	sb := seedSpace(t, d, "Ben", "ben-s", b)
+	seedPageInSpace(t, d, sb, nil, "Fresh", "content")
+	enableWeeklyDigest(t, d, b, "ben@example.com")
+	setDigestLastSent(t, d, b, anchor.Add(-time.Hour).Format(tsLayout))
+
+	n, err := srv.SendDueDigests(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("sent=%d, want 1 (only Ben is due this week)", n)
+	}
+	if got := atomic.LoadInt32(&fake.n); got != 1 {
+		t.Fatalf("mailer fired %d, want 1", got)
+	}
+	// And a rerun the same week sends nobody (both now stamped ≥ anchor).
+	if n, _ := srv.SendDueDigests(context.Background(), false); n != 0 {
+		t.Fatalf("same-week rerun sent %d, want 0", n)
+	}
 }

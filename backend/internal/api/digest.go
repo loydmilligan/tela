@@ -245,6 +245,30 @@ func digestEmpty(d mailer.DigestData) bool {
 // job across the whole deployment (every backend instance shares one Postgres).
 const digestJobLock int64 = 4088231755
 
+// Weekly send schedule: Monday 08:00 UTC. Constants (not env) so there's no
+// config parsing to get wrong; change here to move the schedule.
+const (
+	digestSendWeekday = time.Monday
+	digestSendHour    = 8
+)
+
+// digestWeekAnchor returns the most recent Monday 08:00 (UTC) at or before now —
+// the moment this week's batch is due. A user whose last send is on or after it
+// has already had this week's digest, so they're not due again until next
+// Monday. Constant across the whole week → each user is claimable at most once
+// per week.
+func digestWeekAnchor(now time.Time) time.Time {
+	y, m, d := now.Date()
+	a := time.Date(y, m, d, digestSendHour, 0, 0, 0, now.Location())
+	for a.Weekday() != digestSendWeekday {
+		a = a.AddDate(0, 0, -1)
+	}
+	if a.After(now) { // today IS the weekday but before the hour → last week's
+		a = a.AddDate(0, 0, -7)
+	}
+	return a
+}
+
 // SendDueDigests sends the weekly digest to every opted-in user who is due
 // (never sent, or last send ≥7 days ago). It is engineered to NEVER double-send,
 // through redeploys, crashes, concurrent CLI runs, or multiple instances:
@@ -265,7 +289,12 @@ const digestJobLock int64 = 4088231755
 func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err error) {
 	now := time.Now().UTC()
 	nowStr := now.Format(tsLayout)
-	cutoff := now.AddDate(0, 0, -7).Format(tsLayout) // due when last_sent <= cutoff
+	// The fixed weekly send moment: the most recent Monday 08:00 UTC at/before
+	// now. A user is due when they haven't been sent since it. The anchor is
+	// constant all week, so each user can be claimed at most once per week — that
+	// (with the atomic claim + advisory lock) is what makes double-sends
+	// impossible across ticks, redeploys, and instances.
+	anchor := digestWeekAnchor(now).Format(tsLayout)
 
 	// Serialize the whole job on a single connection's session advisory lock.
 	conn, err := s.DB.Conn(ctx)
@@ -292,7 +321,7 @@ func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err
 		  FROM users
 		 WHERE digest_frequency = 'weekly' AND is_active = 1
 		   AND email IS NOT NULL AND email <> '' AND email_verified_at IS NOT NULL
-		   AND (digest_last_sent_at = '' OR digest_last_sent_at <= $1)`, cutoff)
+		   AND (digest_last_sent_at = '' OR digest_last_sent_at < $1)`, anchor)
 	if err != nil {
 		return 0, err
 	}
@@ -335,8 +364,8 @@ func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err
 		res, e := s.DB.ExecContext(ctx, `
 			UPDATE users SET digest_last_sent_at = $1
 			 WHERE id = $2 AND digest_frequency = 'weekly'
-			   AND (digest_last_sent_at = '' OR digest_last_sent_at <= $3)`,
-			nowStr, d.u.ID, cutoff)
+			   AND (digest_last_sent_at = '' OR digest_last_sent_at < $3)`,
+			nowStr, d.u.ID, anchor)
 		if e != nil {
 			slog.Error("digest: claim failed", "user_id", d.u.ID, "err", e)
 			continue
@@ -355,9 +384,11 @@ func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err
 	return sent, nil
 }
 
-// digestLoop runs the weekly send on a daily tick (per-user cadence is gated in
-// sendDueDigests). A short initial delay keeps boot from being a send storm;
-// with the default 'off' pref, nothing sends until a user opts in.
+// digestLoop drives the send job on an HOURLY tick (SendDueDigests is a no-op
+// unless it's past this week's Monday-08:00 anchor and a user is still unsent).
+// Hourly so Monday delivery lands within ~an hour of 08:00 rather than up to a
+// day late; it's cheap (one indexed query returns nothing when no one is due)
+// and fully idempotent. A short initial delay avoids a boot storm.
 func (s *Server) digestLoop(ctx context.Context) {
 	timer := time.NewTimer(2 * time.Minute)
 	defer timer.Stop()
@@ -372,7 +403,7 @@ func (s *Server) digestLoop(ctx context.Context) {
 		} else if n > 0 {
 			slog.Info("digest: weekly send", "sent", n)
 		}
-		timer.Reset(24 * time.Hour)
+		timer.Reset(time.Hour)
 	}
 }
 
