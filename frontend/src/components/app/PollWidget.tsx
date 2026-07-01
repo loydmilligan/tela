@@ -286,7 +286,7 @@ export function PollWidget({ poll, onVote, className }: PollWidgetProps) {
           )}
 
           <div className="flex items-center justify-between gap-[var(--space-3)]">
-            {voted && poll.allowChange && !poll.closed ? (
+            {voted && poll.allowChange && !poll.closed && !readOnly ? (
               <Button
                 variant="ghost"
                 size="sm"

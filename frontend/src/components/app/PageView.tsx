@@ -542,6 +542,8 @@ function PageViewer({
           <MarkdownView
             body={page.body}
             pageId={page.id}
+            // Editors can cast poll votes here; viewers get read-only results.
+            canVote={canEdit}
             resolveWikilink={resolveWikilink}
             pageHref={pageHref}
             commentThreads={commentsEnabled ? commentThreads : null}
