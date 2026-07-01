@@ -85,10 +85,25 @@ func srcHash(body string) string {
 const bodyHashExpr = `encode(sha256(convert_to(p.body, 'UTF8')), 'hex')`
 
 // summarySystem is the generation prompt: a standfirst, not a "This page…"
-// table of contents.
-const summarySystem = "You write standfirsts for wiki pages. Reply with a 1-2 sentence factual summary " +
-	"of the page, at most 50 words. Plain text only: no markdown, no surrounding quotes, and no " +
-	"boilerplate openers like \"This page describes\" — state the substance directly."
+// table of contents. It is deliberately extractive — summarize only what the
+// body states, never infer from the title or outside knowledge — with an
+// abstention hatch: a body with no readable prose (a bare diagram, a file
+// embed) yields NONE rather than a confabulated standfirst. The abstention is
+// load-bearing: a soft "grounded" instruction alone still lets the model invent
+// a subject from a name in the title (see summarizeNone handling).
+const summarySystem = "You write standfirsts for wiki pages. Summarize ONLY what the body actually states, " +
+	"in 1-2 sentences (at most 50 words); never add facts that are not in the body. If the body has no " +
+	"readable text to summarize, reply with exactly: NONE. Plain text only: no markdown, no surrounding " +
+	"quotes, no openers like \"This page describes\"."
+
+// summaryNone is the sentinel the model returns when the body carries nothing it
+// can faithfully summarize. Matched case-insensitively, trailing period tolerated.
+const summaryNone = "NONE"
+
+// isNone reports whether a sanitized completion is the abstention sentinel.
+func isNone(out string) bool {
+	return strings.EqualFold(strings.TrimRight(out, "."), summaryNone)
+}
 
 // summarizeMaxBodyChars caps how much body is sent to the LLM (prompt-size
 // bound; the opening of a wiki page carries the gist).
@@ -99,11 +114,12 @@ const summarizeMaxBodyChars = 12000
 type Result string
 
 const (
-	Generated     Result = "generated"
-	SkippedFresh  Result = "fresh"  // stored hash matches body and summary present
-	SkippedLocked Result = "locked" // props.summary_lock — never touched
-	SkippedEmpty  Result = "empty"  // blank body — nothing to summarize
-	SkippedGone   Result = "gone"   // page deleted (or locked mid-flight)
+	Generated       Result = "generated"
+	SkippedFresh    Result = "fresh"      // stored hash matches body and summary present
+	SkippedLocked   Result = "locked"     // props.summary_lock — never touched
+	SkippedEmpty    Result = "empty"      // blank body — nothing to summarize
+	SkippedNoneBody Result = "no_content" // body present but nothing faithfully summarizable (model → NONE)
+	SkippedGone     Result = "gone"       // page deleted (or locked mid-flight)
 )
 
 // SummarizePage generates and persists the summary for one page. Idempotent:
@@ -142,15 +158,20 @@ func (s *Service) SummarizePage(ctx context.Context, pageID int64, force bool) (
 
 	hash := srcHash(body)
 	if !force {
-		// Fresh = stored hash matches AND the summary is actually present AND the
-		// last attempt didn't fail (a failed row must stay eligible for retry).
+		// Fresh = a clean row (no pending failure) whose stored hash matches the
+		// live body. A matching clean row means this exact body was already taken
+		// to a terminal state — either a summary was written, or the model
+		// abstained (NONE) and we deliberately left props.summary empty. Both are
+		// fresh; only a hash mismatch (edited body) or a failed row re-runs. (The
+		// Generated write is one tx, so a clean matching row can't have lost its
+		// summary except via a deliberate NONE.)
 		var have string
 		err := s.db.QueryRowContext(ctx,
 			`SELECT src_hash FROM page_summaries WHERE page_id = $1 AND last_error = ''`, pageID).Scan(&have)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return "", fmt.Errorf("summarize: check hash: %w", err)
 		}
-		if cur, _ := props["summary"].(string); err == nil && have == hash && strings.TrimSpace(cur) != "" {
+		if err == nil && have == hash {
 			return SkippedFresh, nil
 		}
 	}
@@ -166,6 +187,17 @@ func (s *Service) SummarizePage(ctx context.Context, pageID int64, force bool) (
 	if err != nil {
 		s.recordFailure(ctx, pageID, err)
 		return "", fmt.Errorf("summarize page %d: %w", pageID, err)
+	}
+
+	// Abstention: the model judged the body has nothing to faithfully summarize
+	// (a bare diagram, a file embed, a name-only stub). Persist NO summary —
+	// clear any stale one — and record the row fresh so this body isn't retried.
+	// Same tx discipline as the write path (lock re-check, no updated_at bump).
+	if isNone(out) {
+		if err := s.clearSummary(ctx, pageID, hash); err != nil {
+			return "", err
+		}
+		return SkippedNoneBody, nil
 	}
 
 	// Persist in ONE tx: set ONLY props.summary — deliberately not the save path
@@ -199,6 +231,35 @@ func (s *Service) SummarizePage(ctx context.Context, pageID int64, force bool) (
 		return "", fmt.Errorf("summarize: commit: %w", err)
 	}
 	return Generated, nil
+}
+
+// clearSummary handles the abstention (NONE) outcome: drop any existing
+// props.summary and record the summary row as fresh for this body hash, so the
+// page reads "done, no summary" and the worker won't re-attempt it until the
+// body changes. Mirrors the write path — respects summary_lock, doesn't bump
+// updated_at, snapshots no revision.
+func (s *Service) clearSummary(ctx context.Context, pageID int64, hash string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("summarize: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE pages SET props = props - 'summary'
+		 WHERE id = $1 AND deleted_at IS NULL
+		   AND coalesce(props->>'summary_lock', '') <> 'true'`, pageID); err != nil {
+		return fmt.Errorf("summarize: clear summary: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO page_summaries (page_id, src_hash, model, generated_at, last_error, attempts)
+		VALUES ($1, $2, $3, tela_now(), '', 0)
+		ON CONFLICT (page_id) DO UPDATE
+		   SET src_hash = EXCLUDED.src_hash, model = EXCLUDED.model,
+		       generated_at = tela_now(), last_error = '', attempts = 0`,
+		pageID, hash, s.llm.Model()); err != nil {
+		return fmt.Errorf("summarize: upsert page_summaries (none): %w", err)
+	}
+	return tx.Commit()
 }
 
 // recordFailure upserts the failure state so the status view reads failed. A

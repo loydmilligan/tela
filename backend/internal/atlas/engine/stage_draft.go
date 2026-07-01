@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
@@ -95,7 +96,14 @@ func draftNarrative(ctx context.Context, rc *RunContext, p *core.Page) (string, 
 		user = draftUserJira(p.Title, p.Summary, ctxStr)
 	}
 	body, err := rc.LLM.Chat(ctx, draftSystem, user, 0.3)
-	return sanitizePage(body), err
+	if err != nil {
+		return "", err
+	}
+	clean, summary := extractSummary(sanitizePage(body))
+	if summary != "" {
+		p.Summary = summary // body-accurate standfirst supersedes the outline plan
+	}
+	return clean, nil
 }
 
 // narrativeChunks retrieves the source for a narrative page and, for a Jira
@@ -147,7 +155,14 @@ func draftReference(ctx context.Context, rc *RunContext, p *core.Page) (string, 
 		return "", err
 	}
 	body, err := rc.LLM.Chat(ctx, refSystem, refUser(p.Title, list.String(), assembleContext(chunks)), 0.2)
-	return sanitizePage(body), err
+	if err != nil {
+		return "", err
+	}
+	clean, summary := extractSummary(sanitizePage(body))
+	if summary != "" {
+		p.Summary = summary
+	}
+	return clean, nil
 }
 
 func detailSuffix(d string) string {
@@ -155,6 +170,25 @@ func detailSuffix(d string) string {
 		return ""
 	}
 	return " — " + d
+}
+
+// summaryMarkerRE matches the trailing standfirst the draft/reference model is
+// asked to emit (summaryDirective): <!-- SUMMARY: one sentence -->. Case- and
+// whitespace-tolerant; the last match wins if the model emitted more than one.
+var summaryMarkerRE = regexp.MustCompile(`(?is)<!--\s*SUMMARY:\s*(.*?)\s*-->`)
+
+// extractSummary pulls the model's SUMMARY marker out of a drafted page,
+// returning the body with every marker removed and the summary text (collapsed
+// to one line; empty if the model omitted it — the caller then keeps whatever
+// summary the outline stage planned).
+func extractSummary(body string) (string, string) {
+	ms := summaryMarkerRE.FindAllStringSubmatch(body, -1)
+	summary := ""
+	if len(ms) > 0 {
+		summary = strings.Join(strings.Fields(ms[len(ms)-1][1]), " ")
+	}
+	body = strings.TrimSpace(summaryMarkerRE.ReplaceAllString(body, ""))
+	return body, summary
 }
 
 // sanitizePage strips any prompt scaffolding the model echoed (leaked tags,

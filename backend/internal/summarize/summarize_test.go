@@ -188,6 +188,50 @@ func TestSummarizePage_LockAndEmptySkipped(t *testing.T) {
 	}
 }
 
+// A model that abstains (NONE) on a body with nothing to faithfully summarize
+// must not persist "NONE": it clears any stale summary, records the row fresh
+// (so the same body isn't retried), and doesn't count as a failure.
+func TestSummarizePage_NoneClearsAndRecordsFresh(t *testing.T) {
+	d := testdb.New(t)
+	ctx := context.Background()
+	u := newUser(t, d, "alice")
+	sp := newSpace(t, d, "alpha", u)
+	// A diagram-only body (non-prose) plus a pre-existing stale/wrong summary.
+	page := newPage(t, d, sp, "Gulden - Cagdas", "```excalidraw\n{\"elements\":[]}\n```")
+	if _, err := d.Exec(`UPDATE pages SET props = '{"summary":"Gulden is a financial institution"}' WHERE id = $1`, page); err != nil {
+		t.Fatalf("seed stale summary: %v", err)
+	}
+
+	fake := &fakeLLM{out: "  NONE.  "} // sanitize-then-isNone must still match
+	svc := newSvc(d, fake)
+	if res, err := svc.SummarizePage(ctx, page, false); err != nil || res != SkippedNoneBody {
+		t.Fatalf("none: res=%q err=%v, want no_content", res, err)
+	}
+	// The stale summary is gone — not replaced with the literal "NONE".
+	if got := pageSummary(t, d, page); got != "" {
+		t.Errorf("summary after NONE = %q, want empty", got)
+	}
+	// Row recorded fresh (hash of body, clean error state) so it reads done.
+	var hash, lastErr string
+	var attempts int
+	if err := d.QueryRow(`SELECT src_hash, last_error, attempts FROM page_summaries WHERE page_id = $1`, page).
+		Scan(&hash, &lastErr, &attempts); err != nil {
+		t.Fatalf("read page_summaries: %v", err)
+	}
+	var body string
+	_ = d.QueryRow(`SELECT body FROM pages WHERE id = $1`, page).Scan(&body)
+	if hash != srcHash(body) || lastErr != "" || attempts != 0 {
+		t.Errorf("row = hash-match:%v err:%q attempts:%d, want fresh", hash == srcHash(body), lastErr, attempts)
+	}
+	// Re-run on the unchanged body makes no second LLM call (recorded fresh).
+	if res, err := svc.SummarizePage(ctx, page, false); err != nil || res != SkippedFresh {
+		t.Fatalf("re-run: res=%q err=%v, want fresh skip", res, err)
+	}
+	if fake.callCount() != 1 {
+		t.Errorf("llm calls = %d, want 1", fake.callCount())
+	}
+}
+
 func TestSummarizePage_BodyChangeGoesStaleThenRegenerates(t *testing.T) {
 	d := testdb.New(t)
 	ctx := context.Background()

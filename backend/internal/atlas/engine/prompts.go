@@ -80,8 +80,17 @@ Write the page in Markdown:
 4. ` + mermaidLabelRules + `
 5. For every significant claim, cite the source inline as ` + "`Sources: [path:start-end]`" + ` using the real line ranges shown.
 6. Use tables where they clarify. Keep it accurate and concrete — name the real symbols.
-Do not include any text outside the page itself.`
+` + summaryDirective + `
+Do not include any other text outside the page itself.`
 }
+
+// summaryDirective asks the drafting model to emit a one-line, user-facing
+// standfirst for the page it just wrote, on the very last line, wrapped in an
+// HTML comment so it's trivially extractable and never renders. Atlas strips it
+// from the body and stamps it as the page's summary (locked), so the auto-
+// summarizer never has to re-derive it. Shared by the narrative + reference
+// draft prompts.
+const summaryDirective = `7. On the VERY LAST line, output a one-sentence plain-text summary of THIS page for someone browsing a list of pages — grounded only in what the page says, no markdown — wrapped exactly as: <!-- SUMMARY: your sentence -->`
 
 // draftUserCode is the git/code draft prompt: the base draft + the code-density
 // rule (no rationale-essay filler). The jira path uses draftUserJira instead.
@@ -151,5 +160,6 @@ Write a Markdown reference page:
 1. An H1 title and a short intro explaining what this surface is.
 2. Document EVERY item in the list — a table or a section each, with what it is, where it lives (` + "`path:line`" + `), and (from the excerpts) what it does.
 3. Group sensibly (e.g. by prefix or area) if there are many.
+` + summaryDirective + `
 Be exhaustive: every listed item must appear. Ground descriptions in the excerpts; if an item's behavior isn't in the excerpts, document its location and signature anyway.`
 }

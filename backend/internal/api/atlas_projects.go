@@ -639,10 +639,17 @@ func (s *Server) createProjectFolder(ctx context.Context, spaceID int64, parentI
 		pos = int(maxPos.Int64) + 1
 	}
 	body := fmt.Sprintf("Documentation for **%s**, generated and maintained by atlas. Each source publishes under its own page below.\n", name)
+	// The index page's summary is deterministic (it's a template, not agent-drafted),
+	// so stamp it directly and lock it — the auto-summarizer must never touch it (a
+	// bare one-liner is exactly what it mis-summarizes or abstains on).
+	props := propsJSON(map[string]any{
+		"summary":      fmt.Sprintf("Documentation for %s, generated and maintained by atlas; each source is documented on its own page.", name),
+		"summary_lock": true,
+	})
 	var id int64
 	if err := s.DB.QueryRowContext(ctx,
-		`INSERT INTO pages (space_id, parent_id, title, body, position) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		spaceID, nullableInt64(parentID), name, body, pos).Scan(&id); err != nil {
+		`INSERT INTO pages (space_id, parent_id, title, body, position, props) VALUES ($1,$2,$3,$4,$5,$6::jsonb) RETURNING id`,
+		spaceID, nullableInt64(parentID), name, body, pos, props).Scan(&id); err != nil {
 		return 0, &apiErr{http.StatusInternalServerError, "internal", "create project folder"}
 	}
 	return id, nil
