@@ -390,6 +390,9 @@ func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err
 // day late; it's cheap (one indexed query returns nothing when no one is due)
 // and fully idempotent. A short initial delay avoids a boot storm.
 func (s *Server) digestLoop(ctx context.Context) {
+	slog.Info("digest: weekly loop started",
+		"next_anchor", digestWeekAnchor(time.Now().UTC().AddDate(0, 0, 7)).Format(tsLayout),
+		"tick", "hourly")
 	timer := time.NewTimer(2 * time.Minute)
 	defer timer.Stop()
 	for {
@@ -398,11 +401,20 @@ func (s *Server) digestLoop(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		if n, err := s.SendDueDigests(ctx, false); err != nil {
-			slog.Error("digest: weekly send failed", "err", err)
-		} else if n > 0 {
-			slog.Info("digest: weekly send", "sent", n)
-		}
+		// One bad tick (a panic in a query/render) must not kill the loop for the
+		// whole process lifetime — recover, log, and keep ticking.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("digest: send tick panicked (recovered)", "panic", r)
+				}
+			}()
+			if n, err := s.SendDueDigests(ctx, false); err != nil {
+				slog.Error("digest: weekly send failed", "err", err)
+			} else if n > 0 {
+				slog.Info("digest: weekly send", "sent", n)
+			}
+		}()
 		timer.Reset(time.Hour)
 	}
 }

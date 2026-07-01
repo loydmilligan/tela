@@ -169,11 +169,6 @@ export function SettingsNotificationsTab() {
           ))}
         </div>
       )}
-
-      <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-        Email delivery isn’t live yet — your Email choices are saved and take effect
-        when it ships.
-      </p>
     </section>
   )
 }

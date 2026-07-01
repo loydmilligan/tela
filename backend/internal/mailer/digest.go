@@ -254,7 +254,7 @@ var digestTmpl = template.Must(template.New("digest").Parse(`<!doctype html>
 
   <tr><td style="padding:22px 32px 30px 32px;border-top:1px solid #f0f0f4;">
     <p style="margin:0 0 6px 0;font-size:12px;color:{{.Faint}};line-height:1.5;">{{.Tagline}}</p>
-    <p style="margin:0;font-size:11px;color:#b4b4c6;line-height:1.6;">You're getting this weekly.{{if .D.PrefsURL}} <a href="{{.D.PrefsURL}}" style="color:{{.Faint}};">Change frequency</a>{{end}}{{if .D.UnsubURL}} · <a href="{{.D.UnsubURL}}" style="color:{{.Faint}};">Unsubscribe</a>{{end}}</p>
+    <p style="margin:0;font-size:11px;color:#b4b4c6;line-height:1.6;">You're getting this weekly.{{if .D.PrefsURL}} <a href="{{.D.PrefsURL}}" style="color:{{.Faint}};">Email settings</a>{{end}}{{if .D.UnsubURL}} · <a href="{{.D.UnsubURL}}" style="color:{{.Faint}};">Unsubscribe</a>{{end}}</p>
   </td></tr>
 
 </table>
