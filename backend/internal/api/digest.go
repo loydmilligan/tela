@@ -528,20 +528,21 @@ func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.Dig
 			Reason string `json:"reason"`
 		}
 		_ = json.Unmarshal([]byte(disputesRaw), &disputes)
-		// Lead with the reason (the substance) — the CONFLICT badge already says
-		// what kind. Fall back to a plain count when there's no reason.
+		// Lead with the actual disagreement (the "X vs Y" reason) — that's what the
+		// reader wants to see. Note extra disputes; fall back to a count if the
+		// reason is missing.
 		detail := fmt.Sprintf("Contradicts %d other page%s in this space.", count, plural(count))
 		if len(disputes) > 0 && disputes[0].Reason != "" {
 			detail = cleanReason(disputes[0].Reason)
-			if count > 1 {
-				detail = fmt.Sprintf("Contradicts %d pages — %s", count, detail)
+			if len(disputes) > 1 {
+				detail += fmt.Sprintf(" (+%d more conflict%s)", len(disputes)-1, plural(len(disputes)-1))
 			}
 		}
 		out = append(out, mailer.DigestAttention{
 			Kind:   "CONFLICT",
 			Tone:   "warn",
 			Title:  title,
-			Detail: digestTruncate(detail, 110),
+			Detail: digestTruncate(detail, 170),
 			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
 		})
 	}
@@ -723,18 +724,14 @@ func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// cleanReason tidies an LLM-written dispute reason for a one-line card: collapse
-// whitespace and drop trailing file-path noise (e.g. "... location: target
-// src/main/java/…") that reads as clutter in a digest.
+// cleanReason tidies an LLM-written dispute reason for the card WITHOUT dropping
+// the substance — the "X vs Y" comparison IS the conflict, so keep it. Only strip
+// the "target" artifact the agreement prompt emits and collapse whitespace.
 func cleanReason(s string) string {
 	s = oneLine(s)
-	for _, m := range []string{" target src/", " target /", " src/main/", " src/", " (target "} {
-		if i := strings.Index(s, m); i > 0 {
-			s = s[:i]
-			break
-		}
-	}
-	return strings.TrimRight(s, " :;,-—")
+	s = strings.ReplaceAll(s, "target ", "") // "…location: target 8080 vs 8443" → "…location: 8080 vs 8443"
+	s = strings.ReplaceAll(s, "  ", " ")
+	return strings.TrimSpace(s)
 }
 
 func digestTruncate(s string, n int) string {
