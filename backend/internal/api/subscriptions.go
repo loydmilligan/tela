@@ -294,7 +294,7 @@ func (s *Server) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 
 // notificationEventTypes / notificationChannels define the matrix the prefs UI
 // renders. Adding an event type or channel here exposes it everywhere.
-var notificationEventTypes = []string{notifMention, notifPageUpdated, notifPageCreated, notifSpaceAdded, notifCommentReply}
+var notificationEventTypes = []string{notifMention, notifPageUpdated, notifPageCreated, notifSpaceAdded, notifCommentReply, notifAtlasRun}
 var notificationChannels = []string{channelInApp, channelEmail}
 
 type notificationPrefDTO struct {

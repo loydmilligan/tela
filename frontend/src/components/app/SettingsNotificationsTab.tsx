@@ -35,6 +35,11 @@ const EVENTS: { type: string; label: string; desc: string; adminOnly?: boolean }
     desc: 'When someone gives you access to a space.',
   },
   {
+    type: 'atlas_run',
+    label: 'Atlas runs',
+    desc: 'When an Atlas generation run you manage finishes or fails.',
+  },
+  {
     type: 'user_registered',
     label: 'New signups',
     desc: 'When a new account confirms its email on this instance.',

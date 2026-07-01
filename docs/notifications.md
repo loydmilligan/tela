@@ -72,6 +72,13 @@ emission policies on `notificationInput`:
   so an operator sees who's signing up. `subject_kind='user'`, the registrant is
   the actor; `DedupKey` makes it one-ever per (admin, new user). The Settings
   matrix row ("New signups") renders for admins only; non-admins never receive it.
+- **atlas_run** — when an Atlas generation run reaches a terminal state,
+  `notifyAtlasRunFinish` (`atlas_notify.go`) notifies the project's **managers**
+  (owner user, or the org's admins). `subject_kind='space'` pointing at the output
+  space (`subject_id=0` when none was materialized); `DedupKey` is one-ever per
+  (manager, run, terminal status). The row's copy is pre-rendered server-side into
+  `data.title`/`data.summary` (headline + coverage/stats or the failure message),
+  and the frontend deep-links to the project via `data.project_id`.
 - **Autowatch** — you auto-follow a page when you **create**, **edit**, or
   **comment** on it (Confluence-style), via `autoFollow` in the shared cores
   (`createPageCore` / `updatePageCore` / `createCommentCore`) so REST *and* MCP

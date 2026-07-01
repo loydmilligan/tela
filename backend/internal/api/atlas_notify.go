@@ -61,6 +61,7 @@ func (m *atlasManager) notifyAtlasRunFinish(ctx context.Context, rc *engine.RunC
 
 	data := map[string]any{
 		"status":       string(status),
+		"project_id":   projectID,
 		"project_name": projectName,
 		"source_name":  srcName,
 		"link":         fmt.Sprintf("/atlas/projects/%d", projectID),

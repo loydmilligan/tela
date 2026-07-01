@@ -42,6 +42,13 @@ function describe(n: NotificationItem): string {
           : actor
       return `${who} just signed up`
     }
+    case 'atlas_run': {
+      // The backend pre-renders a headline (title) + one-line detail (summary),
+      // e.g. "compass regenerated" / "13 pages, must-cover 100%, surface 97%".
+      const t = typeof n.data.title === 'string' ? n.data.title : 'Atlas run finished'
+      const summary = typeof n.data.summary === 'string' ? n.data.summary : ''
+      return summary ? `${t} — ${summary}` : t
+    }
     default:
       return `${actor} sent you a notification`
   }
@@ -132,6 +139,23 @@ function NotificationRow({ n, onOpen }: { n: NotificationItem; onOpen: () => voi
     </>
   )
 
+  // An atlas-run notification points at its project (valid even when the run
+  // failed and no output space was materialized); checked before the space
+  // branch since these rows carry subject_kind 'space'.
+  if (n.type === 'atlas_run' && typeof n.data.project_id === 'number') {
+    return (
+      <DropdownMenuItem asChild>
+        <Link
+          to="/atlas/projects/$projectId"
+          params={{ projectId: n.data.project_id }}
+          onClick={onOpen}
+          className={className}
+        >
+          {inner}
+        </Link>
+      </DropdownMenuItem>
+    )
+  }
   // Deep-link by subject: page → the page, space → the space; else home.
   if (n.subject_kind === 'page' && n.space_id != null) {
     return (
