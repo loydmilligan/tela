@@ -114,15 +114,15 @@ func setDigestLastSent(t *testing.T, d *sql.DB, userID int64, ts string) {
 	}
 }
 
-// The anchor must always be a Monday 08:00 UTC, at/before now, within the past
-// week — swept across two weeks so the Monday-before/after-08:00 boundary is hit.
+// The anchor must always be a Monday 05:00 UTC, at/before now, within the past
+// week — swept across two weeks so the Monday-before/after-05:00 boundary is hit.
 func TestDigestWeekAnchor(t *testing.T) {
 	start := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
 	for h := 0; h < 24*14; h++ {
 		now := start.Add(time.Duration(h) * time.Hour)
 		a := digestWeekAnchor(now)
-		if a.Weekday() != time.Monday || a.Hour() != 8 || a.Minute() != 0 {
-			t.Fatalf("now=%s → anchor=%s is not Monday 08:00", now, a)
+		if a.Weekday() != time.Monday || a.Hour() != 5 || a.Minute() != 0 {
+			t.Fatalf("now=%s → anchor=%s is not Monday 05:00", now, a)
 		}
 		if a.After(now) {
 			t.Fatalf("now=%s → anchor=%s is in the future", now, a)

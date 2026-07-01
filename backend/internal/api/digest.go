@@ -245,14 +245,14 @@ func digestEmpty(d mailer.DigestData) bool {
 // job across the whole deployment (every backend instance shares one Postgres).
 const digestJobLock int64 = 4088231755
 
-// Weekly send schedule: Monday 08:00 UTC. Constants (not env) so there's no
+// Weekly send schedule: Monday 05:00 UTC (08:00 in Turkey, UTC+3). Constants (not env) so there's no
 // config parsing to get wrong; change here to move the schedule.
 const (
 	digestSendWeekday = time.Monday
-	digestSendHour    = 8
+	digestSendHour    = 5
 )
 
-// digestWeekAnchor returns the most recent Monday 08:00 (UTC) at or before now —
+// digestWeekAnchor returns the most recent Monday 05:00 (UTC) at or before now —
 // the moment this week's batch is due. A user whose last send is on or after it
 // has already had this week's digest, so they're not due again until next
 // Monday. Constant across the whole week → each user is claimable at most once
@@ -289,7 +289,7 @@ func digestWeekAnchor(now time.Time) time.Time {
 func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err error) {
 	now := time.Now().UTC()
 	nowStr := now.Format(tsLayout)
-	// The fixed weekly send moment: the most recent Monday 08:00 UTC at/before
+	// The fixed weekly send moment: the most recent Monday 05:00 UTC (08:00 in Turkey, UTC+3) at/before
 	// now. A user is due when they haven't been sent since it. The anchor is
 	// constant all week, so each user can be claimed at most once per week — that
 	// (with the atomic claim + advisory lock) is what makes double-sends
@@ -385,7 +385,7 @@ func (s *Server) SendDueDigests(ctx context.Context, dryRun bool) (sent int, err
 }
 
 // digestLoop drives the send job on an HOURLY tick (SendDueDigests is a no-op
-// unless it's past this week's Monday-08:00 anchor and a user is still unsent).
+// unless it's past this week's Monday-05:00 anchor and a user is still unsent).
 // Hourly so Monday delivery lands within ~an hour of 08:00 rather than up to a
 // day late; it's cheap (one indexed query returns nothing when no one is due)
 // and fully idempotent. A short initial delay avoids a boot storm.
