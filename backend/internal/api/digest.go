@@ -48,22 +48,26 @@ func (s *Server) DigestPreview(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildDigest(ctx context.Context, u *auth.User, since time.Time) (mailer.DigestData, error) {
 	now := time.Now().UTC()
 	sinceStr := since.Format(tsLayout)
+	// base is this recipient's link origin: an org member on a custom domain
+	// lives entirely on that white-label host, so every link in their digest
+	// uses it; everyone else gets the canonical host.
+	base := s.userDigestBase(ctx, u.ID)
 	d := mailer.DigestData{
 		Greeting:  firstName(s.digestGreeting(ctx, u.ID), u.Username),
 		DateRange: dateRange(since, now),
-		AppURL:    canonicalBaseURL(),
+		AppURL:    base,
 	}
-	d.PrefsURL = strings.TrimRight(d.AppURL, "/") + "/settings?tab=notifications"
-	d.UnsubURL = s.digestUnsubURL(u.ID)
+	d.PrefsURL = base + "/settings?tab=notifications"
+	d.UnsubURL = s.digestUnsubURL(base, u.ID)
 
 	// For you — the personal, actionable lead: mentions, replies, and changes to
 	// pages you follow (straight from this user's notification feed).
-	d.ForYou = s.digestForYou(ctx, u.ID, sinceStr)
+	d.ForYou = s.digestForYou(ctx, u.ID, sinceStr, base)
 
 	// Notable this week — HUMAN-authored changes only. Bulk Atlas generation is
 	// not "activity" a person did, so it's excluded here and rolled into one line.
 	const updateLimit = 6
-	updates, total, err := s.digestUpdates(ctx, u.ID, sinceStr, now, updateLimit)
+	updates, total, err := s.digestUpdates(ctx, u.ID, sinceStr, now, updateLimit, base)
 	if err != nil {
 		return d, err
 	}
@@ -78,13 +82,13 @@ func (s *Server) buildDigest(ctx context.Context, u *auth.User, since time.Time)
 	//   2. open questions waiting on an answer,
 	//   3. stale docs that WON'T self-heal (manual-cadence Atlas projects only —
 	//      scheduled projects regenerate themselves, so flagging them is noise).
-	open, err := s.digestAttention(ctx, u.ID)
+	open, err := s.digestAttention(ctx, u.ID, base)
 	if err != nil {
 		return d, err
 	}
-	d.Attention = s.digestConflicts(ctx, u.ID)
+	d.Attention = s.digestConflicts(ctx, u.ID, base)
 	d.Attention = append(d.Attention, open...)
-	d.Attention = append(d.Attention, s.digestStale(ctx, u.ID)...)
+	d.Attention = append(d.Attention, s.digestStale(ctx, u.ID, base)...)
 	if len(d.Attention) > 4 {
 		d.Attention = d.Attention[:4]
 	}
@@ -144,9 +148,29 @@ func (s *Server) digestUnsubToken(userID int64) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (s *Server) digestUnsubURL(userID int64) string {
-	base := strings.TrimRight(canonicalBaseURL(), "/")
+func (s *Server) digestUnsubURL(base string, userID int64) string {
 	return fmt.Sprintf("%s/api/digest/unsubscribe?u=%d&t=%s", base, userID, s.digestUnsubToken(userID))
+}
+
+// userDigestBase is the link origin for a recipient's whole digest. A member of
+// an org that has an active custom domain lives on that white-label host (its
+// members reach login, private spaces, and editing there, regardless of a
+// space's own org), so their digest links point at it; everyone else gets the
+// canonical host. Earliest-created active hostname wins when an org (or the
+// user's several orgs) expose more than one — matching spaceOrgPrimaryHost.
+func (s *Server) userDigestBase(ctx context.Context, userID int64) string {
+	var host string
+	err := s.DB.QueryRowContext(ctx, `
+		SELECT h.hostname
+		  FROM org_members m
+		  JOIN org_hostnames h ON h.org_id = m.org_id AND h.status = 'active'
+		 WHERE m.user_id = $1
+		 ORDER BY h.created_at ASC, h.hostname ASC
+		 LIMIT 1`, userID).Scan(&host)
+	if err != nil {
+		return strings.TrimRight(canonicalBaseURL(), "/")
+	}
+	return "https://" + host
 }
 
 // DigestUnsubscribe handles GET /api/digest/unsubscribe?u=&t= — PUBLIC (on
@@ -432,7 +456,7 @@ func (s *Server) digestGreeting(ctx context.Context, userID int64) string {
 const humanUpdateFilter = ` AND COALESCE(p.props->>'generator','') <> 'atlas'` +
 	` AND p.title <> '' AND lower(p.title) <> 'untitled'`
 
-func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr string, now time.Time, limit int) ([]mailer.DigestUpdate, int, error) {
+func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr string, now time.Time, limit int, base string) ([]mailer.DigestUpdate, int, error) {
 	var total int
 	_ = s.DB.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pages p WHERE p.`+digestSpaceScope+
@@ -458,7 +482,6 @@ func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr strin
 		return nil, 0, err
 	}
 	defer rows.Close()
-	base := strings.TrimRight(canonicalBaseURL(), "/")
 	var out []mailer.DigestUpdate
 	for rows.Next() {
 		var id, spaceID int64
@@ -490,7 +513,7 @@ func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr strin
 // digestForYou is the personal lead — this user's notification feed for the
 // week (mentions, replies, and changes to pages they follow), rendered as ready
 // sentences. Best-effort.
-func (s *Server) digestForYou(ctx context.Context, userID int64, sinceStr string) []mailer.DigestForYou {
+func (s *Server) digestForYou(ctx context.Context, userID int64, sinceStr, base string) []mailer.DigestForYou {
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT n.type, n.subject_id, COALESCE(n.space_id, 0),
 		       COALESCE(n.data->>'page_title', ''), COALESCE(n.data->>'actor_username', ''),
@@ -503,7 +526,6 @@ func (s *Server) digestForYou(ctx context.Context, userID int64, sinceStr string
 		return nil
 	}
 	defer rows.Close()
-	base := strings.TrimRight(canonicalBaseURL(), "/")
 	var out []mailer.DigestForYou
 	for rows.Next() {
 		var ntype, pageTitle, actor, snippet string
@@ -591,7 +613,7 @@ func atlasSourceName(s string) string {
 	return s
 }
 
-func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.DigestAttention, error) {
+func (s *Server) digestAttention(ctx context.Context, userID int64, base string) ([]mailer.DigestAttention, error) {
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT c.body, p.id, p.space_id, p.title, sp.name,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, '')
@@ -607,7 +629,6 @@ func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.Di
 		return nil, err
 	}
 	defer rows.Close()
-	base := strings.TrimRight(canonicalBaseURL(), "/")
 	var out []mailer.DigestAttention
 	for rows.Next() {
 		var body, title, spaceName, actor string
@@ -644,7 +665,7 @@ func cleanReason(s string) string {
 // merely share a section title, e.g. each documenting its own Main.java) are
 // false positives and excluded. The card links BOTH pages and shows the
 // engine's reason (its purpose-written "subject: X vs Y"). Best-effort.
-func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.DigestAttention {
+func (s *Server) digestConflicts(ctx context.Context, userID int64, base string) []mailer.DigestAttention {
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT DISTINCT ON (p.id) p.id, p.space_id, p.title, e->>'reason',
 		       po.id, po.space_id, COALESCE(po.title, ''),
@@ -664,7 +685,6 @@ func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.Dig
 		return nil
 	}
 	defer rows.Close()
-	base := strings.TrimRight(canonicalBaseURL(), "/")
 	var out []mailer.DigestAttention
 	for rows.Next() {
 		var pageID, spaceID, otherID, otherSpace int64
@@ -697,7 +717,7 @@ func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.Dig
 // auto_update OFF, which is exactly the flag the regen scheduler gates on
 // (SELECT … WHERE auto_update = 1). Auto-update projects regenerate themselves,
 // so their drift self-heals and needs nothing from a human. Best-effort.
-func (s *Server) digestStale(ctx context.Context, userID int64) []mailer.DigestAttention {
+func (s *Server) digestStale(ctx context.Context, userID int64, base string) []mailer.DigestAttention {
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT p.id, p.space_id, p.title, sp.name, COALESCE(par.title, '')
 		  FROM atlas_page_map m
@@ -715,7 +735,6 @@ func (s *Server) digestStale(ctx context.Context, userID int64) []mailer.DigestA
 		return nil
 	}
 	defer rows.Close()
-	base := strings.TrimRight(canonicalBaseURL(), "/")
 	var out []mailer.DigestAttention
 	for rows.Next() {
 		var pageID, spaceID int64

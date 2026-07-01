@@ -114,6 +114,66 @@ func setDigestLastSent(t *testing.T, d *sql.DB, userID int64, ts string) {
 	}
 }
 
+// A recipient's link base is their org's active custom domain when they have
+// one, else the canonical host; a pending (unverified) domain never counts, and
+// the earliest-created active hostname wins a tie.
+func TestUserDigestBase(t *testing.T) {
+	_, d, srv := newWiredServerOnDiskWithSrv(t)
+	ctx := context.Background()
+
+	mkOrg := func(name, slug string) int64 {
+		var id int64
+		if err := d.QueryRow(`INSERT INTO orgs (name, slug) VALUES ($1,$2) RETURNING id`, name, slug).Scan(&id); err != nil {
+			t.Fatalf("seed org: %v", err)
+		}
+		return id
+	}
+	join := func(userID, orgID int64) {
+		if _, err := d.Exec(`INSERT INTO org_members (org_id, user_id, org_role) VALUES ($1,$2,'member')`, orgID, userID); err != nil {
+			t.Fatalf("join org: %v", err)
+		}
+	}
+	host := func(orgID int64, hostname, status, createdAt string) {
+		if _, err := d.Exec(
+			`INSERT INTO org_hostnames (hostname, org_id, status, verify_token, created_at) VALUES ($1,$2,$3,'tok',$4)`,
+			hostname, orgID, status, createdAt); err != nil {
+			t.Fatalf("seed hostname: %v", err)
+		}
+	}
+
+	// No org → canonical host (empty in tests, TELA_PUBLIC_BASE_URL unset).
+	loner := seedUser(t, d, "loner", "lonerpw12", false)
+	if got := srv.userDigestBase(ctx, loner); got != canonicalBaseURL() {
+		t.Fatalf("no-org base = %q, want canonical %q", got, canonicalBaseURL())
+	}
+
+	// Org with only a PENDING domain → still canonical (a pending host can't
+	// serve the app, so it must not scope links).
+	pend := seedUser(t, d, "pend", "pendpw123", false)
+	po := mkOrg("Pending Org", "pending-org")
+	join(pend, po)
+	host(po, "pending.example.com", "pending", "2026-01-01 00:00:00")
+	if got := srv.userDigestBase(ctx, pend); got != canonicalBaseURL() {
+		t.Fatalf("pending-domain base = %q, want canonical %q", got, canonicalBaseURL())
+	}
+
+	// Org with an ACTIVE domain → that white-label host.
+	member := seedUser(t, d, "member", "memberpw1", false)
+	ao := mkOrg("Active Org", "active-org")
+	join(member, ao)
+	host(ao, "wiki.acme.test", "active", "2026-02-01 00:00:00")
+	if got := srv.userDigestBase(ctx, member); got != "https://wiki.acme.test" {
+		t.Fatalf("active-domain base = %q, want https://wiki.acme.test", got)
+	}
+
+	// A second, later active hostname on the same org must not win: earliest
+	// created is the canonical white-label host.
+	host(ao, "aaa.acme.test", "active", "2026-03-01 00:00:00")
+	if got := srv.userDigestBase(ctx, member); got != "https://wiki.acme.test" {
+		t.Fatalf("multi-domain base = %q, want earliest https://wiki.acme.test", got)
+	}
+}
+
 // The anchor must always be a Monday 05:00 UTC, at/before now, within the past
 // week — swept across two weeks so the Monday-before/after-05:00 boundary is hit.
 func TestDigestWeekAnchor(t *testing.T) {
