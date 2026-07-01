@@ -6,35 +6,32 @@ import (
 	"strings"
 )
 
-// Digest is tela's periodic (weekly) recap email — "here's what moved across the
-// spaces you can see, and what needs your eyes." It's a richer layout than the
-// shared verify/reset/notification template (stat tiles + sections + badges), so
-// it carries its own template, reusing only the brand palette + white-label
-// Brand. Data is assembled by the API layer (internal/api/digest.go) from
-// signals tela already records — events, comments, page revisions, Atlas
-// staleness — and passed in as DigestData; this file only renders.
+// Digest is tela's weekly recap. It answers one question — "is there anything I
+// need to read or do?" — so it leads with what's personal + actionable (For
+// you), then a curated slice of notable HUMAN activity (bulk Atlas generation is
+// collapsed to one line, not counted as authoring), then quiet housekeeping.
+// Data is assembled by internal/api/digest.go; this file only renders.
 
-// DigestStats are the headline counts for the period.
-type DigestStats struct {
-	Updated    int
-	New        int
-	Comments   int
-	NewMembers int
+// DigestForYou is one personal item — a mention, a reply, or a followed page
+// that changed. Text is the ready-made sentence; Snippet is optional context.
+type DigestForYou struct {
+	Text    string
+	Snippet string
+	URL     string
 }
 
-// DigestUpdate is one "new & updated" row. Badge is "" | "APPROVED" | "ATLAS".
+// DigestUpdate is one notable (human-authored) page in "this week".
 type DigestUpdate struct {
 	Title     string
 	SpaceName string
-	Actor     string // "Maya edited" / "auto-refreshed" / "Deniz created"
-	When      string // "2 days ago"
-	Summary   string // one-line change summary (optional)
+	Actor     string
+	When      string
+	Summary   string
 	URL       string
-	Badge     string
 }
 
-// DigestAttention is one "needs your eyes" row. Kind is a short pill label, e.g.
-// "STALE 6w" or "OPEN Q"; Tone is "warn" (amber) or "info" (indigo).
+// DigestAttention is one housekeeping item — an open question (info) or a stale
+// doc (warn). Kind is the pill label; Tone is "info" or "warn".
 type DigestAttention struct {
 	Kind   string
 	Tone   string
@@ -43,52 +40,37 @@ type DigestAttention struct {
 	URL    string
 }
 
-// DigestData is the full rendering model for one recipient's digest.
+// DigestData is the full model for one recipient.
 type DigestData struct {
-	Greeting   string // first name / username, "" → no name
-	DateRange  string // "Jun 24 – Jun 30, 2026"
-	SpaceCount int
-	Gist       string // AI one-paragraph summary (optional; "" hides the callout)
-	Stats      DigestStats
-	Updates    []DigestUpdate
-	MoreCount  int // "+N more updates" (0 hides)
-	Attention  []DigestAttention
-	AppURL     string // base app URL — CTA + logo + link origin
-	PrefsURL   string // notification preferences
-	UnsubURL   string // one-click unsubscribe
-	Brand      Brand  // per-org white-label (zero → tela)
+	Greeting  string
+	DateRange string
+	Gist      string          // one-line summary of what MATTERS (not volume)
+	ForYou    []DigestForYou  // personal + actionable — the lead
+	Updates   []DigestUpdate  // notable human-authored changes
+	MoreCount int             // "+N more" human updates
+	AtlasLine string          // one-line rollup of bulk Atlas generation ("" hides)
+	Attention []DigestAttention // housekeeping: open questions, then stale docs
+	AppURL    string
+	PrefsURL  string
+	UnsubURL  string
+	Brand     Brand
 }
 
-// digestView is the template model — DigestData plus resolved brand chrome.
 type digestView struct {
-	D         DigestData
-	BrandName string
-	LogoURL   string // absolute logo (org logo or tela icon); "" → wordmark only
-	Tagline   string
-	Powered   bool
-	// resolved palette (accent may be white-labeled)
+	D                                                   DigestData
+	BrandName, LogoURL, Tagline                         string
+	Powered                                             bool
 	Indigo, Text, Muted, Faint, Panel, Rule, Card, Pill string
 }
 
 // Digest renders the weekly digest for one recipient.
 func Digest(to, subject string, d DigestData) Message {
 	v := digestView{
-		D:      d,
-		Indigo: clrIndigo,
-		Text:   clrText,
-		Muted:  clrMuted,
-		Faint:  clrFaint,
-		Panel:  clrPanel,
-		Rule:   clrRule,
-		Card:   clrCard,
-		Pill:   clrPill,
+		D: d, Indigo: clrIndigo, Text: clrText, Muted: clrMuted, Faint: clrFaint,
+		Panel: clrPanel, Rule: clrRule, Card: clrCard, Pill: clrPill,
 	}
-	// White-label: org name + accent + logo, mirroring emailView.applyBrand.
-	name := strings.TrimSpace(d.Brand.Name)
-	if name != "" && name != "tela" {
-		v.BrandName = name
-		v.LogoURL = d.Brand.LogoURL
-		v.Powered = true
+	if name := strings.TrimSpace(d.Brand.Name); name != "" && name != "tela" {
+		v.BrandName, v.LogoURL, v.Powered = name, d.Brand.LogoURL, true
 		if d.Brand.Accent != "" {
 			v.Indigo = d.Brand.Accent
 		}
@@ -114,31 +96,38 @@ func renderDigestText(d DigestData) string {
 	if d.Greeting != "" {
 		b.WriteString("Hi " + d.Greeting + ",\n\n")
 	}
-	b.WriteString("Your week (" + d.DateRange + ")\n\n")
+	b.WriteString("Your week — " + d.DateRange + "\n\n")
 	if d.Gist != "" {
 		b.WriteString(d.Gist + "\n\n")
 	}
-	b.WriteString("This week: ")
-	b.WriteString(itoa(d.Stats.Updated) + " updated, " + itoa(d.Stats.New) + " new, " +
-		itoa(d.Stats.Comments) + " comments, " + itoa(d.Stats.NewMembers) + " new members.\n\n")
+	if len(d.ForYou) > 0 {
+		b.WriteString("FOR YOU\n")
+		for _, f := range d.ForYou {
+			b.WriteString("- " + f.Text + "\n")
+			if f.URL != "" {
+				b.WriteString("  " + f.URL + "\n")
+			}
+		}
+		b.WriteString("\n")
+	}
 	if len(d.Updates) > 0 {
-		b.WriteString("New & updated:\n")
+		b.WriteString("NOTABLE THIS WEEK\n")
 		for _, u := range d.Updates {
 			b.WriteString("- " + u.Title + " (" + u.SpaceName + " · " + u.Actor + " · " + u.When + ")\n")
 			if u.Summary != "" {
 				b.WriteString("  " + u.Summary + "\n")
 			}
-			if u.URL != "" {
-				b.WriteString("  " + u.URL + "\n")
-			}
 		}
 		if d.MoreCount > 0 {
 			b.WriteString("...and " + itoa(d.MoreCount) + " more.\n")
 		}
+		if d.AtlasLine != "" {
+			b.WriteString(d.AtlasLine + "\n")
+		}
 		b.WriteString("\n")
 	}
 	if len(d.Attention) > 0 {
-		b.WriteString("Needs your eyes:\n")
+		b.WriteString("NEEDS ATTENTION\n")
 		for _, a := range d.Attention {
 			b.WriteString("- [" + a.Kind + "] " + a.Title + "\n")
 			if a.Detail != "" {
@@ -147,11 +136,10 @@ func renderDigestText(d DigestData) string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("Catch up: " + d.AppURL + "\n")
+	b.WriteString("Open tela: " + d.AppURL + "\n")
 	return b.String()
 }
 
-// itoa avoids pulling strconv into the template path for one use.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
@@ -187,54 +175,49 @@ var digestTmpl = template.Must(template.New("digest").Parse(`<!doctype html>
       <td align="left" style="vertical-align:middle;">
         {{if .LogoURL}}<img src="{{.LogoURL}}" width="26" height="26" alt="" style="vertical-align:middle;border-radius:7px;display:inline-block;"><span style="font-size:17px;font-weight:600;color:{{.Text}};vertical-align:middle;margin-left:9px;letter-spacing:-.01em;">{{.BrandName}}</span>{{else}}<span style="font-size:17px;font-weight:600;color:{{.Text}};letter-spacing:-.01em;">{{.BrandName}}</span>{{end}}
       </td>
-      <td align="right" style="vertical-align:middle;font-size:12px;color:{{.Faint}};">{{.D.DateRange}}</td>
+      <td align="right" style="vertical-align:middle;font-size:12px;color:{{.Faint}};">Your week · {{.D.DateRange}}</td>
     </tr></table>
   </td></tr>
 
   <tr><td style="padding:14px 32px 0 32px;">
-    <span style="display:inline-block;background:#eef0ff;color:{{.Indigo}};font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:4px 10px;border-radius:20px;">Weekly digest</span>
-    <h1 style="margin:14px 0 6px 0;font-size:24px;line-height:1.25;font-weight:700;color:{{.Text}};letter-spacing:-.02em;">Your week{{if .Powered}} in {{.BrandName}}{{end}}</h1>
-    <p style="margin:0;font-size:15px;line-height:1.5;color:{{.Muted}};">{{if .D.Greeting}}Hi {{.D.Greeting}} — {{end}}here's what moved across the {{.D.SpaceCount}} space{{if ne .D.SpaceCount 1}}s{{end}} you can see this week.</p>
+    <h1 style="margin:0 0 6px 0;font-size:22px;line-height:1.25;font-weight:700;color:{{.Text}};letter-spacing:-.02em;">{{if .D.Greeting}}Hi {{.D.Greeting}},{{else}}Your week{{end}}</h1>
+    {{if .D.Gist}}<p style="margin:0;font-size:15px;line-height:1.5;color:{{.Muted}};">{{.D.Gist}}</p>{{end}}
   </td></tr>
 
-  {{if .D.Gist}}
-  <tr><td style="padding:20px 32px 0 32px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6ff;border:1px solid #e0e2ff;border-left:3px solid {{.Indigo}};border-radius:8px;"><tr><td style="padding:14px 16px;">
-      <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:{{.Indigo}};margin-bottom:6px;">&#10022; The gist</div>
-      <p style="margin:0;font-size:14px;line-height:1.55;color:#33334a;">{{.D.Gist}}</p>
+  {{if .D.ForYou}}
+  <tr><td style="padding:24px 32px 0 32px;">
+    <div style="font-size:13px;font-weight:700;color:{{.Indigo}};text-transform:uppercase;letter-spacing:.05em;padding-bottom:6px;">For you</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6ff;border:1px solid #e2e4ff;border-radius:10px;"><tr><td style="padding:6px 16px;">
+      {{range $i, $f := .D.ForYou}}
+      <div style="padding:10px 0;{{if $i}}border-top:1px solid #e6e8ff;{{end}}">
+        <a href="{{$f.URL}}" style="font-size:14px;color:{{$.Text}};text-decoration:none;line-height:1.4;">{{$f.Text}}</a>
+        {{if $f.Snippet}}<div style="font-size:12.5px;color:{{$.Muted}};margin-top:2px;line-height:1.4;">&ldquo;{{$f.Snippet}}&rdquo;</div>{{end}}
+      </div>
+      {{end}}
     </td></tr></table>
   </td></tr>
   {{end}}
 
-  <tr><td style="padding:22px 32px 4px 32px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td width="25%" align="center" style="padding:10px 4px;background:{{.Panel}};border:1px solid #eee;border-radius:8px 0 0 8px;"><div style="font-size:22px;font-weight:700;color:{{.Text}};">{{.D.Stats.Updated}}</div><div style="font-size:11px;color:{{.Faint}};">updated</div></td>
-      <td width="25%" align="center" style="padding:10px 4px;background:{{.Panel}};border:1px solid #eee;border-left:0;"><div style="font-size:22px;font-weight:700;color:{{.Text}};">{{.D.Stats.New}}</div><div style="font-size:11px;color:{{.Faint}};">new pages</div></td>
-      <td width="25%" align="center" style="padding:10px 4px;background:{{.Panel}};border:1px solid #eee;border-left:0;"><div style="font-size:22px;font-weight:700;color:{{.Text}};">{{.D.Stats.Comments}}</div><div style="font-size:11px;color:{{.Faint}};">comments</div></td>
-      <td width="25%" align="center" style="padding:10px 4px;background:{{.Panel}};border:1px solid #eee;border-left:0;border-radius:0 8px 8px 0;"><div style="font-size:22px;font-weight:700;color:{{.Text}};">{{if gt .D.Stats.NewMembers 0}}+{{end}}{{.D.Stats.NewMembers}}</div><div style="font-size:11px;color:{{.Faint}};">new members</div></td>
-    </tr></table>
-  </td></tr>
-
   {{if .D.Updates}}
   <tr><td style="padding:26px 32px 0 32px;">
-    <div style="font-size:13px;font-weight:600;color:{{.Text}};text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #eee;padding-bottom:8px;">New &amp; updated</div>
+    <div style="font-size:13px;font-weight:600;color:{{.Text}};text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #eee;padding-bottom:8px;">Notable this week</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       {{range .D.Updates}}
       <tr><td style="padding:14px 0 12px 0;border-bottom:1px solid #f2f2f6;">
         <a href="{{.URL}}" style="font-size:15px;font-weight:600;color:{{$.Indigo}};text-decoration:none;">{{.Title}}</a>
-        {{if eq .Badge "APPROVED"}}<span style="display:inline-block;font-size:10px;font-weight:600;color:#0a8a55;background:#e7f7ee;padding:2px 7px;border-radius:20px;margin-left:8px;vertical-align:middle;">APPROVED</span>{{else if eq .Badge "ATLAS"}}<span style="display:inline-block;font-size:10px;font-weight:600;color:{{$.Indigo}};background:#eef0ff;padding:2px 7px;border-radius:20px;margin-left:8px;vertical-align:middle;">&#10022; ATLAS</span>{{end}}
         <div style="font-size:12.5px;color:{{$.Faint}};margin-top:3px;">{{.SpaceName}} · {{.Actor}} · {{.When}}</div>
         {{if .Summary}}<div style="font-size:13.5px;color:{{$.Muted}};margin-top:4px;line-height:1.5;">{{.Summary}}</div>{{end}}
       </td></tr>
       {{end}}
     </table>
-    {{if gt .D.MoreCount 0}}<a href="{{.D.AppURL}}" style="display:inline-block;margin-top:12px;font-size:13px;color:{{.Indigo}};text-decoration:none;">+ {{.D.MoreCount}} more updates &rarr;</a>{{end}}
+    {{if gt .D.MoreCount 0}}<a href="{{.D.AppURL}}" style="display:inline-block;margin-top:12px;font-size:13px;color:{{.Indigo}};text-decoration:none;">+ {{.D.MoreCount}} more human edits &rarr;</a>{{end}}
+    {{if .D.AtlasLine}}<div style="margin-top:12px;font-size:12.5px;color:{{.Faint}};background:{{.Panel}};border:1px solid #eee;border-radius:8px;padding:9px 12px;">&#10022; {{.D.AtlasLine}}</div>{{end}}
   </td></tr>
   {{end}}
 
   {{if .D.Attention}}
   <tr><td style="padding:26px 32px 0 32px;">
-    <div style="font-size:13px;font-weight:600;color:{{.Text}};text-transform:uppercase;letter-spacing:.05em;padding-bottom:4px;">Needs your eyes</div>
+    <div style="font-size:13px;font-weight:600;color:{{.Text}};text-transform:uppercase;letter-spacing:.05em;padding-bottom:4px;">Needs attention</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       {{range .D.Attention}}
       <tr><td style="padding:8px 0 0 0;">
@@ -258,7 +241,7 @@ var digestTmpl = template.Must(template.New("digest").Parse(`<!doctype html>
   {{end}}
 
   <tr><td align="center" style="padding:30px 32px 6px 32px;">
-    <a href="{{.D.AppURL}}" style="display:inline-block;background:{{.Indigo}};color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:8px;">Catch up in {{.BrandName}} &rarr;</a>
+    <a href="{{.D.AppURL}}" style="display:inline-block;background:{{.Indigo}};color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:8px;">Open {{.BrandName}} &rarr;</a>
   </td></tr>
 
   <tr><td style="padding:22px 32px 30px 32px;border-top:1px solid #f0f0f4;">

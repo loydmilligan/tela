@@ -56,29 +56,12 @@ func (s *Server) buildDigest(ctx context.Context, u *auth.User, since time.Time)
 	d.PrefsURL = strings.TrimRight(d.AppURL, "/") + "/settings?tab=notifications"
 	d.UnsubURL = s.digestUnsubURL(u.ID)
 
-	// Spaces the user can see.
-	_ = s.DB.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT space_id) FROM space_access WHERE user_id = $1`, u.ID).
-		Scan(&d.SpaceCount)
+	// For you — the personal, actionable lead: mentions, replies, and changes to
+	// pages you follow (straight from this user's notification feed).
+	d.ForYou = s.digestForYou(ctx, u.ID, sinceStr)
 
-	// Stats. "New" = created this week; "Updated" = touched this week but older;
-	// "Comments" = comments landed this week; "NewMembers" = access granted this
-	// week (best-effort — 0 if the column/rows aren't there).
-	scope := func(extra string) string {
-		return `SELECT COUNT(*) FROM pages WHERE ` + digestSpaceScope +
-			` AND deleted_at IS NULL AND ` + extra
-	}
-	_ = s.DB.QueryRowContext(ctx, scope(`created_at >= $2`), u.ID, sinceStr).Scan(&d.Stats.New)
-	_ = s.DB.QueryRowContext(ctx, scope(`updated_at >= $2 AND created_at < $2`), u.ID, sinceStr).Scan(&d.Stats.Updated)
-	_ = s.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM comments c JOIN pages p ON p.id = c.page_id
-		  WHERE p.`+digestSpaceScope+` AND c.deleted_at IS NULL AND c.created_at >= $2`,
-		u.ID, sinceStr).Scan(&d.Stats.Comments)
-	_ = s.DB.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT user_id) FROM space_access
-		  WHERE `+digestSpaceScope+` AND created_at >= $2`, u.ID, sinceStr).Scan(&d.Stats.NewMembers)
-
-	// New & updated pages (most-recent first).
+	// Notable this week — HUMAN-authored changes only. Bulk Atlas generation is
+	// not "activity" a person did, so it's excluded here and rolled into one line.
 	const updateLimit = 6
 	updates, total, err := s.digestUpdates(ctx, u.ID, sinceStr, now, updateLimit)
 	if err != nil {
@@ -88,17 +71,17 @@ func (s *Server) buildDigest(ctx context.Context, u *auth.User, since time.Time)
 	if total > len(updates) {
 		d.MoreCount = total - len(updates)
 	}
+	d.AtlasLine = s.digestAtlasLine(ctx, u.ID, sinceStr)
 
-	// Needs your eyes — contradictions first (a page disputed by another is the
-	// most urgent), then Atlas-stale pages, then unresolved comment threads.
-	// Each sub-query is best-effort; the section is capped to stay scannable.
-	d.Attention = s.digestConflicts(ctx, u.ID)
-	d.Attention = append(d.Attention, s.digestStale(ctx, u.ID)...)
+	// Needs attention — open questions first (someone's waiting on a human), then
+	// stale Atlas docs as FYI. No conflicts: the agreement engine can't tell a
+	// real contradiction from two repos sharing a section title, so its digest
+	// output was false-positive noise.
 	open, err := s.digestAttention(ctx, u.ID)
 	if err != nil {
 		return d, err
 	}
-	d.Attention = append(d.Attention, open...)
+	d.Attention = append(open, s.digestStale(ctx, u.ID)...)
 	if len(d.Attention) > 4 {
 		d.Attention = d.Attention[:4]
 	}
@@ -248,12 +231,11 @@ func digestSubject(d mailer.DigestData) string {
 	return "Your week in tela · " + d.DateRange
 }
 
-// digestEmpty is true when there's nothing worth mailing: no pages to list AND
-// nothing in "needs your eyes". A comments-only week (no listed updates) doesn't
-// send; a week with only a conflict/stale alert still does — that's worth
-// knowing even with zero page changes.
+// digestEmpty is true when there's nothing worth mailing: nothing personal, no
+// human pages to list, and nothing needing attention. A quiet week (or one that
+// was only bulk Atlas generation) doesn't send a hollow email.
 func digestEmpty(d mailer.DigestData) bool {
-	return len(d.Updates) == 0 && len(d.Attention) == 0
+	return len(d.ForYou) == 0 && len(d.Updates) == 0 && len(d.Attention) == 0
 }
 
 // digestJobLock is the fixed key for the advisory lock that serializes the send
@@ -399,18 +381,22 @@ func (s *Server) digestGreeting(ctx context.Context, userID int64) string {
 	return name
 }
 
+// humanUpdateFilter keeps "Notable this week" to real human authoring: no Atlas
+// auto-generation (rolled up separately) and no blank/"Untitled" pages.
+const humanUpdateFilter = ` AND COALESCE(p.props->>'generator','') <> 'atlas'` +
+	` AND p.title <> '' AND lower(p.title) <> 'untitled'`
+
 func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr string, now time.Time, limit int) ([]mailer.DigestUpdate, int, error) {
 	var total int
 	_ = s.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM pages WHERE `+digestSpaceScope+
-			` AND deleted_at IS NULL AND updated_at >= $2`, userID, sinceStr).Scan(&total)
+		`SELECT COUNT(*) FROM pages p WHERE p.`+digestSpaceScope+
+			` AND p.deleted_at IS NULL AND p.updated_at >= $2`+humanUpdateFilter, userID, sinceStr).Scan(&total)
 
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT p.id, p.space_id, p.title, s.name,
 		       p.updated_at, (p.created_at >= $2) AS is_new,
 		       COALESCE(p.props->>'summary', ''),
-		       COALESCE(NULLIF(u.display_name, ''), u.username, ''),
-		       COALESCE(p.props->>'generator', '')
+		       COALESCE(NULLIF(u.display_name, ''), u.username, '')
 		  FROM pages p
 		  JOIN spaces s ON s.id = p.space_id
 		  LEFT JOIN LATERAL (
@@ -419,7 +405,7 @@ func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr strin
 		  ) lr ON true
 		  LEFT JOIN users u ON u.id = lr.author_id
 		 WHERE p.`+digestSpaceScope+`
-		   AND p.deleted_at IS NULL AND p.updated_at >= $2
+		   AND p.deleted_at IS NULL AND p.updated_at >= $2`+humanUpdateFilter+`
 		 ORDER BY p.updated_at DESC
 		 LIMIT $3`, userID, sinceStr, limit)
 	if err != nil {
@@ -430,9 +416,9 @@ func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr strin
 	var out []mailer.DigestUpdate
 	for rows.Next() {
 		var id, spaceID int64
-		var title, spaceName, updatedAt, summary, actor, generator string
+		var title, spaceName, updatedAt, summary, actor string
 		var isNew bool
-		if err := rows.Scan(&id, &spaceID, &title, &spaceName, &updatedAt, &isNew, &summary, &actor, &generator); err != nil {
+		if err := rows.Scan(&id, &spaceID, &title, &spaceName, &updatedAt, &isNew, &summary, &actor); err != nil {
 			return nil, 0, err
 		}
 		verb := "edited"
@@ -440,10 +426,7 @@ func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr strin
 			verb = "created"
 		}
 		who := strings.ToUpper(verb[:1]) + verb[1:]
-		badge := ""
-		if generator == "atlas" {
-			who, badge = "auto-refreshed", "ATLAS" // Atlas wrote it, not a person
-		} else if actor != "" {
+		if actor != "" {
 			who = actor + " " + verb
 		}
 		out = append(out, mailer.DigestUpdate{
@@ -453,10 +436,83 @@ func (s *Server) digestUpdates(ctx context.Context, userID int64, sinceStr strin
 			When:      relTime(updatedAt, now),
 			Summary:   digestTruncate(summary, 140),
 			URL:       fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, id),
-			Badge:     badge,
 		})
 	}
 	return out, total, rows.Err()
+}
+
+// digestForYou is the personal lead — this user's notification feed for the
+// week (mentions, replies, and changes to pages they follow), rendered as ready
+// sentences. Best-effort.
+func (s *Server) digestForYou(ctx context.Context, userID int64, sinceStr string) []mailer.DigestForYou {
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT n.type, n.subject_id, COALESCE(n.space_id, 0),
+		       COALESCE(n.data->>'page_title', ''), COALESCE(n.data->>'actor_username', ''),
+		       COALESCE(n.data->>'snippet', '')
+		  FROM notifications n
+		 WHERE n.user_id = $1 AND n.created_at >= $2
+		 ORDER BY n.created_at DESC
+		 LIMIT 5`, userID, sinceStr)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	base := strings.TrimRight(canonicalBaseURL(), "/")
+	var out []mailer.DigestForYou
+	for rows.Next() {
+		var ntype, pageTitle, actor, snippet string
+		var subjectID, spaceID int64
+		if err := rows.Scan(&ntype, &subjectID, &spaceID, &pageTitle, &actor, &snippet); err != nil {
+			return out
+		}
+		if pageTitle == "" {
+			pageTitle = "a page"
+		}
+		who := actor
+		if who == "" {
+			who = "Someone"
+		}
+		var text string
+		showSnippet := false
+		switch ntype {
+		case "mention":
+			text, showSnippet = fmt.Sprintf("%s mentioned you in %s", who, pageTitle), true
+		case "comment_reply":
+			text, showSnippet = fmt.Sprintf("%s replied to you in %s", who, pageTitle), true
+		case "page_updated":
+			text = fmt.Sprintf("%s — a page you follow — was updated", pageTitle)
+		default:
+			continue
+		}
+		item := mailer.DigestForYou{Text: text, URL: base}
+		if spaceID > 0 && subjectID > 0 {
+			item.URL = fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, subjectID)
+		}
+		if showSnippet {
+			item.Snippet = digestTruncate(oneLine(snippet), 100)
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// digestAtlasLine rolls all this week's Atlas auto-generation into one honest
+// line ("" when there was none), so bulk output is acknowledged without being
+// mistaken for human activity.
+func (s *Server) digestAtlasLine(ctx context.Context, userID int64, sinceStr string) string {
+	var pages, sources int
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*), COUNT(DISTINCT parent_id) FROM pages p
+		  WHERE p.`+digestSpaceScope+` AND p.deleted_at IS NULL
+		    AND p.updated_at >= $2 AND p.props->>'generator' = 'atlas'`,
+		userID, sinceStr).Scan(&pages, &sources)
+	if err != nil || pages == 0 {
+		return ""
+	}
+	if sources <= 1 {
+		return fmt.Sprintf("Atlas refreshed %d page%s this week.", pages, plural(pages))
+	}
+	return fmt.Sprintf("Atlas refreshed %d pages across %d sources this week.", pages, sources)
 }
 
 func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.DigestAttention, error) {
@@ -496,59 +552,6 @@ func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.Di
 	return out, rows.Err()
 }
 
-// digestConflicts surfaces pages that another page contradicts (page_agreement
-// disputes) — tela's "discrepancies" signal. Best-effort: any error yields no
-// rows and never breaks the digest.
-func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.DigestAttention {
-	rows, err := s.DB.QueryContext(ctx, `
-		SELECT p.id, p.space_id, p.title, a.dispute, a.disputes
-		  FROM page_agreement a
-		  JOIN pages p ON p.id = a.page_id
-		 WHERE a.dispute > 0 AND a.last_error = '' AND p.deleted_at IS NULL
-		   AND p.`+digestSpaceScope+`
-		 ORDER BY a.dispute DESC
-		 LIMIT 2`, userID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	base := strings.TrimRight(canonicalBaseURL(), "/")
-	var out []mailer.DigestAttention
-	for rows.Next() {
-		var pageID, spaceID int64
-		var count int
-		var title, disputesRaw string
-		if err := rows.Scan(&pageID, &spaceID, &title, &count, &disputesRaw); err != nil {
-			return out
-		}
-		// disputes JSON: [{page_id,title,reason}] — lead with the first one's
-		// reason; note the total if there are more.
-		var disputes []struct {
-			Title  string `json:"title"`
-			Reason string `json:"reason"`
-		}
-		_ = json.Unmarshal([]byte(disputesRaw), &disputes)
-		// Lead with the actual disagreement (the "X vs Y" reason) — that's what the
-		// reader wants to see. Note extra disputes; fall back to a count if the
-		// reason is missing.
-		detail := fmt.Sprintf("Contradicts %d other page%s in this space.", count, plural(count))
-		if len(disputes) > 0 && disputes[0].Reason != "" {
-			detail = cleanReason(disputes[0].Reason)
-			if len(disputes) > 1 {
-				detail += fmt.Sprintf(" (+%d more conflict%s)", len(disputes)-1, plural(len(disputes)-1))
-			}
-		}
-		out = append(out, mailer.DigestAttention{
-			Kind:   "CONFLICT",
-			Tone:   "warn",
-			Title:  title,
-			Detail: digestTruncate(detail, 170),
-			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
-		})
-	}
-	return out
-}
-
 // digestStale surfaces Atlas-generated pages whose upstream has moved past the
 // last generated ref (a stale atlas_source). Best-effort: any error — e.g. an
 // instance with no Atlas tables — yields no rows and never breaks the digest.
@@ -585,26 +588,31 @@ func (s *Server) digestStale(ctx context.Context, userID int64) []mailer.DigestA
 	return out
 }
 
-const digestGistSystem = `You write the single-sentence summary at the top of a team wiki's weekly digest email. From the activity brief, say what actually happened this week — concrete and specific, naming the notable pages or topics. Plain language, no greeting, no "this week" filler, no markdown. One sentence, at most ~35 words.`
+const digestGistSystem = `You write the one-sentence opener of a team wiki's weekly digest email. From the brief, say what MATTERS to the reader this week — what's waiting on them, the notable pages or decisions, anything needing attention. IGNORE routine bulk / auto-generated content; never credit it to a person. Concrete and specific, plain language, no greeting, no raw counts, no markdown. One sentence, ~30 words max.`
 
-// digestGist produces the "gist" line — an LLM one-sentence summary when the LLM
-// is configured, else the deterministic fallback below. Any LLM error falls back
-// silently so the digest always has a gist.
+// digestGist produces the "gist" line from what actually matters (personal
+// items, notable human edits, attention) — an LLM sentence when configured, else
+// the deterministic fallback. Bulk Atlas output is passed only as background so
+// the model doesn't headline it.
 func (s *Server) digestGist(ctx context.Context, d mailer.DigestData) string {
 	fallback := digestGistFallback(d)
 	if s.llm == nil || !s.llm.Enabled() {
 		return fallback
 	}
-	if d.Stats.New == 0 && d.Stats.Updated == 0 && d.Stats.Comments == 0 && len(d.Attention) == 0 {
+	if len(d.ForYou) == 0 && len(d.Updates) == 0 && len(d.Attention) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Counts: %d new pages, %d updated, %d comments, %d new members.\n",
-		d.Stats.New, d.Stats.Updated, d.Stats.Comments, d.Stats.NewMembers)
+	if len(d.ForYou) > 0 {
+		b.WriteString("Waiting on the reader:\n")
+		for _, f := range d.ForYou {
+			b.WriteString("- " + f.Text + "\n")
+		}
+	}
 	if len(d.Updates) > 0 {
-		b.WriteString("Recent pages:\n")
+		b.WriteString("Notable human edits:\n")
 		for _, up := range d.Updates {
-			line := "- " + up.Title + " (" + up.SpaceName + ", " + up.Actor + ")"
+			line := "- " + up.Title
 			if up.Summary != "" {
 				line += ": " + up.Summary
 			}
@@ -617,6 +625,9 @@ func (s *Server) digestGist(ctx context.Context, d mailer.DigestData) string {
 			b.WriteString("- [" + a.Kind + "] " + a.Title + "\n")
 		}
 	}
+	if d.AtlasLine != "" {
+		b.WriteString("Background (do not headline): " + d.AtlasLine + "\n")
+	}
 	out, err := s.llm.Complete(llm.WithBackground(ctx), digestGistSystem, b.String())
 	if err != nil {
 		return fallback
@@ -627,32 +638,23 @@ func (s *Server) digestGist(ctx context.Context, d mailer.DigestData) string {
 	return fallback
 }
 
-// digestGistFallback is a deterministic one-liner used when the LLM is off. It
-// adds the "still waiting on a reply" nudge the stat tiles don't convey.
+// digestGistFallback is the deterministic opener when the LLM is off: lead with
+// what's personal, else summarize notable edits + attention. No bulk counts.
 func digestGistFallback(d mailer.DigestData) string {
-	if d.Stats.New == 0 && d.Stats.Updated == 0 && d.Stats.Comments == 0 {
-		return ""
+	if len(d.ForYou) > 0 {
+		return digestPlural(len(d.ForYou), "thing is waiting for you", "things are waiting for you") + " this week."
 	}
-	var b strings.Builder
 	parts := []string{}
-	if d.Stats.New > 0 {
-		parts = append(parts, digestPlural(d.Stats.New, "new page", "new pages"))
+	if n := len(d.Updates) + d.MoreCount; n > 0 {
+		parts = append(parts, digestPlural(n, "page changed", "pages changed"))
 	}
-	if d.Stats.Updated > 0 {
-		parts = append(parts, digestPlural(d.Stats.Updated, "update", "updates"))
+	if len(d.Attention) > 0 {
+		parts = append(parts, digestPlural(len(d.Attention), "item needs attention", "items need attention"))
 	}
 	if len(parts) == 0 {
-		parts = append(parts, digestPlural(d.Stats.Comments, "new comment", "new comments"))
+		return ""
 	}
-	b.WriteString(joinAnd(parts))
-	b.WriteString(" landed across your spaces this week")
-	if n := len(d.Attention); n > 0 {
-		b.WriteString(", and ")
-		b.WriteString(digestPlural(n, "comment thread is", "comment threads are"))
-		b.WriteString(" still waiting on a reply")
-	}
-	b.WriteString(".")
-	return b.String()
+	return joinAnd(parts) + " this week."
 }
 
 // --- small formatting helpers ---
@@ -722,16 +724,6 @@ func joinAnd(parts []string) string {
 func oneLine(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.Join(strings.Fields(s), " ")
-}
-
-// cleanReason tidies an LLM-written dispute reason for the card WITHOUT dropping
-// the substance — the "X vs Y" comparison IS the conflict, so keep it. Only strip
-// the "target" artifact the agreement prompt emits and collapse whitespace.
-func cleanReason(s string) string {
-	s = oneLine(s)
-	s = strings.ReplaceAll(s, "target ", "") // "…location: target 8080 vs 8443" → "…location: 8080 vs 8443"
-	s = strings.ReplaceAll(s, "  ", " ")
-	return strings.TrimSpace(s)
 }
 
 func digestTruncate(s string, n int) string {
