@@ -73,15 +73,18 @@ func (s *Server) buildDigest(ctx context.Context, u *auth.User, since time.Time)
 	}
 	d.AtlasLine = s.digestAtlasLine(ctx, u.ID, sinceStr)
 
-	// Needs attention — open questions first (someone's waiting on a human), then
-	// stale Atlas docs as FYI. No conflicts: the agreement engine can't tell a
-	// real contradiction from two repos sharing a section title, so its digest
-	// output was false-positive noise.
+	// Needs attention — only things a human must actually do:
+	//   1. same-repo doc contradictions (two pages in one source that disagree),
+	//   2. open questions waiting on an answer,
+	//   3. stale docs that WON'T self-heal (manual-cadence Atlas projects only —
+	//      scheduled projects regenerate themselves, so flagging them is noise).
 	open, err := s.digestAttention(ctx, u.ID)
 	if err != nil {
 		return d, err
 	}
-	d.Attention = append(open, s.digestStale(ctx, u.ID)...)
+	d.Attention = s.digestConflicts(ctx, u.ID)
+	d.Attention = append(d.Attention, open...)
+	d.Attention = append(d.Attention, s.digestStale(ctx, u.ID)...)
 	if len(d.Attention) > 4 {
 		d.Attention = d.Attention[:4]
 	}
@@ -552,16 +555,70 @@ func (s *Server) digestAttention(ctx context.Context, userID int64) ([]mailer.Di
 	return out, rows.Err()
 }
 
-// digestStale surfaces Atlas-generated pages whose upstream has moved past the
-// last generated ref (a stale atlas_source). Best-effort: any error — e.g. an
-// instance with no Atlas tables — yields no rows and never breaks the digest.
+// cleanReason strips the "target" artifact the agreement prompt emits while
+// keeping the substance — the "X vs Y" comparison IS the conflict.
+func cleanReason(s string) string {
+	s = oneLine(s)
+	s = strings.ReplaceAll(s, "target ", "")
+	return strings.TrimSpace(strings.ReplaceAll(s, "  ", " "))
+}
+
+// digestConflicts surfaces REAL doc contradictions — two pages that disagree,
+// scoped to the SAME source/repo (same parent). Cross-repo pairs (two repos that
+// merely share a section title, e.g. each documenting its own Main.java) are
+// excluded: those are false positives, not contradictions. Best-effort.
+func (s *Server) digestConflicts(ctx context.Context, userID int64) []mailer.DigestAttention {
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT DISTINCT ON (p.id) p.id, p.space_id, p.title, e->>'reason'
+		  FROM page_agreement a
+		  JOIN pages p ON p.id = a.page_id
+		  CROSS JOIN LATERAL jsonb_array_elements(a.disputes::jsonb) e
+		  JOIN pages po ON po.id = (e->>'page_id')::bigint
+		 WHERE a.dispute > 0 AND a.last_error = '' AND p.deleted_at IS NULL
+		   AND p.`+digestSpaceScope+`
+		   AND p.parent_id IS NOT DISTINCT FROM po.parent_id
+		 ORDER BY p.id
+		 LIMIT 2`, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	base := strings.TrimRight(canonicalBaseURL(), "/")
+	var out []mailer.DigestAttention
+	for rows.Next() {
+		var pageID, spaceID int64
+		var title, reason string
+		if err := rows.Scan(&pageID, &spaceID, &title, &reason); err != nil {
+			return out
+		}
+		detail := cleanReason(reason)
+		if detail == "" {
+			detail = "Contradicts another page in the same source."
+		}
+		out = append(out, mailer.DigestAttention{
+			Kind:   "CONFLICT",
+			Tone:   "warn",
+			Title:  title,
+			Detail: digestTruncate(detail, 150),
+			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
+		})
+	}
+	return out
+}
+
+// digestStale surfaces Atlas docs behind upstream — but ONLY for manual-cadence
+// projects (empty cadence = "off"). Scheduled projects (hourly/daily/…)
+// regenerate themselves, so their drift self-heals and needs nothing from a
+// human — flagging it would be noise. Best-effort.
 func (s *Server) digestStale(ctx context.Context, userID int64) []mailer.DigestAttention {
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT p.id, p.space_id, p.title
 		  FROM atlas_page_map m
 		  JOIN atlas_sources src ON src.id = m.source_id
+		  JOIN atlas_projects pr ON pr.id = src.project_id
 		  JOIN pages p ON p.id = m.page_id
 		 WHERE src.stale_since <> '' AND p.deleted_at IS NULL
+		   AND pr.cadence NOT IN ('hourly', 'daily', 'weekly', 'monthly')
 		   AND p.`+digestSpaceScope+`
 		 ORDER BY src.stale_since ASC
 		 LIMIT 2`, userID)
@@ -581,7 +638,7 @@ func (s *Server) digestStale(ctx context.Context, userID int64) []mailer.DigestA
 			Kind:   "STALE",
 			Tone:   "warn",
 			Title:  title,
-			Detail: "Atlas docs are behind upstream — likely out of date.",
+			Detail: "Its source moved on and this project doesn't auto-refresh — regenerate when you can.",
 			URL:    fmt.Sprintf("%s/spaces/%d/pages/%d", base, spaceID, pageID),
 		})
 	}
