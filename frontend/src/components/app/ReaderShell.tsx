@@ -191,6 +191,7 @@ export function ReaderShell({
   summary,
   body,
   updatedAt,
+  wikilinkMode,
   wikilinkResolveIndex,
   onNavigateWikilink,
   topbarLeading,
@@ -606,6 +607,8 @@ export function ReaderShell({
                 key={`reader-${pageId}`}
                 body={body}
                 pageId={pageId}
+                // App read view lets members vote; share/public are read-only.
+                canVote={wikilinkMode === 'edit'}
                 resolveWikilink={resolveWikilink}
                 // Reader wikilink hrefs use the `tela://page/N` scheme the
                 // shell's click + hover-preview already intercept (see below);

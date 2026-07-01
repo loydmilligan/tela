@@ -206,6 +206,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/comments/{id}", srv.PatchComment)
 	mux.HandleFunc("DELETE /api/comments/{id}", srv.DeleteComment)
 
+	mux.HandleFunc("POST /api/pages/{id}/polls/{pollId}/vote", srv.VotePoll)
+	mux.HandleFunc("POST /api/users/resolve", srv.ResolveUsers)
+
 	mux.HandleFunc("GET /api/pages/{id}/revisions", srv.ListPageRevisions)
 	mux.HandleFunc("GET /api/pages/{id}/revisions/{rev_id}", srv.GetPageRevision)
 

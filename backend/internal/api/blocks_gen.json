@@ -257,6 +257,25 @@
       "note": "Set month=YYYY-MM on the directive. Each bullet is `YYYY-MM-DD Title` inside that month. One month per block; all-day only."
     },
     {
+      "id": "poll",
+      "label": "Poll",
+      "hint": "Vote on options, see who voted",
+      "category": "Data",
+      "slash": true,
+      "agent": true,
+      "keywords": [
+        "poll",
+        "vote",
+        "survey",
+        "ballot",
+        "election",
+        "choice"
+      ],
+      "syntax": ":::poll{id=\"lunch\"}\n### Where for lunch?\n\n- Lisbon\n- Berlin\n- Barcelona\n:::",
+      "when": "Let readers vote on a set of options; results show counts, bars, and who voted for what.",
+      "note": "Options are top-level list items. Give the block a unique `id`. Votes are recorded in the body as nested `- @username` items under an option — voting happens in the read view (editors only), so you normally don't hand-write voters. `closed` on the directive freezes results."
+    },
+    {
       "id": "chart",
       "label": "Chart",
       "hint": "Bar / line / pie (interactive)",

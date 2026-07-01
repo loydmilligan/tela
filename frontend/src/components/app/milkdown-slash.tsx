@@ -28,6 +28,7 @@ import { insertKanban } from './milkdown-kanban'
 import { insertStatGrid } from './milkdown-stat-grid'
 import { insertTimeline } from './milkdown-timeline'
 import { insertCalendar } from './milkdown-calendar'
+import { insertPoll } from './milkdown-poll'
 import { insertPullquote } from './milkdown-pullquote'
 import { insertEmbed } from './milkdown-embed'
 import { openEmojiPicker } from './milkdown-emoji'
@@ -74,6 +75,7 @@ const RUN: Record<string, (ctx: Ctx) => void> = {
   'stat-grid': insertStatGrid,
   timeline: insertTimeline,
   calendar: insertCalendar,
+  poll: insertPoll,
   emoji: openEmojiPicker,
   date: (ctx) => {
     const view = ctx.get(editorViewCtx)

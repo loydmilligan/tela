@@ -39,6 +39,7 @@ export const KNOWN_DIRECTIVE_NAMES = new Set<string>([
   'file',
   'calendar',
   'timeline',
+  'poll',
 ])
 
 const DIRECTIVE_TYPES = new Set<string>([
