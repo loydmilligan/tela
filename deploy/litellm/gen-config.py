@@ -29,7 +29,10 @@ embed failover is out of scope here:
 
 Global:
     LITELLM_MASTER_KEY    required; tela presents it as its bearer.
-    TELA_AI_NUM_RETRIES   (default 1)  same-layer retries before the next layer
+    TELA_AI_NUM_RETRIES   (default 2)  same-layer retries for TRANSIENT errors
+                          (5xx / rate-limit / connection) before the next layer —
+                          keeps a one-off blip on the free L1 instead of spilling
+                          to a paid relief L2. TIMEOUTS are never retried (see below).
     TELA_AI_ALLOWED_FAILS (default 2)  failures before a layer is cooled down
     TELA_AI_COOLDOWN      (default 30) seconds a cooled-down layer sits out
     TELA_AI_TIMEOUT       (default 900) per-request timeout (seconds). Generous so
@@ -62,7 +65,7 @@ MASTER_KEY = env("LITELLM_MASTER_KEY")
 if not MASTER_KEY:
     raise SystemExit("LITELLM_MASTER_KEY is required")
 
-NUM_RETRIES = envint("TELA_AI_NUM_RETRIES", 1)
+NUM_RETRIES = envint("TELA_AI_NUM_RETRIES", 2)
 ALLOWED_FAILS = envint("TELA_AI_ALLOWED_FAILS", 2)
 COOLDOWN = envint("TELA_AI_COOLDOWN", 30)
 TIMEOUT = envint("TELA_AI_TIMEOUT", 900)
@@ -136,6 +139,12 @@ router_settings = {
     "timeout": TIMEOUT,
     "allowed_fails": ALLOWED_FAILS,
     "cooldown_time": COOLDOWN,
+    # Retry TRANSIENT upstream errors on L1 (via num_retries) so a one-off blip
+    # stays on the free local model instead of spilling to a paid relief L2 — but
+    # NEVER retry a TIMEOUT: a timed-out L1 is overloaded/hung, so a retry just
+    # burns another TIMEOUT (and usually times out again). Fail a timeout straight
+    # over to the fallback. Unset error types inherit num_retries.
+    "retry_policy": {"TimeoutErrorRetries": 0},
 }
 if fallbacks:
     router_settings["fallbacks"] = fallbacks
