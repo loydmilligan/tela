@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import 'katex/dist/katex.min.css'
 import './styles/index.css'
 import { subscribeToAuthRequired } from './lib/api'
-import { installGlobalErrorReporting } from './lib/client-errors'
+import { installGlobalErrorReporting, reloadOnceForStaleChunk } from './lib/client-errors'
 import { initTheme } from './lib/theme'
 import { authKeys } from './lib/queries/auth'
 import { queryClient } from './lib/queryClient'
@@ -19,18 +19,12 @@ installGlobalErrorReporting()
 
 // Stale-chunk recovery. After a frontend redeploy the hashed lazy-chunk
 // filenames change; a tab still running the old bundle 404s when it tries to
-// import a now-gone chunk (Vite fires `vite:preloadError`), which would
-// otherwise crash the route. Reload once to pick up the fresh index.html +
-// chunk hashes. A 10s sessionStorage guard prevents a reload loop if an asset
-// is genuinely missing rather than merely stale.
-window.addEventListener('vite:preloadError', () => {
-  const KEY = 'tela:chunk-reload-at'
-  const last = Number(sessionStorage.getItem(KEY) || 0)
-  if (Date.now() - last > 10_000) {
-    sessionStorage.setItem(KEY, String(Date.now()))
-    window.location.reload()
-  }
-})
+// import a now-gone chunk. Vite fires `vite:preloadError` when the dynamic
+// import() itself fails; the failed <link rel=modulepreload>/<script> 404s that
+// precede it are handled by the resource listener in client-errors.ts. Both
+// funnel to the same guarded one-shot reload so a stale tab picks up the fresh
+// build instead of crashing the route.
+window.addEventListener('vite:preloadError', () => reloadOnceForStaleChunk())
 
 // Mid-session 401 handler. api.ts fires `tela:auth-required` after a non-auth
 // endpoint comes back 401 (cookie expired, user deactivated, etc.). We clear

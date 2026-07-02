@@ -128,6 +128,42 @@ describe('installGlobalErrorReporting', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('suppresses a stale-chunk 404 and reloads once onto the fresh build', async () => {
+    const reload = vi.fn()
+    const store: Record<string, string> = {}
+    const m = await freshModule()
+    // The handlers read `window` at call time, so stub the extra surfaces
+    // (reload + sessionStorage) the recovery path needs after freshModule set
+    // its baseline window.
+    ;(globalThis as Record<string, unknown>).window = {
+      location: { href: 'https://tela.test/spaces/22/pages/326/x', reload },
+      sessionStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v
+        },
+      },
+      addEventListener: (type: string, handler: EventListener, capture?: boolean) =>
+        listeners.push({ type, handler, capture }),
+    }
+    m.installGlobalErrorReporting()
+    const capture = listeners.find((l) => l.type === 'error' && l.capture)!.handler
+
+    // A same-origin hashed build asset 404 — expected post-deploy churn.
+    capture({
+      target: { tagName: 'LINK', href: 'https://tela.test/assets/HomeView-DJuVUy5M.js' },
+    } as unknown as Event)
+    expect(fetchMock).not.toHaveBeenCalled() // not reported as an error
+    expect(reload).toHaveBeenCalledTimes(1) // recovered by reloading
+
+    // A second stale-chunk 404 in the same 10s window must NOT reload again
+    // (guard against a reload loop when a chunk is genuinely gone).
+    capture({
+      target: { tagName: 'LINK', href: 'https://tela.test/assets/compass-ByCIuQDY.js' },
+    } as unknown as Event)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
   it('reports an unhandled rejection', async () => {
     const m = await freshModule()
     m.installGlobalErrorReporting()

@@ -32,6 +32,40 @@ const SESSION_CAP = 25
 const seen = new Set<string>()
 let sent = 0
 
+// Stale-chunk recovery, shared with main.tsx's `vite:preloadError` handler.
+// After a frontend redeploy the content-hashed asset filenames rotate and the
+// old files are deleted server-side; a tab still running the old build 404s the
+// moment it asks for a now-gone chunk. Reload once to pick up the fresh
+// index.html + hashes. A 10s guard prevents a reload loop if a chunk is
+// genuinely missing (bad deploy) rather than merely stale — after one failed
+// reload we stop and let the error surface.
+const CHUNK_RELOAD_KEY = 'tela:chunk-reload-at'
+export function reloadOnceForStaleChunk(): void {
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0)
+    if (Date.now() - last > 10_000) {
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()))
+      window.location.reload()
+    }
+  } catch {
+    // sessionStorage/reload can throw (disabled storage, private mode); the
+    // recovery is best-effort and must never propagate into a caller.
+  }
+}
+
+// A same-origin hashed build asset (/assets/<name>-<hash>.js|css). A 404 on one
+// of these is expected churn right after a deploy (the old hash was deleted),
+// NOT a real error — so we recover from it instead of reporting it as noise.
+function isStaleChunkUrl(url: string): boolean {
+  try {
+    const here = new URL(window.location.href)
+    const u = new URL(url, here)
+    return u.origin === here.origin && /^\/assets\/.+\.(js|mjs|css)$/.test(u.pathname)
+  } catch {
+    return false
+  }
+}
+
 // Ambient context the page can set so a report knows which page the user was
 // on without the global handlers having to parse the router. Best-effort.
 let currentPageId: number | undefined
@@ -123,6 +157,14 @@ export function installGlobalErrorReporting(): void {
       const t = e.target as (HTMLElement & { src?: string; href?: string }) | null
       if (!t || !t.tagName) return
       const url = t.src || t.href || ''
+      // A stale hashed chunk 404 (old <script>/<link> after a redeploy) is
+      // expected, not a crash: don't report it (it would just be feed noise and
+      // scare an admin into thinking pages vanished), and recover by reloading
+      // once onto the fresh build so the user isn't stuck on a dead route.
+      if (isStaleChunkUrl(url)) {
+        reloadOnceForStaleChunk()
+        return
+      }
       reportClientError({
         kind: 'resource',
         message: `failed to load ${t.tagName.toLowerCase()}${url ? `: ${url}` : ''}`,
