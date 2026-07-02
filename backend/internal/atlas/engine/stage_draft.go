@@ -159,9 +159,13 @@ func draftReference(ctx context.Context, rc *RunContext, p *core.Page) (string, 
 		return "", err
 	}
 	clean, summary := extractSummary(sanitizePage(body))
-	if summary != "" {
-		p.Summary = summary
-	}
+	// A reference page's outline summary is only a generic placeholder ("Complete
+	// reference, anchored to the extracted surface"), so — unlike a narrative page,
+	// whose outline summary is a real plan line worth keeping — overwrite it
+	// unconditionally. If the agent emitted no marker, leaving it empty makes
+	// publish skip the lock so the auto-summarizer writes a real one from the body,
+	// rather than freezing the placeholder.
+	p.Summary = summary
 	return clean, nil
 }
 

@@ -12,17 +12,20 @@ import (
 )
 
 // acquireTimeout bounds the source-materialization stage (git clone / jira
-// fetch) so a wedged or unreachable source fails the run in minutes instead of
-// hanging until the 4h run watchdog. Generous by default to accommodate large
-// repos/projects on slow links; override with TELA_ATLAS_ACQUIRE_TIMEOUT (a Go
-// duration, e.g. "90m") for giant monorepos.
+// fetch) so a wedged or unreachable source fails the run instead of hanging
+// until the 4h run watchdog. The default is deliberately generous — it covers a
+// very large git clone or a Jira project with hundreds of thousands of issues,
+// so hosted/cloud projects work with no configuration — while still recovering a
+// true wedge ~4x faster than the whole-run watchdog. TELA_ATLAS_ACQUIRE_TIMEOUT
+// exists only as a self-hosted escape hatch for pathological sources; normal use
+// (cloud included) never needs it.
 func acquireTimeout() time.Duration {
 	if v := os.Getenv("TELA_ATLAS_ACQUIRE_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			return d
 		}
 	}
-	return 30 * time.Minute
+	return time.Hour
 }
 
 // acquireStage is the first real stage: it materializes the source into the run
