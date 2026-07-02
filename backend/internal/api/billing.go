@@ -243,11 +243,13 @@ func (s *Server) PolarWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := billing.VerifyWebhook(s.billing.WebhookSecret(), r.Header, body); err != nil {
 		slog.Warn("billing: webhook verification failed", "err", err)
+		polarWebhookErrors.WithLabelValues("signature").Inc()
 		writeError(w, http.StatusBadRequest, "invalid_signature", "webhook signature verification failed")
 		return
 	}
 	evt, err := billing.ParseEvent(body)
 	if err != nil {
+		polarWebhookErrors.WithLabelValues("parse").Inc()
 		writeError(w, http.StatusBadRequest, "bad_request", "could not parse event")
 		return
 	}
@@ -268,6 +270,7 @@ func (s *Server) PolarWebhook(w http.ResponseWriter, r *http.Request) {
 	// return 500 so Polar redelivers.
 	if err := s.reconcileBilling(ctx, evt); err != nil {
 		slog.Error("billing: reconcile failed", "type", evt.Type, "id", evt.Data.ID, "err", err)
+		polarWebhookErrors.WithLabelValues("reconcile").Inc()
 		writeError(w, http.StatusInternalServerError, "internal", "reconcile failed")
 		return
 	}

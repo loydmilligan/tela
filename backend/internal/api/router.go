@@ -366,6 +366,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// (admin_client_errors.go), plus per-issue recent occurrences.
 	mux.HandleFunc("GET /api/admin/client-errors", srv.ListClientErrorGroups)
 	mux.HandleFunc("GET /api/admin/client-errors/{fingerprint}", srv.ListClientErrorOccurrences)
+	// Prometheus http_sd feed of active custom domains so the monitoring stack
+	// probes every custom domain dynamically (uptime + cert) with no per-domain
+	// config (admin_blackbox_targets.go).
+	mux.HandleFunc("GET /api/admin/blackbox-targets", srv.BlackboxTargets)
 	mux.HandleFunc("GET /api/admin/usage", srv.AdminUsage)
 	// Instance-analytics dashboard (admin_stats.go): activity time-series, growth,
 	// leaderboards, AI + error pulse, knowledge health — aggregated from events.

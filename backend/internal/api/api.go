@@ -185,7 +185,7 @@ func New(db *sql.DB) *Server {
 		shareSecret:        resolveShareSecret(ctx, st),
 		shareLimiter:       newShareRateLimiter(),
 		auditWriter:        auth.NewAuditWriter(db),
-		Mailer:             mailer.FromEnv(),
+		Mailer:             meteredMailer{inner: mailer.FromEnv()},
 		authLimiter:        newAuthRateLimiter(authRateWindow, authRateLimit),
 		loginLimiter:       newAuthRateLimiter(loginRateWindow, loginRateLimit),
 		unfurlLimiter:      newAuthRateLimiter(unfurlRateWindow, unfurlRateLimit),

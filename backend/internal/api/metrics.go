@@ -53,6 +53,33 @@ var (
 		[]string{"kind"},
 	)
 
+	// emailSends counts transactional email send attempts by result (ok|error).
+	// Email is a SILENT-failure surface: a broken relay means verify / reset /
+	// invite / digest mail just vanishes with no error the user or an admin sees
+	// server-side — so this counter is the only alertable signal that delivery
+	// has stopped. Bumped by the meteredMailer wrapper around every Send.
+	emailSends = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tela_email_send_total",
+			Help: "Transactional email send attempts by result (ok|error).",
+		},
+		[]string{"result"},
+	)
+
+	// polarWebhookErrors counts Polar billing webhook deliveries that FAILED to
+	// process, by reason (signature|parse|reconcile). signature failures include
+	// internet noise (any POST to the public webhook path with a bad/absent
+	// signature), so the alert keys only on parse|reconcile — those happen AFTER
+	// the signature verifies, i.e. a genuinely-authenticated Polar event we then
+	// couldn't handle, which is a real billing bug worth paging on.
+	polarWebhookErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tela_polar_webhook_errors_total",
+			Help: "Polar webhook deliveries that failed to process, by reason (signature|parse|reconcile).",
+		},
+		[]string{"reason"},
+	)
+
 	// atlasKills counts Atlas runs killed by the stuck-run watchdog (running for
 	// more than atlasRunTimeout = 4h). Any increment is a signal that a run hung
 	// badly enough to hit the watchdog; a spike means something is systematically
@@ -126,6 +153,8 @@ func init() {
 		httpRequests,
 		httpDuration,
 		clientErrors,
+		emailSends,
+		polarWebhookErrors,
 		aiTokens,
 		aiForegroundSpills,
 		aiUp,
