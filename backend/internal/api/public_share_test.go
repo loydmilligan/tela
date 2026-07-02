@@ -18,8 +18,8 @@ func TestPublicShare_FullFlow(t *testing.T) {
 	ts, d := newWiredServer(t)
 	admin := seedUser(t, d, "admin", "adminpw12", true)
 
-	// A PUBLIC space + page drives the bot OG-card assertions: the /p/{id} card
-	// now renders only for a public space.
+	// A PUBLIC space + page drives the bot OG-card assertions (and the
+	// human-redirect-to-public-reader branch).
 	pubSpace := seedPublicSpace(t, d, "Engineering", "engineering", admin)
 	var pageID int64
 	err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
@@ -29,7 +29,8 @@ func TestPublicShare_FullFlow(t *testing.T) {
 	}
 
 	// A PRIVATE space + page drives the human-redirect-to-in-app branch and the
-	// bot-must-404 privacy gate (a crawler must not learn a private page's title).
+	// bot title-only card (an always-on permalink card that must carry the title
+	// but never the private body).
 	privSpace := seedSpace(t, d, "Internal", "internal", admin)
 	var privPageID int64
 	if err := d.QueryRow(`INSERT INTO pages (space_id, parent_id, title, body, position)
@@ -123,10 +124,18 @@ func TestPublicShare_FullFlow(t *testing.T) {
 		t.Fatalf("Chrome UA (private) Location=%q want %q", loc, wantLoc)
 	}
 
-	// 5c. Bot UA on a PRIVATE page → 404: a crawler must not learn the title of a
-	//     page in a private space (mirrors the og_space.go gate).
-	if respPriv, _ := get("Slackbot-LinkExpanding 1.0", fmt.Sprintf("/p/%d", privPageID)); respPriv.StatusCode != http.StatusNotFound {
-		t.Fatalf("bot on private page status=%d want 404", respPriv.StatusCode)
+	// 5c. Bot UA on a PRIVATE page → 200 OG card, TITLE-ONLY. /p/{id} is an
+	//     always-on permalink card for every page; the envelope must carry the
+	//     title but never the private body (docs/visibility-model.md).
+	respPriv, bodyPriv := get("Slackbot-LinkExpanding 1.0", fmt.Sprintf("/p/%d", privPageID))
+	if respPriv.StatusCode != http.StatusOK {
+		t.Fatalf("bot on private page status=%d want 200", respPriv.StatusCode)
+	}
+	if !strings.Contains(bodyPriv, `<meta property="og:title"`) {
+		t.Fatalf("private page OG missing og:title: %s", bodyPriv)
+	}
+	if strings.Contains(bodyPriv, "classified") {
+		t.Fatalf("private page body leaked into OG envelope: %s", bodyPriv)
 	}
 
 	// 6. Missing UA → 302 (treated as human; no UA, no allowlist match).

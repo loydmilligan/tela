@@ -110,9 +110,6 @@ capture is now one click, not "create space → set membership → create page."
 
 ## Deferred (explicit, not forgotten)
 
-- **`/p/{id}` leak** — narrow the always-on permalink to **title-only** OG (drop the body
-  excerpt / image for non-shared pages), or fold it into a real Published state. Agreed
-  to handle after this lands; not a blocker.
 - **Published state** (🌐 clean indexed URL, no token).
 - **Personal-space UI polish** — label/pin the personal space in the spaces list
   ("just you"); the space itself is provisioned, this is only affordance.
@@ -124,3 +121,15 @@ capture is now one click, not "create space → set membership → create page."
 2. **Audit view — its own route/screen.** A dedicated "Shared" page across spaces.
 3. **Sidebar markers — on by default.** Add a toggle later only if the tree feels noisy.
 4. **Icons — Lucide, not emoji.** A clean, consistent set; no emoji in the UI.
+
+## Resolved (2026-07-02) — `/p/{id}` permalink card
+
+The always-on `/p/{id}` OG permalink is kept for **every page, public or private**,
+narrowed to **title-only** — the crawler envelope carries the page title + a
+generated OG image, never the body excerpt (`public_share.go`, `writeOGHTMLWithURL`).
+A deck's card is its **first-slide cover** (`/p/{id}/og.png` renders it for public
+*and* private decks; `og_image.go`). Rationale: a pasted link should unfurl anywhere
+it's shared, and a title + cover slide is intentionally shareable, while the body
+stays private. The **rich body excerpt** remains gated behind an explicit
+`/share/{token}` link. (This supersedes the interim hard-404 for private-space
+pages from `f921ccc`/`b0d6c65`, which had over-corrected the leak fix.)

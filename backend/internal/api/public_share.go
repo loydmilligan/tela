@@ -83,13 +83,12 @@ func (s *Server) HandlePublicShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Bot UAs must also respect space visibility — private-space pages must not
-	// leak their titles via OG cards. Mirrors the gate added to og_space.go.
-	if visibility != spaceVisibilityPublic {
-		writeNotFoundHTML(w)
-		return
-	}
-
+	// Title-only OG card for EVERY page, public or private. /p/{id} is an
+	// always-on permalink card by design (docs/visibility-model.md): the envelope
+	// carries only the title + a generated image, NEVER the body — so a private
+	// page's contents don't leak, while a pasted link still unfurls anywhere. A
+	// deck gets its first-slide cover via /p/{id}/og.png (public + private alike);
+	// the rich body excerpt stays gated behind an explicit /share/{token} link.
 	s.writeOGHTML(r, w, pageID, title, body, spaceName, ownerOrgID)
 }
 
