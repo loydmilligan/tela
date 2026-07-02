@@ -12,6 +12,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 
@@ -82,6 +83,12 @@ export function DeckOverview({ page }: { page: Page }) {
   const { download: downloadPptx } = useFileDownload(
     `/api/pages/${pageId}/deck.pptx`,
     { fallbackName: 'deck.pptx' },
+  )
+  // Raw Slidev source — the deck body verbatim, directly runnable with
+  // `slidev slides.md`. Instant (no headless render), so no toast dance.
+  const { download: downloadMd } = useFileDownload(
+    `/api/pages/${pageId}/deck.md`,
+    { fallbackName: 'deck.md' },
   )
   const exportDeck = (kind: 'PDF' | 'PPTX') => {
     const id = toast({ title: `Preparing ${kind}…`, loading: true, duration: 0 })
@@ -171,6 +178,10 @@ export function DeckOverview({ page }: { page: Page }) {
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => exportDeck('PPTX')}>
               Download PPTX
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => void downloadMd()}>
+              Slidev source (.md)
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

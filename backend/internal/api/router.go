@@ -198,6 +198,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/pages/{id}/deck/parse", srv.PostPageDeckParse)
 	mux.HandleFunc("GET /api/pages/{id}/deck.pdf", srv.ExportPageDeckPDF)
 	mux.HandleFunc("GET /api/pages/{id}/deck.pptx", srv.ExportPageDeckPPTX)
+	mux.HandleFunc("GET /api/pages/{id}/deck.md", srv.ExportPageDeckMarkdown)
 	mux.HandleFunc("GET /api/deck/d/{renderId}/{file}", srv.ServeDeckAsset)
 	mux.HandleFunc("GET /api/deck/themes", srv.ServeDeckThemes)
 

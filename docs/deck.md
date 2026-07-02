@@ -47,7 +47,18 @@ GET  /api/pages/{id}/deck/spa/{path...}   live SPA (Present) — proxies sidecar
 GET  /api/pages/{id}/deck/outline         structure only (editor outline) — /parse
 POST /api/pages/{id}/deck/parse           parse a draft (editor outline)
 GET  /api/pages/{id}/deck.pdf | .pptx     export (Chromium)
+GET  /api/pages/{id}/deck.md              raw Slidev source (verbatim body)
 ```
+
+`deck.md` (`ExportPageDeckMarkdown`) hands back the deck **body verbatim** — the
+real Slidev source, headmatter and all, asset URLs absolutized so images resolve
+off-origin — for running in a standalone Slidev (the reader supplies the
+`slidev-theme-tahta` look itself). It's deliberately *not* the generic `/md`
+export, which prepends a tela frontmatter block (id/title/link/…) for round-trip
+and would give a deck two headmatter blocks. Bundling a runnable project
+(package.json pinning slidev + tahta, theme baked into headmatter) is a
+considered non-goal — it would fork tahta's themeConfig schema into tela; if
+built, it belongs behind a tahta sidecar endpoint so the schema stays in tahta.
 
 The **generic page-export routes are deck-aware**: `GET /api/pages/{id}/pdf` and
 the share-link `GET /api/share/{token}/pdf` (`pdf_export.go`) detect a deck

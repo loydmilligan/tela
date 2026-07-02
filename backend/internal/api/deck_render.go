@@ -392,6 +392,28 @@ func (s *Server) ExportPageDeckPPTX(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(pptx)
 }
 
+// ExportPageDeckMarkdown (GET /api/pages/{id}/deck.md): session-authed. Returns
+// the deck's raw Slidev source — the page body verbatim (headmatter and all),
+// tela asset URLs absolutized so images resolve outside tela. Unlike the generic
+// /md export (which prepends a tela frontmatter block for round-trip), this is
+// directly usable with `slidev slides.md`; the reader still supplies the
+// slidev-theme-tahta look (npm) itself. The runnable-project bundle is a
+// deliberate non-goal here (see docs/deck.md).
+func (s *Server) ExportPageDeckMarkdown(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requirePageRead(w, r)
+	if !ok {
+		return
+	}
+	if !isDeckBag(p.Props) {
+		writeError(w, http.StatusBadRequest, "not_a_deck", "page is not a deck")
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", pageFileSlug(p.Title)+".md"))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(absolutizeDeckAssets(p.Body)))
+}
+
 // GetPageDeckOutline (GET /api/pages/{id}/deck/outline): session-authed. Returns
 // the deck's structure (slide count, titles, layouts, speaker notes, detected
 // features) via the sidecar's /parse — no render, no Chromium. Powers the deck's
