@@ -181,15 +181,27 @@ func detailSuffix(d string) string {
 // whitespace-tolerant; the last match wins if the model emitted more than one.
 var summaryMarkerRE = regexp.MustCompile(`(?is)<!--\s*SUMMARY:\s*(.*?)\s*-->`)
 
+// thisPageOpenerRE matches the low-value "This page … / This document …" opener
+// the model falls back to despite the prompt forbidding it. Stripped
+// deterministically so summaries state the substance directly (a prompt rule
+// alone the 30B ignores ~40% of the time).
+var thisPageOpenerRE = regexp.MustCompile(`(?i)^this (?:page|document|section)\s+`)
+
 // extractSummary pulls the model's SUMMARY marker out of a drafted page,
 // returning the body with every marker removed and the summary text (collapsed
-// to one line; empty if the model omitted it — the caller then keeps whatever
-// summary the outline stage planned).
+// to one line, "This page…" opener stripped; empty if the model omitted the
+// marker — the caller then keeps whatever summary the outline stage planned).
 func extractSummary(body string) (string, string) {
 	ms := summaryMarkerRE.FindAllStringSubmatch(body, -1)
 	summary := ""
 	if len(ms) > 0 {
 		summary = strings.Join(strings.Fields(ms[len(ms)-1][1]), " ")
+		if op := thisPageOpenerRE.FindString(summary); op != "" {
+			summary = strings.TrimSpace(summary[len(op):])
+			if summary != "" { // recapitalize the new leading word
+				summary = strings.ToUpper(summary[:1]) + summary[1:]
+			}
+		}
 	}
 	body = strings.TrimSpace(summaryMarkerRE.ReplaceAllString(body, ""))
 	return body, summary
