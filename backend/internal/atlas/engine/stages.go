@@ -2,11 +2,28 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/zcag/tela/backend/internal/atlas/core"
+	"github.com/zcag/tela/backend/internal/atlas/source"
 )
+
+// acquireTimeout bounds the source-materialization stage (git clone / jira
+// fetch) so a wedged or unreachable source fails the run in minutes instead of
+// hanging until the 4h run watchdog. Generous by default to accommodate large
+// repos/projects on slow links; override with TELA_ATLAS_ACQUIRE_TIMEOUT (a Go
+// duration, e.g. "90m") for giant monorepos.
+func acquireTimeout() time.Duration {
+	if v := os.Getenv("TELA_ATLAS_ACQUIRE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 30 * time.Minute
+}
 
 // acquireStage is the first real stage: it materializes the source into the run
 // workspace and pins the exact ref. The source-specific work (clone, rev pin)
@@ -30,9 +47,34 @@ func (acquireStage) Run(ctx context.Context, rc *RunContext) error {
 	} else {
 		rc.Info("cloning %s", rc.Source.Location)
 	}
-	snap, err := conn.Acquire(ctx, *rc.Source, rc.Workspace)
-	if err != nil {
-		return err
+	// Bound acquire with a generous deadline. We run it in a goroutine and select
+	// so the stage fails on timeout even if the connector is stuck in a call that
+	// ignores ctx cancellation (a hung DNS resolve / half-open TCP read — the
+	// exact wedge we saw: idle goroutine, no socket, no progress). The wedged
+	// goroutine may leak, but the run fails cleanly and frees its slot.
+	acqCtx, cancel := context.WithTimeout(ctx, acquireTimeout())
+	defer cancel()
+	type acqResult struct {
+		snap source.Snapshot
+		err  error
+	}
+	done := make(chan acqResult, 1)
+	go func() {
+		s, e := conn.Acquire(acqCtx, *rc.Source, rc.Workspace)
+		done <- acqResult{s, e}
+	}()
+	var snap source.Snapshot
+	select {
+	case <-acqCtx.Done():
+		if ctx.Err() != nil {
+			return ctx.Err() // whole run canceled/timed out — propagate as-is
+		}
+		return fmt.Errorf("acquire of %s exceeded %s (source unreachable, too large, or wedged; raise TELA_ATLAS_ACQUIRE_TIMEOUT)", rc.Source.Location, acquireTimeout())
+	case r := <-done:
+		if r.err != nil {
+			return r.err
+		}
+		snap = r.snap
 	}
 	rc.Snapshot = snap
 	rc.Source.Ref = snap.Ref

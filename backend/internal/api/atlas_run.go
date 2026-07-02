@@ -264,13 +264,22 @@ func (m *atlasManager) claimNextPending(ctx context.Context) (atlasSourceRow, in
 	if cred.Valid {
 		src.CredID = &cred.Int64
 	}
+	// Claim the run only if fewer than maxRuns are already executing. The cap is
+	// enforced HERE, in the DB, not via the in-memory active map: that map can
+	// undercount (a spawn/accounting race, or a second manager), which silently
+	// lifts the cap and lets a project's sources all run at once — the exact
+	// overload we hit. The DB count is authoritative and holds across the map,
+	// races, multiple instances, and restarts. A pending row isn't 'running', so
+	// it doesn't count itself.
 	res, err := m.s.DB.ExecContext(ctx,
-		`UPDATE atlas_runs SET status='running' WHERE id=$1 AND status='pending'`, runID)
+		`UPDATE atlas_runs SET status='running'
+		  WHERE id=$1 AND status='pending'
+		    AND (SELECT count(*) FROM atlas_runs WHERE status='running') < $2`, runID, m.maxRuns)
 	if err != nil {
 		return src, 0, false
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return src, 0, false // already claimed (multi-instance) — the ticker retries
+		return src, 0, false // cap reached, or already claimed (multi-instance) — the ticker retries
 	}
 	return src, runID, true
 }

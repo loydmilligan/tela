@@ -52,6 +52,49 @@ func TestAtlasCadenceLogic(t *testing.T) {
 	}
 }
 
+// TestAtlasClaimNextPending_RespectsCap verifies the run-concurrency cap is
+// enforced at the DB claim itself (not the in-memory active map): with maxRuns=1
+// and a run already 'running', the next pending run is NOT claimed until the
+// running one leaves 'running'. This is the fix for a project's sources all
+// executing at once and overloading the shared model.
+func TestAtlasClaimNextPending_RespectsCap(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	m := srv.atlas
+	m.maxRuns = 1
+	owner := seedUser(t, d, "alice", "alicepw12", false)
+	space := seedSpace(t, d, "Repo Docs", "repo-docs", owner)
+	pid := seedAtlasProject(t, d, "Repo Docs", accountUser, owner, space, 0)
+	src1 := seedAtlasSource(t, d, pid, "https://example.com/a.git", "a1")
+	src2 := seedAtlasSource(t, d, pid, "https://example.com/b.git", "b1")
+	ctx := context.Background()
+
+	run1 := seedAtlasRun(t, d, src1, "pending")
+	run2 := seedAtlasRun(t, d, src2, "pending")
+
+	// First claim succeeds (0 running < cap 1) and marks run1 running.
+	if _, got, ok := m.claimNextPending(ctx); !ok || got != run1 {
+		t.Fatalf("first claim: ok=%v run=%d, want ok run %d", ok, got, run1)
+	}
+	// Second claim is blocked by the cap — run2 is pending, but 1 is already running.
+	if _, _, ok := m.claimNextPending(ctx); ok {
+		t.Fatalf("second claim succeeded despite cap=1 with a run already running")
+	}
+	// The running run finishing frees the slot → run2 becomes claimable.
+	if _, err := d.Exec(`UPDATE atlas_runs SET status='done' WHERE id=$1`, run1); err != nil {
+		t.Fatalf("finish run1: %v", err)
+	}
+	if _, got, ok := m.claimNextPending(ctx); !ok || got != run2 {
+		t.Fatalf("post-finish claim: ok=%v run=%d, want ok run %d", ok, got, run2)
+	}
+	// Raising the cap lets a second run start alongside the one still running.
+	m.maxRuns = 2
+	run3 := seedAtlasRun(t, d, src1, "pending")
+	if _, got, ok := m.claimNextPending(ctx); !ok || got != run3 {
+		t.Fatalf("claim with cap=2 and 1 running should succeed, got ok=%v run=%d want %d", ok, got, run3)
+	}
+}
+
 // seedAtlasSource binds a minimal git source to a project and returns its id.
 func seedAtlasSource(t *testing.T, d *sql.DB, projectID int64, location, ref string) int64 {
 	t.Helper()
