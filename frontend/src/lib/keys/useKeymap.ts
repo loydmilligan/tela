@@ -24,7 +24,12 @@ const LEADER_TIMEOUT = 800
 // KeymapHost. The engine supplies the motion verbs and `surface` itself.
 export type KeymapActions = Pick<
   KeyContext,
-  'navigate' | 'openPalette' | 'openNewPage' | 'toggleTheme' | 'openCheatsheet'
+  | 'navigate'
+  | 'openPalette'
+  | 'openNewPage'
+  | 'toggleTheme'
+  | 'toggleSidebar'
+  | 'openCheatsheet'
 >
 
 // Build the motion half of the context against whatever region is live now.

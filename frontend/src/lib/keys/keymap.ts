@@ -25,6 +25,7 @@ export interface KeyContext {
   openPalette: () => void
   openNewPage: () => void
   toggleTheme: () => void
+  toggleSidebar: () => void
   openCheatsheet: () => void
   // Motion (engine-provided) — operate on the active keynav region. `down`/`up`
   // scroll a reader region or move the cursor in a list region; `activate`

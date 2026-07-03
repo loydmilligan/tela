@@ -29,7 +29,13 @@ import { emitOpenPalette } from '../../lib/paletteEvent'
 import { IS_MAC } from '../../lib/useGlobalShortcut'
 import { cn } from '../../lib/utils'
 
-export function Sidebar({ open = false }: { open?: boolean }) {
+export function Sidebar({
+  open = false,
+  collapsed = false,
+}: {
+  open?: boolean
+  collapsed?: boolean
+}) {
   // Read both params loosely — sidebar lives in the root layout, so we may be
   // anywhere in the tree (index, space, or page route).
   const params = useParams({ strict: false }) as {
@@ -58,9 +64,12 @@ export function Sidebar({ open = false }: { open?: boolean }) {
       className={cn(
         'flex flex-col w-[var(--sidebar-width)] shrink-0 border-r border-[var(--border-subtle)] bg-[var(--surface-2)] overflow-hidden',
         // Mobile: a fixed slide-in drawer toggled by the header hamburger.
-        // Desktop (md+): static, in-flow, always visible — unchanged.
-        'fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out md:static md:z-auto md:translate-x-0',
+        // Desktop (md+): static, in-flow, always visible — unless collapsed.
+        'fixed inset-y-0 left-0 z-50 transition-[transform,width] duration-200 ease-out md:static md:z-auto md:translate-x-0',
         open ? 'translate-x-0' : '-translate-x-full',
+        // Desktop collapse: animate width to 0 (content clipped by overflow),
+        // main content reflows to fill. Independent of the mobile drawer.
+        collapsed && 'md:w-0 md:border-r-0',
       )}
     >
       <div className="px-[var(--space-3)] pt-[var(--space-4)] flex flex-col gap-[var(--space-1)]">

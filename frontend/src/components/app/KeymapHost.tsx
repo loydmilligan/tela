@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { router } from '../../routes/router'
 import { emitOpenPalette } from '../../lib/paletteEvent'
 import { emitOpenNewPage } from '../../lib/newPageEvent'
+import { emitToggleSidebar } from '../../lib/sidebarEvent'
 import { getTheme, setTheme, THEMES } from '../../lib/theme'
 import { useKeymap, type KeymapActions } from '../../lib/keys/useKeymap'
 import { KeyCheatsheet } from '../ui/key-cheatsheet'
@@ -32,6 +33,7 @@ export function KeymapHost() {
         const i = THEMES.indexOf(cur)
         setTheme(THEMES[(i + 1) % THEMES.length])
       },
+      toggleSidebar: () => emitToggleSidebar(),
       openCheatsheet: () => setCheatsheetOpen(true),
     }),
     [],

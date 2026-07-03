@@ -87,6 +87,14 @@ registerKeys({
   when: 'app',
   run: (c) => c.toggleTheme(),
 })
+registerKeys({
+  id: 'act.sidebar',
+  keys: '\\',
+  label: 'Toggle sidebar',
+  group: ACT,
+  when: 'app',
+  run: (c) => c.toggleSidebar(),
+})
 
 // --- Move (roving / scroll) — every surface ----------------------------
 const MOVE = 'Move'

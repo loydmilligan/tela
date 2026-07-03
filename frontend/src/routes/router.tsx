@@ -11,7 +11,8 @@ import {
   useNavigate,
   useParams,
 } from '@tanstack/react-router'
-import { FilePlus, FileQuestion, Menu } from 'lucide-react'
+import { FilePlus, FileQuestion, Menu, PanelLeft } from 'lucide-react'
+import { subscribeToToggleSidebar } from '../lib/sidebarEvent'
 import { AppCommandHost } from '../components/app/AppCommandHost'
 import { SpaceView } from '../components/app/SpaceView'
 import { KeymapHost } from '../components/app/KeymapHost'
@@ -129,6 +130,16 @@ const appLayoutRoute = createRoute({
   },
   component: function AppLayout() {
     const [sidebarOpen, setSidebarOpen] = useState(false)
+    // Desktop show/hide for the whole left nav — independent of the mobile
+    // drawer (sidebarOpen). Persisted so it sticks across navigation + reloads;
+    // toggled by the header button and the `\` keybinding (via sidebarEvent).
+    const [collapsed, setCollapsed] = useState(
+      () => localStorage.getItem('tela:sidebar-collapsed') === '1',
+    )
+    useEffect(() => {
+      localStorage.setItem('tela:sidebar-collapsed', collapsed ? '1' : '0')
+    }, [collapsed])
+    useEffect(() => subscribeToToggleSidebar(() => setCollapsed((c) => !c)), [])
     const { pathname } = useLocation()
     // Close the mobile drawer on navigation (e.g. tapping a page link).
     useEffect(() => {
@@ -145,7 +156,7 @@ const appLayoutRoute = createRoute({
     }, [sidebarOpen])
     return (
       <div className="h-dvh flex bg-[var(--surface-1)] text-[var(--text-primary)] overflow-hidden">
-        <Sidebar open={sidebarOpen} />
+        <Sidebar open={sidebarOpen} collapsed={collapsed} />
         {sidebarOpen ? (
           <button
             type="button"
@@ -164,6 +175,17 @@ const appLayoutRoute = createRoute({
                 onClick={() => setSidebarOpen(true)}
               >
                 <Menu size="1.1em" aria-hidden />
+              </button>
+              {/* Desktop show/hide of the whole left nav (also `\`). */}
+              <button
+                type="button"
+                aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+                aria-pressed={collapsed}
+                title={collapsed ? 'Show sidebar (\\)' : 'Hide sidebar (\\)'}
+                className="hidden md:inline-flex items-center justify-center rounded-[var(--radius-xs)] p-[var(--space-1)] text-[var(--text-muted)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                onClick={() => setCollapsed((c) => !c)}
+              >
+                <PanelLeft size="1.1em" aria-hidden />
               </button>
               <Link
                 to="/"
