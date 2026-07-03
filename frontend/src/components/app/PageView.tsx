@@ -518,10 +518,10 @@ function PageViewer({
 
       {isSheet ? (
         // First-class sheet surface: the grid owns the full width + height of the
-        // content area (no reading column, no doc furniture) and scrolls
-        // internally — a spreadsheet app, not a doc with a widget. Title lives in
-        // the header breadcrumb. Edit flips to the collaborative grid.
-        <div className="flex-1 min-h-0 flex flex-col p-[var(--space-3)]">
+        // content area (no reading column, no doc furniture, no padding) and
+        // scrolls internally — a spreadsheet app, edge-to-edge, not a card. Title
+        // lives in the header breadcrumb. Edit flips to the collaborative grid.
+        <div className="flex-1 min-h-0 flex flex-col">
           <Suspense fallback={<div className="flex-1" />}>
             <GridEditor
               defaultValue={page.body}
@@ -1231,7 +1231,15 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <header className="flex items-center justify-between gap-[var(--space-4)] px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
-        <Breadcrumb spaceId={spaceId} pageId={page.id} />
+        <Breadcrumb
+          spaceId={spaceId}
+          pageId={page.id}
+          titleEditor={
+            isSheet && !isViewer
+              ? { value: title, onChange: setTitle, onBlur: handleTitleBlur }
+              : undefined
+          }
+        />
         <div className="flex items-center gap-[var(--space-3)]">
           {isDraftMode ? (
             <>
@@ -1367,45 +1375,23 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
       </header>
 
       {isSheet ? (
-        // First-class sheet edit surface: a slim editable title, then the live
-        // collaborative grid filling the rest of the viewport (full width +
-        // height, internal scroll) — no reading column, no doc furniture.
+        // First-class sheet edit surface: the collaborative grid fills the whole
+        // content area, edge-to-edge, identical geometry to the read view (no
+        // title row → no layout shift when toggling edit). Renaming is inline in
+        // the header breadcrumb (titleEditor below).
         <div className="flex-1 min-h-0 flex flex-col">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleTitleBlur}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                e.currentTarget.blur()
-              }
-            }}
-            placeholder="Untitled sheet"
-            aria-label="Sheet title"
-            className={cn(
-              'shrink-0 mx-[var(--space-3)] mt-[var(--space-2)] mb-[var(--space-1)]',
-              'w-[min(32rem,100%)] rounded-[var(--radius-md)] border border-transparent bg-transparent',
-              'px-[var(--space-2)] py-[var(--space-1)] outline-none',
-              'text-[length:var(--text-lg)] font-medium leading-[var(--leading-tight)]',
-              'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-              'focus-visible:border-[var(--border-subtle)]',
-            )}
-          />
-          <div className="flex-1 min-h-0 flex flex-col px-[var(--space-3)] pb-[var(--space-3)]">
-            <Suspense fallback={<EditorFallback />}>
-              <GridEditor
-                defaultValue={page.body}
-                onChange={handleBodyChange}
-                onBlur={handleBodyBlur}
-                collabPageId={isViewer ? null : page.id}
-                readOnly={isViewer}
-                autoFocus={bodyAutoFocus}
-                ariaLabel="Spreadsheet"
-                pageId={page.id}
-              />
-            </Suspense>
-          </div>
+          <Suspense fallback={<EditorFallback />}>
+            <GridEditor
+              defaultValue={page.body}
+              onChange={handleBodyChange}
+              onBlur={handleBodyBlur}
+              collabPageId={isViewer ? null : page.id}
+              readOnly={isViewer}
+              autoFocus={bodyAutoFocus}
+              ariaLabel="Spreadsheet"
+              pageId={page.id}
+            />
+          </Suspense>
         </div>
       ) : (
       <div
@@ -1761,7 +1747,18 @@ function ChildPagesSection({
   )
 }
 
-function Breadcrumb({ spaceId, pageId }: { spaceId: number; pageId: number }) {
+function Breadcrumb({
+  spaceId,
+  pageId,
+  // When set (sheet edit mode), the last crumb (the page title) renders as an
+  // inline input controlled by the editor — renaming happens here instead of a
+  // content title row, so entering edit never shifts/shrinks the grid.
+  titleEditor,
+}: {
+  spaceId: number
+  pageId: number
+  titleEditor?: { value: string; onChange: (v: string) => void; onBlur: () => void }
+}) {
   const space = useSpace(spaceId)
   const tree = usePages({ spaceId, tree: true })
   const nodes = (tree.data as PageTreeNode[] | undefined) ?? []
@@ -1794,9 +1791,26 @@ function Breadcrumb({ spaceId, pageId }: { spaceId: number; pageId: number }) {
               className="mx-[var(--space-1)] shrink-0"
             />
             {isLast ? (
-              <span className="truncate text-[var(--text-primary)]">
-                {node.title || 'Untitled'}
-              </span>
+              titleEditor ? (
+                <input
+                  value={titleEditor.value}
+                  onChange={(e) => titleEditor.onChange(e.target.value)}
+                  onBlur={titleEditor.onBlur}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      e.currentTarget.blur()
+                    }
+                  }}
+                  placeholder="Untitled sheet"
+                  aria-label="Sheet title"
+                  className="min-w-0 w-[min(28rem,50vw)] rounded-[var(--radius-sm)] border border-transparent bg-transparent px-[var(--space-1)] -mx-[var(--space-1)] text-[var(--text-primary)] outline-none hover:bg-[var(--surface-2)] focus-visible:border-[var(--border-subtle)]"
+                />
+              ) : (
+                <span className="truncate text-[var(--text-primary)]">
+                  {node.title || 'Untitled'}
+                </span>
+              )
             ) : (
               <Link
                 to="/spaces/$spaceId/pages/$pageId/{-$slug}"

@@ -19,6 +19,12 @@
  * own defaults — they're layout constants, not themeable colors.
  */
 .defter-shell.tela-grid {
+  /* Edge-to-edge, not a floating card: drop defter's own shell border + radius so
+     the grid reads as the page surface (the page header already draws the top
+     divider; sheet tabs cap the bottom). */
+  border: none;
+  border-radius: 0;
+
   /* fonts */
   --defter-font: var(--font-sans);
   --defter-font-mono: var(--font-mono);
