@@ -7,10 +7,57 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"strings"
+	"time"
 
 	defterparse "github.com/zcag/defter/go"
 )
+
+// projectSheet turns a sheet's Defter body into prose for embedding. It prefers
+// the node sidecar's /project (which materializes formula-COMPUTED values via the
+// TS engine); if that's unset or unreachable it falls back to the in-process Go
+// projection (literal values, formulas as source). Either way the presentation
+// block is stripped and tables become self-describing lines.
+func (s *Service) projectSheet(ctx context.Context, body string) string {
+	if base := strings.TrimRight(s.cfg.SheetProjectURL, "/"); base != "" {
+		if prose, err := postProject(ctx, base+"/project", body); err == nil {
+			return prose
+		} else {
+			slog.Warn("rag: sheet project sidecar failed, using in-process projection", "err", err)
+		}
+	}
+	return defterparse.ProjectProse(defterparse.Parse(body))
+}
+
+func postProject(ctx context.Context, url, body string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("content-type", "text/plain; charset=utf-8")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+		return "", fmt.Errorf("project sidecar %d", resp.StatusCode)
+	}
+	out, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return "", fmt.Errorf("project sidecar returned empty")
+	}
+	return string(out), nil
+}
 
 // chunkHash keys a chunk's embedding by (model, embed-text) so a reindex can
 // reuse a stored vector when nothing relevant changed. Folding the model in
@@ -58,7 +105,7 @@ func (s *Service) reindexPage(ctx context.Context, pageID int64, force bool) (in
 	// a node projection step.)
 	embedBody := StripExcalidrawFences(body)
 	if isSheet.Valid && isSheet.String == "true" {
-		embedBody = defterparse.ProjectProse(defterparse.Parse(body))
+		embedBody = s.projectSheet(ctx, body)
 	}
 	chunks := ChunkMarkdown(title, embedBody)
 	cached := map[string]string{}
