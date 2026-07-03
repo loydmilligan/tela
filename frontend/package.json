@@ -16,6 +16,7 @@
     "@defterjs/core": "^0.1.2",
     "@defterjs/formula": "^0.1.2",
     "@defterjs/react": "^0.1.2",
+    "@defterjs/xlsx": "^0.1.2",
     "@defterjs/yjs": "^0.1.2",
     "@excalidraw/excalidraw": "^0.18.1",
     "@mermaid-js/layout-elk": "^0.2.2",

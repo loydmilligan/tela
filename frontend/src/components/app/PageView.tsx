@@ -125,6 +125,7 @@ import { BacklinksSection } from './BacklinksSection'
 import { RelatedPagesSection } from './RelatedPagesSection'
 import { PageTrustStrip } from './PageTrustStrip'
 import { MarkdownView } from '../view/MarkdownView'
+import { SheetExportMenu } from './sheet-export-menu'
 import { prefetchMilkdownEditor } from '../../lib/prefetchEditor'
 import { useFileDownload } from './use-file-download'
 import { toast, updateToast } from '../ui/toast'
@@ -324,6 +325,8 @@ function PageViewer({
 
   const [graphOpen, setGraphOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // Active sheet index (lifted from the grid) so a sheet export can scope to it.
+  const [activeSheet, setActiveSheet] = useState(0)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [showResolvedComments, setShowResolvedComments] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -410,6 +413,9 @@ function PageViewer({
           {roleResolved ? <FavoriteStar pageId={page.id} /> : null}
           {roleResolved ? <FollowButton id={page.id} /> : null}
           <PageProperties props={page.props} />
+          {isSheet ? (
+            <SheetExportMenu body={page.body} title={page.title} activeSheet={activeSheet} />
+          ) : null}
           {commentsEnabled ? (
             <Button
               type="button"
@@ -530,6 +536,7 @@ function PageViewer({
               readOnly
               pageId={page.id}
               ariaLabel="Spreadsheet (read-only)"
+              onSheetChange={setActiveSheet}
             />
           </Suspense>
         </div>
@@ -784,6 +791,8 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
   const navigate = useNavigate()
   const [title, setTitle] = useState(page.title)
   const [body, setBody] = useState(page.body)
+  // Active sheet index (lifted from the grid) so a sheet export scopes to it.
+  const [activeSheet, setActiveSheet] = useState(0)
   // Title is a textarea (so long titles wrap instead of clipping); keep its
   // height pinned to its content so it reads like a heading, not a box.
   const titleRef = useRef<HTMLTextAreaElement>(null)
@@ -1267,6 +1276,9 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
             </>
           ) : (
             <>
+              {isSheet ? (
+                <SheetExportMenu body={body} title={title} activeSheet={activeSheet} />
+              ) : null}
               {/* Confluence "Done" — leave edit mode back to the read view. */}
               {roleResolved && !isViewer ? (
                 <Button
@@ -1390,6 +1402,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
               autoFocus={bodyAutoFocus}
               ariaLabel="Spreadsheet"
               pageId={page.id}
+              onSheetChange={setActiveSheet}
             />
           </Suspense>
         </div>

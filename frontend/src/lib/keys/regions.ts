@@ -24,6 +24,10 @@ export function isEditableTarget(node: EventTarget | null): boolean {
   if (!(node instanceof Element)) return false
   const tag = node.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  // The Defter spreadsheet grid is a focusable, key-driven surface (arrows move
+  // cells, typing edits them) — treat it like an input so bare keys (`t`, `/`,
+  // `\`, j/k…) go to the grid, not tela's command layer.
+  if (node.closest('.defter-shell')) return true
   // Closest contenteditable host (ProseMirror sets it on the editor root).
   return node.closest('[contenteditable=""],[contenteditable="true"]') != null
 }
