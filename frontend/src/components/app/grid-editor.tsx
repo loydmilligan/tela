@@ -43,6 +43,12 @@ const GRID_PROPS = {
   formulaBar: true,
   statusBar: true,
   sheetTabs: true,
+  // Tile blank rows/cols past the data so the grid fills the (now full-height)
+  // viewport like a real spreadsheet instead of leaving white space below the
+  // last row. A generous fixed count covers common viewports; a true
+  // fill-to-container behavior is a defter-side follow-up.
+  extraRows: 40,
+  extraCols: 14,
   // Marker on the grid's own `.defter-shell` root so the token bridge
   // (.defter-shell.tela-grid in defter-grid.css) maps onto tela tokens. See that
   // file's cascade note — it MUST land on defter's root, not just an ancestor.

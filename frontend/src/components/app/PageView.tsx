@@ -516,8 +516,26 @@ function PageViewer({
         </div>
       </header>
 
-      {/* The scroller spans the full width (so wheel over the empty gutters
-          scrolls the page); the 48rem reading column is an inner wrapper. */}
+      {isSheet ? (
+        // First-class sheet surface: the grid owns the full width + height of the
+        // content area (no reading column, no doc furniture) and scrolls
+        // internally — a spreadsheet app, not a doc with a widget. Title lives in
+        // the header breadcrumb. Edit flips to the collaborative grid.
+        <div className="flex-1 min-h-0 flex flex-col p-[var(--space-3)]">
+          <Suspense fallback={<div className="flex-1" />}>
+            <GridEditor
+              defaultValue={page.body}
+              onChange={noopBodyChange}
+              collabPageId={null}
+              readOnly
+              pageId={page.id}
+              ariaLabel="Spreadsheet (read-only)"
+            />
+          </Suspense>
+        </div>
+      ) : (
+      /* The scroller spans the full width (so wheel over the empty gutters
+          scrolls the page); the 48rem reading column is an inner wrapper. */
       <div
         ref={contentRef}
         onClick={onContentClick}
@@ -555,20 +573,6 @@ function PageViewer({
           <Suspense fallback={<div className={EDITOR_MIN_H} />}>
             <DeckOverview page={page} />
           </Suspense>
-        ) : isSheet ? (
-          // A sheet reads as a read-only live grid (formulas computed at render),
-          // not the raw Defter markdown as prose.
-          <Suspense fallback={<div className={EDITOR_MIN_H} />}>
-            <GridEditor
-              defaultValue={page.body}
-              onChange={noopBodyChange}
-              collabPageId={null}
-              readOnly
-              pageId={page.id}
-              ariaLabel="Spreadsheet (read-only)"
-              className={EDITOR_MIN_H}
-            />
-          </Suspense>
         ) : (
           <MarkdownView
             body={page.body}
@@ -599,6 +603,7 @@ function PageViewer({
         <LocalGraphCard pageId={page.id} />
         </div>
       </div>
+      )}
 
       <DeletePageConfirmDialog
         page={page}
@@ -1361,6 +1366,48 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
         </div>
       </header>
 
+      {isSheet ? (
+        // First-class sheet edit surface: a slim editable title, then the live
+        // collaborative grid filling the rest of the viewport (full width +
+        // height, internal scroll) — no reading column, no doc furniture.
+        <div className="flex-1 min-h-0 flex flex-col">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={handleTitleBlur}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder="Untitled sheet"
+            aria-label="Sheet title"
+            className={cn(
+              'shrink-0 mx-[var(--space-3)] mt-[var(--space-2)] mb-[var(--space-1)]',
+              'w-[min(32rem,100%)] rounded-[var(--radius-md)] border border-transparent bg-transparent',
+              'px-[var(--space-2)] py-[var(--space-1)] outline-none',
+              'text-[length:var(--text-lg)] font-medium leading-[var(--leading-tight)]',
+              'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+              'focus-visible:border-[var(--border-subtle)]',
+            )}
+          />
+          <div className="flex-1 min-h-0 flex flex-col px-[var(--space-3)] pb-[var(--space-3)]">
+            <Suspense fallback={<EditorFallback />}>
+              <GridEditor
+                defaultValue={page.body}
+                onChange={handleBodyChange}
+                onBlur={handleBodyBlur}
+                collabPageId={isViewer ? null : page.id}
+                readOnly={isViewer}
+                autoFocus={bodyAutoFocus}
+                ariaLabel="Spreadsheet"
+                pageId={page.id}
+              />
+            </Suspense>
+          </div>
+        </div>
+      ) : (
       <div
         ref={contentRef}
         className="flex-1 flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full self-center min-h-0"
@@ -1417,25 +1464,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
 
         {!isDraftMode ? <AttachmentStrip pageId={page.id} editable /> : null}
 
-        {isSheet ? (
-          // Sheet body is Defter markdown — edited as a live collaborative grid.
-          // GridEditor owns the Y.Text collab session; handleBodyChange keeps the
-          // local `body` state in sync + drives the debounced body PATCH (same
-          // autosave seam as every page). Viewers get a read-only grid.
-          <Suspense fallback={<EditorFallback />}>
-            <GridEditor
-              defaultValue={page.body}
-              onChange={handleBodyChange}
-              onBlur={handleBodyBlur}
-              collabPageId={isViewer ? null : page.id}
-              readOnly={isViewer}
-              autoFocus={bodyAutoFocus}
-              ariaLabel="Spreadsheet"
-              className={EDITOR_MIN_H}
-              pageId={page.id}
-            />
-          </Suspense>
-        ) : isDeck ? (
+        {isDeck ? (
           // Deck body is Slidev markdown — edited as raw text so the rich editor
           // can't normalize/break `---` slide breaks or layout frontmatter on
           // save. Same body state + autosave (handleBodyChange/Blur) as any page.
@@ -1541,6 +1570,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
 
         <LocalGraphCard pageId={page.id} />
       </div>
+      )}
 
       <DeletePageConfirmDialog
         page={page}
