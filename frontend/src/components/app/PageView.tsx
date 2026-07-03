@@ -71,6 +71,14 @@ const openDeckPresent = (pageId: number) =>
 const DeckOverview = lazy(() =>
   import('./DeckOverview').then((m) => ({ default: m.DeckOverview })),
 )
+// The sheet grid pulls in @defterjs/* (grid + formula engine) — lazy so it only
+// loads for sheet pages, never on the common doc path.
+const GridEditor = lazy(() =>
+  import('./grid-editor').then((m) => ({ default: m.GridEditor })),
+)
+// A read-only grid never emits body changes; a stable no-op keeps GridEditor's
+// onChange required (edit paths always pass a real handler).
+const noopBodyChange = () => {}
 const DeckEditorOutline = lazy(() =>
   import('./DeckEditorOutline').then((m) => ({ default: m.DeckEditorOutline })),
 )
@@ -240,6 +248,11 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
   // deck-specific view is PRESENT: ?view=read renders the body as full-screen
   // slides (via the deck sidecar) instead of the prose reader.
   const isDeck = page.data.props?.deck === true
+  // A sheet (props.sheet) is a doc whose body is Defter markdown, rendered as a
+  // live spreadsheet grid: read view shows it read-only, edit mounts the collab
+  // GridEditor (see PageEditor/PageViewer isSheet branches). Like a deck it never
+  // uses the prose reader overlay.
+  const isSheet = page.data.props?.sheet === true
 
   // Confluence-style: read view is the default; the editor mounts only on an
   // explicit Edit (?edit=1) or when restoring a draft. This is what keeps
@@ -257,6 +270,7 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
         draftRevId={draftRevId ?? null}
         onDeleted={onDeleted}
         isDeck={isDeck}
+        isSheet={isSheet}
       />
     )
   }
@@ -264,7 +278,7 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
   // shell (which stays mounted underneath, so closing is instant). Docs only:
   // a deck Presents as the live Slidev SPA in a new tab (see Present button), so
   // it never uses this overlay.
-  if (view === 'read' && !isDeck) {
+  if (view === 'read' && !isDeck && !isSheet) {
     return (
       <div className="fixed inset-0 z-50 bg-[var(--surface-1)]">
         <Suspense fallback={null}>
@@ -280,6 +294,7 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
       spaceId={spaceId}
       onDeleted={onDeleted}
       isDeck={isDeck}
+      isSheet={isSheet}
     />
   )
 }
@@ -294,11 +309,13 @@ function PageViewer({
   spaceId,
   onDeleted,
   isDeck,
+  isSheet,
 }: {
   page: Page
   spaceId: number
   onDeleted: () => void
   isDeck: boolean
+  isSheet: boolean
 }) {
   const navigate = useNavigate()
   const me = useMe()
@@ -538,6 +555,20 @@ function PageViewer({
           <Suspense fallback={<div className={EDITOR_MIN_H} />}>
             <DeckOverview page={page} />
           </Suspense>
+        ) : isSheet ? (
+          // A sheet reads as a read-only live grid (formulas computed at render),
+          // not the raw Defter markdown as prose.
+          <Suspense fallback={<div className={EDITOR_MIN_H} />}>
+            <GridEditor
+              defaultValue={page.body}
+              onChange={noopBodyChange}
+              collabPageId={null}
+              readOnly
+              pageId={page.id}
+              ariaLabel="Spreadsheet (read-only)"
+              className={EDITOR_MIN_H}
+            />
+          </Suspense>
         ) : (
           <MarkdownView
             body={page.body}
@@ -740,9 +771,10 @@ interface PageEditorProps {
   draftRevId: number | null
   onDeleted: () => void
   isDeck: boolean
+  isSheet: boolean
 }
 
-function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck }: PageEditorProps) {
+function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: PageEditorProps) {
   const updatePage = useUpdatePage()
   const navigate = useNavigate()
   const [title, setTitle] = useState(page.title)
@@ -1385,7 +1417,25 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck }: PageEditor
 
         {!isDraftMode ? <AttachmentStrip pageId={page.id} editable /> : null}
 
-        {isDeck ? (
+        {isSheet ? (
+          // Sheet body is Defter markdown — edited as a live collaborative grid.
+          // GridEditor owns the Y.Text collab session; handleBodyChange keeps the
+          // local `body` state in sync + drives the debounced body PATCH (same
+          // autosave seam as every page). Viewers get a read-only grid.
+          <Suspense fallback={<EditorFallback />}>
+            <GridEditor
+              defaultValue={page.body}
+              onChange={handleBodyChange}
+              onBlur={handleBodyBlur}
+              collabPageId={isViewer ? null : page.id}
+              readOnly={isViewer}
+              autoFocus={bodyAutoFocus}
+              ariaLabel="Spreadsheet"
+              className={EDITOR_MIN_H}
+              pageId={page.id}
+            />
+          </Suspense>
+        ) : isDeck ? (
           // Deck body is Slidev markdown — edited as raw text so the rich editor
           // can't normalize/break `---` slide breaks or layout frontmatter on
           // save. Same body state + autosave (handleBodyChange/Blur) as any page.

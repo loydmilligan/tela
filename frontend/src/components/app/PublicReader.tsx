@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Menu, Play } from 'lucide-react'
 import { applyPdfThemeParam } from '../../lib/theme'
@@ -25,6 +25,12 @@ import { DownloadPdfButton } from './DownloadPdfButton'
 import { ReaderShell } from './ReaderShell'
 import { pageSummary } from './SummaryHint'
 import { useTelaHomeHref } from '../../lib/queries/host-context'
+
+// Read-only spreadsheet grid for public sheet pages. Lazy — pulls in @defterjs/*
+// only when a public sheet is actually viewed.
+const GridEditor = lazy(() =>
+  import('./grid-editor').then((m) => ({ default: m.GridEditor })),
+)
 
 interface PublicReaderViewProps {
   space: PublicSpacePayload
@@ -66,6 +72,7 @@ export function PublicReaderView({
   // are the public, visibility-gated deck routes (cover = first slide, present =
   // live SPA). Branch is taken below, AFTER all hooks, to keep hook order stable.
   const isDeck = pageProps?.deck === true
+  const isSheet = pageProps?.sheet === true
   const metaDescription = useMemo(
     () => summary ?? bodyExcerpt(pageBody, '', 90).trim(),
     [summary, pageBody],
@@ -190,12 +197,26 @@ export function PublicReaderView({
     )
   }
 
+  const sheetSlot = isSheet ? (
+    <Suspense fallback={null}>
+      <GridEditor
+        defaultValue={pageBody}
+        onChange={() => {}}
+        collabPageId={null}
+        readOnly
+        pageId={pageId}
+        ariaLabel="Spreadsheet (read-only)"
+      />
+    </Suspense>
+  ) : undefined
+
   return (
     <ReaderShell
       pageId={pageId}
       title={pageTitle}
       summary={summary}
       body={pageBody}
+      bodySlot={sheetSlot}
       updatedAt={updatedAt}
       wikilinkMode="share"
       aliveWikilinkIds={inScopePageIds}

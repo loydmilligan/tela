@@ -116,6 +116,11 @@ export interface ReaderShellProps {
   /** Frontmatter standfirst — when set, a hover hint by the title shows it. */
   summary?: string | null
   body: string
+  /**
+   * When set, renders in place of the markdown body — for non-prose doc-types
+   * (e.g. a sheet's read-only grid). `body` is still used for reading-time/meta.
+   */
+  bodySlot?: ReactNode
   updatedAt: string
   /** Decoration mode for the read-only editor. */
   wikilinkMode: 'edit' | 'share'
@@ -190,6 +195,7 @@ export function ReaderShell({
   title,
   summary,
   body,
+  bodySlot,
   updatedAt,
   wikilinkMode,
   wikilinkResolveIndex,
@@ -603,20 +609,22 @@ export function ReaderShell({
                   </>
                 ) : null}
               </div>
-              <MarkdownView
-                key={`reader-${pageId}`}
-                body={body}
-                pageId={pageId}
-                // App read view lets members vote; share/public are read-only.
-                canVote={wikilinkMode === 'edit'}
-                resolveWikilink={resolveWikilink}
-                // Reader wikilink hrefs use the `tela://page/N` scheme the
-                // shell's click + hover-preview already intercept (see below);
-                // the browser treats the scheme as dead, so nav is fully ours.
-                pageHref={(id) => `tela://page/${id}`}
-                wikilinkUnresolved="plain"
-                onReady={handleContentReady}
-              />
+              {bodySlot ?? (
+                <MarkdownView
+                  key={`reader-${pageId}`}
+                  body={body}
+                  pageId={pageId}
+                  // App read view lets members vote; share/public are read-only.
+                  canVote={wikilinkMode === 'edit'}
+                  resolveWikilink={resolveWikilink}
+                  // Reader wikilink hrefs use the `tela://page/N` scheme the
+                  // shell's click + hover-preview already intercept (see below);
+                  // the browser treats the scheme as dead, so nav is fully ours.
+                  pageHref={(id) => `tela://page/${id}`}
+                  wikilinkUnresolved="plain"
+                  onReady={handleContentReady}
+                />
+              )}
               {articleFooter}
             </article>
           </div>

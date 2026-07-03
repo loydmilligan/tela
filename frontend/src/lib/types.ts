@@ -223,6 +223,10 @@ export interface CreatePageInput {
   parent_id?: number | null
   title: string
   body?: string
+  // Free-form page props at creation — used to stamp a doc-type (e.g.
+  // `{ sheet: true }` for a spreadsheet, `{ deck: true }` for a deck). The
+  // backend keeps a verbatim body for these types (no frontmatter stripping).
+  props?: Record<string, unknown>
 }
 
 // PATCH /api/pages/{id} only accepts title and body — space_id and parent_id are

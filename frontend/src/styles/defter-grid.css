@@ -1,0 +1,58 @@
+/*
+ * Theme bridge: map defter's `--defter-*` token contract (33 vars, documented in
+ * @defterjs/react THEMING.md) onto tela's semantic design tokens, so the embedded
+ * spreadsheet grid follows the active [data-theme] with zero hardcoded colors.
+ * Every value is a tela token via var() — nothing is a raw hex/px, so the grid
+ * restyles on theme switch and stays within tela's token system.
+ *
+ * Cascade note (load-bearing): @defterjs/react's own styles.css sets the light
+ * token DEFAULTS on `.defter-shell` in the UNLAYERED cascade. Unlayered styles beat
+ * ANY @layer, so this override must ALSO be unlayered — a `@layer components` block
+ * would silently lose and the grid would stay light in every theme. We additionally
+ * qualify with `.tela-grid` (specificity 0,2,0 > defter's 0,1,0) so we win
+ * regardless of stylesheet source order. The `.tela-grid` marker is added by
+ * GridEditor alongside `.defter-shell`.
+ *
+ * Leave defter's `theme` prop UNSET when mounting the grid: its [data-defter-theme]
+ * presets would otherwise set colors directly on the grid root and beat this map.
+ * Metrics (font-size/row-height/col-width/head gutter) intentionally keep defter's
+ * own defaults — they're layout constants, not themeable colors.
+ */
+.defter-shell.tela-grid {
+  /* fonts */
+  --defter-font: var(--font-sans);
+  --defter-font-mono: var(--font-mono);
+
+  /* surfaces */
+  --defter-bg: var(--surface-1);
+  --defter-fg: var(--text-primary);
+  --defter-muted-fg: var(--text-muted);
+  --defter-grid-line: var(--border-subtle);
+  --defter-grid-line-strong: var(--border-strong);
+  --defter-header-bg: var(--surface-2);
+  --defter-header-fg: var(--text-muted);
+  --defter-header-active-bg: var(--accent-info-soft);
+  --defter-header-active-fg: var(--accent-info-fg);
+  --defter-corner-bg: var(--surface-3);
+  --defter-bar-bg: var(--surface-2);
+
+  /* accent + selection */
+  --defter-accent: var(--accent);
+  --defter-selection-border: var(--accent);
+  --defter-focus-ring: var(--accent);
+  --defter-selection-bg: color-mix(in oklab, var(--accent) 18%, transparent);
+
+  /* defter-style palette tokens (fills/text authors reference by name) */
+  --defter-token-surface-1: var(--surface-1);
+  --defter-token-surface-2: var(--surface-2);
+  --defter-token-surface-3: var(--surface-3);
+  --defter-token-accent: var(--accent);
+  --defter-token-accent-soft: var(--accent-info-soft);
+  --defter-token-success: var(--accent-positive-fg);
+  --defter-token-success-soft: var(--accent-positive-soft);
+  --defter-token-warning: var(--accent-warning-fg);
+  --defter-token-warning-soft: var(--accent-warning-soft);
+  --defter-token-danger: var(--accent-negative-fg);
+  --defter-token-danger-soft: var(--accent-negative-soft);
+  --defter-token-muted: var(--text-muted);
+}

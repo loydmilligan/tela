@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, FileText, Globe } from 'lucide-react'
+import { Check, FileText, Globe, Table2 } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useCreatePage, usePages } from '../../lib/queries/pages'
 import { useSpaces } from '../../lib/queries/spaces'
@@ -58,6 +58,23 @@ function parentIdToPickerValue(parentId: number | null): string {
   return parentId == null ? ROOT_ID : String(parentId)
 }
 
+type DocType = 'doc' | 'sheet'
+
+// Starter body for a new spreadsheet — a small, valid Defter document (compact
+// table + a defter-style header band) so the grid opens with a usable shape, not
+// blank. Kept minimal; the agent guide covers the full format.
+const SHEET_STARTER_BODY = [
+  '| Item | Qty | Unit | Total |',
+  '|---|---|---|---|',
+  '| Example | 1 | 0 | =B2*C2 |',
+  '',
+  '```defter-style',
+  'A1:D1  bold fill=surface-2 align=center',
+  'D2  format=#,##0.00',
+  '```',
+  '',
+].join('\n')
+
 export interface NewPageDialogProps {
   open: boolean
   onOpenChange: (next: boolean) => void
@@ -101,6 +118,7 @@ export function NewPageDialog({
     parentIdToPickerValue(defaultParentId ?? null),
   )
   const [error, setError] = useState<string | null>(null)
+  const [docType, setDocType] = useState<DocType>('doc')
 
   // Reset all state on each fresh open so a closed-and-reopened dialog never
   // leaks the previous attempt's input. Mirrors the pattern in NewSpaceDialog.
@@ -110,6 +128,7 @@ export function NewPageDialog({
       openRef.current = true
       setTitle(defaultTitle ?? '')
       setError(null)
+      setDocType('doc')
       // Defaults are honored only at the open transition (see prop doc).
       const seedSpace =
         defaultSpaceId != null && spaces.some((s) => s.id === defaultSpaceId)
@@ -212,6 +231,9 @@ export function NewPageDialog({
         space_id: spaceId,
         parent_id: parentId,
         title: trimmed,
+        ...(docType === 'sheet'
+          ? { props: { sheet: true }, body: SHEET_STARTER_BODY }
+          : {}),
       })
       handleClose(false)
       // Use the imported router directly: NewPageDialog is rendered by
@@ -250,6 +272,30 @@ export function NewPageDialog({
             onSubmit={handleSubmit}
             className="flex flex-col gap-[var(--space-4)]"
           >
+            <div className="flex flex-col gap-[var(--space-2)]">
+              <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                Type
+              </span>
+              <div className="flex gap-[var(--space-2)]" role="group" aria-label="Page type">
+                <Button
+                  type="button"
+                  variant={docType === 'doc' ? 'secondary' : 'ghost'}
+                  aria-pressed={docType === 'doc'}
+                  onClick={() => setDocType('doc')}
+                >
+                  <FileText width={14} height={14} /> Doc
+                </Button>
+                <Button
+                  type="button"
+                  variant={docType === 'sheet' ? 'secondary' : 'ghost'}
+                  aria-pressed={docType === 'sheet'}
+                  onClick={() => setDocType('sheet')}
+                >
+                  <Table2 width={14} height={14} /> Sheet
+                </Button>
+              </div>
+            </div>
+
             <div className="flex flex-col gap-[var(--space-2)]">
               <label
                 htmlFor="new-page-title"
@@ -321,7 +367,11 @@ export function NewPageDialog({
                 </Button>
               </DialogClose>
               <Button type="submit" disabled={submitDisabled}>
-                {createPage.isPending ? 'Creating…' : 'Create page'}
+                {createPage.isPending
+                  ? 'Creating…'
+                  : docType === 'sheet'
+                    ? 'Create sheet'
+                    : 'Create page'}
               </Button>
             </DialogFooter>
           </form>
