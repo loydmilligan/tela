@@ -85,6 +85,10 @@ export interface GridEditorProps {
   className?: string
   // Lifts the active sheet index (for a host-level export scoped to "this sheet").
   onSheetChange?: (index: number) => void
+  // Freeze the header row / first column (opt-in, from page props — a sheet may
+  // have no header, so it's never on by default).
+  freezeHeader?: boolean
+  freezeCol?: boolean
 }
 
 const engine = createEngine()
@@ -116,7 +120,7 @@ export function GridEditor(props: GridEditorProps) {
 }
 
 // Local-state grid: no Yjs. Used for viewers (readOnly) and solo/draft edits.
-function SoloGrid({ defaultValue, onChange, onBlur, readOnly, ariaLabel, className, onSheetChange }: GridEditorProps) {
+function SoloGrid({ defaultValue, onChange, onBlur, readOnly, ariaLabel, className, onSheetChange, freezeHeader, freezeCol }: GridEditorProps) {
   const [text, setText] = useState(defaultValue)
   const onGridChange = useCallback(
     (next: string) => {
@@ -127,7 +131,7 @@ function SoloGrid({ defaultValue, onChange, onBlur, readOnly, ariaLabel, classNa
   )
   return (
     <div className={cn('min-h-0 flex-1', className)} aria-label={ariaLabel} onBlur={onBlur}>
-      <DefterGrid {...GRID_PROPS} text={text} onChange={readOnly ? undefined : onGridChange} readOnly={readOnly} onSheetChange={onSheetChange} />
+      <DefterGrid {...GRID_PROPS} text={text} onChange={readOnly ? undefined : onGridChange} readOnly={readOnly} onSheetChange={onSheetChange} freezeHeader={freezeHeader} freezeCol={freezeCol} />
     </div>
   )
 }
@@ -135,7 +139,7 @@ function SoloGrid({ defaultValue, onChange, onBlur, readOnly, ariaLabel, classNa
 // Live-collaborative grid. The Y.Text on tela's page Y.Doc holds the canonical
 // Defter markdown; useYText mirrors it into `text` (reactive across local + remote
 // edits) and gives a splice-back updater.
-function CollabGrid({ defaultValue, onChange, onBlur, collabPageId, readOnly, ariaLabel, className, onSheetChange }: GridEditorProps) {
+function CollabGrid({ defaultValue, onChange, onBlur, collabPageId, readOnly, ariaLabel, className, onSheetChange, freezeHeader, freezeCol }: GridEditorProps) {
   const { session, isLeaderRef } = useCollabSession(collabPageId)
   const me = useMe()
   const awareness = session?.provider.awareness ?? null
@@ -259,6 +263,8 @@ function CollabGrid({ defaultValue, onChange, onBlur, collabPageId, readOnly, ar
         redo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
+        freezeHeader={freezeHeader}
+        freezeCol={freezeCol}
       />
     </div>
   )

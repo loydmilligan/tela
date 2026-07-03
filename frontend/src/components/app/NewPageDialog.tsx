@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, FileText, Globe, Table2 } from 'lucide-react'
+import { Check, FileText, Globe, Table2, Upload } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { useCreatePage, usePages } from '../../lib/queries/pages'
 import { useSpaces } from '../../lib/queries/spaces'
@@ -119,16 +119,25 @@ export function NewPageDialog({
   )
   const [error, setError] = useState<string | null>(null)
   const [docType, setDocType] = useState<DocType>('doc')
+  // Sheet import: an uploaded CSV/XLSX converted to a Defter body. When set, the
+  // new sheet is seeded from it instead of the blank starter.
+  const [importedBody, setImportedBody] = useState<string | null>(null)
+  const [importName, setImportName] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
 
   // Reset all state on each fresh open so a closed-and-reopened dialog never
   // leaks the previous attempt's input. Mirrors the pattern in NewSpaceDialog.
   const openRef = useRef(false)
+  const importInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (open && !openRef.current) {
       openRef.current = true
       setTitle(defaultTitle ?? '')
       setError(null)
       setDocType('doc')
+      setImportedBody(null)
+      setImportName(null)
+      setImporting(false)
       // Defaults are honored only at the open transition (see prop doc).
       const seedSpace =
         defaultSpaceId != null && spaces.some((s) => s.id === defaultSpaceId)
@@ -214,6 +223,27 @@ export function NewPageDialog({
     onOpenChange(next)
   }
 
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // let the same file be re-picked after a clear
+    if (!file) return
+    setImporting(true)
+    setError(null)
+    try {
+      const { fileToSheetBody } = await import('./sheet-import')
+      const { body, name } = await fileToSheetBody(file)
+      setImportedBody(body)
+      setImportName(file.name)
+      if (title.trim().length === 0 && name) setTitle(name)
+    } catch {
+      setError("Couldn't read that file — use a .csv or .xlsx export.")
+      setImportedBody(null)
+      setImportName(null)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const trimmed = title.trim()
@@ -232,7 +262,7 @@ export function NewPageDialog({
         parent_id: parentId,
         title: trimmed,
         ...(docType === 'sheet'
-          ? { props: { sheet: true }, body: SHEET_STARTER_BODY }
+          ? { props: { sheet: true }, body: importedBody ?? SHEET_STARTER_BODY }
           : {}),
       })
       handleClose(false)
@@ -294,6 +324,50 @@ export function NewPageDialog({
                   <Table2 width={14} height={14} /> Sheet
                 </Button>
               </div>
+              {docType === 'sheet' ? (
+                <div className="mt-[var(--space-1)] flex min-w-0 items-center gap-[var(--space-2)]">
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept=".csv,.xlsx,.xls,text/csv"
+                    className="sr-only"
+                    onChange={handleImportFile}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={importing}
+                    onClick={() => importInputRef.current?.click()}
+                  >
+                    <Upload width={14} height={14} />
+                    {importing
+                      ? 'Reading…'
+                      : importName
+                        ? 'Replace file'
+                        : 'Import CSV / XLSX'}
+                  </Button>
+                  {importName ? (
+                    <span className="flex min-w-0 items-center gap-[var(--space-1)] text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                      <span className="truncate">{importName}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 underline hover:text-[var(--text-primary)]"
+                        onClick={() => {
+                          setImportedBody(null)
+                          setImportName(null)
+                        }}
+                      >
+                        clear
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                      optional — start from an existing spreadsheet
+                    </span>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-[var(--space-2)]">
