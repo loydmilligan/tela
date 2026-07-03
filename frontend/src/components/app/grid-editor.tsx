@@ -1,14 +1,65 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as Y from 'yjs'
+import type { Awareness } from 'y-protocols/awareness'
 import { normalize } from '@defterjs/core'
 import { createEngine, FUNCTION_NAMES } from '@defterjs/formula'
-import { DefterGrid } from '@defterjs/react'
-import { useYText } from '@defterjs/yjs'
+import { DefterGrid, type Collaborator, type SelectionState } from '@defterjs/react'
+import { useYText, useYUndo } from '@defterjs/yjs'
 import '@defterjs/react/styles.css'
 import { cn } from '../../lib/utils'
 import { decodeSyncInit } from '../../lib/collab/encode'
 import { useCollabSession } from '../../lib/collab/use-collab-session'
+import { useMe } from '../../lib/queries/auth'
 import '../../styles/defter-grid.css'
+
+// 0..7 colorIdx → a --collab-cursor-{1..8} token reference, so remote cursors
+// use the SAME theme-aware hues as tela's milkdown cursors + presence avatars.
+// A CSS var (not a resolved hex) keeps it theme-reactive.
+function cursorColorToken(colorIdx: number): string {
+  const n = (((Math.trunc(colorIdx) % 8) + 8) % 8) + 1
+  return `var(--collab-cursor-${n})`
+}
+
+interface SheetAwarenessState {
+  user?: { id: number; username: string; colorIdx?: number }
+  sheetSel?: SelectionState
+}
+
+// Live remote peers (their name/color + current cell selection) from tela's
+// awareness, mapped to defter's Collaborator shape. Excludes self; only peers
+// that have published a sheet selection are shown.
+function useSheetCollaborators(awareness: Awareness | null): Collaborator[] {
+  const [collabs, setCollabs] = useState<Collaborator[]>([])
+  useEffect(() => {
+    if (!awareness) {
+      setCollabs([])
+      return
+    }
+    const self = awareness.clientID
+    const rebuild = () => {
+      const out: Collaborator[] = []
+      for (const [clientID, state] of awareness.getStates()) {
+        if (clientID === self) continue
+        const s = state as SheetAwarenessState | undefined
+        if (!s?.user || !s.sheetSel?.selection) continue
+        const colorIdx =
+          typeof s.user.colorIdx === 'number' ? s.user.colorIdx : s.user.id % 8
+        out.push({
+          id: String(clientID),
+          name: s.user.username || `User ${clientID}`,
+          color: cursorColorToken(colorIdx),
+          sheetIndex: s.sheetSel.sheetIndex,
+          selection: s.sheetSel.selection,
+        })
+      }
+      setCollabs(out)
+    }
+    rebuild()
+    awareness.on('change', rebuild)
+    return () => awareness.off('change', rebuild)
+  }, [awareness])
+  return collabs
+}
 
 // GridEditor — the SHEET doc-type editor. A sheet's body is Defter markdown; the
 // grid is a live projection of it. This mirrors MilkdownEditor's collab contract
@@ -86,10 +137,35 @@ function SoloGrid({ defaultValue, onChange, onBlur, readOnly, ariaLabel, classNa
 // edits) and gives a splice-back updater.
 function CollabGrid({ defaultValue, onChange, onBlur, collabPageId, readOnly, ariaLabel, className, onSheetChange }: GridEditorProps) {
   const { session, isLeaderRef } = useCollabSession(collabPageId)
+  const me = useMe()
+  const awareness = session?.provider.awareness ?? null
 
   // A stable Y.Text handle for the lifetime of this session.
   const ytext = useMemo(() => session?.doc.getText('defter') ?? new Y.Doc().getText('defter'), [session])
   const [text, setText] = useYText(ytext)
+
+  // CRDT-aware undo/redo: scoped to the local origin, so undo reverts only THIS
+  // user's edits, never a remote peer's concurrent change.
+  const { undo, redo, canUndo, canRedo } = useYUndo(ytext)
+
+  // Presence — seed our identity into awareness (same {id,username,colorIdx}
+  // shape tela's milkdown cursors + avatars use), read peers, broadcast our
+  // selection. Viewers don't advertise a selection.
+  const collaborators = useSheetCollaborators(awareness)
+  useEffect(() => {
+    if (!awareness || !me.data) return
+    awareness.setLocalStateField('user', {
+      id: me.data.id,
+      username: me.data.username,
+      colorIdx: me.data.id % 8,
+    })
+  }, [awareness, me.data])
+  const onSelectionChange = useCallback(
+    (sel: SelectionState) => {
+      awareness?.setLocalStateField('sheetSel', sel)
+    },
+    [awareness],
+  )
 
   // Local edit: splice into the Y.Text (origin 'local'), then persist. Every peer
   // persists its OWN local edits — last-write-wins on the body PATCH.
@@ -171,7 +247,19 @@ function CollabGrid({ defaultValue, onChange, onBlur, collabPageId, readOnly, ar
 
   return (
     <div className={cn('min-h-0 flex-1', className)} aria-label={ariaLabel} onBlur={onBlur}>
-      <DefterGrid {...GRID_PROPS} text={text} onChange={readOnly ? undefined : onGridChange} readOnly={readOnly} onSheetChange={onSheetChange} />
+      <DefterGrid
+        {...GRID_PROPS}
+        text={text}
+        onChange={readOnly ? undefined : onGridChange}
+        readOnly={readOnly}
+        onSheetChange={onSheetChange}
+        collaborators={collaborators}
+        onSelectionChange={onSelectionChange}
+        undo={undo}
+        redo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+      />
     </div>
   )
 }
