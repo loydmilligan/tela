@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/zcag/tela/backend/internal/models"
+	"github.com/zcag/tela/backend/internal/sheetproj"
 	"github.com/zcag/tela/backend/internal/rag"
 )
 
@@ -536,7 +537,7 @@ func (s *Server) mcpListPages(ctx context.Context, req *mcp.CallToolRequest, in 
 
 type getPageIn struct {
 	ID     int64  `json:"id" jsonschema:"numeric page id"`
-	Format string `json:"format,omitempty" jsonschema:"'full' (default) returns the markdown body; 'map' returns just the heading outline (section levels + paths) and no body — cheap to read, and each path is a target for patch_page"`
+	Format string `json:"format,omitempty" jsonschema:"'full' (default) returns the markdown body; 'map' returns just the heading outline (section levels + paths) and no body — cheap to read, and each path is a target for patch_page; 'values' — for a SHEET page (sheet=true), returns the computed spreadsheet as self-describing prose (formulas materialized to their numbers, styling stripped) so you read the answers, not the raw =formulas (no effect on non-sheet pages)"`
 }
 
 type getPageOut struct {
@@ -592,6 +593,13 @@ func (s *Server) mcpGetPage(ctx context.Context, req *mcp.CallToolRequest, in ge
 		p.Body = ""
 		mp := mcpPage{Page: p, URL: s.mcpPageURL(ctx, p), Epistemic: epi, Sections: sections}
 		return nil, getPageOut{Page: mp}, nil
+	}
+	// A sheet's raw body is Defter markdown (formulas, not answers). 'values' mode
+	// returns the computed projection so an agent reads the numbers directly.
+	if in.Format == "values" && isSheetBag(p.Props) {
+		p.Body = sheetproj.Project(ctx, p.Body)
+		out := getPageOut{Page: mcpPage{Page: p, URL: s.mcpPageURL(ctx, p), Epistemic: epi}}
+		return nil, out, nil
 	}
 	body, whole := mcpCapBody(p.Body)
 	p.Body = body
