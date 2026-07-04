@@ -13,11 +13,11 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@defterjs/core": "^0.1.5",
-    "@defterjs/formula": "^0.1.5",
-    "@defterjs/react": "^0.1.5",
-    "@defterjs/xlsx": "^0.1.5",
-    "@defterjs/yjs": "^0.1.5",
+    "@defterjs/core": "^0.2.0",
+    "@defterjs/formula": "^0.2.0",
+    "@defterjs/react": "^0.2.0",
+    "@defterjs/xlsx": "^0.2.0",
+    "@defterjs/yjs": "^0.2.0",
     "@excalidraw/excalidraw": "^0.18.1",
     "@mermaid-js/layout-elk": "^0.2.2",
     "@milkdown/kit": "^7.21.1",
