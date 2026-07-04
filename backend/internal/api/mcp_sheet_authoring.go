@@ -41,7 +41,7 @@ func telaSheetPreamble() string {
 	b.WriteString("- Make a page a sheet: set the page property `sheet: true` (e.g. `create_page` with `props: {\"sheet\": true}`).\n")
 	b.WriteString("- The body is stored **verbatim** — write canonical Defter markdown directly. Do NOT hand-align table columns with padding spaces (defter stores compact, one row per line, and aligns at render time); do NOT put page frontmatter in the body.\n")
 	b.WriteString("- **Formulas are computed at read time and never stored** — always write the formula (`=SUM(D2:D9)`), never a baked number. Row 1 is the header; the `|---|` delimiter row does not count; the first data row is row 2.\n")
-	b.WriteString("- To edit a live sheet, prefer a targeted `update_page` (or `patch_page`) over rewriting the whole body, so you don't clobber a collaborator — sheets are live-collaborative.\n")
+	b.WriteString("- **To EDIT an existing sheet, use `edit_sheet`, not `update_page`.** Pass a structured op (`setCells`, `insertRows`/`deleteRows`, `insertCols`/`deleteCols`, `setStyle`, `setFreeze`, `addSheet`/`renameSheet`/`deleteSheet`) and tela rewrites the Defter markdown correctly — inserting a row shifts every formula below it, so you never corrupt the grid by editing text by hand. It also touches only what you change, so you don't clobber a collaborator (sheets are live-collaborative). Reserve `update_page` for a full-body rewrite or the initial content.\n")
 	b.WriteString("\nEverything below is defter's own authoring contract (the full format, coordinate, formula, and styling reference) — apply it verbatim.\n\n---\n\n")
 	return b.String()
 }

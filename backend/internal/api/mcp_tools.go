@@ -174,6 +174,20 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpSheetAuthoringGuide)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:  "edit_sheet",
+		Title: "Edit sheet (structured)",
+		Description: "Make a STRUCTURED edit to a sheet (a sheet=true page), editor+. Prefer this over update_page for sheets: you pass a typed operation and tela rewrites the Defter markdown correctly — inserting a row shifts every formula below it, deleting a column re-references the rest, so you never corrupt the grid by hand-editing text. " +
+			"Pass one `op` (or a batch via `ops`, applied atomically). Each op is `{kind, ...}` where kind is one of: " +
+			"setCells {cells:[{ref:\"B2\",text:\"=A2*1.2\"}]} — write literals/formulas by A1 ref; " +
+			"insertRows/deleteRows {at:<1-based row>, count?}; insertCols/deleteCols {at:<col letter or 1-based index>, count?}; " +
+			"setStyle {target:\"A1:C1\"|\"B\"|\"2\", attrs:{...}} — bold/align/fill/number-format a range/col/row; " +
+			"setFreeze {rows?, cols?} — freeze N header rows / M leading cols (0 clears); " +
+			"addSheet {name, after?}; renameSheet {sheet, name}; deleteSheet {sheet}. " +
+			"Ops that target a specific tab take an optional `sheet` (name or 0-based index; defaults to the first). A bad ref/range/sheet is rejected with a fixable error. Call sheet_authoring_guide for the full op reference, cell/style syntax, and formula functions. Returns the updated sheet with formulas computed.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &no, DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpEditSheet)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "lint_deck",
 		Title:       "Lint slide deck",
 		Description: "Validate a deck page's slides against the tahta theme contract — unknown layouts, missing required fields, type/format mistakes. Run after authoring/editing a deck to catch problems before presenting. Returns structured issues per slide. For the full list of valid layouts and each layout's fields, call deck_authoring_guide.",

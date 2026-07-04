@@ -41,7 +41,7 @@ import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { parse, stringify, prettifySlide, detectFeatures } from '@slidev/parser/core'
-import { parse as parseSheet, projectProse, projectValuesModel } from '@defterjs/core'
+import { parse as parseSheet, projectProse, projectValuesModel, applyOp, applyOps } from '@defterjs/core'
 import { createEngine } from '@defterjs/formula'
 import { lint as tahtaLint } from 'slidev-theme-tahta/lint.mjs'
 import { treat as tahtaTreat } from 'slidev-theme-tahta/imagine.mjs'
@@ -556,6 +556,24 @@ const server = http.createServer(async (req, res) => {
         for (let r = 0; r < sh.grid.length && r < 5; r++) cells.push(sh.grid[r].slice(0, cols))
       }
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ cells }))
+    } else if (req.method === 'POST' && path === '/apply') {
+      // Apply a structured SheetOp (or a batch) to a Defter body → new canonical
+      // markdown, reusing @defterjs/core's reference-rewriting. Body JSON:
+      // {body, op} or {body, ops}. 200 {body} on success; 422 {error} on a bad op
+      // (bad A1 ref, unknown sheet, out-of-range) so the host relays it to the agent.
+      let payload
+      try {
+        payload = JSON.parse(await readBody(req))
+      } catch {
+        return void res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'invalid json' }))
+      }
+      try {
+        const src = String(payload.body ?? '')
+        const next = Array.isArray(payload.ops) ? applyOps(src, payload.ops) : applyOp(src, payload.op)
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ body: next }))
+      } catch (e) {
+        res.writeHead(422, { 'content-type': 'application/json' }).end(JSON.stringify({ error: String((e && e.message) || e) }))
+      }
     } else if (req.method === 'POST' && path === '/treat') {
       // tahta's deterministic image TREAT step (tahta-imagine): crop to 16:9 →
       // scheme-aware duotone (palette-lock) → grain → optional scrim, reading the
