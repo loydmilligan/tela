@@ -33,6 +33,14 @@
 ## Subjective — human gate (never auto-passed)
 - [ ] Taste sign-off on the signature "agent weaving a page" moment / overall feel
 
+## §6b Spreadsheets section (added 2026-07-04; sibling of §6a Presentations)
+- [x] Framed as a standalone capability ("tela makes spreadsheets"), not a per-page table trick — mirrors §6a
+- [x] Visual is a REAL screenshot of the live grid (light register vs the dark page): formula bar `=SUM(B2:B6)`, currency + percent formats, over-budget cells flagged red, bold `=SUM` total row — show, don't describe
+- [x] Engine not sold in headline/body/chrome; muted "Powered by defter" credit at the section foot (parallels Slidev/tahta on §6a)
+- [x] Charts NOT claimed and NOT shown — tela's grid doesn't render sheet charts inline yet (honesty; user chose ship-as-is)
+- [x] Deterministic gates green with the section live: tokens, axe WCAG 2.2 AA (4 viewports), reduced-motion, Lighthouse desktop + mobile
+- [x] Verified dark + light, desktop (1440) + mobile (390); "sheets" woven into the pricing/self-host/terms/mcp enumerations
+
 <!--
   Stop/SubagentStop hook keys off .cila/state.json `gate_required`. design-reviewer must cite a
   screenshot region + the relevant DESIGN.md/CONTENT.md clause before each sub-score.

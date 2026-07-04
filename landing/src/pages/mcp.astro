@@ -39,6 +39,9 @@ const atlasTools = [
   ['atlas_run', 'Trigger an Atlas run — generate or refresh a source.'],
   ['atlas_run_status', 'Check a run — stage, status, and coverage.'],
 ];
+const sheetTools = [
+  ['sheet_authoring_guide', 'The guide for authoring tela spreadsheets — the table format, formulas, and styling.'],
+];
 const deckTools = [
   ['preview_deck', 'Render a deck to preview its slides.'],
   ['lint_deck', 'Check deck markdown before presenting.'],
@@ -258,6 +261,13 @@ env = { TELA_BASE_URL = "https://telawiki.com", TELA_API_KEY = "<your personal a
   <h3>Atlas</h3>
   <ul class="tool-grid">
     {atlasTools.map(([name, desc]) => (
+      <li><code>{name}</code><span class="desc">{desc}</span></li>
+    ))}
+  </ul>
+
+  <h3>Sheets</h3>
+  <ul class="tool-grid">
+    {sheetTools.map(([name, desc]) => (
       <li><code>{name}</code><span class="desc">{desc}</span></li>
     ))}
   </ul>

@@ -1,0 +1,179 @@
+---
+// §6b — Spreadsheets. A page flipped to a sheet (props.sheet=true) is a real
+// spreadsheet: live formulas, conditional formatting, number formats, CSV/XLSX in
+// and out, live multiplayer — and, the tela angle, agents author the whole thing
+// over MCP. The showcase uses a REAL screenshot of the live grid (light register,
+// public/sheets/budget.webp) so the quality is shown, not described. The engine
+// name (defter) is credited at the bottom, never sold. Sibling of Decks (§6a).
+//
+// To re-shoot (e.g. after a grid-theme change) — the source sheet is a real tela
+// page (sheet:true) with a =SUM total, over-budget conditional formatting, and
+// currency/percent formats. Recipe:
+//   1. Boot dev (make be-dev DEV_BE_PORT=18080 + vite proxied to it); create a
+//      known admin; POST a sheet page (props {sheet:true}) with the Defter body.
+//   2. Playwright (bundled chromium), light theme, open /spaces/<sid>/pages/<pid>,
+//      mouse-click the =SUM cell so the formula bar reads "=SUM(B2:B6)", then
+//      screenshot a clip: formula bar → one empty row past the total, cols A–F.
+//   3. magick shot.png -resize 1408x -quality 82 public/sheets/budget.webp
+const feats = [
+  'Agents build whole spreadsheets for you',
+  'Live formulas, conditional formatting & number formats',
+  'Import & export CSV and XLSX',
+  'Plain markdown you own underneath',
+];
+---
+<section id="sheets" class="section">
+  <div class="section-head reveal-up">
+    <p class="kicker"><span class="kicker-dot"></span>Spreadsheets</p>
+    <h2 class="h2">Spreadsheets, built in.</h2>
+    <p class="lede">
+      tela makes <strong>real spreadsheets</strong> — live formulas, conditional formatting and
+      number formats, with CSV and XLSX in and out. And because tela is agent-native, your agent
+      can build the whole sheet for you: ask Claude or ChatGPT to <em>"turn this CSV into a Q3
+      budget with totals and over-budget flags"</em> and it does.
+    </p>
+  </div>
+
+  <div class="sheet-wrap reveal-up">
+    <!-- Real screenshot of the live grid: framed viewer with a mock title-bar -->
+    <div class="sheet-frame">
+      <div class="sheet-bar">
+        <span class="sheet-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="sheet-chips">
+          <span class="sheet-chip sheet-chip--fx">fx</span>
+          <span class="sheet-chip">CSV</span>
+          <span class="sheet-chip">XLSX</span>
+        </span>
+      </div>
+
+      <div class="sheet-stage">
+        <img
+          class="sheet-shot"
+          src="/sheets/budget.webp"
+          width="1408"
+          height="550"
+          alt="A tela spreadsheet: a Q3 marketing budget with a =SUM total row, over-budget cells flagged red, and currency and percent number formats — rendered by the live grid."
+          loading="lazy"
+          decoding="async"
+        />
+      </div>
+    </div>
+
+    <!-- Capabilities -->
+    <ul class="sheet-feats">
+      {feats.map((f) => (
+        <li>
+          <svg class="tick" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>{f}</span>
+        </li>
+      ))}
+      <li class="sheet-note">
+        Formulas compute at read time — never baked into stored numbers. Sheets are
+        live-collaborative (cursors and presence), and semantic search reads the <em>computed</em>
+        values, not the raw formulas.
+      </li>
+    </ul>
+  </div>
+
+  <p class="sheet-credit reveal-up">
+    Powered by
+    <a href="https://github.com/zcag/defter" target="_blank" rel="noopener">defter</a>.
+  </p>
+</section>
+
+<style>
+  .section-head .lede strong { color: var(--fg); font-weight: 600; }
+  .section-head .lede em { color: var(--fg-soft); font-style: italic; }
+
+  .sheet-wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  @media (min-width: 860px) {
+    .sheet-wrap { grid-template-columns: 1.5fr 1fr; gap: 2.5rem; }
+  }
+
+  /* ── grid viewer ──────────────────────────────────────────────────── */
+  .sheet-frame {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-frame, none);
+    overflow: hidden;
+  }
+  .sheet-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding: 0.7rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-sunk);
+  }
+  .sheet-dots { display: inline-flex; gap: 0.4rem; }
+  .sheet-dots i {
+    width: 0.55rem; height: 0.55rem; border-radius: var(--radius-full);
+    background: var(--border-strong);
+  }
+  .sheet-chips { display: inline-flex; gap: 0.4rem; }
+  .sheet-chip {
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    color: var(--fg-faint);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.5rem;
+  }
+  .sheet-chip--fx {
+    color: var(--brand-strong);
+    background: var(--brand-wash);
+    border-color: var(--pill-border);
+    font-style: italic;
+  }
+
+  .sheet-stage { padding: 1rem; }
+
+  /* The screenshot is a light-register grid; frame it on its own light mat so it
+     reads as a distinct, premium surface against the dark page (mirrors the way
+     the paper-variant slides sit apart in §6a). */
+  .sheet-shot {
+    display: block;
+    width: 100%; height: auto;
+    aspect-ratio: 1408 / 550;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: #fff;
+  }
+
+  /* ── capability list ──────────────────────────────────────────────── */
+  .sheet-feats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.85rem; }
+  .sheet-feats li {
+    display: flex; align-items: flex-start; gap: 0.55rem;
+    font-size: var(--text-base); color: var(--fg-soft);
+  }
+  .sheet-feats .tick { color: var(--brand); flex: none; margin-top: 0.2rem; }
+  /* `.sheet-feats li` sets display:flex; this note is prose with inline <em>, so
+     it must stay block. Match list+note specificity to beat the li rule. */
+  .sheet-feats li.sheet-note {
+    display: block;
+    margin-top: 0.25rem; padding-top: 0.85rem;
+    border-top: 1px solid var(--border);
+    font-size: var(--text-sm); color: var(--fg-faint);
+  }
+  .sheet-note em { color: var(--fg-soft); font-style: italic; }
+
+  .sheet-credit {
+    margin-top: 1.75rem;
+    font-size: var(--text-xs);
+    color: var(--fg-faint);
+  }
+  .sheet-credit a {
+    color: var(--fg-soft);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: var(--border-strong);
+  }
+  .sheet-credit a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+</style>
