@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Play } from 'lucide-react'
+import { Play, Table2 } from 'lucide-react'
 import { DeckCoverImage } from '../deck-cover-image'
 import { coverBackground, monogram } from '../../../lib/blog'
 import { pageSlug } from '../../../lib/slug'
@@ -105,6 +105,10 @@ export function PostCard({
           ) : post.kind === 'deck' ? (
             <span className="inline-flex items-center gap-[var(--space-1)]">
               <Play width={11} height={11} /> Presentation
+            </span>
+          ) : post.kind === 'sheet' ? (
+            <span className="inline-flex items-center gap-[var(--space-1)]">
+              <Table2 width={11} height={11} /> Spreadsheet
             </span>
           ) : (
             <span>{post.reading_minutes} min read</span>

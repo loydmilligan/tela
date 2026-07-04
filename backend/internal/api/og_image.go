@@ -22,6 +22,8 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
+
+	defterparse "github.com/zcag/defter/go"
 )
 
 // Geist (Vercel, OFL) — tela's brand typeface per DESIGN.md (Geist family only).
@@ -189,6 +191,23 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A sheet's share image is a preview of its grid (its visual identity) — the
+	// branded card with a table of its top-left cells. Fall back to the generic
+	// card if the sheet is empty/unparseable.
+	if isSheetBag(decodeProps(propsRaw)) {
+		if cells := sheetOGCells(body); len(cells) > 0 {
+			if pngBytes, gerr := renderSheetOGCard(title, "in "+spaceName, brand, cells); gerr == nil {
+				w.Header().Set("Content-Type", "image/png")
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+				w.Header().Set("ETag", etag)
+				w.Header().Set("Content-Length", strconv.Itoa(len(pngBytes)))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(pngBytes)
+				return
+			}
+		}
+	}
+
 	pngBytes, err := renderOGCard(title, "in "+spaceName, brand)
 	if err != nil {
 		slog.Error("og_image: render page", "page_id", pageID, "err", err)
@@ -266,8 +285,9 @@ type ogCardOpts struct {
 	title         string
 	subtitle      string
 	maxTitleLines int
-	chips         []string // pill labels along the bottom-left (hero cards)
-	accentLabel   string   // bottom-right accent text, e.g. the domain (hero cards)
+	chips         []string   // pill labels along the bottom-left (hero cards)
+	accentLabel   string     // bottom-right accent text, e.g. the domain (hero cards)
+	grid          [][]string // when set (a sheet), a top-left cell window drawn as a table preview instead of the subtitle
 	brand         ogBrand
 }
 
@@ -387,7 +407,14 @@ func renderOGCardOpts(o ogCardOpts) ([]byte, error) {
 	}
 
 	subtitleY := titleY + (len(titleLines)-1)*ogTitleLineH + 24 + ogSubtitleSize
-	if o.subtitle != "" && subtitleY <= clearanceY-12 {
+	if len(o.grid) > 0 {
+		// A sheet: draw a table preview of the top-left cells in the space between
+		// the title and the footer band, reading as a spreadsheet at a glance.
+		gridTop := titleY + (len(titleLines)-1)*ogTitleLineH + 30
+		if gridTop < clearanceY-90 {
+			drawSheetGrid(img, o.grid, gridTop, clearanceY-16)
+		}
+	} else if o.subtitle != "" && subtitleY <= clearanceY-12 {
 		sub := truncateToWidth(subtitleFace, o.subtitle, ogDrawableWidth)
 		subtitleDrawer := &font.Drawer{
 			Dst:  img,
@@ -403,6 +430,121 @@ func renderOGCardOpts(o ogCardOpts) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// renderSheetOGCard is the share card for a sheet: the branded card with a
+// top-left cell window drawn as a light spreadsheet panel instead of a subtitle.
+func renderSheetOGCard(title, _subtitle string, brand ogBrand, cells [][]string) ([]byte, error) {
+	return renderOGCardOpts(ogCardOpts{title: title, grid: cells, brand: brand, maxTitleLines: 2})
+}
+
+// sheetOGCells extracts the top-left window (≤5 rows × ≤5 cols) of a sheet's
+// first sheet for the OG preview, from raw cell text (literal values; formula
+// cells keep their source — the visible top rows are almost always literals).
+func sheetOGCells(body string) [][]string {
+	model := defterparse.Parse(body)
+	if len(model.Sheets) == 0 {
+		return nil
+	}
+	sh := model.Sheets[0]
+	cols := sh.Width
+	if cols > 5 {
+		cols = 5
+	}
+	if cols == 0 {
+		return nil
+	}
+	out := make([][]string, 0, 5)
+	for r := 0; r < len(sh.Grid) && r < 5; r++ {
+		row := make([]string, cols)
+		for c := 0; c < cols && c < len(sh.Grid[r]); c++ {
+			row[c] = sh.Grid[r][c]
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// drawSheetGrid paints a light spreadsheet panel (header band + rows + hairlines)
+// with the given cell text, on the dark OG card, between top and bottom.
+func drawSheetGrid(img *image.RGBA, cells [][]string, top, bottom int) {
+	rows := len(cells)
+	if rows > 5 {
+		rows = 5
+	}
+	if rows == 0 {
+		return
+	}
+	cols := 0
+	for _, r := range cells[:rows] {
+		if len(r) > cols {
+			cols = len(r)
+		}
+	}
+	if cols == 0 {
+		return
+	}
+	x0, x1 := ogMargin, ogMargin+ogDrawableWidth
+	cellW := (x1 - x0) / cols
+	rowH := 48
+	if rows*rowH > bottom-top {
+		rowH = (bottom - top) / rows
+	}
+	if rowH < 30 {
+		rowH = 30
+	}
+	y0 := top
+	y1 := y0 + rows*rowH
+
+	panelBG := color.RGBA{R: 0xfa, G: 0xfa, B: 0xfc, A: 0xff}
+	headerBG := color.RGBA{R: 0xe7, G: 0xea, B: 0xf6, A: 0xff}
+	lineC := color.RGBA{R: 0xd8, G: 0xdb, B: 0xe4, A: 0xff}
+	cellText := color.RGBA{R: 0x1a, G: 0x1a, B: 0x22, A: 0xff}
+	headText := color.RGBA{R: 0x1c, G: 0x25, B: 0x52, A: 0xff}
+
+	fillRoundRect(img, image.Rect(x0, y0, x1, y1), 14, panelBG)
+	draw.Draw(img, image.Rect(x0+1, y0+1, x1-1, y0+rowH), &image.Uniform{C: headerBG}, image.Point{}, draw.Src)
+
+	cf, err := opentype.NewFace(ogRegularFont, &opentype.FaceOptions{Size: 24, DPI: 72, Hinting: font.HintingFull})
+	if err != nil {
+		return
+	}
+	defer cf.Close()
+	bf, err := opentype.NewFace(ogBoldFont, &opentype.FaceOptions{Size: 24, DPI: 72, Hinting: font.HintingFull})
+	if err != nil {
+		return
+	}
+	defer bf.Close()
+
+	for r := 1; r < rows; r++ {
+		y := y0 + r*rowH
+		draw.Draw(img, image.Rect(x0, y, x1, y+1), &image.Uniform{C: lineC}, image.Point{}, draw.Src)
+	}
+	for c := 1; c < cols; c++ {
+		x := x0 + c*cellW
+		draw.Draw(img, image.Rect(x, y0, x+1, y1), &image.Uniform{C: lineC}, image.Point{}, draw.Src)
+	}
+
+	const pad = 16
+	for r := 0; r < rows; r++ {
+		face, tc := cf, cellText
+		if r == 0 {
+			face, tc = bf, headText
+		}
+		baseY := y0 + r*rowH + rowH/2 + 8
+		for c := 0; c < cols; c++ {
+			var txt string
+			if c < len(cells[r]) {
+				txt = strings.TrimSpace(cells[r][c])
+			}
+			if txt == "" {
+				continue
+			}
+			txt = truncateToWidth(face, txt, cellW-2*pad)
+			d := &font.Drawer{Dst: img, Src: &image.Uniform{C: tc}, Face: face, Dot: fixed.P(x0+c*cellW+pad, baseY)}
+			d.DrawString(txt)
+		}
+	}
 }
 
 // brandName is the org name when branded, else "tela".

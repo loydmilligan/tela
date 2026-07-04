@@ -37,6 +37,16 @@ func blogMetaFor(body string, props map[string]any) blogCardMeta {
 			Tags:    propStrings(props, "tags"),
 		}
 	}
+	// A sheet's body is Defter markdown (compact tables + a style block) — the
+	// prose excerpter mangles it and reading-time is meaningless. Use the summary;
+	// the cover (grid-preview OG) is filled in by the caller (space+page ids).
+	if isSheetBag(props) {
+		return blogCardMeta{
+			Kind:    "sheet",
+			Excerpt: clip(strings.Join(strings.Fields(propString(props, "summary", "excerpt", "description")), " "), 180),
+			Tags:    propStrings(props, "tags"),
+		}
+	}
 	return blogCardMeta{
 		Excerpt:        postExcerpt(body, props, 180),
 		ReadingMinutes: readingMinutes(body),

@@ -161,6 +161,10 @@ func (s *Server) GetPublicSpaceTree(w http.ResponseWriter, r *http.Request) {
 		if n.Kind == "deck" {
 			n.Cover = fmt.Sprintf("/api/public/spaces/%d/pages/%d/deck/cover", id, n.ID)
 		}
+		// A sheet's cover is its grid-preview OG image (the public share OG).
+		if n.Kind == "sheet" {
+			n.Cover = fmt.Sprintf("/p/%d/og.png", n.ID)
+		}
 		nodes = append(nodes, n)
 	}
 	if err := rows.Err(); err != nil {

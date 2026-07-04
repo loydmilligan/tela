@@ -410,7 +410,7 @@ function PageViewer({
     <div className="flex-1 flex flex-col min-h-0">
       <header className="flex items-center justify-between gap-[var(--space-4)] px-[var(--space-6)] py-[var(--space-3)] border-b border-[var(--border-subtle)] shrink-0">
         <Breadcrumb spaceId={spaceId} pageId={page.id} />
-        <div className="flex items-center gap-[var(--space-3)]">
+        <div className="flex items-center gap-[var(--space-3)] min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {roleResolved ? <FavoriteStar pageId={page.id} /> : null}
           {roleResolved ? <FollowButton id={page.id} /> : null}
           <PageProperties props={page.props} />
@@ -1255,7 +1255,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
               : undefined
           }
         />
-        <div className="flex items-center gap-[var(--space-3)]">
+        <div className="flex items-center gap-[var(--space-3)] min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {isDraftMode ? (
             <>
               <Button
