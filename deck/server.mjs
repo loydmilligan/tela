@@ -41,7 +41,7 @@ import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { parse, stringify, prettifySlide, detectFeatures } from '@slidev/parser/core'
-import { parse as parseSheet, projectProse } from '@defterjs/core'
+import { parse as parseSheet, projectProse, projectValuesModel } from '@defterjs/core'
 import { createEngine } from '@defterjs/formula'
 import { lint as tahtaLint } from 'slidev-theme-tahta/lint.mjs'
 import { treat as tahtaTreat } from 'slidev-theme-tahta/imagine.mjs'
@@ -543,6 +543,19 @@ const server = http.createServer(async (req, res) => {
       const model = parseSheet(md)
       const prose = projectProse(model, { computed: sheetEngine.compute(model) })
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(prose)
+    } else if (req.method === 'POST' && path === '/sheet-cells') {
+      // The top-left window of a sheet with formulas materialized to COMPUTED
+      // display values (number formats applied) — for the OG share-card grid
+      // preview, so it shows numbers, not `=source`.
+      const md = await readBody(req)
+      const vm = projectValuesModel(parseSheet(md), { computed: sheetEngine.compute(parseSheet(md)) })
+      const sh = vm.sheets[0]
+      const cells = []
+      if (sh) {
+        const cols = Math.min(sh.width, 5)
+        for (let r = 0; r < sh.grid.length && r < 5; r++) cells.push(sh.grid[r].slice(0, cols))
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ cells }))
     } else if (req.method === 'POST' && path === '/treat') {
       // tahta's deterministic image TREAT step (tahta-imagine): crop to 16:9 →
       // scheme-aware duotone (palette-lock) → grain → optional scrim, reading the

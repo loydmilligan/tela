@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -11,6 +13,7 @@ import (
 	"image/draw"
 	"image/jpeg" // encode the share image; its init also registers the JPEG decoder
 	"image/png"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -195,7 +198,7 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 	// branded card with a table of its top-left cells. Fall back to the generic
 	// card if the sheet is empty/unparseable.
 	if isSheetBag(decodeProps(propsRaw)) {
-		if cells := sheetOGCells(body); len(cells) > 0 {
+		if cells := sheetOGCells(r.Context(), body); len(cells) > 0 {
 			if pngBytes, gerr := renderSheetOGCard(title, "in "+spaceName, brand, cells); gerr == nil {
 				w.Header().Set("Content-Type", "image/png")
 				w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -438,10 +441,47 @@ func renderSheetOGCard(title, _subtitle string, brand ogBrand, cells [][]string)
 	return renderOGCardOpts(ogCardOpts{title: title, grid: cells, brand: brand, maxTitleLines: 2})
 }
 
-// sheetOGCells extracts the top-left window (≤5 rows × ≤5 cols) of a sheet's
-// first sheet for the OG preview, from raw cell text (literal values; formula
-// cells keep their source — the visible top rows are almost always literals).
-func sheetOGCells(body string) [][]string {
+// sheetOGCells returns the top-left window (≤5 rows × ≤5 cols) of a sheet for the
+// OG preview. It prefers COMPUTED cell values from the node sidecar (so formulas
+// show their numbers); if the sidecar is unset or unreachable it falls back to
+// the in-process raw parse with formula cells blanked (never `=source` in a card).
+func sheetOGCells(ctx context.Context, body string) [][]string {
+	if cells := sheetCellsFromSidecar(ctx, body); len(cells) > 0 {
+		return cells
+	}
+	return sheetOGCellsRaw(body)
+}
+
+func sheetCellsFromSidecar(ctx context.Context, body string) [][]string {
+	base := strings.TrimRight(deckBaseURL(), "/")
+	if base == "" {
+		return nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodPost, base+"/sheet-cells", strings.NewReader(body))
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("content-type", "text/plain; charset=utf-8")
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var out struct {
+		Cells [][]string `json:"cells"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out) != nil {
+		return nil
+	}
+	return out.Cells
+}
+
+func sheetOGCellsRaw(body string) [][]string {
 	model := defterparse.Parse(body)
 	if len(model.Sheets) == 0 {
 		return nil
@@ -458,7 +498,11 @@ func sheetOGCells(body string) [][]string {
 	for r := 0; r < len(sh.Grid) && r < 5; r++ {
 		row := make([]string, cols)
 		for c := 0; c < cols && c < len(sh.Grid[r]); c++ {
-			row[c] = sh.Grid[r][c]
+			cell := sh.Grid[r][c]
+			if strings.HasPrefix(strings.TrimSpace(cell), "=") {
+				cell = "" // no raw formula source in a share card
+			}
+			row[c] = cell
 		}
 		out = append(out, row)
 	}
