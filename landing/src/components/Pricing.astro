@@ -15,7 +15,7 @@ const { selfHostLink = '/pricing#self-host' } = Astro.props;
 const includes = [
   'Atlas — generate & refresh a cited, coverage-checked wiki from a git repo or Jira project',
   'Semantic search + ask your docs, with citations',
-  'MCP connector for Claude & ChatGPT',
+  'Bring your own agent (Claude, ChatGPT) over MCP — ask unlimited, on your model',
   'Local folder sync over WebDAV',
   'Real-time multiplayer editing',
   'Organizations & per-space roles',
@@ -44,7 +44,7 @@ const cloud = [
     periodYear: null,
     saveYear: null,
     blurb: 'Personal notes and trying tela.',
-    specs: ['1 Atlas source', '50 AI answers / month', 'Unlimited pages & spaces', 'The whole wiki, sheets, decks & sync'],
+    specs: ['Unlimited with your own agent (MCP)', '50 built-in AI answers / mo', '1 Atlas source · manual refresh', 'Unlimited pages & spaces'],
     cta: 'Get started',
     href: REGISTER_URL,
     action: 'app',
@@ -58,7 +58,7 @@ const cloud = [
     periodYear: '/mo',
     saveYear: 'Billed annually — $72/yr, save $24',
     blurb: 'For power users who live in their wiki.',
-    specs: ['5 Atlas sources', '1,000 AI answers / month', 'Custom domain & public spaces', 'Everything in Free'],
+    specs: ['5 Atlas sources · auto-refreshed', '1,000 built-in AI answers / mo', 'Custom domain & public spaces', 'Everything in Free'],
     cta: 'Get Personal',
     href: UPGRADE_URL,
     action: 'buy',
@@ -72,7 +72,7 @@ const cloud = [
     periodYear: 'per seat / mo',
     saveYear: 'Billed annually — $96/seat/yr, save $24',
     blurb: 'A team that runs on its docs.',
-    specs: ['20 Atlas sources', '2,000 AI answers / month, pooled', 'Roles & member management', 'Everything in Personal'],
+    specs: ['20 Atlas sources · auto-refreshed', '2,000 built-in answers / mo, pooled', 'Roles & member management', 'Everything in Personal'],
     cta: 'Get Team',
     href: UPGRADE_URL,
     action: 'buy',
@@ -161,6 +161,12 @@ const cloud = [
     </div>
   </div>
 
+  <p class="byo-foot reveal-up">
+    <strong>Bring your own agent — ask unlimited.</strong> The monthly answer counts meter
+    <em>tela's built-in</em> AI. Connect Claude, ChatGPT, or any MCP agent and it runs on your model,
+    on your tokens — no limit, same wiki. Semantic search stays fair-use on every plan.
+  </p>
+
   <p class="trial-foot reveal-up">
     No card to start — every new account gets a 30-day Personal trial, then settles onto your plan.
   </p>
@@ -244,10 +250,25 @@ const cloud = [
 </script>
 
 <style>
+  /* BYO-agent clarifier — the load-bearing distinction under the ladder: the
+     answer counts are tela's managed AI; your own agent over MCP is unlimited.
+     More prominent than the trial fine-print (it reframes every card's number)
+     but neutral-toned — the earned indigo stays on Atlas + the recommended tier. */
+  .byo-foot {
+    margin: 1.75rem auto 0;
+    max-width: 74ch;
+    text-align: center;
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    color: var(--fg-soft);
+  }
+  .byo-foot strong { color: var(--fg); font-weight: 600; }
+  .byo-foot em { font-style: normal; color: var(--fg); }
+
   /* Trial reassurance, deliberately quiet fine-print under the tiers — the trial
      is a perk, not the headline. Purchase (the plan CTAs) leads; this reassures. */
   .trial-foot {
-    margin: 1.75rem 0 0;
+    margin: 0.75rem 0 0;
     text-align: center;
     font-size: var(--text-xs);
     color: var(--fg-faint);
