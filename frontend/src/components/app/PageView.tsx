@@ -126,7 +126,6 @@ import { RelatedPagesSection } from './RelatedPagesSection'
 import { PageTrustStrip } from './PageTrustStrip'
 import { MarkdownView } from '../view/MarkdownView'
 import { SheetExportMenu } from './sheet-export-menu'
-import { SheetViewMenu } from './sheet-view-menu'
 import { prefetchMilkdownEditor } from '../../lib/prefetchEditor'
 import { useFileDownload } from './use-file-download'
 import { toast, updateToast } from '../ui/toast'
@@ -415,10 +414,7 @@ function PageViewer({
           {roleResolved ? <FollowButton id={page.id} /> : null}
           <PageProperties props={page.props} />
           {isSheet ? (
-            <>
-              <SheetViewMenu pageId={page.id} props={page.props} />
-              <SheetExportMenu body={page.body} title={page.title} activeSheet={activeSheet} />
-            </>
+            <SheetExportMenu body={page.body} title={page.title} activeSheet={activeSheet} />
           ) : null}
           {commentsEnabled ? (
             <Button
@@ -541,8 +537,6 @@ function PageViewer({
               pageId={page.id}
               ariaLabel="Spreadsheet (read-only)"
               onSheetChange={setActiveSheet}
-              freezeHeader={page.props?.sheetFreezeHeader === true}
-              freezeCol={page.props?.sheetFreezeCol === true}
             />
           </Suspense>
         </div>
@@ -1283,10 +1277,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
           ) : (
             <>
               {isSheet ? (
-                <>
-                  <SheetViewMenu pageId={page.id} props={page.props} />
-                  <SheetExportMenu body={body} title={title} activeSheet={activeSheet} />
-                </>
+                <SheetExportMenu body={body} title={title} activeSheet={activeSheet} />
               ) : null}
               {/* Confluence "Done" — leave edit mode back to the read view. */}
               {roleResolved && !isViewer ? (
@@ -1412,8 +1403,6 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
               ariaLabel="Spreadsheet"
               pageId={page.id}
               onSheetChange={setActiveSheet}
-              freezeHeader={page.props?.sheetFreezeHeader === true}
-              freezeCol={page.props?.sheetFreezeCol === true}
             />
           </Suspense>
         </div>

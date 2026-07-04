@@ -12,7 +12,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/wneessen/go-mail v0.7.3
-	github.com/zcag/defter/go v0.1.0
+	github.com/zcag/defter/go v0.1.1
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.40.0
 	golang.org/x/net v0.55.0

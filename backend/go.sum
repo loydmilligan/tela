@@ -71,6 +71,8 @@ github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zI
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 github.com/zcag/defter/go v0.1.0 h1:xcrBpkMkJ46lUH8YiokmdDQ8Cg1EUob9sH41JA3a9uA=
 github.com/zcag/defter/go v0.1.0/go.mod h1:f8pMUbPmjdwSl10p/WGuMXiIWnD0tgfrEljaKEg1z7c=
+github.com/zcag/defter/go v0.1.1 h1:JP7KRybacWH/faIhOqFB0kDDNqEous1rc8wOJcefAwg=
+github.com/zcag/defter/go v0.1.1/go.mod h1:f8pMUbPmjdwSl10p/WGuMXiIWnD0tgfrEljaKEg1z7c=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.yaml.in/yaml/v2 v2.4.2 h1:DzmwEr2rDGHl7lsFgAHxmNz/1NlQ7xLIrlN2h5d1eGI=

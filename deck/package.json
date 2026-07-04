@@ -8,8 +8,8 @@
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@defterjs/core": "^0.1.3",
-    "@defterjs/formula": "^0.1.3",
+    "@defterjs/core": "^0.1.4",
+    "@defterjs/formula": "^0.1.4",
     "@slidev/cli": "^52.16.0",
     "@slidev/parser": "^52.16.0",
     "echarts": "^5.5.0",

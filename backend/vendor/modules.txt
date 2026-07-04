@@ -122,7 +122,7 @@ github.com/wneessen/go-mail/smtp
 # github.com/yosida95/uritemplate/v3 v3.0.2
 ## explicit; go 1.14
 github.com/yosida95/uritemplate/v3
-# github.com/zcag/defter/go v0.1.0
+# github.com/zcag/defter/go v0.1.1
 ## explicit; go 1.22
 github.com/zcag/defter/go
 # go.yaml.in/yaml/v2 v2.4.2
