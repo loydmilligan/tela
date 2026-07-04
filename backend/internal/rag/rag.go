@@ -40,12 +40,6 @@ type Config struct {
 	RerankURL   string // full /rerank endpoint (Cohere/Jina-compatible shape)
 	RerankModel string
 	RerankToken string
-
-	// SheetProjectURL is the node sidecar base (the deck render service) whose
-	// /project endpoint materializes a sheet's formula-computed values into prose
-	// for embedding. Empty => sheets fall back to the in-process Go projection
-	// (literal values only, formulas as source). Reuses TELA_DECK_URL.
-	SheetProjectURL string
 }
 
 // ConfigFromEnv reads the TELA_RAG_* env. The default embed model tracks the prod
@@ -57,10 +51,9 @@ func ConfigFromEnv() Config {
 		EmbedModel:  getenv("TELA_RAG_EMBED_MODEL", "qwen3-embedding:0.6b"),
 		EmbedToken:  os.Getenv("TELA_RAG_EMBED_TOKEN"),
 		Dim:         atoiDefault(os.Getenv("TELA_RAG_EMBED_DIM"), 1024),
-		RerankURL:       os.Getenv("TELA_RAG_RERANK_URL"),
-		RerankModel:     os.Getenv("TELA_RAG_RERANK_MODEL"),
-		RerankToken:     os.Getenv("TELA_RAG_RERANK_TOKEN"),
-		SheetProjectURL: os.Getenv("TELA_DECK_URL"),
+		RerankURL:   os.Getenv("TELA_RAG_RERANK_URL"),
+		RerankModel: os.Getenv("TELA_RAG_RERANK_MODEL"),
+		RerankToken: os.Getenv("TELA_RAG_RERANK_TOKEN"),
 	}
 }
 

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/zcag/tela/backend/internal/llm"
+	"github.com/zcag/tela/backend/internal/sheetproj"
 )
 
 // Service bundles the DB handle and the chat-completion client, plus the
@@ -176,7 +177,15 @@ func (s *Service) SummarizePage(ctx context.Context, pageID int64, force bool) (
 		}
 	}
 
-	user := "Title: " + title + "\n\n" + truncate(body, summarizeMaxBodyChars)
+	// A sheet's raw body is Defter markdown (formulas, not answers) — summarizing
+	// it makes the model guess numbers and get them wrong. Feed the COMPUTED
+	// projection instead so the standfirst quotes real totals. The staleness hash
+	// stays keyed on the raw body above, so an edit still re-summarizes.
+	promptBody := body
+	if isSheet, _ := props["sheet"].(bool); isSheet {
+		promptBody = sheetproj.Project(ctx, body)
+	}
+	user := "Title: " + title + "\n\n" + truncate(promptBody, summarizeMaxBodyChars)
 	// Background work: bypass the foreground gate and never spill to the relief layer.
 	out, err := s.llm.Complete(llm.WithBackground(ctx), summarySystem, user)
 	if err == nil {
