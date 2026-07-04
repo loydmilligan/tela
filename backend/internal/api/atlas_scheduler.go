@@ -172,11 +172,11 @@ func (m *atlasManager) probeStaleness(ctx context.Context, sourceID int64) {
 // free plans get manual refresh only. Gated on managed cloud only: self-host
 // plan flags aren't trustworthy entitlements (mirrors entitled() /
 // checkAndRecordLLMCall), so self-host always allows it.
-func (m *atlasManager) scheduledAtlasAllowed(ctx context.Context, acct account) bool {
-	if !m.s.managedCloud {
+func (s *Server) scheduledAtlasAllowed(ctx context.Context, acct account) bool {
+	if !s.managedCloud {
 		return true
 	}
-	return m.s.featureEnabled(ctx, acct, "atlas_scheduled")
+	return s.featureEnabled(ctx, acct, "atlas_scheduled")
 }
 
 // pollRegen regenerates, on each auto_update project's cadence, only the sources
@@ -219,7 +219,7 @@ func (m *atlasManager) pollRegen(ctx context.Context) {
 		// refresh only. We still stamp last_refresh_at below (matching the existing
 		// "measure cadence from this poll" semantics) so a skipped free project
 		// isn't re-evaluated every tick. Manual run paths are unaffected.
-		if m.scheduledAtlasAllowed(ctx, account{Kind: d.ownerKind, ID: d.ownerID}) {
+		if m.s.scheduledAtlasAllowed(ctx, account{Kind: d.ownerKind, ID: d.ownerID}) {
 			m.regenProject(ctx, d.id)
 		}
 		if _, err := m.s.DB.ExecContext(ctx,

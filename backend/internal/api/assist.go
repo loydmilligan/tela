@@ -523,6 +523,9 @@ func (s *Server) RAGDraft(w http.ResponseWriter, r *http.Request) {
 	if !s.askGuards(w) {
 		return
 	}
+	if !s.embedRateOK(w, account{Kind: accountUser, ID: u.ID}) {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
 	var req draftRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Topic) == "" {
@@ -568,6 +571,9 @@ func (s *Server) RAGAnswerToPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.askGuards(w) {
+		return
+	}
+	if !s.embedRateOK(w, account{Kind: accountUser, ID: u.ID}) {
 		return
 	}
 	k, _ := auth.APIKeyFromContext(r.Context())

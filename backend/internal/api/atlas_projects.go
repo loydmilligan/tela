@@ -149,6 +149,10 @@ type atlasProjectDTO struct {
 	LastRun            *atlasLastRun  `json:"last_run"`
 	CreatedAt          string         `json:"created_at"`
 	CanManage          bool           `json:"can_manage"`
+	// ScheduledAllowed reports whether the owning account's plan includes scheduled
+	// Atlas auto-refresh (paid/trial). When false, auto_update is a no-op server-side
+	// (the scheduler skips it) — the UI shows manual-only + an upgrade affordance.
+	ScheduledAllowed bool `json:"scheduled_allowed"`
 }
 
 // atlasProjectListCols is the SELECT list shared by the list + single-project
@@ -229,6 +233,7 @@ func (s *Server) listAtlasProjectsFor(ctx context.Context, u *auth.User) ([]atla
 			return nil, err
 		}
 		d.CanManage = s.atlasOwnerManageErr(ctx, u, d.Owner.Kind, d.Owner.ID) == nil
+		d.ScheduledAllowed = s.scheduledAtlasAllowed(ctx, account{Kind: d.Owner.Kind, ID: d.Owner.ID})
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -350,6 +355,7 @@ func (s *Server) CreateAtlasProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.CanManage = true
+	d.ScheduledAllowed = s.scheduledAtlasAllowed(r.Context(), account{Kind: d.Owner.Kind, ID: d.Owner.ID})
 	writeJSON(w, http.StatusCreated, map[string]any{"project": d})
 }
 
@@ -377,6 +383,7 @@ func (s *Server) GetAtlasProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.CanManage = s.atlasOwnerManageErr(r.Context(), u, d.Owner.Kind, d.Owner.ID) == nil
+	d.ScheduledAllowed = s.scheduledAtlasAllowed(r.Context(), account{Kind: d.Owner.Kind, ID: d.Owner.ID})
 
 	sources, err := s.listProjectSources(r.Context(), projectID)
 	if err != nil {
@@ -470,6 +477,7 @@ func (s *Server) PatchAtlasProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.CanManage = true
+	d.ScheduledAllowed = s.scheduledAtlasAllowed(r.Context(), account{Kind: d.Owner.Kind, ID: d.Owner.ID})
 	writeJSON(w, http.StatusOK, map[string]any{"project": d})
 }
 

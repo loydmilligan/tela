@@ -216,6 +216,9 @@ func (s *Server) RAGAsk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "llm_disabled", "managed AI is not configured")
 		return
 	}
+	if !s.embedRateOK(w, account{Kind: accountUser, ID: u.ID}) {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
 	var req askRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -333,6 +336,9 @@ func (s *Server) RAGAskStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.askGuards(w) {
+		return
+	}
+	if !s.embedRateOK(w, account{Kind: accountUser, ID: u.ID}) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
