@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -32,7 +35,34 @@ const (
 	// LLM/embedder compute into an unbounded bill / DoS.
 	cloudRateWindow = 1 * time.Minute
 	cloudRateLimit  = 60
+
+	// Semantic retrieval (research / semantic search / suggest-links) embeds the
+	// query on the shared embedder — the scarcest resource on a single-box
+	// instance and, unlike the ask path, previously ungated. Keyed per ACCOUNT
+	// and deliberately generous (interactive use and agent bursts are fine) but
+	// bounded so one PAT or script can't saturate the embedder for everyone.
+	// Tunable via TELA_EMBED_RATE_LIMIT (per-minute; <=0 disables the throttle).
+	embedRateWindow       = 1 * time.Minute
+	embedRateLimitDefault = 30
 )
+
+// resolveEmbedRateLimit is the per-account embed budget, overridable via
+// TELA_EMBED_RATE_LIMIT (per minute). A value <= 0 disables the throttle (a huge
+// cap) for operators whose embedder has the headroom.
+func resolveEmbedRateLimit() int {
+	v := strings.TrimSpace(os.Getenv("TELA_EMBED_RATE_LIMIT"))
+	if v == "" {
+		return embedRateLimitDefault
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return embedRateLimitDefault
+	}
+	if n <= 0 {
+		return 1 << 30
+	}
+	return n
+}
 
 // authRateLimiter is an in-memory sliding-window limiter keyed by
 // (purpose, key). Process-local; a restart resets it — fine for v0, mirrors

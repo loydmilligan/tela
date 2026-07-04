@@ -703,6 +703,9 @@ func (s *Server) mcpResearch(ctx context.Context, req *mcp.CallToolRequest, in r
 	if strings.TrimSpace(in.Question) == "" {
 		return mcpErr(&apiErr{400, "bad_request", "question is required"}), researchOut{}, nil
 	}
+	if ae := s.embedRateErr(account{Kind: accountUser, ID: u.ID}); ae != nil {
+		return mcpErr(ae), researchOut{}, nil
+	}
 	// A space-pinned bearer key may only ever see its one space.
 	spaceID := in.SpaceID
 	if k != nil && k.SpaceID != nil {
@@ -811,6 +814,9 @@ func (s *Server) mcpSuggestLinks(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	if !s.aiEnabled() {
 		return mcpErr(&apiErr{503, "rag_disabled", "semantic features are not configured"}), suggestLinksOut{}, nil
+	}
+	if ae := s.embedRateErr(account{Kind: accountUser, ID: u.ID}); ae != nil {
+		return mcpErr(ae), suggestLinksOut{}, nil
 	}
 	spaceID := in.SpaceID
 	if k != nil && k.SpaceID != nil {

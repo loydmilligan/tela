@@ -166,18 +166,33 @@ func (m *atlasManager) probeStaleness(ctx context.Context, sourceID int64) {
 	}
 }
 
+// scheduledAtlasAllowed reports whether the account's plan includes scheduled
+// Atlas auto-regen — the heaviest AI pipeline (fetch + embed + LLM per source),
+// run on a cadence whether or not the owner is online. It's a paid capability;
+// free plans get manual refresh only. Gated on managed cloud only: self-host
+// plan flags aren't trustworthy entitlements (mirrors entitled() /
+// checkAndRecordLLMCall), so self-host always allows it.
+func (m *atlasManager) scheduledAtlasAllowed(ctx context.Context, acct account) bool {
+	if !m.s.managedCloud {
+		return true
+	}
+	return m.s.featureEnabled(ctx, acct, "atlas_scheduled")
+}
+
 // pollRegen regenerates, on each auto_update project's cadence, only the sources
 // detection has flagged stale. last_refresh_at is stamped on the project whether
 // or not anything regenerated, so the cadence measures from this poll.
 func (m *atlasManager) pollRegen(ctx context.Context) {
 	now := time.Now()
 	type due struct {
-		id      int64
-		cadence string
-		last    string
+		id        int64
+		cadence   string
+		last      string
+		ownerKind string
+		ownerID   int64
 	}
 	rows, err := m.s.DB.QueryContext(ctx,
-		`SELECT id, cadence, last_refresh_at FROM atlas_projects WHERE auto_update = 1`)
+		`SELECT id, cadence, last_refresh_at, owner_kind, owner_id FROM atlas_projects WHERE auto_update = 1`)
 	if err != nil {
 		slog.Error("atlas: regen poll", "err", err)
 		return
@@ -185,7 +200,7 @@ func (m *atlasManager) pollRegen(ctx context.Context) {
 	var pending []due
 	for rows.Next() {
 		var d due
-		if err := rows.Scan(&d.id, &d.cadence, &d.last); err != nil {
+		if err := rows.Scan(&d.id, &d.cadence, &d.last, &d.ownerKind, &d.ownerID); err != nil {
 			continue
 		}
 		pending = append(pending, d)
@@ -200,7 +215,13 @@ func (m *atlasManager) pollRegen(ctx context.Context) {
 		if !atlasIsDue(d.cadence, last, now) {
 			continue
 		}
-		m.regenProject(ctx, d.id)
+		// Scheduled auto-regen is a paid capability; free plans get Atlas on manual
+		// refresh only. We still stamp last_refresh_at below (matching the existing
+		// "measure cadence from this poll" semantics) so a skipped free project
+		// isn't re-evaluated every tick. Manual run paths are unaffected.
+		if m.scheduledAtlasAllowed(ctx, account{Kind: d.ownerKind, ID: d.ownerID}) {
+			m.regenProject(ctx, d.id)
+		}
 		if _, err := m.s.DB.ExecContext(ctx,
 			`UPDATE atlas_projects SET last_refresh_at = tela_now() WHERE id = $1`, d.id); err != nil {
 			slog.Error("atlas: stamp last_refresh_at", "project", d.id, "err", err)

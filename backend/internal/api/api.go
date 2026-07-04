@@ -57,6 +57,12 @@ type Server struct {
 	// LLM/embedder compute into an unbounded bill or DoS the shared clients.
 	cloudLimiter *authRateLimiter
 
+	// embedLimiter throttles the semantic-retrieval embed paths (research /
+	// semantic search / suggest-links) per ACCOUNT. The shared embedder is the
+	// scarcest resource on a single-box instance and these paths are otherwise
+	// ungated; a separate budget from cloudLimiter so the two don't collide.
+	embedLimiter *authRateLimiter
+
 	// clientErrorLimiter throttles the browser error-report beacon
 	// (/api/client-errors) per user so a tab stuck in an error loop can't flood
 	// the events table. Reuses the same sliding-window machinery.
@@ -190,6 +196,7 @@ func New(db *sql.DB) *Server {
 		loginLimiter:       newAuthRateLimiter(loginRateWindow, loginRateLimit),
 		unfurlLimiter:      newAuthRateLimiter(unfurlRateWindow, unfurlRateLimit),
 		cloudLimiter:       newAuthRateLimiter(cloudRateWindow, cloudRateLimit),
+		embedLimiter:       newAuthRateLimiter(embedRateWindow, resolveEmbedRateLimit()),
 		clientErrorLimiter: newAuthRateLimiter(clientErrorRateWindow, clientErrorRateLimit),
 		davDeletes:         newDavDeleteGuard(),
 		rag:                rag.NewService(db, rag.ConfigFromEnv()),
@@ -243,6 +250,7 @@ func New(db *sql.DB) *Server {
 	go s.loginLimiter.sweepLoop(context.Background())
 	go s.unfurlLimiter.sweepLoop(context.Background())
 	go s.cloudLimiter.sweepLoop(context.Background())
+	go s.embedLimiter.sweepLoop(context.Background())
 	go s.clientErrorLimiter.sweepLoop(context.Background())
 	go s.davDeletes.sweepLoop(context.Background())
 	// Weekly digest sender — daily tick, per-user 7-day cadence. No-op until a

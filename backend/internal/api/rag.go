@@ -22,6 +22,30 @@ import (
 // RAGSearch handles GET /api/rag/search?q=&space_id=&limit=&mode=
 // Hybrid chunk search scoped to the caller's space_access. Returns ranked
 // chunks with page id + heading path for citation.
+// embedRateOK enforces the per-account fair-use limit on the shared embedder,
+// the scarcest resource on a single-box instance. REST variant: on exhaustion it
+// writes 429 + Retry-After and returns false. Keyed per account so one PAT or
+// script can't saturate the embedder for everyone; the ask paths' generation is
+// separately bounded by cloudLimiter. See embedRateErr for the MCP variant.
+func (s *Server) embedRateOK(w http.ResponseWriter, acct account) bool {
+	ok, retry := s.embedLimiter.allow("embed", fmt.Sprintf("%s:%d", acct.Kind, acct.ID))
+	if !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "AI search rate limit reached; slow down and retry shortly")
+		return false
+	}
+	return true
+}
+
+// embedRateErr is the MCP variant of embedRateOK: a 429 *apiErr (surfaced as a
+// tool error) when the per-account embed budget is spent, nil otherwise.
+func (s *Server) embedRateErr(acct account) *apiErr {
+	if ok, _ := s.embedLimiter.allow("embed", fmt.Sprintf("%s:%d", acct.Kind, acct.ID)); !ok {
+		return &apiErr{http.StatusTooManyRequests, "rate_limited", "AI search rate limit reached; slow down and retry shortly"}
+	}
+	return nil
+}
+
 func (s *Server) RAGSearch(w http.ResponseWriter, r *http.Request) {
 	u, ok := requireUser(w, r)
 	if !ok {
@@ -29,6 +53,9 @@ func (s *Server) RAGSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic search is not configured")
+		return
+	}
+	if !s.embedRateOK(w, account{Kind: accountUser, ID: u.ID}) {
 		return
 	}
 
@@ -491,6 +518,9 @@ func (s *Server) RAGSuggestLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.aiEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "rag_disabled", "semantic features are not configured")
+		return
+	}
+	if !s.embedRateOK(w, account{Kind: accountUser, ID: u.ID}) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, cloudMaxRequestBytes)
