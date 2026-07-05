@@ -75,20 +75,17 @@ envelope.
 
 ## Deferred / follow-ups
 
-- **Full SEO for public spaces** — make published spaces properly indexable +
-  shareable. The public reader is a client-rendered SPA, so crawlers need
-  server-rendered/prerendered metadata (today `/p/{id}` emits only a title-only
-  OG envelope, by design for private). Scope:
-  - per-page `<title>` + meta description (derived from the body) rendered for
-    crawlers; **full-body** OG for public pages (not the title-only private form);
-  - OG / Twitter card tags on `/public/…` URLs (title, description, image);
-  - `<link rel="canonical">` per page;
-  - `sitemap.xml` enumerating every public space's pages (public spaces give the
-    enumerable set this needs);
-  - `robots.txt` allowing `/public/…`; JSON-LD (Article/BlogPosting) for rich
-    results;
-  - clean, branded indexable URLs (ties to "clean readable URLs").
-  Tracked in the blog roadmap (tela space 9, page 177) as its own item.
+- **Full SEO for public spaces** — DONE. Bot UAs hitting `/public/…` get a
+  server-rendered OG document (`public_og.go`): per-page `<title>` + meta
+  description (body-derived), OG/Twitter cards, `<link rel="canonical">`,
+  JSON-LD (BlogPosting), and — as of the `feat(seo): render public page body`
+  change — the **full rendered body** in a crawler-visible `<article>`
+  (`renderPublicBodyHTML`, goldmark GFM, raw HTML disabled; custom block
+  directives degrade to their inner text, which is what a crawler wants). Both
+  sitemaps (`sitemap.xml` marketing, `sitemap-public.xml` enumerating every
+  public page) are submitted and `robots.txt` allows `/public/…`. The human
+  path stays the client-rendered SPA. Remaining polish: clean/branded indexable
+  URLs (ties to "clean readable URLs").
 - **`llms.txt`** — an index of a public space's pages (now that there's an
   enumerable public set to point at).
 - **Per-page "Published" in a private space** — explicitly skipped. Publicness is
