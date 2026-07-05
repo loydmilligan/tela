@@ -51,6 +51,16 @@
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 
+	# Glama MCP connector ownership verification. Static JSON that claims the
+	# io.github.zcag/tela remote-connector listing for the maintainer's Glama
+	# account so Glama attaches introspection credentials + scores it. The email
+	# is already public in this repo's git history (commit authorship). noindex.
+	handle /.well-known/glama.json {
+		header Content-Type application/json
+		header X-Robots-Tag "noindex"
+		respond `{"$schema":"https://glama.ai/mcp/schemas/connector.json","maintainers":[{"email":"cagdassalur@gmail.com"}]}` 200
+	}
+
 	# OAuth Protected Resource Metadata (RFC 9728) for the MCP endpoint — a new
 	# top-level path (not under /api), so it needs its own route to the backend.
 	# The backend serves the static discovery JSON (or 404s when OAuth is
