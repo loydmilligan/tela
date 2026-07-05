@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { useAccessAudit } from '../../lib/queries/access-audit'
+import { IncludeAdminsToggle } from './IncludeAdminsToggle'
 import { localDateFromSqlite } from '../../lib/relativeTime'
 import type { AccessAuditEntry } from '../../lib/types'
 import { Badge } from '../ui/badge'
@@ -19,17 +21,21 @@ const ACTION_LABEL: Record<string, string> = {
 }
 
 export function SettingsAuditTab() {
-  const audit = useAccessAudit()
+  const [includeAdmins, setIncludeAdmins] = useState(false)
+  const audit = useAccessAudit(includeAdmins)
 
   return (
     <section
       aria-labelledby="settings-audit"
       className="flex flex-col gap-[var(--space-4)]"
     >
-      <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-        Recent access-control changes — org membership, space grants, auto-joins,
-        and domain mappings. Most recent first.
-      </p>
+      <div className="flex items-start justify-between gap-[var(--space-3)]">
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+          Recent access-control changes — org membership, space grants, auto-joins,
+          and domain mappings. Most recent first.
+        </p>
+        <IncludeAdminsToggle checked={includeAdmins} onChange={setIncludeAdmins} />
+      </div>
 
       {audit.isLoading ? (
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">

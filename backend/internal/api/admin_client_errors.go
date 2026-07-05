@@ -48,6 +48,14 @@ func (s *Server) ListClientErrorGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := clampLimit(r.URL.Query().Get("limit"), 100, 200)
 
+	// Hide errors reported from instance admins' own browsers by default (dev/test
+	// noise); ?include_admins brings them back. Both the group aggregate and the
+	// drill-down occurrences apply the same filter so their counts stay consistent.
+	adminCond := ""
+	if f := adminActorFilter("actor_user_id", wantIncludeAdmins(r)); f != "" {
+		adminCond = " AND " + f
+	}
+
 	rows, err := s.DB.QueryContext(r.Context(), `
 		WITH agg AS (
 			SELECT fingerprint,
@@ -57,7 +65,7 @@ func (s *Server) ListClientErrorGroups(w http.ResponseWriter, r *http.Request) {
 			       MAX(created_at)             AS last_seen,
 			       MAX(id)                     AS last_id
 			  FROM events
-			 WHERE type = $1 AND fingerprint IS NOT NULL
+			 WHERE type = $1 AND fingerprint IS NOT NULL`+adminCond+`
 			 GROUP BY fingerprint
 		)
 		SELECT a.fingerprint, a.cnt, a.users, a.first_seen, a.last_seen, e.detail
@@ -111,10 +119,14 @@ func (s *Server) ListClientErrorOccurrences(w http.ResponseWriter, r *http.Reque
 	}
 	limit := clampLimit(r.URL.Query().Get("limit"), 50, 200)
 
+	adminCond := ""
+	if f := adminActorFilter("actor_user_id", wantIncludeAdmins(r)); f != "" {
+		adminCond = " AND " + f
+	}
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT id, actor_label, detail, ip, created_at
 		  FROM events
-		 WHERE type = $1 AND fingerprint = $2
+		 WHERE type = $1 AND fingerprint = $2`+adminCond+`
 		 ORDER BY id DESC
 		 LIMIT $3`, evtClientError, fp, limit)
 	if err != nil {

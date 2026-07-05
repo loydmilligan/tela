@@ -121,6 +121,53 @@ func TestEvents_PageLifecycle(t *testing.T) {
 	}
 }
 
+// The Events feed hides instance-admin activity by default (operator noise) and
+// re-includes it with ?include_admins=1. Anonymous (NULL-actor) rows are always
+// kept — they can't be an admin.
+func TestEvents_HideAdminActivityByDefault(t *testing.T) {
+	d := newAPITestDB(t)
+	srv := New(d)
+	adminID := seedUser(t, d, "admin", "adminpw123", true)
+	bobID := seedUser(t, d, "bob", "bobpw1234", false)
+	ctx := context.Background()
+
+	recordEvent(ctx, d, eventInput{Type: evtPageView, ActorUserID: &adminID, ActorLabel: "admin", TargetLabel: "A"})
+	recordEvent(ctx, d, eventInput{Type: evtPageView, ActorUserID: &bobID, ActorLabel: "bob", TargetLabel: "B"})
+	recordEvent(ctx, d, eventInput{Type: evtPageView, ActorLabel: "anon", TargetLabel: "C"}) // NULL actor
+
+	list := func(qs string) []eventDTO {
+		t.Helper()
+		rec := routedRecorder("GET /api/admin/events", srv.ListEvents,
+			userRequest(http.MethodGet, "/api/admin/events?types=page.view"+qs, "", authUser(adminID, "admin", true)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+		}
+		var out struct {
+			Events []eventDTO `json:"events"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v body=%q", err, rec.Body.String())
+		}
+		return out.Events
+	}
+
+	// Default: admin's page.view is dropped; bob + anonymous remain.
+	def := list("")
+	if len(def) != 2 {
+		t.Fatalf("default events=%d want 2 (admin hidden): %+v", len(def), def)
+	}
+	for _, e := range def {
+		if e.ActorUserID != nil && *e.ActorUserID == adminID {
+			t.Fatalf("admin activity leaked into default view: %+v", e)
+		}
+	}
+
+	// include_admins=1 → all three.
+	if all := list("&include_admins=1"); len(all) != 3 {
+		t.Fatalf("include_admins events=%d want 3: %+v", len(all), all)
+	}
+}
+
 // ListEvents is instance-admin-only and honors the types filter + the keyset
 // `before` cursor.
 func TestEvents_ListGatedAndFiltered(t *testing.T) {

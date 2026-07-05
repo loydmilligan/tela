@@ -87,18 +87,46 @@ func (s *Server) recordRequestEvent(r *http.Request, e eventInput) {
 	recordEvent(r.Context(), s.DB, e)
 }
 
+// adminActorFilter returns a SQL boolean fragment (no leading AND) that is TRUE
+// for rows whose actor is NOT a current instance admin — and "" when admins
+// should be included. `col` is the actor-user-id column expression (e.g.
+// "actor_user_id" or "a.actor_user_id"). NULL actors (anonymous / system) are
+// always kept: they can't be an admin. The admin set is a tiny subquery, cheap to
+// inline on these admin-only screens. `users.id` is never NULL, so the NOT IN is
+// safe (no NULL-swallows-everything trap).
+//
+// The admin surfaces (analytics, Events, Errors, Audit) hide admin activity by
+// default — it's mostly the operator's own testing noise — and re-include it when
+// the ?include_admins flag is set. See wantIncludeAdmins.
+func adminActorFilter(col string, includeAdmins bool) string {
+	if includeAdmins {
+		return ""
+	}
+	return "(" + col + " IS NULL OR " + col + " NOT IN (SELECT id FROM users WHERE is_instance_admin = 1))"
+}
+
+// wantIncludeAdmins parses the ?include_admins query flag (default false → admin
+// activity hidden).
+func wantIncludeAdmins(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("include_admins"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 type eventDTO struct {
-	ID          int64   `json:"id"`
-	Type        string  `json:"type"`
-	ActorUserID *int64  `json:"actor_user_id"`
-	ActorLabel  string  `json:"actor_label"`
-	TargetKind  string  `json:"target_kind"`
-	TargetID    *int64  `json:"target_id"`
-	TargetLabel string  `json:"target_label"`
-	Detail      string  `json:"detail"`
-	IP          string  `json:"ip"`
-	UserAgent   string  `json:"user_agent"`
-	CreatedAt   string  `json:"created_at"`
+	ID          int64  `json:"id"`
+	Type        string `json:"type"`
+	ActorUserID *int64 `json:"actor_user_id"`
+	ActorLabel  string `json:"actor_label"`
+	TargetKind  string `json:"target_kind"`
+	TargetID    *int64 `json:"target_id"`
+	TargetLabel string `json:"target_label"`
+	Detail      string `json:"detail"`
+	IP          string `json:"ip"`
+	UserAgent   string `json:"user_agent"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // ListEvents — GET /api/admin/events. Instance-admin only. Filters: types (csv),
@@ -114,6 +142,12 @@ func (s *Server) ListEvents(w http.ResponseWriter, r *http.Request) {
 
 	conds := []string{}
 	args := []any{}
+
+	// Hide instance-admin activity by default (the operator's own noise); the
+	// Events screen's "Include admins" toggle sets ?include_admins to bring it back.
+	if f := adminActorFilter("actor_user_id", wantIncludeAdmins(r)); f != "" {
+		conds = append(conds, f)
+	}
 
 	if raw := strings.TrimSpace(q.Get("types")); raw != "" {
 		// A token ending in '.' is a family prefix (e.g. "access." matches every
@@ -181,8 +215,8 @@ func (s *Server) ListEvents(w http.ResponseWriter, r *http.Request) {
 	events := []eventDTO{}
 	for rows.Next() {
 		var (
-			e                  eventDTO
-			actorID, targetID  sql.NullInt64
+			e                 eventDTO
+			actorID, targetID sql.NullInt64
 		)
 		if err := rows.Scan(&e.ID, &e.Type, &actorID, &e.ActorLabel, &e.TargetKind, &targetID, &e.TargetLabel, &e.Detail, &e.IP, &e.UserAgent, &e.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan event row failed")

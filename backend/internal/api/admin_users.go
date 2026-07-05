@@ -65,8 +65,8 @@ type adminUserPatchRequest struct {
 	Password        *string `json:"password"`
 }
 
-// ListAdminUsers returns every user row, including inactive ones, sorted by
-// username ASC. Instance-admin only.
+// ListAdminUsers returns every user row, including inactive ones, newest account
+// first (most recent signup on top). Instance-admin only.
 func (s *Server) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireInstanceAdmin(w, r); !ok {
 		return
@@ -74,7 +74,7 @@ func (s *Server) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT id, username, display_name, email, email_verified_at, is_instance_admin, is_active, plan_key, created_at, updated_at, mcp_last_seen_at
 		  FROM users
-		 ORDER BY username ASC`)
+		 ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "list users failed")
 		return

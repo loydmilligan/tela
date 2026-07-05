@@ -107,12 +107,12 @@ type adminStats struct {
 
 	// Operator signals: growth/activation + the newest accounts and the questions
 	// the docs couldn't answer. Turns "ask someone to run SQL" into a glance.
-	NewUsers30     int64             `json:"new_users_30"`    // accounts created in the window
-	Activated      int64             `json:"activated"`       // users who have authored ≥1 page revision (all-time)
+	NewUsers30     int64             `json:"new_users_30"`     // accounts created in the window
+	Activated      int64             `json:"activated"`        // users who have authored ≥1 page revision (all-time)
 	ActivatedNew30 int64             `json:"activated_new_30"` // of NewUsers30, how many have made ≥1 page revision (signup→first-edit rate)
 	RetainedNew30  int64             `json:"retained_new_30"`  // users who signed up 8-30d ago and were active in the last 7d (early retention proxy)
-	RecentSignups  []statsSignup     `json:"recent_signups"`  // newest accounts + whether they activated
-	UnansweredAsks []statsUnanswered `json:"unanswered_asks"` // recent Ask questions that returned nothing
+	RecentSignups  []statsSignup     `json:"recent_signups"`   // newest accounts + whether they activated
+	UnansweredAsks []statsUnanswered `json:"unanswered_asks"`  // recent Ask questions that returned nothing
 
 	// Reach / adoption — including the agent surface (tela's first-class audience).
 	WAUPrev      int64 `json:"wau_prev"`      // active users in the 7d BEFORE the last 7 (for a WoW delta)
@@ -121,9 +121,9 @@ type adminStats struct {
 	PublicSpaces int64 `json:"public_spaces"` // spaces published to the open web
 
 	// Billing signals — revenue visibility at a glance.
-	ActiveTrials      int64 `json:"active_trials"`       // users currently on an active (non-expired) trial
-	ExpiredTrials     int64 `json:"expired_trials"`      // trials that ended without converting (trial_plan_key set, trial_ends_at past)
-	PaidSubscriptions int64 `json:"paid_subscriptions"`  // users on any paid plan (not free or trial)
+	ActiveTrials      int64 `json:"active_trials"`      // users currently on an active (non-expired) trial
+	ExpiredTrials     int64 `json:"expired_trials"`     // trials that ended without converting (trial_plan_key set, trial_ends_at past)
+	PaidSubscriptions int64 `json:"paid_subscriptions"` // users on any paid plan (not free or trial)
 
 	// AI service health — the last background-probe result from StartAIHealthProbe.
 	AIHealthy bool   `json:"ai_healthy"`
@@ -136,6 +136,23 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	now := time.Now().UTC()
+
+	// Activity aggregates hide instance-admin actors by default (the operator's own
+	// views/edits/asks/errors dominate an otherwise-quiet instance); ?include_admins
+	// brings them back. Only the activity/actor-derived figures are filtered — the
+	// population counts (users, pages, signups, billing) always count everyone.
+	includeAdmins := wantIncludeAdmins(r)
+	evtAdmin := adminActorFilter("actor_user_id", includeAdmins)    // bare `events`
+	evtAdminE := adminActorFilter("e.actor_user_id", includeAdmins) // `events e`
+	askAdmin := adminActorFilter("user_id", includeAdmins)          // bare `ask_log`
+	askAdminA := adminActorFilter("a.user_id", includeAdmins)       // `ask_log a`
+	// and prefixes a non-empty filter with " AND " for appending to a WHERE.
+	and := func(f string) string {
+		if f == "" {
+			return ""
+		}
+		return " AND " + f
+	}
 
 	// Dense day axis (oldest→newest) + a day→index map for scattering grouped rows.
 	days := make([]string, statsWindowDays)
@@ -173,7 +190,7 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		SELECT substr(created_at,1,10) AS day, type, COUNT(*)
 		  FROM events
 		 WHERE created_at >= $1
-		   AND type IN ('page.view','page.edit','auth.login','ask','client.error')
+		   AND type IN ('page.view','page.edit','auth.login','ask','client.error')`+and(evtAdmin)+`
 		 GROUP BY day, type`, cut30); err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -210,7 +227,7 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		  COUNT(DISTINCT actor_user_id) FILTER (WHERE created_at >= $3),
 		  COUNT(DISTINCT actor_user_id) FILTER (WHERE created_at >= $4 AND created_at < $2)
 		  FROM events
-		 WHERE actor_user_id IS NOT NULL AND created_at >= $3`,
+		 WHERE actor_user_id IS NOT NULL AND created_at >= $3`+and(evtAdmin),
 		cut1, cut7, cut30, cut14).Scan(&out.DAU, &out.WAU, &out.MAU, &out.WAUPrev)
 
 	// --- Current totals ---
@@ -234,7 +251,7 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		  FROM events e
 		  JOIN pages p  ON p.id = e.target_id AND p.deleted_at IS NULL
 		  JOIN spaces sp ON sp.id = p.space_id
-		 WHERE e.type = 'page.view' AND e.target_kind = 'page' AND e.created_at >= $1
+		 WHERE e.type = 'page.view' AND e.target_kind = 'page' AND e.created_at >= $1`+and(evtAdminE)+`
 		 GROUP BY e.target_id, p.space_id, p.title, sp.name
 		 ORDER BY c DESC LIMIT 10`, cut30); err == nil {
 		defer rows.Close()
@@ -252,7 +269,7 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 	if rows, err := s.DB.QueryContext(ctx, `
 		SELECT actor_label, COUNT(*) c
 		  FROM events
-		 WHERE type = 'page.edit' AND created_at >= $1 AND actor_label <> ''
+		 WHERE type = 'page.edit' AND created_at >= $1 AND actor_label <> ''`+and(evtAdmin)+`
 		 GROUP BY actor_label ORDER BY c DESC LIMIT 10`, cut30); err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -271,7 +288,7 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		  FROM events e
 		  JOIN pages p  ON p.id = e.target_id AND p.deleted_at IS NULL
 		  JOIN spaces sp ON sp.id = p.space_id
-		 WHERE e.target_kind = 'page' AND e.type IN ('page.view','page.edit') AND e.created_at >= $1
+		 WHERE e.target_kind = 'page' AND e.type IN ('page.view','page.edit') AND e.created_at >= $1`+and(evtAdminE)+`
 		 GROUP BY sp.id, sp.name ORDER BY c DESC LIMIT 10`, cut30); err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -286,14 +303,14 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 
 	// --- Asks + answer rate (30d) ---
 	_ = s.DB.QueryRowContext(ctx, `
-		SELECT COUNT(*), COALESCE(SUM(answered),0) FROM ask_log WHERE created_at >= $1`, cut30).
+		SELECT COUNT(*), COALESCE(SUM(answered),0) FROM ask_log WHERE created_at >= $1`+and(askAdmin), cut30).
 		Scan(&out.Asks30, &out.AsksAnswered30)
 
 	// --- Client errors by kind (7d), parsed from the "[kind] …" detail header ---
 	if rows, err := s.DB.QueryContext(ctx, `
 		SELECT COALESCE((regexp_match(detail, '^\[([^\]]+)\]'))[1], 'error') AS kind, COUNT(*) c
 		  FROM events
-		 WHERE type = 'client.error' AND created_at >= $1
+		 WHERE type = 'client.error' AND created_at >= $1`+and(evtAdmin)+`
 		 GROUP BY kind ORDER BY c DESC`, cut7); err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -381,7 +398,7 @@ func (s *Server) AdminStats(w http.ResponseWriter, r *http.Request) {
 		SELECT a.question, COALESCE(NULLIF(u.display_name, ''), u.username, '') AS who, a.created_at
 		  FROM ask_log a
 		  LEFT JOIN users u ON u.id = a.user_id
-		 WHERE a.answered = 0 AND a.created_at >= $1
+		 WHERE a.answered = 0 AND a.created_at >= $1`+and(askAdminA)+`
 		 ORDER BY a.created_at DESC LIMIT 12`, cut30); err == nil {
 		defer rows.Close()
 		for rows.Next() {

@@ -76,13 +76,17 @@ export interface AdminStats {
   ai_reason?: string
 }
 
-export const adminStatsKeys = { stats: ['admin-stats'] as const }
+export const adminStatsKeys = {
+  stats: (includeAdmins: boolean) => ['admin-stats', { includeAdmins }] as const,
+}
 
-// GET /api/admin/stats — instance-admin only.
-export function useAdminStats() {
+// GET /api/admin/stats — instance-admin only. Admin activity is excluded from the
+// activity aggregates by default; includeAdmins re-includes it (?include_admins=1).
+export function useAdminStats(includeAdmins = false) {
   return useQuery({
-    queryKey: adminStatsKeys.stats,
-    queryFn: () => api<AdminStats>('/api/admin/stats'),
+    queryKey: adminStatsKeys.stats(includeAdmins),
+    queryFn: () =>
+      api<AdminStats>(`/api/admin/stats${includeAdmins ? '?include_admins=1' : ''}`),
     staleTime: 60_000,
   })
 }

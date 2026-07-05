@@ -30,17 +30,21 @@ func postClientError(t *testing.T, c *http.Client, base string, payload map[stri
 func TestClientErrorGroups_GroupsAndNormalizes(t *testing.T) {
 	ts, d := newWiredServer(t)
 	seedUser(t, d, "admin", "testpass123", true)
+	seedUser(t, d, "bob", "bobpw1234", false)
+	// Errors are reported by non-admin bob (the Errors view hides admin-reported
+	// errors by default — that filter is covered separately below); the admin reads.
+	reporter := loginClient(t, ts, "bob", "bobpw1234")
 	c := loginClient(t, ts, "admin", "testpass123")
 
 	// Same error 3×.
 	for i := 0; i < 3; i++ {
-		postClientError(t, c, ts.URL, map[string]any{"kind": "react", "message": "boom", "stack": "at X (a.js:10)"})
+		postClientError(t, reporter, ts.URL, map[string]any{"kind": "react", "message": "boom", "stack": "at X (a.js:10)"})
 	}
 	// Differ only by a number in the message → must group into one.
-	postClientError(t, c, ts.URL, map[string]any{"kind": "query", "message": "page 1 failed"})
-	postClientError(t, c, ts.URL, map[string]any{"kind": "query", "message": "page 2 failed"})
+	postClientError(t, reporter, ts.URL, map[string]any{"kind": "query", "message": "page 1 failed"})
+	postClientError(t, reporter, ts.URL, map[string]any{"kind": "query", "message": "page 2 failed"})
 	// A genuinely distinct one.
-	postClientError(t, c, ts.URL, map[string]any{"kind": "error", "message": "totally different"})
+	postClientError(t, reporter, ts.URL, map[string]any{"kind": "error", "message": "totally different"})
 
 	resp, err := c.Get(ts.URL + "/api/admin/client-errors")
 	if err != nil {
@@ -92,6 +96,37 @@ func TestClientErrorGroups_GroupsAndNormalizes(t *testing.T) {
 	}
 	if len(occ.Occurrences) != 3 {
 		t.Fatalf("want 3 occurrences, got %d", len(occ.Occurrences))
+	}
+}
+
+// TestClientErrorGroups_HidesAdminByDefault — errors reported from an admin's own
+// browser are excluded by default (dev/test noise) and returned with
+// ?include_admins=1.
+func TestClientErrorGroups_HidesAdminByDefault(t *testing.T) {
+	ts, d := newWiredServer(t)
+	seedUser(t, d, "admin", "testpass123", true)
+	c := loginClient(t, ts, "admin", "testpass123")
+	postClientError(t, c, ts.URL, map[string]any{"kind": "react", "message": "admin-only boom"})
+
+	groups := func(qs string) []clientErrorGroupDTO {
+		t.Helper()
+		resp, err := c.Get(ts.URL + "/api/admin/client-errors" + qs)
+		if err != nil {
+			t.Fatalf("get groups: %v", err)
+		}
+		defer resp.Body.Close()
+		var got clientErrorGroupsResp
+		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return got.Groups
+	}
+
+	if g := groups(""); len(g) != 0 {
+		t.Fatalf("default groups=%d want 0 (admin errors hidden): %+v", len(g), g)
+	}
+	if g := groups("?include_admins=1"); len(g) != 1 {
+		t.Fatalf("include_admins groups=%d want 1", len(g))
 	}
 }
 

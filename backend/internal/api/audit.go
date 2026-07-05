@@ -68,10 +68,18 @@ func (s *Server) ListAccessAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := clampLimit(r.URL.Query().Get("limit"), 100, 200)
+	// Hide changes made by instance admins by default (operator noise); the Audit
+	// screen's "Include admins" toggle sets ?include_admins to bring them back.
+	// System actions (NULL actor, e.g. auto-join) are always kept.
+	where := ""
+	if f := adminActorFilter("a.actor_user_id", wantIncludeAdmins(r)); f != "" {
+		where = "WHERE " + f
+	}
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT a.id, a.actor_user_id, u.username, a.action, a.target_kind, a.target_id, a.detail, a.created_at
 		  FROM access_audit a
 		  LEFT JOIN users u ON u.id = a.actor_user_id
+		 `+where+`
 		 ORDER BY a.id DESC
 		 LIMIT $1`, limit)
 	if err != nil {

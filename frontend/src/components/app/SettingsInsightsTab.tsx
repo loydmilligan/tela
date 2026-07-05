@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, ExternalLink, Info } from 'lucide-react'
 import { navigateToPage } from '../../lib/pageHitItem'
+import { IncludeAdminsToggle } from './IncludeAdminsToggle'
 import { useAIUsage } from '../../lib/queries/ai-usage'
 import { useAIEndpoints, type AIEndpointHealth, type AIGate } from '../../lib/queries/ai-endpoints'
 import {
   useAdminStats,
+  type AdminStats,
   type StatsSignup,
   type StatsTopPage,
   type StatsTopPerson,
@@ -34,28 +37,41 @@ const newInWeek = (cum: number[]) =>
   cum.length >= 8 ? cum[cum.length - 1] - cum[cum.length - 8] : (cum[cum.length - 1] ?? 0) - (cum[0] ?? 0)
 
 export function SettingsInsightsTab() {
-  const q = useAdminStats()
-
-  if (q.isLoading) return <InsightsSkeleton />
-  if (q.isError || !q.data) {
-    return (
-      <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
-        Couldn't load insights.
-      </p>
-    )
-  }
-  const s = q.data
-  const answerRate = s.asks_30 > 0 ? s.asks_answered_30 / s.asks_30 : 0
-  const activation = s.users > 0 ? s.activated / s.users : 0
+  // Admin activity is excluded from the aggregates by default — the operator's own
+  // views/edits/asks otherwise drown the real signal. The toggle re-includes it.
+  const [includeAdmins, setIncludeAdmins] = useState(false)
+  const q = useAdminStats(includeAdmins)
 
   return (
     <TooltipProvider delayDuration={150}>
       <section aria-labelledby="settings-insights" className="flex flex-col gap-[var(--space-6)]">
-        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-          A live read on the instance. Trends are daily over the last 30 days; deltas
-          compare the last 7 days with the 7 before.
-        </p>
+        <div className="flex items-start justify-between gap-[var(--space-3)]">
+          <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+            A live read on the instance. Trends are daily over the last 30 days; deltas
+            compare the last 7 days with the 7 before.
+          </p>
+          <IncludeAdminsToggle checked={includeAdmins} onChange={setIncludeAdmins} />
+        </div>
+        {q.isLoading ? (
+          <InsightsSkeleton />
+        ) : q.isError || !q.data ? (
+          <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+            Couldn't load insights.
+          </p>
+        ) : (
+          <InsightsBody s={q.data} />
+        )}
+      </section>
+    </TooltipProvider>
+  )
+}
 
+function InsightsBody({ s }: { s: AdminStats }) {
+  const answerRate = s.asks_30 > 0 ? s.asks_answered_30 / s.asks_30 : 0
+  const activation = s.users > 0 ? s.activated / s.users : 0
+
+  return (
+    <>
         {/* At a glance */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-[var(--space-3)]">
           <Kpi
@@ -203,8 +219,7 @@ export function SettingsInsightsTab() {
             <Health label="Contradictions" value={s.contradictions} sub="pages that disagree" warn={s.contradictions > 0} />
           </div>
         </Section>
-      </section>
-    </TooltipProvider>
+    </>
   )
 }
 

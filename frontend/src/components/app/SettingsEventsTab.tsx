@@ -5,6 +5,7 @@ import {
   type EventFilters,
 } from '../../lib/queries/events'
 import { EventRow } from './EventRow'
+import { IncludeAdminsToggle } from './IncludeAdminsToggle'
 import { Toggle } from '../ui/toggle'
 import { Input } from '../ui/input'
 import { Button } from '../ui/button'
@@ -20,6 +21,7 @@ export function SettingsEventsTab() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [since, setSince] = useState('')
+  const [includeAdmins, setIncludeAdmins] = useState(false)
 
   // Debounce the free-text box so each keystroke doesn't refetch.
   useEffect(() => {
@@ -35,8 +37,9 @@ export function SettingsEventsTab() {
       types: types.length > 0 ? types : undefined,
       q: debouncedSearch.trim() || undefined,
       since: since || undefined,
+      includeAdmins: includeAdmins || undefined,
     }
-  }, [groups, debouncedSearch, since])
+  }, [groups, debouncedSearch, since, includeAdmins])
 
   const query = useInfiniteEvents(filters)
   const {
@@ -76,7 +79,8 @@ export function SettingsEventsTab() {
     })
   }
 
-  const hasFilters = groups.size > 0 || search !== '' || since !== ''
+  const hasFilters =
+    groups.size > 0 || search !== '' || since !== '' || includeAdmins
 
   return (
     <section
@@ -119,6 +123,10 @@ export function SettingsEventsTab() {
               className="max-w-[10rem]"
             />
           </label>
+          <IncludeAdminsToggle
+            checked={includeAdmins}
+            onChange={setIncludeAdmins}
+          />
           {hasFilters ? (
             <Button
               variant="ghost"
@@ -127,6 +135,7 @@ export function SettingsEventsTab() {
                 setGroups(new Set())
                 setSearch('')
                 setSince('')
+                setIncludeAdmins(false)
               }}
             >
               Clear

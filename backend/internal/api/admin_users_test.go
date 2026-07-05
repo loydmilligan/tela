@@ -9,12 +9,29 @@ import (
 	"testing"
 )
 
-func TestListAdminUsers_OkSortedByUsername(t *testing.T) {
+// The admin users list is newest-account-first (most recent signup on top), not
+// alphabetical — the operator wants to see who just joined.
+func TestListAdminUsers_NewestFirst(t *testing.T) {
 	d := newAPITestDB(t)
 	srv := New(d)
 	adminID := seedUser(t, d, "admin", "adminpw123", true)
-	seedUser(t, d, "charlie", "charliepw", false)
-	seedUser(t, d, "bob", "bobpw1234", false)
+	charlieID := seedUser(t, d, "charlie", "charliepw", false)
+	bobID := seedUser(t, d, "bob", "bobpw1234", false)
+
+	// Stamp distinct created_at so the ordering is unambiguous (admin oldest, bob
+	// newest) regardless of same-second insert ties.
+	for _, s := range []struct {
+		id int64
+		ts string
+	}{
+		{adminID, "2026-01-01 00:00:00"},
+		{charlieID, "2026-02-01 00:00:00"},
+		{bobID, "2026-03-01 00:00:00"},
+	} {
+		if _, err := d.Exec(`UPDATE users SET created_at=$1 WHERE id=$2`, s.ts, s.id); err != nil {
+			t.Fatalf("stamp created_at: %v", err)
+		}
+	}
 
 	req := userRequest(http.MethodGet, "/api/admin/users", "", authUser(adminID, "admin", true))
 	rec := recordHandler(srv.ListAdminUsers, req)
@@ -22,14 +39,15 @@ func TestListAdminUsers_OkSortedByUsername(t *testing.T) {
 		t.Fatalf("status=%d body=%q want 200", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	adminIdx := strings.Index(body, `"admin"`)
 	bobIdx := strings.Index(body, `"bob"`)
 	charlieIdx := strings.Index(body, `"charlie"`)
+	adminIdx := strings.Index(body, `"admin"`)
 	if adminIdx < 0 || bobIdx < 0 || charlieIdx < 0 {
 		t.Fatalf("missing user(s) in body=%q", body)
 	}
-	if !(adminIdx < bobIdx && bobIdx < charlieIdx) {
-		t.Fatalf("ordering wrong: admin=%d bob=%d charlie=%d body=%q", adminIdx, bobIdx, charlieIdx, body)
+	// Newest first: bob (Mar) < charlie (Feb) < admin (Jan) by position.
+	if !(bobIdx < charlieIdx && charlieIdx < adminIdx) {
+		t.Fatalf("ordering wrong (want newest first): bob=%d charlie=%d admin=%d body=%q", bobIdx, charlieIdx, adminIdx, body)
 	}
 }
 

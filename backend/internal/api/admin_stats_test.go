@@ -14,30 +14,40 @@ func TestAdminStats_Aggregates(t *testing.T) {
 	ts, d := newWiredServer(t)
 	ctx := context.Background()
 	admin := seedUser(t, d, "admin", "testpass123", true)
+	bob := seedUser(t, d, "bob", "bobpw1234", false)
 	spaceID := seedSpace(t, d, "Docs", "docs", admin)
 	pageID := seedPage(t, d, spaceID, "Guide")
 
-	// 5 views + 2 edits today, by the admin.
+	// 5 views + 2 edits today, by non-admin bob — the activity the default view
+	// should surface.
 	for i := 0; i < 5; i++ {
 		if _, err := d.ExecContext(ctx,
 			`INSERT INTO events (type, target_kind, target_id, actor_user_id, actor_label)
-			 VALUES ('page.view','page',$1,$2,'admin')`, pageID, admin); err != nil {
+			 VALUES ('page.view','page',$1,$2,'bob')`, pageID, bob); err != nil {
 			t.Fatalf("insert view: %v", err)
 		}
 	}
 	for i := 0; i < 2; i++ {
 		if _, err := d.ExecContext(ctx,
 			`INSERT INTO events (type, target_kind, target_id, actor_user_id, actor_label)
-			 VALUES ('page.edit','page',$1,$2,'admin')`, pageID, admin); err != nil {
+			 VALUES ('page.edit','page',$1,$2,'bob')`, pageID, bob); err != nil {
 			t.Fatalf("insert edit: %v", err)
 		}
 	}
-	// An ask that retrieved nothing + one that did.
+	// One extra view by the admin — noise that the default view must hide (and
+	// ?include_admins must reveal).
 	if _, err := d.ExecContext(ctx,
-		`INSERT INTO ask_log (user_id, question, answered) VALUES ($1,'q1',0),($1,'q2',1)`, admin); err != nil {
+		`INSERT INTO events (type, target_kind, target_id, actor_user_id, actor_label)
+		 VALUES ('page.view','page',$1,$2,'admin')`, pageID, admin); err != nil {
+		t.Fatalf("insert admin view: %v", err)
+	}
+	// An ask that retrieved nothing + one that did, both by bob.
+	if _, err := d.ExecContext(ctx,
+		`INSERT INTO ask_log (user_id, question, answered) VALUES ($1,'q1',0),($1,'q2',1)`, bob); err != nil {
 		t.Fatalf("insert ask_log: %v", err)
 	}
-	// A page revision authored by the admin → they count as "activated".
+	// A page revision authored by the admin → they count as "activated" (a
+	// population signal, never filtered by the admin toggle).
 	if _, err := d.ExecContext(ctx,
 		`INSERT INTO page_revisions (page_id, title, body, author_id, source, byte_size, created_at)
 		 VALUES ($1,'Guide','hello world',$2,'edit',11,tela_now())`, pageID, admin); err != nil {
@@ -64,9 +74,10 @@ func TestAdminStats_Aggregates(t *testing.T) {
 	if len(got.Days) != statsWindowDays || len(got.Views) != statsWindowDays {
 		t.Fatalf("series length wrong: days=%d views=%d", len(got.Days), len(got.Views))
 	}
-	// Today is the last bucket; the 5 views landed there.
+	// Today is the last bucket; bob's 5 views landed there. The admin's extra view
+	// is hidden by default (5, not 6).
 	if got.Views[statsWindowDays-1] != 5 {
-		t.Fatalf("today's views=%d want 5", got.Views[statsWindowDays-1])
+		t.Fatalf("today's views=%d want 5 (admin view excluded)", got.Views[statsWindowDays-1])
 	}
 	if got.Edits[statsWindowDays-1] != 2 {
 		t.Fatalf("today's edits=%d want 2", got.Edits[statsWindowDays-1])
@@ -74,7 +85,7 @@ func TestAdminStats_Aggregates(t *testing.T) {
 	if len(got.TopPages) != 1 || got.TopPages[0].PageID != pageID || got.TopPages[0].Count != 5 {
 		t.Fatalf("top pages wrong: %+v", got.TopPages)
 	}
-	if len(got.TopContributors) != 1 || got.TopContributors[0].Label != "admin" || got.TopContributors[0].Count != 2 {
+	if len(got.TopContributors) != 1 || got.TopContributors[0].Label != "bob" || got.TopContributors[0].Count != 2 {
 		t.Fatalf("top contributors wrong: %+v", got.TopContributors)
 	}
 	if got.Asks30 != 2 || got.AsksAnswered30 != 1 {
@@ -108,6 +119,20 @@ func TestAdminStats_Aggregates(t *testing.T) {
 	}
 	if len(got.UnansweredAsks) != 1 || got.UnansweredAsks[0].Question != "q1" {
 		t.Fatalf("unanswered asks wrong: %+v", got.UnansweredAsks)
+	}
+
+	// ?include_admins=1 folds the admin's extra view back in → 6 today.
+	resp2, err := c.Get(ts.URL + "/api/admin/stats?include_admins=1")
+	if err != nil {
+		t.Fatalf("get stats (include_admins): %v", err)
+	}
+	defer resp2.Body.Close()
+	var withAdmins adminStats
+	if err := json.NewDecoder(resp2.Body).Decode(&withAdmins); err != nil {
+		t.Fatalf("decode include_admins: %v", err)
+	}
+	if withAdmins.Views[statsWindowDays-1] != 6 {
+		t.Fatalf("include_admins today's views=%d want 6", withAdmins.Views[statsWindowDays-1])
 	}
 }
 

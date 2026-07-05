@@ -4,6 +4,7 @@ import {
   useClientErrorOccurrences,
   type ClientErrorGroup,
 } from '../../lib/queries/client-errors'
+import { IncludeAdminsToggle } from './IncludeAdminsToggle'
 import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 import { Badge } from '../ui/badge'
 import { cn } from '../../lib/utils'
@@ -12,14 +13,18 @@ import { cn } from '../../lib/utils'
 // grouped by fingerprint so a recurring crash is one row with a count, not a
 // flood in the raw Events feed. Expand a row for its stack + recent occurrences.
 export function SettingsErrorsTab() {
-  const groups = useClientErrorGroups()
+  const [includeAdmins, setIncludeAdmins] = useState(false)
+  const groups = useClientErrorGroups(includeAdmins)
 
   return (
     <section aria-labelledby="settings-errors" className="flex flex-col gap-[var(--space-4)]">
-      <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
-        Errors reported from users' browsers — uncaught exceptions, failed
-        requests, broken assets — grouped by signature. Most recently seen first.
-      </p>
+      <div className="flex items-start justify-between gap-[var(--space-3)]">
+        <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)] leading-[var(--leading-relaxed)]">
+          Errors reported from users' browsers — uncaught exceptions, failed
+          requests, broken assets — grouped by signature. Most recently seen first.
+        </p>
+        <IncludeAdminsToggle checked={includeAdmins} onChange={setIncludeAdmins} />
+      </div>
 
       {groups.isLoading ? (
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading errors…</p>
@@ -30,7 +35,7 @@ export function SettingsErrorsTab() {
       ) : groups.data && groups.data.length > 0 ? (
         <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-2)]">
           {groups.data.map((g) => (
-            <ErrorGroupRow key={g.fingerprint} group={g} />
+            <ErrorGroupRow key={g.fingerprint} group={g} includeAdmins={includeAdmins} />
           ))}
         </ul>
       ) : (
@@ -42,9 +47,15 @@ export function SettingsErrorsTab() {
   )
 }
 
-function ErrorGroupRow({ group }: { group: ClientErrorGroup }) {
+function ErrorGroupRow({
+  group,
+  includeAdmins,
+}: {
+  group: ClientErrorGroup
+  includeAdmins: boolean
+}) {
   const [open, setOpen] = useState(false)
-  const occ = useClientErrorOccurrences(open ? group.fingerprint : null)
+  const occ = useClientErrorOccurrences(open ? group.fingerprint : null, includeAdmins)
 
   return (
     <li
