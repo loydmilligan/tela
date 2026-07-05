@@ -302,6 +302,11 @@ func IsPublicPath(p string) bool {
 	if strings.HasPrefix(p, "/.well-known/oauth-protected-resource") {
 		return true
 	}
+	// MCP machine-discovery manifest — public static JSON served by
+	// api.ServeMCPManifest; discovery clients fetch it unauthenticated.
+	if p == "/.well-known/mcp.json" {
+		return true
+	}
 	// WorkOS Standalone login bridge (Phase 5b) — self-authenticates (reads the
 	// session cookie itself, redirects to /login when absent), so it must bypass
 	// the middleware's blanket 401.

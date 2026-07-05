@@ -86,6 +86,11 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource", srv.ServePRM)
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource/api/mcp", srv.ServePRM)
 
+	// MCP machine-discovery manifest (advertised in the README + registry
+	// server.json). Static JSON with this instance's origin injected into the
+	// remote. Public (see auth.IsPublicPath); routed through Caddy in prod.
+	mux.HandleFunc("GET /.well-known/mcp.json", srv.ServeMCPManifest)
+
 	// WorkOS Standalone "OAuth Bridge" Login URI (Phase 5b). WorkOS redirects the
 	// user here with ?external_auth_id during the Connect flow; we authenticate
 	// against tela's own session, then complete via the WorkOS API. Public (it

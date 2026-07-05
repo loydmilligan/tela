@@ -71,6 +71,13 @@
 		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
 	}
 
+	# MCP machine-discovery manifest — new top-level path, routed to the backend
+	# which injects this instance's origin into the remote URL. noindex.
+	handle /.well-known/mcp.json {
+		header X-Robots-Tag "noindex"
+		reverse_proxy {$TELA_UPSTREAM_BACKEND:backend:8080}
+	}
+
 	# WorkOS Standalone login bridge (MCP OAuth Connect flow). New top-level path
 	# → route to the backend, which authenticates via tela's session and completes
 	# the OAuth dance. The /login bounce it issues falls through to the SPA. noindex.

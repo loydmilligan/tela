@@ -7,7 +7,7 @@
     "source": "github",
     "subfolder": "mcp"
   },
-  "version": "0.7.5",
+  "version": "0.7.4",
   "websiteUrl": "https://telawiki.com",
   "packages": [
     {
@@ -15,6 +15,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "tela-mcp",
       "version": "0.7.4",
+      "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
       },

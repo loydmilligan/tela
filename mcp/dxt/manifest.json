@@ -1,0 +1,50 @@
+{
+  "dxt_version": "0.1",
+  "name": "tela",
+  "display_name": "tela",
+  "version": "0.7.4",
+  "description": "Search, read, and write your tela wiki from Claude Desktop.",
+  "long_description": "Connects Claude Desktop to a tela instance — a self-hostable, markdown-native team wiki — via its built-in MCP server. Lets Claude search, read, and author wiki pages with scoped, per-tool write permissions. Wraps the tela-mcp stdio↔HTTP proxy; point it at your own origin to use a self-hosted instance.",
+  "author": {
+    "name": "zcag",
+    "url": "https://github.com/zcag/tela"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zcag/tela"
+  },
+  "homepage": "https://telawiki.com",
+  "documentation": "https://github.com/zcag/tela/blob/main/mcp/README.md",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "npx",
+      "args": ["-y", "tela-mcp"],
+      "env": {
+        "TELA_BASE_URL": "${user_config.base_url}",
+        "TELA_API_KEY": "${user_config.api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "base_url": {
+      "type": "string",
+      "title": "tela base URL",
+      "description": "Origin of your tela instance, e.g. https://telawiki.com or your self-hosted host.",
+      "required": true,
+      "default": "https://telawiki.com"
+    },
+    "api_key": {
+      "type": "string",
+      "title": "API token",
+      "description": "A tela personal access token (tela_pat_...). Create one in Settings → API tokens.",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "compatibility": {
+    "runtimes": { "node": ">=20" }
+  },
+  "keywords": ["wiki", "documentation", "self-hosted", "knowledge-base", "tela"]
+}
