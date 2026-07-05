@@ -39,9 +39,24 @@ import (
 var errSelfHostSignerMissing = errors.New("selfhost license: signing key not configured")
 
 // selfHostLicenseGraceDays extends a minted key past the paid-through date so a
-// renewal that lands a little late (or a clock skew on the self-hosted box)
-// doesn't briefly lock a paying customer out of EE.
-const selfHostLicenseGraceDays = 5
+// renewal that lands late — or a buyer slow to re-install the renewed key —
+// doesn't lock a paying customer out of EE. Generous on purpose: the offline key
+// can't be refreshed remotely, so this window is the whole cushion against the
+// renewal cliff.
+const selfHostLicenseGraceDays = 14
+
+// isSelfHostSubscription reports whether subID is a subscription we've issued a
+// self-host license against. Lets the webhook route cancel/revoke events (which
+// may omit product_id) to license handling instead of the plan reconciler.
+func (s *Server) isSelfHostSubscription(ctx context.Context, subID string) bool {
+	if strings.TrimSpace(subID) == "" {
+		return false
+	}
+	var exists bool
+	_ = s.DB.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM selfhost_licenses WHERE polar_subscription_id = $1)`, subID).Scan(&exists)
+	return exists
+}
 
 // loadLicenseSigner reads the vendor's ed25519 private signing key from
 // TELA_LICENSE_SIGNING_KEY (base64 RawStd, same format as the `tela license
@@ -171,6 +186,29 @@ func (s *Server) ListSelfHostLicenses(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"licenses": out, "sales_enabled": s.selfHostIssuanceEnabled()})
 }
 
+// CreateSelfHostPortal opens the Polar customer portal for the caller so they can
+// manage/cancel/update their self-host license subscription. Keyed by the account
+// external id (CreateCustomerSession works off it), NOT users.polar_customer_id —
+// a self-host buyer typically sits on the Free cloud plan and has no cloud
+// customer id, so the plan-side portal (CreateBillingPortal) would 400 for them.
+func (s *Server) CreateSelfHostPortal(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.billing.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "billing_disabled", "billing is not configured on this instance")
+		return
+	}
+	url, err := s.billing.CreateCustomerSession(r.Context(), acctExternalID(account{Kind: accountUser, ID: u.ID}))
+	if err != nil {
+		slog.Error("selfhost license: create portal", "user", u.ID, "err", err)
+		writeError(w, http.StatusBadGateway, "billing_error", "could not open the billing portal")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
 // reconcileSelfHostLicense handles a Polar event for the self-host license
 // product: (re)mint + persist + email on an active subscription, mark on
 // cancel/revoke. Idempotent per subscription (upsert on polar_subscription_id).
@@ -192,19 +230,34 @@ func (s *Server) reconcileSelfHostLicense(ctx context.Context, evt billing.Event
 			// past_due etc — leave the existing key (it lapses on its own expiry).
 			return nil
 		}
-		if s.licenseSigner == nil {
-			// Product wired but no signer: fail loud (→ 500 → Polar redelivers) so a
-			// paying customer isn't silently left keyless once the signer is set.
-			return errSelfHostSignerMissing
-		}
 		periodEnd := time.Now().AddDate(1, 0, 0)
 		if evt.Data.CurrentPeriodEnd != nil {
 			periodEnd = *evt.Data.CurrentPeriodEnd
 		}
 		expiresAt := periodEnd.AddDate(0, 0, selfHostLicenseGraceDays)
 		expStr := expiresAt.UTC().Format("2006-01-02 15:04:05")
-		seats := metadataInt(evt.Data.Metadata, "seats")
 
+		// Already issued for this exact period? Then this is a redelivery or a
+		// same-term update — do NOT re-mint (a fresh signature would make the stored
+		// key diverge from the one the buyer was emailed and installed). Just make
+		// sure the row reads active and stop.
+		var prevExp sql.NullString
+		existed := s.DB.QueryRowContext(ctx,
+			`SELECT expires_at FROM selfhost_licenses WHERE polar_subscription_id = $1`, subID).Scan(&prevExp) == nil
+		if existed && prevExp.String == expStr {
+			_, err := s.DB.ExecContext(ctx,
+				`UPDATE selfhost_licenses SET status = 'active', updated_at = tela_now() WHERE polar_subscription_id = $1`, subID)
+			return err
+		}
+
+		// First issuance or a genuine renewal (period advanced) → mint + persist +
+		// email the (new) key.
+		if s.licenseSigner == nil {
+			// Product wired but no signer: fail loud (→ 500 → Polar redelivers) so a
+			// paying customer isn't silently left keyless once the signer is set.
+			return errSelfHostSignerMissing
+		}
+		seats := metadataInt(evt.Data.Metadata, "seats")
 		var email sql.NullString
 		_ = s.DB.QueryRowContext(ctx, `SELECT email FROM users WHERE id = $1`, acct.ID).Scan(&email)
 		customer := cmp.Or(strings.TrimSpace(email.String), acctExternalID(acct))
@@ -213,13 +266,6 @@ func (s *Server) reconcileSelfHostLicense(ctx context.Context, evt billing.Event
 		if err != nil {
 			return err
 		}
-
-		// Was this subscription already issued, and did its period advance? Drives
-		// whether we email (first issuance or a renewal, not a no-op re-delivery).
-		var prevExp sql.NullString
-		existed := s.DB.QueryRowContext(ctx,
-			`SELECT expires_at FROM selfhost_licenses WHERE polar_subscription_id = $1`, subID).Scan(&prevExp) == nil
-
 		if _, err := s.DB.ExecContext(ctx, `
 			INSERT INTO selfhost_licenses
 			  (owner_user_id, polar_subscription_id, polar_customer_id, tier, seats, status, token, expires_at, issued_at, updated_at)
@@ -231,8 +277,7 @@ func (s *Server) reconcileSelfHostLicense(ctx context.Context, evt billing.Event
 			acct.ID, subID, nullIfEmpty(evt.Data.CustomerID), seats, token, expStr); err != nil {
 			return err
 		}
-
-		if (!existed || prevExp.String != expStr) && email.Valid && strings.TrimSpace(email.String) != "" {
+		if email.Valid && strings.TrimSpace(email.String) != "" {
 			manage := cmp.Or(canonicalBaseURL(), devBaseURL) + "/settings?tab=licenses"
 			if e := s.Mailer.Send(ctx, mailer.SelfHostLicense(email.String, token, seats, expiresAt, manage)); e != nil {
 				slog.Warn("selfhost license: delivery email failed", "user", acct.ID, "err", e)

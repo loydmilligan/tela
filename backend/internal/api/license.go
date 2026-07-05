@@ -69,6 +69,33 @@ func (s *Server) licenseStatus() ee.Status {
 	return s.license.Load().Status() // Load()==nil → nil-receiver Status() → zero
 }
 
+// selfHostSeatUsage counts active users on this instance — the number compared
+// against the license's Seats for the SOFT seat check. Never used to block.
+func (s *Server) selfHostSeatUsage(ctx context.Context) int {
+	var n int
+	_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE is_active = 1`).Scan(&n)
+	return n
+}
+
+// warnSelfHostSeats logs a prominent boot notice when a self-host instance has
+// MORE active users than its Enterprise license covers. This is the honor-system
+// seat model: features stay on (offline keys can't phone home to count seats), so
+// enforcement is a visible nudge to true-up, never a lockout. Managed cloud is
+// exempt (seats are billed by Polar there). No-op without a seated license.
+func (s *Server) warnSelfHostSeats(ctx context.Context) {
+	if s.managedCloud {
+		return
+	}
+	lic := s.license.Load()
+	if lic == nil || lic.Seats <= 0 {
+		return
+	}
+	if used := s.selfHostSeatUsage(ctx); used > lic.Seats {
+		slog.Warn("this instance has more active users than the Enterprise license covers — Enterprise features stay on, but please update your subscription's seat count to stay licensed.",
+			"seats_used", used, "seats_licensed", lic.Seats)
+	}
+}
+
 // envLicensed reports whether the key is pinned via env (then the admin API is
 // read-only — the env value always wins on the next boot).
 func envLicensed() bool { return strings.TrimSpace(os.Getenv("TELA_LICENSE_KEY")) != "" }
@@ -78,10 +105,16 @@ func (s *Server) GetLicense(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireInstanceAdmin(w, r); !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"license":    s.licenseStatus(),
 		"env_locked": envLicensed(),
-	})
+	}
+	// Soft seat check: surface used-vs-licensed so the admin tab can nudge a
+	// true-up when the instance is over. Self-host only; managed cloud bills seats.
+	if lic := s.license.Load(); lic != nil && lic.Seats > 0 && !s.managedCloud {
+		resp["seat_usage"] = map[string]int{"used": s.selfHostSeatUsage(r.Context()), "licensed": lic.Seats}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // PutLicense installs (or replaces) the license key. Instance-admin. The token

@@ -298,7 +298,12 @@ func (s *Server) reconcileBilling(ctx context.Context, evt billing.Event) error 
 
 	// The self-host Enterprise license is a separate SKU (its product is kept out
 	// of the plan map): route its events to license issuance, not plan changes.
-	if s.selfHostProductID != "" && evt.Data.ProductID == s.selfHostProductID {
+	// Match on the product, OR on a subscription id we already issued against —
+	// Polar's cancel/revoke payloads don't reliably carry product_id, and without
+	// the sub-id fallback such an event would fall through to the plan reconciler
+	// (a no-op there) and leave the license row wrongly showing Active.
+	if s.selfHostProductID != "" &&
+		(evt.Data.ProductID == s.selfHostProductID || s.isSelfHostSubscription(ctx, evt.Data.ID)) {
 		return s.reconcileSelfHostLicense(ctx, evt, acct)
 	}
 

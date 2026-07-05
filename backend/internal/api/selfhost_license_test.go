@@ -5,9 +5,32 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
+
+// decodeLicensePayload cracks a minted token's payload (base64url JSON, short
+// keys) WITHOUT verifying the signature — enough to assert the minted contents.
+func decodeLicensePayload(t *testing.T, token string) map[string]any {
+	t.Helper()
+	raw := strings.TrimPrefix(token, "tela_lic_")
+	parts := strings.SplitN(raw, ".", 2)
+	if len(parts) != 2 {
+		t.Fatalf("malformed token: %q", token)
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	return m
+}
 
 // selfHostServer wires billing + the self-host license product + an ephemeral
 // signing key + a capture mailer, so the issuance flow runs end-to-end with no
@@ -133,6 +156,89 @@ func TestSelfHostLicenseRevoke(t *testing.T) {
 	}
 	if _, status, _ := selfHostLicenseRow(t, d, "sub_1"); status != "revoked" {
 		t.Fatalf("after revoke status=%q (want revoked)", status)
+	}
+}
+
+func TestSelfHostLicenseMintContent(t *testing.T) {
+	s, _, _ := selfHostServer(t)
+	exp := time.Now().Add(365 * 24 * time.Hour)
+	tok, err := s.mintSelfHostLicense("acme@example.com", 7, exp)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	m := decodeLicensePayload(t, tok)
+	if m["tier"] != "enterprise" {
+		t.Fatalf("tier=%v (want enterprise)", m["tier"])
+	}
+	if m["cust"] != "acme@example.com" {
+		t.Fatalf("cust=%v", m["cust"])
+	}
+	if seats, _ := m["seats"].(float64); int(seats) != 7 {
+		t.Fatalf("seats=%v (want 7)", m["seats"])
+	}
+	feat, _ := m["feat"].(map[string]any)
+	if feat["*"] != true {
+		t.Fatalf("feat=%v (want all-features \"*\")", m["feat"])
+	}
+	if e, _ := m["exp"].(float64); int64(e) != exp.Unix() {
+		t.Fatalf("exp=%v (want %d)", m["exp"], exp.Unix())
+	}
+}
+
+func TestSelfHostLicenseCanceledMarksRow(t *testing.T) {
+	s, d, _ := selfHostServer(t)
+	ctx := context.Background()
+	uid := seedUser(t, d, "buyer", "pw123456", false)
+	ext := acctExternalID(account{Kind: accountUser, ID: uid})
+	if err := s.reconcileBilling(ctx, subEvent("subscription.created", ext, "prod_selfhost", "active", false)); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if err := s.reconcileBilling(ctx, subEvent("subscription.canceled", ext, "prod_selfhost", "active", true)); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if _, status, _ := selfHostLicenseRow(t, d, "sub_1"); status != "canceled" {
+		t.Fatalf("after cancel status=%q (want canceled)", status)
+	}
+}
+
+// A revoke/cancel event that omits product_id must still reach license handling
+// (routed by subscription id), or the row wrongly stays Active. Covers the
+// isSelfHostSubscription fallback.
+func TestSelfHostLicenseRoutesBySubIdWhenProductMissing(t *testing.T) {
+	s, d, _ := selfHostServer(t)
+	ctx := context.Background()
+	uid := seedUser(t, d, "buyer", "pw123456", false)
+	ext := acctExternalID(account{Kind: accountUser, ID: uid})
+	if err := s.reconcileBilling(ctx, subEvent("subscription.created", ext, "prod_selfhost", "active", false)); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	revoke := subEvent("subscription.revoked", ext, "", "canceled", false) // product_id empty
+	if err := s.reconcileBilling(ctx, revoke); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if _, status, _ := selfHostLicenseRow(t, d, "sub_1"); status != "revoked" {
+		t.Fatalf("revoke without product_id left status=%q (want revoked)", status)
+	}
+}
+
+// A redelivery within the same period must NOT re-mint — the stored key must stay
+// byte-identical to the one the buyer was emailed/installed.
+func TestSelfHostLicenseSamePeriodTokenStable(t *testing.T) {
+	s, d, _ := selfHostServer(t)
+	ctx := context.Background()
+	uid := seedUser(t, d, "buyer", "pw123456", false)
+	ext := acctExternalID(account{Kind: accountUser, ID: uid})
+	e := subEvent("subscription.created", ext, "prod_selfhost", "active", false)
+	if err := s.reconcileBilling(ctx, e); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	first, _, _ := selfHostLicenseRow(t, d, "sub_1")
+	// A same-period subscription.updated redelivery.
+	if err := s.reconcileBilling(ctx, subEvent("subscription.updated", ext, "prod_selfhost", "active", false)); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if again, _, _ := selfHostLicenseRow(t, d, "sub_1"); again != first {
+		t.Fatal("same-period update re-minted the key (should stay stable)")
 	}
 }
 

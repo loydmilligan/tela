@@ -445,11 +445,11 @@ func OrgInvite(to, orgName, inviter, inviteURL string, brand Brand) Message {
 // to their licenses in the cloud app so they can re-copy it later.
 func SelfHostLicense(to, token string, seats int, expires time.Time, manageURL string) Message {
 	intro := "Thanks for subscribing to tela Self-Host Enterprise. Your license key is below — in your self-hosted instance, open **Settings → License** and paste it in to unlock SSO, SCIM, audit, advanced roles and the premium connectors."
-	valid := "Valid until " + expires.UTC().Format("2 January 2006")
+	valid := "**Valid until " + expires.UTC().Format("2 January 2006") + "**"
 	if seats > 0 {
-		valid += " · up to " + strconv.Itoa(seats) + " seats"
+		valid += " · " + strconv.Itoa(seats) + " seats"
 	}
-	valid += ". It renews automatically each term — you'll get a fresh key to install when it does."
+	valid += ". It renews automatically each term, and **each renewal issues a NEW key you must re-install before this one expires** — we'll email it to you, and it's always in Settings → Self-host licenses. If you don't re-install it, Enterprise features switch off when the key lapses."
 	v := emailView{
 		LogoOrigin: originOf(manageURL),
 		Eyebrow:    "License",

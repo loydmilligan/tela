@@ -242,6 +242,7 @@ func New(db *sql.DB) *Server {
 	// nil on the cloud + unlicensed self-host. See license.go.
 	s.loadLicense(ctx)
 	s.warnSelfHostSSO(ctx)
+	s.warnSelfHostSeats(ctx)
 	// Managed-cloud issuer config: the private signing key + the self-host license
 	// Polar product. Set only on the cloud; nil/"" elsewhere (self-serve issuance
 	// then no-ops). See selfhost_license.go.
