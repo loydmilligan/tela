@@ -69,10 +69,8 @@ github.com/wneessen/go-mail v0.7.3 h1:g3DravXC5SMlVdboFrQA8Jx95A8sOzoBeS5F+vzNRK
 github.com/wneessen/go-mail v0.7.3/go.mod h1:QGhBX0yNbc1J+Mkjcu7z2rpj4B4l+BmDY8gYznPC9sk=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
-github.com/zcag/defter/go v0.1.0 h1:xcrBpkMkJ46lUH8YiokmdDQ8Cg1EUob9sH41JA3a9uA=
-github.com/zcag/defter/go v0.1.0/go.mod h1:f8pMUbPmjdwSl10p/WGuMXiIWnD0tgfrEljaKEg1z7c=
-github.com/zcag/defter/go v0.1.1 h1:JP7KRybacWH/faIhOqFB0kDDNqEous1rc8wOJcefAwg=
-github.com/zcag/defter/go v0.1.1/go.mod h1:f8pMUbPmjdwSl10p/WGuMXiIWnD0tgfrEljaKEg1z7c=
+github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
+github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 github.com/zcag/defter/go v0.1.2 h1:BInmgEV6m19wSqACjfyUhes56WhMVHIRcG0jzgylKbs=
 github.com/zcag/defter/go v0.1.2/go.mod h1:f8pMUbPmjdwSl10p/WGuMXiIWnD0tgfrEljaKEg1z7c=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

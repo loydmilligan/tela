@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"html/template"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -38,6 +39,8 @@ type ogDoc struct {
 	FeedURL      string // optional rss alternate
 	JSONLD       string // optional ld+json
 	SiteName     string // og:site_name — org brand on a white-label domain, else "tela"
+	Heading      string // optional <h1> for the crawler body (page title)
+	BodyHTML     template.HTML // optional rendered page body (crawler-visible content)
 }
 
 func writeOGDoc(w http.ResponseWriter, d ogDoc) {
@@ -51,6 +54,17 @@ func writeOGDoc(w http.ResponseWriter, d ogDoc) {
 	jsonld := ""
 	if d.JSONLD != "" {
 		jsonld = "\n  <script type=\"application/ld+json\">" + d.JSONLD + "</script>"
+	}
+	// Crawler-visible body: an <article> with the page heading + rendered markdown.
+	// Empty (SPA shell) when the caller supplies no body — the human path is a
+	// client-rendered SPA regardless; this content is for bots/indexing only.
+	body := ""
+	if d.BodyHTML != "" {
+		heading := ""
+		if d.Heading != "" {
+			heading = "<h1>" + html.EscapeString(d.Heading) + "</h1>\n"
+		}
+		body = "<article>" + heading + string(d.BodyHTML) + "</article>"
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")
@@ -75,14 +89,14 @@ func writeOGDoc(w http.ResponseWriter, d ogDoc) {
   <meta name="twitter:description" content="%s">
   <meta name="twitter:image" content="%s">%s%s
 </head>
-<body></body>
+<body>%s</body>
 </html>`,
 		html.EscapeString(d.Title), html.EscapeString(d.Description), html.EscapeString(d.CanonicalURL),
 		html.EscapeString(d.SiteName),
 		html.EscapeString(d.Title), html.EscapeString(d.Description), html.EscapeString(d.ImageURL),
 		html.EscapeString(d.CanonicalURL), html.EscapeString(d.OGType),
 		html.EscapeString(d.Title), html.EscapeString(d.Description), html.EscapeString(d.ImageURL),
-		feed, jsonld,
+		feed, jsonld, body,
 	)
 }
 
@@ -262,6 +276,8 @@ func (s *Server) HandlePublicReaderOG(w http.ResponseWriter, r *http.Request) {
 		OGType:       "article",
 		JSONLD:       jsonLD(ld),
 		SiteName:     s.ogSiteName(r, s.spaceOwnerOrg(r.Context(), sp.ID)),
+		Heading:      page.Title,
+		BodyHTML:     renderPublicBodyHTML(page.Body),
 	})
 }
 

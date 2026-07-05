@@ -12,11 +12,13 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/wneessen/go-mail v0.7.3
+	github.com/yuin/goldmark v1.8.2
 	github.com/zcag/defter/go v0.1.2
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.40.0
 	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/sync v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -39,7 +41,6 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
