@@ -139,7 +139,7 @@ nobody gates on them) — keep generous, cap only for abuse.
 | | **Free** | **Personal** | **Team** | **Enterprise** |
 |---|---|---|---|---|
 | Who | Trying tela | Individual power user | Any team (the real business) | Compliance / scale |
-| Price | **$0** | **$8/mo** ($72/yr → $6/mo) | **$10/seat/mo** ($96/yr → $8/seat/mo) | **from $15/seat/mo** (annual) |
+| Price | **$0** | **$8/mo** ($72/yr → $6/mo) | **$10/seat/mo** ($96/yr → $8/seat/mo) | Custom (contact-sales, no published price) |
 | Seats | 1 | 1 | 2+ | Negotiated |
 | Built-in AI answers / mo | 50 | 1,000 | 2,000 pooled (+credits) | Negotiated |
 | Your own agent (MCP) | Unlimited | Unlimited | Unlimited | Unlimited |
@@ -152,14 +152,16 @@ nobody gates on them) — keep generous, cap only for abuse.
 | SSO / SCIM / audit / governance | — | — | — | ✅ |
 | Support | Community | Community | Email | Priority + SLA |
 
-**Cloud Enterprise — published `from $15/seat/mo` (decided 2026-07-05).** On cloud there's
-no customer-side variable (we run the AI + ops uniformly), so a fixed floor is the honest
-shape rather than "Custom". $15 undercuts the incumbent SSO-tier price (Notion Business
-$20) — a new-tool price — while sitting above Team ($10) and self-host Enterprise ($8) so
-cloud ≥ self-host holds. The `from` + `Get in touch` CTA keeps a volume/SLA/procurement lane
-(what enterprise buyers actually negotiate — not the product). Free tier carries managed-AI
-COGS with no revenue — capped to a **taste**; the "I want real AI for free" crowd is routed
-to **self-host Community** (their inference, zero cost to us). Trial: 30-day Personal.
+**Cloud Enterprise — `Custom`, contact-sales, NO published price (decided 2026-07-05).** We
+briefly published a `from $15/seat` floor, then reverted: Enterprise is a company-of-record
+deal (SSO/SCIM/audit/governance/SLA/procurement) sold by conversation, shown with no number
+and a `Get in touch` CTA — the norm across the field (Notion/GitLab/Coda all hide it). Note
+the optics that first worried us are already handled at the self-host end: self-host
+Enterprise is `$8` (= a Team seat's displayed price), so it never reads as *more* than Team,
+with or without a cloud number. `plans.org_enterprise.price_cents` is NULL so the in-app card
+also reads "let's talk". Free tier carries managed-AI COGS with no revenue — capped to a
+**taste**; the "I want real AI for free" crowd is routed to **self-host Community** (their
+inference, zero cost to us). Trial: 30-day Personal.
 
 ## 7. Self-host options
 
