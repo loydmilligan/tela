@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useSearch } from '@tanstack/react-router'
+import { useMemo } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ImportSection } from '../components/app/ImportSection'
 import { SettingsApiKeysTab } from '../components/app/SettingsApiKeysTab'
 import { SettingsBillingTab } from '../components/app/SettingsBillingTab'
@@ -234,11 +234,18 @@ export function SettingsPage() {
     return [{ label: 'Account', tabs: account }]
   }, [me.data?.is_instance_admin, isOrgAdmin, feedbackUnseen, showLicenses])
   const tabs = useMemo<SettingsTab[]>(() => groups.flatMap((g) => g.tabs), [groups])
-  // `?tab=` (set by the per-org page's back link) picks the initial section;
-  // once a tab actually exists for it, the `active` lookup resolves it.
-  const { tab: initialTab } = useSearch({ from: '/_app/settings' })
-  const [activeId, setActiveId] = useState(initialTab ?? tabs[0].id)
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
+  // The active section lives in the URL (`?tab=`), not local state, so a refresh
+  // or a shared link lands on the same tab instead of resetting to Profile. When
+  // the param is absent (or names a tab this user can't see) it falls back to the
+  // first tab — and once `me` loads and gates in the admin tabs, an admin-tab
+  // param resolves on the next render.
+  const navigate = useNavigate()
+  const { tab: tabParam } = useSearch({ from: '/_app/settings' })
+  const active = tabs.find((t) => t.id === tabParam) ?? tabs[0]
+  // Replace (not push) so switching tabs doesn't stack history entries — Back
+  // leaves Settings rather than walking back through every tab visited.
+  const selectTab = (id: string) =>
+    void navigate({ to: '/settings', search: { tab: id }, replace: true })
 
   return (
     <div className="flex-1 flex min-h-0">
@@ -265,7 +272,7 @@ export function SettingsPage() {
                       'bg-[var(--surface-3)] text-[var(--text-primary)] font-medium',
                   )}
                   aria-current={isActive ? 'page' : undefined}
-                  onClick={() => setActiveId(tab.id)}
+                  onClick={() => selectTab(tab.id)}
                 >
                   <span className="flex-1 text-left truncate">{tab.label}</span>
                   {tab.badge ? (
