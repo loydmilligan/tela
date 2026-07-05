@@ -45,21 +45,21 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_spaces",
 		Title:       "List spaces",
-		Description: "List every space the API key can access (id, name, slug).",
+		Description: "List every space the API key can access (id, name, slug). Read-only. Start here to discover a `space_id` for list_pages / search / create_page when you don't already have one; for a single space you already know, use get_space instead.",
 		Annotations: readOnly,
 	}, s.mcpListSpaces)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_space",
 		Title:       "Get space",
-		Description: "Fetch a single space's metadata (id, name, slug) by id.",
+		Description: "Fetch one space's metadata (id, name, slug) by id. Read-only. Use when you already hold a space_id and just need its name/slug; to discover spaces use list_spaces, to list its pages use list_pages.",
 		Annotations: readOnly,
 	}, s.mcpGetSpace)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_pages",
 		Title:       "List pages",
-		Description: "Flat page listing in a space. Optional parent_id for direct children (omit for top-level pages).",
+		Description: "Flat page listing in a space (read-only). Pass parent_id for the direct children of one page; omit for top-level pages. Use to browse a space's structure or find a page_id; to find pages by keyword use `search`, and to read a page's body use get_page.",
 		Annotations: readOnly,
 	}, s.mcpListPages)
 
@@ -74,7 +74,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_backlinks",
 		Title:       "List backlinks",
-		Description: "Pages that link to the given page via [[wikilink]] / tela://page/{id}.",
+		Description: "List the pages that link TO the given page via [[wikilink]] / tela://page/{id} — its incoming references (read-only). Use to see what depends on a page before you edit or delete it, or to walk the explicit link graph; for semantically similar pages that don't link it, use related_pages.",
 		Annotations: readOnly,
 	}, s.mcpListBacklinks)
 
@@ -98,14 +98,14 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_chunk",
 		Title:       "Read chunk",
-		Description: "Fetch one chunk's full section text by chunk_id (from a `research` source), for a page OR a file chunk. Middle granularity between a research excerpt and get_page; a file chunk cites the file (file_name + parent page_id + download_url).",
+		Description: "Fetch one chunk's full section text by chunk_id (from a `research` source), for a page OR a file chunk (read-only). Middle granularity — use it to expand a single cited section; for the whole page use get_page. A file chunk cites its file (file_name + parent page_id + download_url).",
 		Annotations: readOnly,
 	}, s.mcpReadChunk)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "related_pages",
 		Title:       "Related pages",
-		Description: "Pages semantically related to a given page (\"see also\"), ranked by similarity. Discovery beyond explicit [[wikilinks]]/backlinks. Works without a live embedder (uses stored vectors).",
+		Description: "Pages semantically related to a given page (\"see also\"), ranked by similarity — discovery beyond explicit links (read-only). Use for topically similar pages; for pages that explicitly link this one, use list_backlinks. Works without a live embedder (uses stored vectors).",
 		Annotations: readOnly,
 	}, s.mcpRelatedPages)
 
@@ -136,7 +136,7 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "fetch",
 		Title:       "Fetch document",
-		Description: "Fetch a tela page's full text by id (id comes from a search result). The ChatGPT Deep Research 'fetch' tool.",
+		Description: "Fetch a tela page's full text by id — the fixed-shape ChatGPT Deep Research companion to `search` (the id comes from a search result). Read-only. Prefer get_page for normal use (same body plus richer metadata and trust signals); reach for `fetch` only when the Deep Research search/fetch contract requires it.",
 		Annotations: readOnly,
 	}, s.mcpFetch)
 
@@ -246,21 +246,21 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_comment",
 		Title:       "Add comment",
-		Description: "Attach a root comment to a page, anchored by a {prefix, exact, suffix} text triplet (editor+).",
+		Description: "Attach a root (non-reply) comment to a page, anchored to a specific passage by a {prefix, exact, suffix} text triplet so it stays pinned to the right spot as the page changes (editor+). Pass idempotency_key to make retries safe (a repeat returns the original comment instead of posting a duplicate). Use for feedback ON page content; to report problems with tela itself use submit_feedback.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &no, DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpAddComment)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_space",
 		Title:       "Create space",
-		Description: "Create a space. The caller becomes its owner. slug is derived from name when omitted.",
+		Description: "Create a space; the caller becomes its owner (write scope). `slug` is derived from `name` when omitted. Use to start a new top-level container of pages; to add a page inside an existing space use create_page, and to rename a space use update_space.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &no, DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpCreateSpace)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_space",
 		Title:       "Update space",
-		Description: "Patch a space's name and/or slug (editor+).",
+		Description: "Patch a space's name and/or slug (editor+); idempotent — pass only the field(s) you want to change. Changing the slug updates the space's URL path (existing page ids and links still resolve). To create a space use create_space, to read it use get_space, to remove it use delete_space.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &no, IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpUpdateSpace)
 
