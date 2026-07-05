@@ -20,6 +20,22 @@ export interface PageHitItemOptions {
   // Tier-2 only — backend-supplied snippet with literal <mark> delimiters.
   // Rendered via HighlightedSnippet (XSS-safe) when present.
   snippet?: string
+  // Space name, prefixed onto the breadcrumb line ("Space · Parent / Child")
+  // so a title match is attributable to its space at a glance. Omit to keep
+  // the bare parent chain.
+  spaceName?: string
+}
+
+// Compose the breadcrumb line: the space name (when known) followed by the
+// parent-page chain, e.g. "Docs · Guides / Payments". Either part may be
+// absent — space-only ("Docs"), chain-only ("Guides / Payments"), or neither.
+function composeBreadcrumb(
+  chain: string[],
+  spaceName?: string,
+): string | undefined {
+  const parents = chain.length > 0 ? chain.join(' / ') : ''
+  if (spaceName && parents) return `${spaceName} · ${parents}`
+  return spaceName || parents || undefined
 }
 
 export function navigateToPage(spaceId: number, pageId: number) {
@@ -40,8 +56,7 @@ export function pageHitToCommandItem(
       opts.snippet != null ? (
         <HighlightedSnippet snippet={opts.snippet} />
       ) : undefined,
-    breadcrumb:
-      hit.breadcrumb.length > 0 ? hit.breadcrumb.join(' / ') : undefined,
+    breadcrumb: composeBreadcrumb(hit.breadcrumb, opts.spaceName),
     icon: <FileText aria-hidden width={14} height={14} />,
     onSelect: () => navigateToPage(hit.spaceId, hit.pageId),
   }

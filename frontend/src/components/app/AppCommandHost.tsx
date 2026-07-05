@@ -241,9 +241,23 @@ export function AppCommandHost() {
     [recents],
   )
 
+  // space_id → name, so title/FTS hits can carry their space on the breadcrumb
+  // line without a per-row lookup. Rebuilt only when the spaces list changes.
+  const spaceNameById = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const s of spaces) m.set(s.id, s.name)
+    return m
+  }, [spaces])
+
   const titleItems = useMemo<CommandItem[]>(
-    () => titleHits.map((h) => pageHitToCommandItem(h, { idPrefix: 'page-t1' })),
-    [titleHits],
+    () =>
+      titleHits.map((h) =>
+        pageHitToCommandItem(h, {
+          idPrefix: 'page-t1',
+          spaceName: spaceNameById.get(h.spaceId),
+        }),
+      ),
+    [titleHits, spaceNameById],
   )
 
   const searchItems = useMemo<CommandItem[]>(() => {
@@ -262,10 +276,14 @@ export function AppCommandHost() {
             title: r.title,
             breadcrumb: r.breadcrumb,
           },
-          { idPrefix: 'page-t2', snippet: r.snippet },
+          {
+            idPrefix: 'page-t2',
+            snippet: r.snippet,
+            spaceName: spaceNameById.get(r.space_id),
+          },
         ),
       )
-  }, [searchResults, titleHits])
+  }, [searchResults, titleHits, spaceNameById])
 
   // Tier-3 body-fuzzy hits. Dedupe against tier-1 AND tier-2 (a body row whose
   // page is already surfaced as a title or FTS5 hit is noise). Excerpt is
