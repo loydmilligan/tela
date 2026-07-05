@@ -45,8 +45,8 @@ export function SettingsLicensesTab() {
         <p className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
           Could not load your licenses.
         </p>
-      ) : null}
-
+      ) : (
+      <>
       {/* Buy */}
       {salesEnabled ? (
         <Card className="flex flex-col gap-[var(--space-3)] p-[var(--space-4)]">
@@ -102,6 +102,8 @@ export function SettingsLicensesTab() {
             <LicenseRow key={lic.id} lic={lic} />
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   )

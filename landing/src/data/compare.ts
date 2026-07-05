@@ -9,7 +9,9 @@
 // git + Jira). The real differentiator is ATLAS + open-source/self-host/markdown
 // ownership — NOT "they have no MCP": Notion, Confluence, GitBook, Docmost,
 // Slite, Nuclino and Coda all ship MCP. Never claim a competitor lacks MCP.
-// No specific tela prices (mid-revamp): say "self-host free · free cloud tier".
+// Keep compare pages price-agnostic on purpose (durability): say "self-host free
+// · free cloud tier", not concrete numbers — so a pricing change never stales
+// these. Canonical prices live in docs/editions-and-pricing.md + the landing.
 
 export interface CompareRow {
   /** Comparison dimension. */
