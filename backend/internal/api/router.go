@@ -524,6 +524,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/billing/checkout", srv.CreateCheckout)
 	mux.HandleFunc("POST /api/billing/portal", srv.CreateBillingPortal)
 	mux.HandleFunc("POST /api/billing/webhook", srv.PolarWebhook)
+	// Self-serve self-host Enterprise licensing (selfhost_license.go): buy a key,
+	// list your keys. The webhook above mints + emails on purchase.
+	mux.HandleFunc("POST /api/billing/selfhost-checkout", srv.CreateSelfHostCheckout)
+	mux.HandleFunc("GET /api/licenses", srv.ListSelfHostLicenses)
 	mux.HandleFunc("GET /api/orgs/{id}/members", srv.ListOrgMembers)
 	mux.HandleFunc("POST /api/orgs/{id}/members", srv.AddOrgMember)
 	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)

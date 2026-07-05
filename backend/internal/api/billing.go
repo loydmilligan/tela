@@ -295,6 +295,13 @@ func (s *Server) reconcileBilling(ctx context.Context, evt billing.Event) error 
 		slog.Warn("billing: event without a resolvable account", "type", evt.Type, "id", evt.Data.ID)
 		return nil
 	}
+
+	// The self-host Enterprise license is a separate SKU (its product is kept out
+	// of the plan map): route its events to license issuance, not plan changes.
+	if s.selfHostProductID != "" && evt.Data.ProductID == s.selfHostProductID {
+		return s.reconcileSelfHostLicense(ctx, evt, acct)
+	}
+
 	table := acctTable(acct.Kind)
 
 	switch evt.Type {

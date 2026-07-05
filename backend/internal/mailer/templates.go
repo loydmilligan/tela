@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Branded transactional templates. Deliberately a LIGHT theme: tela's app is
@@ -435,6 +437,30 @@ func OrgInvite(to, orgName, inviter, inviteURL string, brand Brand) Message {
 	}
 	v.applyBrand(brand)
 	return Message{To: to, Subject: "You're invited to " + orgName + " on " + name, HTML: renderHTML(v), Text: renderText(v)}
+}
+
+// SelfHostLicense builds the "here's your self-host Enterprise license key"
+// delivery email. token is the signed key the buyer pastes into their own
+// instance (Settings → License); seats/expires describe it; manageURL links back
+// to their licenses in the cloud app so they can re-copy it later.
+func SelfHostLicense(to, token string, seats int, expires time.Time, manageURL string) Message {
+	intro := "Thanks for subscribing to tela Self-Host Enterprise. Your license key is below — in your self-hosted instance, open **Settings → License** and paste it in to unlock SSO, SCIM, audit, advanced roles and the premium connectors."
+	valid := "Valid until " + expires.UTC().Format("2 January 2006")
+	if seats > 0 {
+		valid += " · up to " + strconv.Itoa(seats) + " seats"
+	}
+	valid += ". It renews automatically each term — you'll get a fresh key to install when it does."
+	v := emailView{
+		LogoOrigin: originOf(manageURL),
+		Eyebrow:    "License",
+		Heading:    "Your self-host Enterprise key",
+		Intro:      intro + "\n\n" + valid,
+		Snippet:    token,
+		CTALabel:   "Manage your licenses",
+		CTAURL:     manageURL,
+		Footer:     "You're receiving this because you purchased a tela Self-Host Enterprise license.",
+	}
+	return Message{To: to, Subject: "Your tela Self-Host Enterprise license key", HTML: renderHTML(v), Text: renderText(v)}
 }
 
 // FeedbackNotice tells an instance admin that new feedback landed. `who` is the

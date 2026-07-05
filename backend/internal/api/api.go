@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"log/slog"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	"github.com/zcag/tela/backend/internal/agreement"
@@ -155,6 +157,18 @@ type Server struct {
 	// entitled() and mutated at runtime by the admin License API, so it's atomic.
 	license atomic.Pointer[ee.License]
 
+	// licenseSigner is the vendor's ed25519 PRIVATE key (TELA_LICENSE_SIGNING_KEY),
+	// set only on the managed-cloud issuer so it can MINT self-host Enterprise keys
+	// on purchase (selfhost_license.go). nil everywhere else — a self-hosted
+	// instance verifies keys, it never signs them. Guard every use on it being set.
+	licenseSigner ed25519.PrivateKey
+
+	// selfHostProductID is the Polar product UUID for the self-serve self-host
+	// Enterprise license (TELA_POLAR_SELFHOST_PRODUCT). Kept OUT of the plan
+	// product map so the plan reconciler ignores it; the webhook routes its events
+	// to reconcileSelfHostLicense instead. "" → self-host license sales disabled.
+	selfHostProductID string
+
 	// managedCloud marks THIS instance as the managed cloud (Polar billing on, or
 	// TELA_CLOUD=1). On the cloud the account's plan flag is an authoritative
 	// entitlement; on self-host it is NOT (plan_key is freely admin-assignable),
@@ -228,6 +242,11 @@ func New(db *sql.DB) *Server {
 	// nil on the cloud + unlicensed self-host. See license.go.
 	s.loadLicense(ctx)
 	s.warnSelfHostSSO(ctx)
+	// Managed-cloud issuer config: the private signing key + the self-host license
+	// Polar product. Set only on the cloud; nil/"" elsewhere (self-serve issuance
+	// then no-ops). See selfhost_license.go.
+	s.loadLicenseSigner()
+	s.selfHostProductID = strings.TrimSpace(os.Getenv("TELA_POLAR_SELFHOST_PRODUCT"))
 
 	// Guard against a Polar reprice silently diverging from the plans table (we'd
 	// charge a price the UI never shows). Background — a few API calls, advisory
