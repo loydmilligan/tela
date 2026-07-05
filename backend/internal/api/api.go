@@ -243,6 +243,9 @@ func New(db *sql.DB) *Server {
 	s.loadLicense(ctx)
 	s.warnSelfHostSSO(ctx)
 	s.warnSelfHostSeats(ctx)
+	// Self-host only: auto-pull a renewed Enterprise key from the cloud so it
+	// doesn't lapse without a manual re-paste. No-op on cloud / without a key.
+	go s.licenseRefreshLoop(context.Background())
 	// Managed-cloud issuer config: the private signing key + the self-host license
 	// Polar product. Set only on the cloud; nil/"" elsewhere (self-serve issuance
 	// then no-ops). See selfhost_license.go.

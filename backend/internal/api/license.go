@@ -109,10 +109,15 @@ func (s *Server) GetLicense(w http.ResponseWriter, r *http.Request) {
 		"license":    s.licenseStatus(),
 		"env_locked": envLicensed(),
 	}
-	// Soft seat check: surface used-vs-licensed so the admin tab can nudge a
-	// true-up when the instance is over. Self-host only; managed cloud bills seats.
-	if lic := s.license.Load(); lic != nil && lic.Seats > 0 && !s.managedCloud {
-		resp["seat_usage"] = map[string]int{"used": s.selfHostSeatUsage(r.Context()), "licensed": lic.Seats}
+	if lic := s.license.Load(); lic != nil && !s.managedCloud {
+		// Soft seat check: surface used-vs-licensed so the admin tab can nudge a
+		// true-up when the instance is over.
+		if lic.Seats > 0 {
+			resp["seat_usage"] = map[string]int{"used": s.selfHostSeatUsage(r.Context()), "licensed": lic.Seats}
+		}
+		// A cloud-issued key (has a refresh handle) auto-renews from the cloud, so
+		// the admin needn't re-paste on renewal — as long as this box can reach it.
+		resp["refreshable"] = lic.LicenseID != "" && licenseRefreshURL() != ""
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

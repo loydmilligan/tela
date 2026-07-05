@@ -17,12 +17,15 @@ import (
 	"cmp"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -84,9 +87,11 @@ func (s *Server) selfHostIssuanceEnabled() bool {
 }
 
 // mintSelfHostLicense signs a perpetual-feature ("*") Enterprise key for the
-// buyer, expiring at expiresAt. seats is advisory (0 = unspecified). Errors if
-// the signer isn't configured — the caller must gate on selfHostIssuanceEnabled.
-func (s *Server) mintSelfHostLicense(customer string, seats int, expiresAt time.Time) (string, error) {
+// buyer, expiring at expiresAt. seats is advisory (0 = unspecified). licenseID is
+// the stable per-subscription handle embedded so the instance can refresh the key
+// from the cloud. Errors if the signer isn't configured — gate on
+// selfHostIssuanceEnabled.
+func (s *Server) mintSelfHostLicense(customer string, seats int, expiresAt time.Time, licenseID string) (string, error) {
 	lic := ee.License{
 		Customer:  customer,
 		Tier:      "enterprise",
@@ -94,8 +99,17 @@ func (s *Server) mintSelfHostLicense(customer string, seats int, expiresAt time.
 		Features:  map[string]bool{"*": true},
 		IssuedAt:  time.Now().Unix(),
 		ExpiresAt: expiresAt.Unix(),
+		LicenseID: licenseID,
 	}
 	return ee.Sign(s.licenseSigner, lic)
+}
+
+// newRefreshID returns a random opaque handle for a subscription's license,
+// stable across renewals (stored once, reused). Not a secret.
+func newRefreshID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // CreateSelfHostCheckout starts a Polar checkout for the self-host Enterprise
@@ -241,9 +255,9 @@ func (s *Server) reconcileSelfHostLicense(ctx context.Context, evt billing.Event
 		// same-term update — do NOT re-mint (a fresh signature would make the stored
 		// key diverge from the one the buyer was emailed and installed). Just make
 		// sure the row reads active and stop.
-		var prevExp sql.NullString
+		var prevExp, prevRefresh sql.NullString
 		existed := s.DB.QueryRowContext(ctx,
-			`SELECT expires_at FROM selfhost_licenses WHERE polar_subscription_id = $1`, subID).Scan(&prevExp) == nil
+			`SELECT expires_at, refresh_id FROM selfhost_licenses WHERE polar_subscription_id = $1`, subID).Scan(&prevExp, &prevRefresh) == nil
 		if existed && prevExp.String == expStr {
 			_, err := s.DB.ExecContext(ctx,
 				`UPDATE selfhost_licenses SET status = 'active', updated_at = tela_now() WHERE polar_subscription_id = $1`, subID)
@@ -257,24 +271,27 @@ func (s *Server) reconcileSelfHostLicense(ctx context.Context, evt billing.Event
 			// paying customer isn't silently left keyless once the signer is set.
 			return errSelfHostSignerMissing
 		}
+		// The refresh handle is stable across renewals — reuse the row's if present.
+		refreshID := cmp.Or(strings.TrimSpace(prevRefresh.String), newRefreshID())
 		seats := metadataInt(evt.Data.Metadata, "seats")
 		var email sql.NullString
 		_ = s.DB.QueryRowContext(ctx, `SELECT email FROM users WHERE id = $1`, acct.ID).Scan(&email)
 		customer := cmp.Or(strings.TrimSpace(email.String), acctExternalID(acct))
 
-		token, err := s.mintSelfHostLicense(customer, seats, expiresAt)
+		token, err := s.mintSelfHostLicense(customer, seats, expiresAt, refreshID)
 		if err != nil {
 			return err
 		}
 		if _, err := s.DB.ExecContext(ctx, `
 			INSERT INTO selfhost_licenses
-			  (owner_user_id, polar_subscription_id, polar_customer_id, tier, seats, status, token, expires_at, issued_at, updated_at)
-			VALUES ($1, $2, $3, 'enterprise', $4, 'active', $5, $6, tela_now(), tela_now())
+			  (owner_user_id, polar_subscription_id, polar_customer_id, tier, seats, status, token, expires_at, refresh_id, issued_at, updated_at)
+			VALUES ($1, $2, $3, 'enterprise', $4, 'active', $5, $6, $7, tela_now(), tela_now())
 			ON CONFLICT (polar_subscription_id) WHERE polar_subscription_id IS NOT NULL
 			DO UPDATE SET
 			  seats = EXCLUDED.seats, status = 'active', token = EXCLUDED.token,
-			  expires_at = EXCLUDED.expires_at, issued_at = tela_now(), updated_at = tela_now()`,
-			acct.ID, subID, nullIfEmpty(evt.Data.CustomerID), seats, token, expStr); err != nil {
+			  expires_at = EXCLUDED.expires_at, refresh_id = EXCLUDED.refresh_id,
+			  issued_at = tela_now(), updated_at = tela_now()`,
+			acct.ID, subID, nullIfEmpty(evt.Data.CustomerID), seats, token, expStr, refreshID); err != nil {
 			return err
 		}
 		if email.Valid && strings.TrimSpace(email.String) != "" {
@@ -309,4 +326,115 @@ func metadataInt(m map[string]any, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+// ── cloud license refresh (issuer side, PUBLIC) ─────────────────────────────
+
+// RefreshSelfHostLicense returns the CURRENT signed key for the subscription that
+// the presented key belongs to. A self-hosted instance polls this so a renewal's
+// new key installs without a manual re-paste. It's PUBLIC (under /api/public/),
+// self-authenticating: only a validly-SIGNED tela key is accepted (ParseSigned,
+// which tolerates expiry so a lapsed instance can still recover), and it returns
+// ONLY the current key for that same subscription (matched by the embedded lid) —
+// never anyone else's. 404 when the subscription isn't active, so the instance
+// lets its key lapse. Holding a signed key already grants the license, so this
+// exposes nothing new.
+func (s *Server) RefreshSelfHostLicense(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "token is required")
+		return
+	}
+	lic, err := ee.ParseSigned(token)
+	if err != nil || lic.LicenseID == "" {
+		writeError(w, http.StatusUnauthorized, "invalid_license", "not a valid tela license key")
+		return
+	}
+	var current, status string
+	err = s.DB.QueryRowContext(r.Context(),
+		`SELECT token, status FROM selfhost_licenses WHERE refresh_id = $1`, lic.LicenseID).Scan(&current, &status)
+	if err != nil || status != "active" {
+		writeError(w, http.StatusNotFound, "no_active_license", "no active license to refresh")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"token": current})
+}
+
+// ── cloud license refresh (consumer side, self-host) ────────────────────────
+
+// licenseRefreshURL is the cloud base a self-hosted instance polls for its
+// renewed key. Defaults to the public tela cloud (where the license was bought);
+// set TELA_LICENSE_REFRESH_URL empty to disable (air-gapped installs re-paste by
+// hand). Only instances with a purchased, non-env key ever call it.
+func licenseRefreshURL() string {
+	if v, ok := os.LookupEnv("TELA_LICENSE_REFRESH_URL"); ok {
+		return strings.TrimRight(strings.TrimSpace(v), "/")
+	}
+	return "https://telawiki.com"
+}
+
+// licenseRefreshLoop pulls the current key for this instance's installed license
+// from the cloud and installs it when it's newer — so a renewal lands without a
+// manual re-paste. Self-host only (managed cloud grants via plan flags); no-op
+// without an installed non-env key or a reachable URL. A network failure is a
+// silent no-op, so it never disrupts an air-gapped instance.
+func (s *Server) licenseRefreshLoop(ctx context.Context) {
+	base := licenseRefreshURL()
+	if base == "" || s.managedCloud {
+		return
+	}
+	s.refreshLicenseOnce(ctx, base)
+	t := time.NewTicker(12 * time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.refreshLicenseOnce(ctx, base)
+		}
+	}
+}
+
+func (s *Server) refreshLicenseOnce(ctx context.Context, base string) {
+	if envLicensed() { // an env-pinned key always wins — never overwrite it
+		return
+	}
+	cur := s.license.Load()
+	if cur == nil || cur.LicenseID == "" {
+		return // no refreshable key installed (Community, or a pre-lid legacy key)
+	}
+	token, _ := s.settings.Get(licenseTokenSettingKey)
+	if strings.TrimSpace(token) == "" {
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		base+"/api/public/license/refresh?token="+url.QueryEscape(strings.TrimSpace(token)), nil)
+	if err != nil {
+		return
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return // offline / air-gapped → no-op, manual re-paste still works
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&out) != nil || out.Token == "" {
+		return
+	}
+	newLic, err := ee.Verify(out.Token) // must be a valid, unexpired key
+	if err != nil || newLic.ExpiresAt <= cur.ExpiresAt {
+		return // not newer → nothing to do
+	}
+	if err := s.settings.Set(ctx, licenseTokenSettingKey, out.Token, nil); err != nil {
+		slog.Warn("license: auto-refresh save failed", "err", err)
+		return
+	}
+	s.loadLicense(ctx)
+	slog.Info("license: auto-refreshed the Enterprise key from the cloud", "expires_at", time.Unix(newLic.ExpiresAt, 0).UTC())
 }

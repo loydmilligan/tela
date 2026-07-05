@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -162,13 +163,16 @@ func TestSelfHostLicenseRevoke(t *testing.T) {
 func TestSelfHostLicenseMintContent(t *testing.T) {
 	s, _, _ := selfHostServer(t)
 	exp := time.Now().Add(365 * 24 * time.Hour)
-	tok, err := s.mintSelfHostLicense("acme@example.com", 7, exp)
+	tok, err := s.mintSelfHostLicense("acme@example.com", 7, exp, "refh-abc")
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
 	m := decodeLicensePayload(t, tok)
 	if m["tier"] != "enterprise" {
 		t.Fatalf("tier=%v (want enterprise)", m["tier"])
+	}
+	if m["lid"] != "refh-abc" {
+		t.Fatalf("lid=%v (want refh-abc)", m["lid"])
 	}
 	if m["cust"] != "acme@example.com" {
 		t.Fatalf("cust=%v", m["cust"])
@@ -239,6 +243,55 @@ func TestSelfHostLicenseSamePeriodTokenStable(t *testing.T) {
 	}
 	if again, _, _ := selfHostLicenseRow(t, d, "sub_1"); again != first {
 		t.Fatal("same-period update re-minted the key (should stay stable)")
+	}
+}
+
+// The refresh handle is set on issue and stays STABLE across a renewal (the key's
+// lid must survive re-minting so the instance can always find its subscription).
+func TestSelfHostLicenseRefreshIdStable(t *testing.T) {
+	s, d, _ := selfHostServer(t)
+	ctx := context.Background()
+	uid := seedUser(t, d, "buyer", "pw123456", false)
+	ext := acctExternalID(account{Kind: accountUser, ID: uid})
+	e := subEvent("subscription.created", ext, "prod_selfhost", "active", false)
+	if err := s.reconcileBilling(ctx, e); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	var rid1 string
+	if err := d.QueryRowContext(ctx, `SELECT refresh_id FROM selfhost_licenses WHERE polar_subscription_id='sub_1'`).Scan(&rid1); err != nil || rid1 == "" {
+		t.Fatalf("refresh_id not set on issue: %q err=%v", rid1, err)
+	}
+	later := e.Data.CurrentPeriodEnd.Add(365 * 24 * 60 * 60 * 1e9)
+	e2 := subEvent("subscription.updated", ext, "prod_selfhost", "active", false)
+	e2.Data.CurrentPeriodEnd = &later
+	if err := s.reconcileBilling(ctx, e2); err != nil {
+		t.Fatalf("renewal: %v", err)
+	}
+	var rid2 string
+	_ = d.QueryRowContext(ctx, `SELECT refresh_id FROM selfhost_licenses WHERE polar_subscription_id='sub_1'`).Scan(&rid2)
+	if rid2 != rid1 {
+		t.Fatalf("refresh_id changed on renewal: %q -> %q", rid1, rid2)
+	}
+}
+
+// The public refresh endpoint rejects a missing token (400) and any junk /
+// unsigned token (401) — it only ever answers a validly-signed key.
+func TestRefreshEndpointRejectsJunk(t *testing.T) {
+	s, _, _ := selfHostServer(t)
+	for _, tc := range []struct {
+		q    string
+		code int
+	}{
+		{"", 400},
+		{"?token=not-a-key", 401},
+		{"?token=tela_lic_deadbeef.deadbeef", 401},
+	} {
+		req := httptest.NewRequest("GET", "/api/public/license/refresh"+tc.q, nil)
+		rr := httptest.NewRecorder()
+		s.RefreshSelfHostLicense(rr, req)
+		if rr.Code != tc.code {
+			t.Fatalf("token=%q → %d (want %d)", tc.q, rr.Code, tc.code)
+		}
 	}
 }
 

@@ -37,12 +37,17 @@ var (
 // License is the signed payload of a key: who it's for, what it grants, and when
 // it lapses. JSON keys are short to keep tokens compact.
 type License struct {
-	Customer  string          `json:"cust"`           // human label (company / org)
-	Tier      string          `json:"tier"`           // e.g. "enterprise"
-	Seats     int             `json:"seats,omitempty"`// max seats; 0 = unspecified
-	Features  map[string]bool `json:"feat"`           // explicit grants; "*" = all features
-	IssuedAt  int64           `json:"iat,omitempty"`  // unix seconds
-	ExpiresAt int64           `json:"exp,omitempty"`  // unix seconds; 0 = perpetual
+	Customer  string          `json:"cust"`            // human label (company / org)
+	Tier      string          `json:"tier"`            // e.g. "enterprise"
+	Seats     int             `json:"seats,omitempty"` // max seats; 0 = unspecified
+	Features  map[string]bool `json:"feat"`            // explicit grants; "*" = all features
+	IssuedAt  int64           `json:"iat,omitempty"`   // unix seconds
+	ExpiresAt int64           `json:"exp,omitempty"`   // unix seconds; 0 = perpetual
+	// LicenseID is a stable, opaque handle for the subscription this key belongs to
+	// — unchanged across renewals. It lets a self-hosted instance present its
+	// current (even lapsed) key to the cloud refresh endpoint and get the renewed
+	// one back. Not a secret; not used for entitlement.
+	LicenseID string `json:"lid,omitempty"`
 }
 
 // Sign mints a license key from a License using the offline private key. Used by
@@ -65,8 +70,22 @@ func Sign(priv ed25519.PrivateKey, l License) (string, error) {
 // key, rejecting expired keys. The returned *License is safe to trust.
 func Verify(token string) (*License, error) { return verifyWith(publicKey(), token) }
 
+// ParseSigned authenticates the signature against the embedded public key but
+// does NOT reject an expired key — for the cloud refresh lookup, where an
+// instance sends its current (possibly lapsed) key to fetch the renewed one. The
+// result proves issuance, not entitlement; never gate features on it.
+func ParseSigned(token string) (*License, error) {
+	l, err := verifyWith(publicKey(), token)
+	if err == ErrExpired {
+		return l, nil // signature was valid; expiry is fine here
+	}
+	return l, err
+}
+
 // verifyWith is Verify against an explicit key — the seam tests sign+verify
-// against an ephemeral keypair rather than the embedded production key.
+// against an ephemeral keypair rather than the embedded production key. On an
+// expired-but-otherwise-valid key it returns the parsed *License alongside
+// ErrExpired, so callers that tolerate expiry (ParseSigned) can still read it.
 func verifyWith(pub ed25519.PublicKey, token string) (*License, error) {
 	raw, ok := strings.CutPrefix(strings.TrimSpace(token), tokenPrefix)
 	if !ok {
@@ -92,7 +111,7 @@ func verifyWith(pub ed25519.PublicKey, token string) (*License, error) {
 		return nil, ErrMalformed
 	}
 	if l.expired() {
-		return nil, ErrExpired
+		return &l, ErrExpired // signature valid; ParseSigned tolerates this, Verify rejects
 	}
 	return &l, nil
 }

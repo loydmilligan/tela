@@ -529,6 +529,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/billing/selfhost-checkout", srv.CreateSelfHostCheckout)
 	mux.HandleFunc("POST /api/billing/selfhost-portal", srv.CreateSelfHostPortal)
 	mux.HandleFunc("GET /api/licenses", srv.ListSelfHostLicenses)
+	// PUBLIC (under /api/public/, on IsPublicPath): a self-hosted instance polls
+	// this with its current key to pull the renewed one — self-authenticates by
+	// the key's signature. See selfhost_license.go.
+	mux.HandleFunc("GET /api/public/license/refresh", srv.RefreshSelfHostLicense)
 	mux.HandleFunc("GET /api/orgs/{id}/members", srv.ListOrgMembers)
 	mux.HandleFunc("POST /api/orgs/{id}/members", srv.AddOrgMember)
 	mux.HandleFunc("PATCH /api/orgs/{id}/members/{user_id}", srv.PatchOrgMember)

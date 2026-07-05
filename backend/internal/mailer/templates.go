@@ -449,7 +449,7 @@ func SelfHostLicense(to, token string, seats int, expires time.Time, manageURL s
 	if seats > 0 {
 		valid += " · " + strconv.Itoa(seats) + " seats"
 	}
-	valid += ". It renews automatically each term, and **each renewal issues a NEW key you must re-install before this one expires** — we'll email it to you, and it's always in Settings → Self-host licenses. If you don't re-install it, Enterprise features switch off when the key lapses."
+	valid += ". It renews automatically each term. If your instance can reach the internet it **auto-updates its key on renewal** — no action needed. Air-gapped? Each renewal's new key is emailed to you and always in Settings → Self-host licenses; re-install it before this one expires."
 	v := emailView{
 		LogoOrigin: originOf(manageURL),
 		Eyebrow:    "License",

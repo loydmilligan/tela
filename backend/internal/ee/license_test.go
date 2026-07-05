@@ -61,8 +61,18 @@ func TestWildcardGrantsEverything(t *testing.T) {
 func TestExpiredKeyRejected(t *testing.T) {
 	pub, priv := testKeys(t)
 	tok, _ := Sign(priv, License{Tier: "enterprise", ExpiresAt: time.Now().Add(-time.Hour).Unix(), Features: map[string]bool{"sso": true}})
-	if _, err := verifyWith(pub, tok); err != ErrExpired {
+	// verifyWith still returns the parsed license alongside ErrExpired (so
+	// expiry-tolerant callers like ParseSigned can read the lid), but the error is
+	// set so entitlement callers reject it.
+	l, err := verifyWith(pub, tok)
+	if err != ErrExpired {
 		t.Fatalf("want ErrExpired, got %v", err)
+	}
+	if l == nil || l.Tier != "enterprise" {
+		t.Fatalf("expired key should still parse (for refresh lookup), got %v", l)
+	}
+	if l.Grants("sso") {
+		t.Fatal("an expired license must not Grant")
 	}
 }
 

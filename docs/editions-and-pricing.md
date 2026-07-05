@@ -187,8 +187,18 @@ on the default view — the confusing "$12 self-host > $10 Team" optics is remov
 number level, not just via the reconciler matrix. Self-host is ~zero marginal cost to serve
 (they run it, their AI), so floor pricing is near-pure margin + adoption for a new tool;
 it's at the market floor (Docmost $3.50, Mattermost $10, Gitea $9.50–19). Commercial-license
-flat-annual figure: TBD. **Note (2026-07-05):** these are landing-copy prices; the Polar/
-backend `plans` reprice is a separate follow-up before they're charged.
+flat-annual figure: TBD.
+
+**Self-serve + renewal — SHIPPED & LIVE (2026-07-05).** Buying is self-serve (Polar seat-based
+product → webhook mints a signed key → emailed + shown in **Settings → Self-host licenses**;
+paste into the instance's **Settings → License**). Renewal is handled two ways: the minted key
+carries a stable `lid`, and a self-hosted instance polls the cloud (`GET /api/public/license/
+refresh`, self-authing by the key's signature) every 12h to **auto-install the renewed key** —
+so EE doesn't lapse on renewal without a manual re-paste. Air-gapped installs (unset
+`TELA_LICENSE_REFRESH_URL`, or no network) fall back to the emailed key + a 14-day grace.
+Seats are **soft-enforced** (over-seat warning, never a block — offline can't count live
+seats). Backend plans/Polar for the CLOUD tiers were reconciled live; cloud Enterprise stays
+contact-sales (no published price).
 
 ## 8. Naming / how it reads (kills the old confusion)
 

@@ -20,6 +20,9 @@ export interface LicenseInfo {
   // Present (self-host only) when the key is seated: active users vs licensed
   // seats, for the soft over-seat notice. Features stay on regardless.
   seat_usage?: { used: number; licensed: number }
+  // Self-host only: true when the active key was cloud-issued and auto-renews from
+  // the cloud (no manual re-paste needed on renewal).
+  refreshable?: boolean
 }
 
 const licenseKey = ['admin', 'license'] as const

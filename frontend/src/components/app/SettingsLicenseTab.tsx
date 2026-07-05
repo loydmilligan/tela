@@ -114,7 +114,14 @@ export function SettingsLicenseTab() {
             <dt className="text-[var(--text-muted)]">Expires</dt>
             <dd className="m-0 text-[var(--text-primary)]">{lic.expires_at ? lic.expires_at.slice(0, 10) : 'Never'}</dd>
           </dl>
-        ) : (
+        ) : null}
+
+        {active && info.data?.refreshable ? (
+          <p className="m-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            Auto-renews from telawiki.com when your subscription renews — no manual re-install needed
+            (as long as this instance can reach it).
+          </p>
+        ) : active ? null : (
           <p className="m-0 text-[length:var(--text-sm)] text-[var(--text-muted)]">
             No license installed. The whole product works without one — Enterprise features
             stay locked until a key is added.
