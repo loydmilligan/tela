@@ -4,7 +4,7 @@ import {
   useInfiniteEvents,
   type EventFilters,
 } from '../../lib/queries/events'
-import { EventRow } from './EventRow'
+import { EventRow, collapseEvents } from './EventRow'
 import { IncludeAdminsToggle } from './IncludeAdminsToggle'
 import { Toggle } from '../ui/toggle'
 import { Input } from '../ui/input'
@@ -54,6 +54,9 @@ export function SettingsEventsTab() {
     () => data?.pages.flatMap((p) => p.events) ?? [],
     [data],
   )
+  // Collapse consecutive identical events (e.g. a burst of autosave edits on one
+  // page by one user) into single "×N" rows so the feed stays readable.
+  const eventGroups = useMemo(() => collapseEvents(events), [events])
 
   // Infinite scroll: when the sentinel scrolls into view and there's another
   // page, fetch it. fetchNextPage is referentially stable across renders.
@@ -156,8 +159,13 @@ export function SettingsEventsTab() {
       ) : events.length > 0 ? (
         <>
           <ul className="m-0 p-0 list-none flex flex-col gap-[var(--space-1)]">
-            {events.map((e) => (
-              <EventRow key={e.id} event={e} />
+            {eventGroups.map((g) => (
+              <EventRow
+                key={g.head.id}
+                event={g.head}
+                count={g.count}
+                oldestAt={g.oldestAt}
+              />
             ))}
           </ul>
           <div ref={sentinelRef} aria-hidden className="h-[var(--space-6)]" />
