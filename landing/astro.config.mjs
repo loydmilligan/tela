@@ -15,6 +15,12 @@ export default defineConfig({
   output: 'static',
   site: 'https://telawiki.com',
 
+  // Inline all CSS into the HTML so first paint has no render-blocking
+  // stylesheet round-trip (Lighthouse "render-blocking resources"). Styles are
+  // unchanged — only where they load — so the design/token/a11y gates still
+  // hold. Right tradeoff for a marketing site optimizing first-visit LCP/FCP.
+  build: { inlineStylesheets: 'always' },
+
   // Vanity redirect → the tela Blog (a public tela space, served by the app).
   redirects: {
     '/blog': '/public/spaces/59',
