@@ -198,16 +198,24 @@ func (s *Server) HandlePublicSpaceOG(w http.ResponseWriter, r *http.Request) {
 	if owner != "" {
 		ld["author"] = map[string]any{"@type": "Person", "name": owner, "url": base + "/u/" + owner}
 	}
-	if posts := s.topLevelPosts(r, sp.ID, 20); len(posts) > 0 {
+	// One post list feeds both the JSON-LD blogPost array AND a crawler-visible
+	// linked index — so bots reach every public page through internal <a> links
+	// (stronger than sitemap-only discovery), not just structured-data URLs.
+	var body template.HTML
+	if posts := s.topLevelPosts(r, sp.ID, 100); len(posts) > 0 {
 		bp := make([]map[string]any, 0, len(posts))
+		var list string
 		for _, p := range posts {
+			path := publicReaderPath(sp.ID, p.id, p.title)
 			bp = append(bp, map[string]any{
 				"@type": "BlogPosting", "headline": p.title,
-				"url":           base + publicReaderPath(sp.ID, p.id, p.title),
+				"url":           base + path,
 				"datePublished": telaTimeToRFC3339(p.created),
 			})
+			list += "<li><a href=\"" + html.EscapeString(path) + "\">" + html.EscapeString(p.title) + "</a></li>"
 		}
 		ld["blogPost"] = bp
+		body = template.HTML("<ul>" + list + "</ul>") //nolint:gosec // titles+paths escaped above
 	}
 
 	writeOGDoc(w, ogDoc{
@@ -219,6 +227,8 @@ func (s *Server) HandlePublicSpaceOG(w http.ResponseWriter, r *http.Request) {
 		FeedURL:      base + "/api/public/spaces/" + strconv.FormatInt(sp.ID, 10) + "/feed.xml",
 		JSONLD:       jsonLD(ld),
 		SiteName:     siteName,
+		Heading:      sp.Name,
+		BodyHTML:     body,
 	})
 }
 
