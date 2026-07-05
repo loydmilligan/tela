@@ -113,6 +113,18 @@ export function useSelfHostCheckout() {
   })
 }
 
+// POST /api/billing/selfhost-portal — open the Polar customer portal for the
+// caller's self-host license subscription (keyed by external id, so it works even
+// for a buyer on the Free cloud plan with no cloud customer id).
+export function useSelfHostPortal() {
+  return useMutation({
+    mutationFn: () => api<{ url: string }>('/api/billing/selfhost-portal', { method: 'POST' }),
+    onSuccess: ({ url }) => {
+      window.location.href = url
+    },
+  })
+}
+
 export interface SetPlanInput {
   account_kind: 'user' | 'org'
   account_id: number

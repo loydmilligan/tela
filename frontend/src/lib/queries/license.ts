@@ -17,6 +17,9 @@ export interface LicenseInfo {
   license: LicenseStatus
   // true → the key is pinned via TELA_LICENSE_KEY (env); the UI is read-only.
   env_locked: boolean
+  // Present (self-host only) when the key is seated: active users vs licensed
+  // seats, for the soft over-seat notice. Features stay on regardless.
+  seat_usage?: { used: number; licensed: number }
 }
 
 const licenseKey = ['admin', 'license'] as const

@@ -5,7 +5,7 @@ import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { ApiError } from '../../lib/api'
-import { useMyLicenses, useSelfHostCheckout, type SelfHostLicense } from '../../lib/queries/billing'
+import { useMyLicenses, useSelfHostCheckout, useSelfHostPortal, type SelfHostLicense } from '../../lib/queries/billing'
 
 // Buyer-facing "Self-host licenses" tab (managed cloud). Purchase a self-host
 // Enterprise license (seat-based Polar checkout) and copy the minted key into
@@ -14,6 +14,7 @@ import { useMyLicenses, useSelfHostCheckout, type SelfHostLicense } from '../../
 export function SettingsLicensesTab() {
   const info = useMyLicenses()
   const checkout = useSelfHostCheckout()
+  const portal = useSelfHostPortal()
   const [seats, setSeats] = useState(1)
   const [error, setError] = useState<string | null>(null)
 
@@ -98,6 +99,12 @@ export function SettingsLicensesTab() {
         </p>
       ) : (
         <div className="flex flex-col gap-[var(--space-3)]">
+          <div className="flex items-center justify-between gap-[var(--space-2)]">
+            <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Your licenses</span>
+            <Button variant="ghost" onClick={() => portal.mutate()} disabled={portal.isPending}>
+              Manage subscription
+            </Button>
+          </div>
           {licenses.map((lic) => (
             <LicenseRow key={lic.id} lic={lic} />
           ))}
