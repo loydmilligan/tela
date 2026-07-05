@@ -165,7 +165,10 @@ func (s *Server) ListSelfHostLicenses(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, d)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"licenses": out})
+	// sales_enabled gates the buyer UI: true only where this instance can actually
+	// sell + mint (managed cloud with the product + signer wired). Elsewhere the
+	// panel hides its Buy affordance (a self-hosted instance doesn't sell to itself).
+	writeJSON(w, http.StatusOK, map[string]any{"licenses": out, "sales_enabled": s.selfHostIssuanceEnabled()})
 }
 
 // reconcileSelfHostLicense handles a Polar event for the self-host license

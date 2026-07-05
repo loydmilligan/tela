@@ -76,6 +76,43 @@ export function useBillingPortal() {
   })
 }
 
+// A purchased self-host Enterprise license key (issued by the cloud on subscribe).
+export interface SelfHostLicense {
+  id: number
+  tier: string
+  seats: number
+  status: string
+  token: string
+  issued_at: string
+  expires_at?: string
+}
+
+// GET /api/licenses — the caller's self-host Enterprise keys + whether this
+// instance can sell them (managed cloud with the product + signer wired).
+export function useMyLicenses() {
+  return useQuery({
+    queryKey: [...billingKeys.all, 'licenses'] as const,
+    queryFn: () => api<{ licenses: SelfHostLicense[]; sales_enabled: boolean }>('/api/licenses'),
+    staleTime: 30_000,
+  })
+}
+
+// POST /api/billing/selfhost-checkout — start a Polar checkout for a self-host
+// Enterprise license (seat-based) and hand the browser to the hosted URL. The key
+// is minted + emailed by the webhook, and appears under /api/licenses afterwards.
+export function useSelfHostCheckout() {
+  return useMutation({
+    mutationFn: (input: { seats: number }) =>
+      api<{ url: string }>('/api/billing/selfhost-checkout', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: ({ url }) => {
+      window.location.href = url
+    },
+  })
+}
+
 export interface SetPlanInput {
   account_kind: 'user' | 'org'
   account_id: number

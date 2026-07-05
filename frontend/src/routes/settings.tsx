@@ -15,6 +15,7 @@ import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
 import { SettingsInstanceTab } from '../components/app/SettingsInstanceTab'
 import { SettingsLicenseTab } from '../components/app/SettingsLicenseTab'
+import { SettingsLicensesTab } from '../components/app/SettingsLicensesTab'
 import { SettingsSearchIndexTab } from '../components/app/SettingsSearchIndexTab'
 import { SettingsSummariesTab } from '../components/app/SettingsSummariesTab'
 import { SettingsSyncTab } from '../components/app/SettingsSyncTab'
@@ -22,6 +23,7 @@ import { SettingsUsersTab } from '../components/app/SettingsUsersTab'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { useMe } from '../lib/queries/auth'
+import { useMyLicenses } from '../lib/queries/billing'
 import { useOrgs } from '../lib/queries/orgs'
 import { cn } from '../lib/utils'
 
@@ -183,6 +185,14 @@ const LICENSE_TAB: SettingsTab = {
   render: () => <SettingsLicenseTab />,
 }
 
+// Buyer-facing self-host license purchase/retrieval (managed cloud). Only shown
+// where this instance can sell them, or when the user already owns a key.
+const LICENSES_TAB: SettingsTab = {
+  id: 'licenses',
+  label: 'Self-host licenses',
+  render: () => <SettingsLicensesTab />,
+}
+
 export function SettingsPage() {
   const me = useMe()
   const orgs = useOrgs()
@@ -201,8 +211,14 @@ export function SettingsPage() {
   // Grouped so it's clear WHY each section is visible: "Account" is everyone's,
   // "Organization" appears because you administer an org, "Instance admin" because
   // you're an instance admin.
+  // The buyer-facing Self-host licenses tab appears only where the instance can
+  // sell them (managed cloud, wired) or the user already owns a key — so it stays
+  // invisible on a plain self-hosted instance.
+  const licenses = useMyLicenses()
+  const showLicenses = (licenses.data?.sales_enabled ?? false) || (licenses.data?.licenses.length ?? 0) > 0
   const groups = useMemo<SettingsGroup[]>(() => {
     const account = [PROFILE_TAB, NOTIFICATIONS_TAB, FOLLOWING_TAB, BILLING_TAB, API_KEYS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
+    if (showLicenses) account.splice(4, 0, LICENSES_TAB) // after Plan & Usage
     if (me.data?.is_instance_admin) {
       return [
         { label: 'Account', tabs: account },
@@ -216,7 +232,7 @@ export function SettingsPage() {
       ]
     }
     return [{ label: 'Account', tabs: account }]
-  }, [me.data?.is_instance_admin, isOrgAdmin, feedbackUnseen])
+  }, [me.data?.is_instance_admin, isOrgAdmin, feedbackUnseen, showLicenses])
   const tabs = useMemo<SettingsTab[]>(() => groups.flatMap((g) => g.tabs), [groups])
   // `?tab=` (set by the per-org page's back link) picks the initial section;
   // once a tab actually exists for it, the `active` lookup resolves it.
