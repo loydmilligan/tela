@@ -9,7 +9,10 @@ const CONTACT_EMAIL = 'tela@telawiki.com';
 const GITHUB_URL = 'https://github.com/zcag/tela';
 const mailto = (subject) => `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`;
 
-// Self-host editions. Enterprise is the one earned-indigo card.
+// Self-host editions — TWO tiers only (the GitLab/open-core shape): the free
+// Community core, and the paid Enterprise layer unlocked by a license key. The
+// Commercial license (AGPL relief) is a real revenue lever but a lawyer's SKU,
+// not a product tier — it lives in a strip below, not as a co-equal card.
 const editions = [
   {
     name: 'Community',
@@ -18,6 +21,7 @@ const editions = [
     blurb: 'The whole product, on your infrastructure.',
     specs: [
       'Full wiki, Atlas, search, agents, sheets, decks & sync',
+      'Unlimited users, spaces & pages',
       'Bring your own AI — any OpenAI-compatible LLM + embedder',
       'Organizations & per-space roles',
       'Self-supported, community help',
@@ -31,44 +35,40 @@ const editions = [
     name: 'Enterprise',
     price: 'from $12',
     period: 'per user / mo, billed annually',
-    blurb: 'SSO, governance and support — on your infrastructure.',
+    blurb: 'The identity, governance and support a company needs — unlocked by a license key.',
     specs: [
       'Everything in Community',
       'SSO / SAML / OIDC, SCIM provisioning',
       'Audit log, advanced RBAC, retention',
       'Premium Atlas connectors (Slack, Drive, GitHub…)',
-      'Priority support + SLA · license key',
+      'Priority support + SLA',
     ],
     cta: 'Talk to us',
     href: mailto('tela self-host Enterprise'),
     action: 'contact',
     featured: true,
   },
-  {
-    name: 'Commercial license',
-    price: 'Annual',
-    period: 'flat, not per-seat',
-    blurb: 'AGPL relief, when you don’t need Enterprise.',
-    specs: [
-      'The full open core under a commercial license',
-      'Ship without AGPL copyleft obligations',
-      'For legal / compliance constraints',
-      'No license key, no feature gating',
-    ],
-    cta: 'Contact us',
-    href: mailto('tela commercial license'),
-    action: 'contact',
-    featured: false,
-  },
 ];
 
-// The two-axis matrix. Columns = where it runs; rows = how much company-layer.
+// The reconciler: ONE product, two tiers (rows), two ways to run it (cols). This
+// is the table that kills the confusion — it shows Enterprise is the same feature
+// layer whether we host it or you do, and that everything below it is free to
+// self-host. Cloud costs more because it bundles managed AI + ops.
 const matrix = {
-  cols: ['tela Cloud — we run it, AI included', 'Self-hosted — you run it, bring your own AI'],
+  cols: ['tela Cloud — we host it · AI included', 'Self-host — you host it · BYO AI'],
   rows: [
-    { label: 'Free', cloud: 'Free', self: 'Community (free)' },
-    { label: 'Individual / team', cloud: 'Personal · Team', self: '— use Community' },
-    { label: 'Enterprise layer', cloud: 'Cloud Enterprise', self: 'Enterprise (license key)' },
+    {
+      label: 'Core',
+      sub: 'the whole wiki + Atlas + AI',
+      cloud: 'Free · Personal $8 · Team $10 / seat',
+      self: 'Community — free',
+    },
+    {
+      label: 'Enterprise',
+      sub: 'SSO · SCIM · audit · governance',
+      cloud: 'Cloud Enterprise — custom',
+      self: 'from $12 / seat · license key',
+    },
   ],
 };
 
@@ -110,12 +110,13 @@ const faqs = [
 <section id="self-host" class="section sh">
   <div class="section-head reveal-up">
     <p class="kicker"><span class="kicker-dot"></span>Self-host</p>
-    <h2 class="h2">Run it yourself.</h2>
+    <h2 class="h2">Run it yourself — free.</h2>
     <p class="lede">
-      <strong>Where it runs decides the AI; which edition decides the company-layer.</strong>
-      Cloud is managed with AI included. Self-host is the whole product on your own
-      infrastructure — you bring your own AI — and it’s free. Enterprise adds the identity,
-      governance and support a company needs, on either side.
+      tela is open source, and the whole product is <strong>free to self-host</strong> —
+      unlimited people, on your own infrastructure, bringing your own AI. You only ever pay
+      for the <strong>Enterprise layer</strong>: the identity, governance and support a
+      company needs, unlocked by a license key. <strong>Everything below Enterprise is free
+      to self-host, forever.</strong>
     </p>
   </div>
 
@@ -144,10 +145,18 @@ const faqs = [
     ))}
   </div>
 
+  <p class="sh-commercial reveal-up">
+    <span class="sh-commercial-label">Commercial license</span>
+    Can’t ship AGPL? A flat annual commercial license gives you the full open core under
+    commercial terms — no copyleft obligation, no feature gating — for legal or compliance
+    constraints, even if you never touch Enterprise.
+    <a href={mailto('tela commercial license')} class="sh-commercial-link">Contact us&nbsp;→</a>
+  </p>
+
   <div class="sh-matrix reveal-up">
-    <p class="sh-block-label">How it maps</p>
+    <p class="sh-block-label">One product · two tiers · two ways to run it</p>
     <div class="sh-table-wrap">
-      <table class="sh-table">
+      <table class="sh-table sh-table--map">
         <thead>
           <tr>
             <td class="sh-corner"></td>
@@ -157,7 +166,7 @@ const faqs = [
         <tbody>
           {matrix.rows.map((r) => (
             <tr>
-              <th scope="row">{r.label}</th>
+              <th scope="row">{r.label} <span class="sh-row-sub">{r.sub}</span></th>
               <td>{r.cloud}</td>
               <td>{r.self}</td>
             </tr>
@@ -165,7 +174,7 @@ const faqs = [
         </tbody>
       </table>
     </div>
-    <p class="sh-note">“Enterprise” means the same feature layer in both columns — bought bundled on cloud, or as a license key on self-host.</p>
+    <p class="sh-note">Cloud is priced on managed AI + seats; self-host is free because you bring your own AI and infra. <strong>Enterprise is the same feature layer either way</strong> — you just pick who runs it.</p>
   </div>
 
   <div class="sh-features reveal-up">
@@ -216,7 +225,7 @@ const faqs = [
 
   .sh-cards {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
     margin-top: 2rem;
   }
@@ -343,7 +352,44 @@ const faqs = [
     color: var(--fg-faint);
   }
 
+  /* Commercial license — a slim strip, not a co-equal card. */
+  .sh-commercial {
+    margin: 1rem 0 0;
+    padding: 0.9rem 1.15rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunk);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    color: var(--fg-soft);
+  }
+  .sh-commercial-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg);
+    margin-right: 0.5rem;
+  }
+  .sh-commercial-link {
+    color: var(--brand-strong);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .sh-commercial-link:hover { text-decoration: underline; }
+
   .sh-matrix, .sh-features, .sh-faq { margin-top: 2.5rem; }
+
+  /* Map table: two tiers × two run-modes. Row header carries a dim sub-label. */
+  .sh-row-sub {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    font-weight: 400;
+    color: var(--fg-faint);
+    margin-top: 0.15rem;
+  }
+  .sh-table--map tbody th { width: 30%; }
 
   .sh-table-wrap {
     border: 1px solid var(--border);
