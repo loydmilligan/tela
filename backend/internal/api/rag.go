@@ -79,6 +79,9 @@ func (s *Server) RAGSearch(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	hits, err := s.rag.Search(r.Context(), u.ID, q.Get("q"), spaceID, limit, q.Get("mode"))
 	if err != nil {
+		if clientCanceled(w, r, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", "semantic search failed")
 		return
 	}

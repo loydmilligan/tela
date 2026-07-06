@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zcag/tela/backend/internal/auth"
 	"github.com/zcag/tela/backend/internal/rag"
 )
 
@@ -42,6 +44,59 @@ func newRagServer(t *testing.T) (*httptest.Server, *sql.DB, *Server) {
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
 	return ts, d, srv
+}
+
+// A request the client aborts mid-flight (canceled request context) must NOT be
+// a 5xx. The frontend cancels a superseded search-as-you-type fetch; the backend
+// must map that context.Canceled to 499, not 500, so normal typing never trips
+// the "5xx spike" alert. Regression guard for the telawiki.com false alarm traced
+// to /api/rag/search returning 500 on client aborts.
+func TestRAGSearch_ClientCancelIs499(t *testing.T) {
+	_, d, srv := newRagServer(t)
+	uid := seedUser(t, d, "alice", "alicepw12", false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // client went away before the search finished
+	ctx = auth.WithUser(ctx, &auth.User{ID: uid})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rag/search?q=anything", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	srv.RAGSearch(rec, req)
+
+	if rec.Code != statusClientClosed {
+		t.Fatalf("status = %d, want %d (client closed request) — a canceled request must not surface as a 5xx", rec.Code, statusClientClosed)
+	}
+}
+
+// clientCanceled swallows ONLY a canceled request context; a live request or an
+// unrelated error must still surface (and 5xx upstream).
+func TestClientCanceled(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cases := []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want bool
+		code int
+	}{
+		{"aborted request", canceled, context.Canceled, true, statusClientClosed},
+		{"live request, canceled err", context.Background(), context.Canceled, false, http.StatusOK},
+		{"aborted request, other err", canceled, errors.New("boom"), false, http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(tc.ctx)
+			w := httptest.NewRecorder()
+			if got := clientCanceled(w, r, tc.err); got != tc.want {
+				t.Fatalf("clientCanceled = %v, want %v", got, tc.want)
+			}
+			if w.Code != tc.code {
+				t.Fatalf("status = %d, want %d", w.Code, tc.code)
+			}
+		})
+	}
 }
 
 func TestRAG_DisabledReturns503(t *testing.T) {

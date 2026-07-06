@@ -538,6 +538,9 @@ func (s *Server) RAGDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	excerpts, hits, _, err := s.askContext(r.Context(), u.ID, req.Topic, spaceID, req.Limit)
 	if err != nil {
+		if clientCanceled(w, r, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
 		return
 	}
@@ -585,6 +588,9 @@ func (s *Server) RAGAnswerToPage(w http.ResponseWriter, r *http.Request) {
 	}
 	excerpts, hits, top, err := s.askContext(r.Context(), u.ID, req.Question, &req.SpaceID, 0)
 	if err != nil {
+		if clientCanceled(w, r, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", "retrieval failed")
 		return
 	}
