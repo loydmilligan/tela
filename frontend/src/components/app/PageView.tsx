@@ -1067,10 +1067,12 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet, scr
 
   // The editor body scrolls its own inner column (contentRef), matching the
   // read view — so the header stays put (main never scrolls). Restore the
-  // incoming offset on entry, re-applying across a few frames because the lazy
-  // editor + async sections grow after mount, and a deep target would otherwise
-  // be lost to a transient short-content clamp. A 0 target (fresh page) pins the
-  // top. The live offset is tracked via the scroller's onScroll (below).
+  // incoming offset on entry, re-pinning it every frame: the lazy editor grows
+  // after mount (so a deep target is briefly out of range), and — once collab
+  // syncs, which can take a beat on a live connection — its autofocus yanks the
+  // view to the cursor at the top. Keep re-applying the target until the user
+  // scrolls for real (wheel/touch/key → we never fight them) or a short safety
+  // budget elapses. A 0 target (fresh page) just pins the top.
   useLayoutEffect(() => {
     const scroller = contentRef.current
     if (!scroller) return
@@ -1081,17 +1083,28 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet, scr
       return
     }
     let raf = 0
-    let tries = 0
-    const apply = () => {
-      scroller.scrollTop = target
-      // Content still growing toward the target → keep re-applying (≈1s budget).
-      if (scroller.scrollTop < target && tries < 60) {
-        tries += 1
-        raf = requestAnimationFrame(apply)
-      }
+    let frames = 0
+    let done = false
+    const stop = () => {
+      if (done) return
+      done = true
+      cancelAnimationFrame(raf)
+      scroller.removeEventListener('wheel', stop)
+      scroller.removeEventListener('touchmove', stop)
+      scroller.removeEventListener('keydown', stop, true)
     }
+    const apply = () => {
+      if (done) return
+      if (scroller.scrollTop !== target) scroller.scrollTop = target
+      // ~3s safety net — long enough to outlast a late post-sync autofocus.
+      if ((frames += 1) > 180) stop()
+      else raf = requestAnimationFrame(apply)
+    }
+    scroller.addEventListener('wheel', stop, { passive: true })
+    scroller.addEventListener('touchmove', stop, { passive: true })
+    scroller.addEventListener('keydown', stop, true)
     raf = requestAnimationFrame(apply)
-    return () => cancelAnimationFrame(raf)
+    return stop
     // Once per page entry — PageEditor remounts on page.id via its key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page.id])
