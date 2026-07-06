@@ -164,7 +164,11 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 	// Resolve the org brand (logo/accent/name) for this card. Folding its
 	// signature into the ETag busts caches when an org changes its branding.
 	brand := s.resolveOGBrand(r, ownerOrgID)
-	etag := fmt.Sprintf(`W/"og-%d-%d-%s"`, pageID, updatedUnix, brand.sig)
+	// Fold the build commit into the ETag: the card is rendered by this binary, so
+	// a deploy that changes the rendering (like blanking sheet data) must produce a
+	// new ETag — otherwise a revalidating cache (Cloudflare, social crawlers) gets a
+	// 304 on the unchanged page and serves the stale image forever.
+	etag := fmt.Sprintf(`W/"og-%d-%d-%s-%s"`, pageID, updatedUnix, brand.sig, Commit)
 
 	if r.Header.Get("If-None-Match") == etag {
 		w.Header().Set("ETag", etag)
