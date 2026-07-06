@@ -230,6 +230,12 @@ func TestSummarizePage_NoneClearsAndRecordsFresh(t *testing.T) {
 	if fake.callCount() != 1 {
 		t.Errorf("llm calls = %d, want 1", fake.callCount())
 	}
+	// The status endpoint must agree it's done: an abstained page reads fresh,
+	// not stale, so the staleness dot clears. Regression guard — an empty
+	// props.summary alone used to force 'stale' here (and re-queue) forever.
+	if st := pageStatus(t, svc, u, sp, page); st != "fresh" {
+		t.Errorf("status after NONE = %q, want fresh", st)
+	}
 }
 
 func TestSummarizePage_BodyChangeGoesStaleThenRegenerates(t *testing.T) {

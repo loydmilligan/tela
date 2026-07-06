@@ -28,28 +28,34 @@ type PageSummary struct {
 
 // statusExpr resolves one page's summary status in SQL, against pages p LEFT
 // JOIN page_summaries ps. Precedence: empty body, then the lock, then a
-// pending failure, then missing (no summary AND no record — reported under
-// stale in counts but distinct per-page so the UI can label it), then any
-// hash/summary drift, else fresh. A failed-only row keeps src_hash ” so it
+// pending failure, then missing (no record AND no summary — reported under
+// stale in counts but distinct per-page so the UI can label it), then a body
+// edited since generation (hash drift), else fresh. A clean row whose src_hash
+// matches the live body is a terminal state — either a summary was written, OR
+// the model abstained (NONE) and props.summary was deliberately left empty;
+// both read fresh, so an empty summary alone is NOT stale (this mirrors
+// SummarizePage's SkippedFresh check). A failed-only row keeps src_hash ” so it
 // can never read fresh by accident.
 const statusExpr = `CASE
 	WHEN length(btrim(p.body)) = 0 THEN 'empty'
 	WHEN coalesce(p.props->>'summary_lock', '') = 'true' THEN 'locked'
 	WHEN coalesce(ps.last_error, '') <> '' THEN 'failed'
 	WHEN ps.page_id IS NULL AND coalesce(p.props->>'summary', '') = '' THEN 'missing'
-	WHEN coalesce(p.props->>'summary', '') = '' OR ps.src_hash IS NULL OR ps.src_hash <> ` + bodyHashExpr + ` THEN 'stale'
+	WHEN ps.src_hash IS NULL OR ps.src_hash <> ` + bodyHashExpr + ` THEN 'stale'
 	ELSE 'fresh'
 END`
 
 // needsWorkExpr is the SQL predicate for "this page should be (re)summarized":
-// real content, not locked, and the summary is missing, failed, cleared, or
-// generated from a different body. Shared by the stale sweep and the
-// POST summarize queueing so they agree exactly. (statusExpr ∈ stale, missing,
-// failed — kept as a flat predicate so it can run without the CASE.)
+// real content, not locked, and the summary is missing (no row), failed, or
+// generated from a different body (hash drift). A clean row matching the live
+// body is done — even with an empty summary (a deliberate NONE abstention) — so
+// it is NOT re-queued. Shared by the stale sweep and the POST summarize
+// queueing so they agree exactly, and consistent with SummarizePage's
+// SkippedFresh check. (statusExpr ∈ stale, missing, failed — kept as a flat
+// predicate so it can run without the CASE.)
 const needsWorkExpr = `length(btrim(p.body)) > 0
 	AND coalesce(p.props->>'summary_lock', '') <> 'true'
 	AND (coalesce(ps.last_error, '') <> ''
-	     OR coalesce(p.props->>'summary', '') = ''
 	     OR ps.src_hash IS NULL OR ps.src_hash <> ` + bodyHashExpr + `)`
 
 // generatedJoin guards the provenance columns: a failed-never-generated row
