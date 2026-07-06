@@ -2,10 +2,8 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -13,7 +11,6 @@ import (
 	"image/draw"
 	"image/jpeg" // encode the share image; its init also registers the JPEG decoder
 	"image/png"
-	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -25,8 +22,6 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
-
-	defterparse "github.com/zcag/defter/go"
 )
 
 // Geist (Vercel, OFL) — tela's brand typeface per DESIGN.md (Geist family only).
@@ -194,20 +189,20 @@ func (s *Server) HandleOGImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// A sheet's share image is a preview of its grid (its visual identity) — the
-	// branded card with a table of its top-left cells. Fall back to the generic
-	// card if the sheet is empty/unparseable.
+	// A sheet's share image is a branded card with a generic spreadsheet visual
+	// (column letters, row numbers, placeholder cells) — enough to read as a
+	// spreadsheet at a glance WITHOUT exposing any of the sheet's actual cell
+	// contents (a public OG card must never leak page data). Fall back to the
+	// plain card if the render fails.
 	if isSheetBag(decodeProps(propsRaw)) {
-		if cells := sheetOGCells(r.Context(), body); len(cells) > 0 {
-			if pngBytes, gerr := renderSheetOGCard(title, "in "+spaceName, brand, cells); gerr == nil {
-				w.Header().Set("Content-Type", "image/png")
-				w.Header().Set("Cache-Control", "public, max-age=3600")
-				w.Header().Set("ETag", etag)
-				w.Header().Set("Content-Length", strconv.Itoa(len(pngBytes)))
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write(pngBytes)
-				return
-			}
+		if pngBytes, gerr := renderSheetOGCard(title, brand); gerr == nil {
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Content-Length", strconv.Itoa(len(pngBytes)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(pngBytes)
+			return
 		}
 	}
 
@@ -288,9 +283,9 @@ type ogCardOpts struct {
 	title         string
 	subtitle      string
 	maxTitleLines int
-	chips         []string   // pill labels along the bottom-left (hero cards)
-	accentLabel   string     // bottom-right accent text, e.g. the domain (hero cards)
-	grid          [][]string // when set (a sheet), a top-left cell window drawn as a table preview instead of the subtitle
+	chips         []string // pill labels along the bottom-left (hero cards)
+	accentLabel   string   // bottom-right accent text, e.g. the domain (hero cards)
+	sheetMock     bool     // when set (a sheet), draw a generic spreadsheet mock instead of the subtitle
 	brand         ogBrand
 }
 
@@ -410,12 +405,12 @@ func renderOGCardOpts(o ogCardOpts) ([]byte, error) {
 	}
 
 	subtitleY := titleY + (len(titleLines)-1)*ogTitleLineH + 24 + ogSubtitleSize
-	if len(o.grid) > 0 {
-		// A sheet: draw a table preview of the top-left cells in the space between
-		// the title and the footer band, reading as a spreadsheet at a glance.
+	if o.sheetMock {
+		// A sheet: draw a generic spreadsheet mock in the space between the title
+		// and the footer band — reads as a spreadsheet without exposing any cells.
 		gridTop := titleY + (len(titleLines)-1)*ogTitleLineH + 30
 		if gridTop < clearanceY-90 {
-			drawSheetGrid(img, o.grid, gridTop, clearanceY-16)
+			drawSheetMock(img, gridTop, clearanceY-16)
 		}
 	} else if o.subtitle != "" && subtitleY <= clearanceY-12 {
 		sub := truncateToWidth(subtitleFace, o.subtitle, ogDrawableWidth)
@@ -435,158 +430,113 @@ func renderOGCardOpts(o ogCardOpts) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// renderSheetOGCard is the share card for a sheet: the branded card with a
-// top-left cell window drawn as a light spreadsheet panel instead of a subtitle.
-func renderSheetOGCard(title, _subtitle string, brand ogBrand, cells [][]string) ([]byte, error) {
-	return renderOGCardOpts(ogCardOpts{title: title, grid: cells, brand: brand, maxTitleLines: 2})
+// renderSheetOGCard is the share card for a sheet: the branded card with a "sheet"
+// type label and a generic spreadsheet mock (drawn by drawSheetMock) in place of a
+// subtitle. It carries NO cell content — the card must not leak the page's data.
+func renderSheetOGCard(title string, brand ogBrand) ([]byte, error) {
+	return renderOGCardOpts(ogCardOpts{kicker: "sheet", title: title, sheetMock: true, brand: brand, maxTitleLines: 2})
 }
 
-// sheetOGCells returns the top-left window (≤5 rows × ≤5 cols) of a sheet for the
-// OG preview. It prefers COMPUTED cell values from the node sidecar (so formulas
-// show their numbers); if the sidecar is unset or unreachable it falls back to
-// the in-process raw parse with formula cells blanked (never `=source` in a card).
-func sheetOGCells(ctx context.Context, body string) [][]string {
-	if cells := sheetCellsFromSidecar(ctx, body); len(cells) > 0 {
-		return cells
-	}
-	return sheetOGCellsRaw(body)
-}
-
-func sheetCellsFromSidecar(ctx context.Context, body string) [][]string {
-	base := strings.TrimRight(deckBaseURL(), "/")
-	if base == "" {
-		return nil
-	}
-	cctx, cancel := context.WithTimeout(ctx, 6*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, http.MethodPost, base+"/sheet-cells", strings.NewReader(body))
-	if err != nil {
-		return nil
-	}
-	req.Header.Set("content-type", "text/plain; charset=utf-8")
-	resp, err := (&http.Client{}).Do(req)
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
-	var out struct {
-		Cells [][]string `json:"cells"`
-	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out) != nil {
-		return nil
-	}
-	return out.Cells
-}
-
-func sheetOGCellsRaw(body string) [][]string {
-	model := defterparse.Parse(body)
-	if len(model.Sheets) == 0 {
-		return nil
-	}
-	sh := model.Sheets[0]
-	cols := sh.Width
-	if cols > 5 {
-		cols = 5
-	}
-	if cols == 0 {
-		return nil
-	}
-	out := make([][]string, 0, 5)
-	for r := 0; r < len(sh.Grid) && r < 5; r++ {
-		row := make([]string, cols)
-		for c := 0; c < cols && c < len(sh.Grid[r]); c++ {
-			cell := sh.Grid[r][c]
-			if strings.HasPrefix(strings.TrimSpace(cell), "=") {
-				cell = "" // no raw formula source in a share card
-			}
-			row[c] = cell
-		}
-		out = append(out, row)
-	}
-	return out
-}
-
-// drawSheetGrid paints a light spreadsheet panel (header band + rows + hairlines)
-// with the given cell text, on the dark OG card, between top and bottom.
-func drawSheetGrid(img *image.RGBA, cells [][]string, top, bottom int) {
-	rows := len(cells)
-	if rows > 5 {
-		rows = 5
-	}
-	if rows == 0 {
-		return
-	}
-	cols := 0
-	for _, r := range cells[:rows] {
-		if len(r) > cols {
-			cols = len(r)
-		}
-	}
-	if cols == 0 {
-		return
-	}
+// drawSheetMock paints a generic spreadsheet panel on the dark OG card between top
+// and bottom: a column-letter header (A, B, C…), a row-number gutter (1, 2, 3…),
+// grid hairlines, and neutral placeholder bars in the cells. It deliberately shows
+// NO real cell text — the sheet's identity is conveyed by the spreadsheet form
+// alone, so a public share card never exposes page contents.
+func drawSheetMock(img *image.RGBA, top, bottom int) {
 	x0, x1 := ogMargin, ogMargin+ogDrawableWidth
-	cellW := (x1 - x0) / cols
-	rowH := 48
-	if rows*rowH > bottom-top {
-		rowH = (bottom - top) / rows
+	const gutter = 56 // row-number column width
+	const headerH = 44
+	const cols = 5
+	cellW := (x1 - x0 - gutter) / cols
+
+	// Fit as many data rows as the space allows (3–6), ~46px each.
+	rowH := 46
+	avail := bottom - top - headerH
+	rows := avail / rowH
+	if rows > 6 {
+		rows = 6
 	}
-	if rowH < 30 {
-		rowH = 30
+	if rows < 3 {
+		rows = 3
+		if avail > rows {
+			rowH = avail / rows
+		}
+	}
+	if rowH < 28 {
+		rowH = 28
 	}
 	y0 := top
-	y1 := y0 + rows*rowH
+	yHeader := y0 + headerH
+	y1 := yHeader + rows*rowH
 
 	panelBG := color.RGBA{R: 0xfa, G: 0xfa, B: 0xfc, A: 0xff}
 	headerBG := color.RGBA{R: 0xe7, G: 0xea, B: 0xf6, A: 0xff}
+	gutterBG := color.RGBA{R: 0xef, G: 0xf1, B: 0xf9, A: 0xff}
 	lineC := color.RGBA{R: 0xd8, G: 0xdb, B: 0xe4, A: 0xff}
-	cellText := color.RGBA{R: 0x1a, G: 0x1a, B: 0x22, A: 0xff}
-	headText := color.RGBA{R: 0x1c, G: 0x25, B: 0x52, A: 0xff}
+	headText := color.RGBA{R: 0x5b, G: 0x61, B: 0x82, A: 0xff}
+	barC := color.RGBA{R: 0xdd, G: 0xe0, B: 0xea, A: 0xff}
 
 	fillRoundRect(img, image.Rect(x0, y0, x1, y1), 14, panelBG)
-	draw.Draw(img, image.Rect(x0+1, y0+1, x1-1, y0+rowH), &image.Uniform{C: headerBG}, image.Point{}, draw.Src)
+	draw.Draw(img, image.Rect(x0+1, y0+1, x1-1, yHeader), &image.Uniform{C: headerBG}, image.Point{}, draw.Src)
+	draw.Draw(img, image.Rect(x0+1, yHeader, x0+gutter, y1-1), &image.Uniform{C: gutterBG}, image.Point{}, draw.Src)
 
-	cf, err := opentype.NewFace(ogRegularFont, &opentype.FaceOptions{Size: 24, DPI: 72, Hinting: font.HintingFull})
-	if err != nil {
-		return
-	}
-	defer cf.Close()
-	bf, err := opentype.NewFace(ogBoldFont, &opentype.FaceOptions{Size: 24, DPI: 72, Hinting: font.HintingFull})
-	if err != nil {
-		return
-	}
-	defer bf.Close()
-
-	for r := 1; r < rows; r++ {
-		y := y0 + r*rowH
-		draw.Draw(img, image.Rect(x0, y, x1, y+1), &image.Uniform{C: lineC}, image.Point{}, draw.Src)
-	}
+	// Vertical hairlines (gutter edge + each column), horizontal hairlines (rows).
+	draw.Draw(img, image.Rect(x0+gutter, y0, x0+gutter+1, y1), &image.Uniform{C: lineC}, image.Point{}, draw.Src)
 	for c := 1; c < cols; c++ {
-		x := x0 + c*cellW
+		x := x0 + gutter + c*cellW
 		draw.Draw(img, image.Rect(x, y0, x+1, y1), &image.Uniform{C: lineC}, image.Point{}, draw.Src)
 	}
+	for r := 0; r <= rows; r++ {
+		y := yHeader + r*rowH
+		draw.Draw(img, image.Rect(x0, y, x1, y+1), &image.Uniform{C: lineC}, image.Point{}, draw.Src)
+	}
 
-	const pad = 16
+	hf, err := opentype.NewFace(ogBoldFont, &opentype.FaceOptions{Size: 22, DPI: 72, Hinting: font.HintingFull})
+	if err != nil {
+		return
+	}
+	defer hf.Close()
+	hm := hf.Metrics()
+
+	// Column letters, centered in each header cell.
+	for c := 0; c < cols; c++ {
+		letter := string(rune('A' + c))
+		lw := font.MeasureString(hf, letter)
+		cx := fixed.I(x0+gutter+c*cellW) + (fixed.I(cellW)-lw)/2
+		cy := fixed.I(y0) + (fixed.I(headerH)+hm.Ascent-hm.Descent)/2
+		d := &font.Drawer{Dst: img, Src: &image.Uniform{C: headText}, Face: hf, Dot: fixed.Point26_6{X: cx, Y: cy}}
+		d.DrawString(letter)
+	}
+	// Row numbers, centered in the gutter.
 	for r := 0; r < rows; r++ {
-		face, tc := cf, cellText
-		if r == 0 {
-			face, tc = bf, headText
-		}
-		baseY := y0 + r*rowH + rowH/2 + 8
+		num := strconv.Itoa(r + 1)
+		nw := font.MeasureString(hf, num)
+		nx := fixed.I(x0) + (fixed.I(gutter)-nw)/2
+		ny := fixed.I(yHeader+r*rowH) + (fixed.I(rowH)+hm.Ascent-hm.Descent)/2
+		d := &font.Drawer{Dst: img, Src: &image.Uniform{C: headText}, Face: hf, Dot: fixed.Point26_6{X: nx, Y: ny}}
+		d.DrawString(num)
+	}
+
+	// Neutral placeholder bars — a deterministic width/skip pattern per (row,col)
+	// so cells look populated without carrying any real value. Column A reads
+	// "label-like" (wider bars); some cells are left blank for an organic look.
+	const pad, barH = 16, 10
+	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
-			var txt string
-			if c < len(cells[r]) {
-				txt = strings.TrimSpace(cells[r][c])
-			}
-			if txt == "" {
+			if (r+2*c)%3 == 2 {
 				continue
 			}
-			txt = truncateToWidth(face, txt, cellW-2*pad)
-			d := &font.Drawer{Dst: img, Src: &image.Uniform{C: tc}, Face: face, Dot: fixed.P(x0+c*cellW+pad, baseY)}
-			d.DrawString(txt)
+			maxBar := cellW - 2*pad
+			w := maxBar * (5 + (r*7+c*3)%5) / 10
+			if c == 0 {
+				w = maxBar * (7 + r%3) / 10
+			}
+			if w < 12 {
+				continue
+			}
+			bx := x0 + gutter + c*cellW + pad
+			by := yHeader + r*rowH + (rowH-barH)/2
+			fillRoundRect(img, image.Rect(bx, by, bx+w, by+barH), barH/2, barC)
 		}
 	}
 }
