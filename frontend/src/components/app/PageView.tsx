@@ -225,6 +225,15 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
     }).catch(() => {})
   }, [deckWarmId])
 
+  // Shared scroll offset so toggling view↔edit lands you where you were rather
+  // than jumping to the top. PageView doesn't remount on the toggle (only the
+  // ?edit param flips), so a ref here survives the PageViewer↔PageEditor swap.
+  // Both the view and the editor scroll an inner column with the header as a
+  // fixed sibling above it (identical geometry), so the offset is interchangeable
+  // — one ref suffices. The stored pageId lets the consumers ignore a stale offset
+  // after navigating to a different page (fresh page always opens at the top).
+  const scrollRef = useRef({ pageId, top: 0 })
+
   // 404 / wrong-space handling
   if (page.isError) {
     const status = page.error instanceof ApiError ? page.error.status : null
@@ -272,6 +281,7 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
         onDeleted={onDeleted}
         isDeck={isDeck}
         isSheet={isSheet}
+        scrollRef={scrollRef}
       />
     )
   }
@@ -296,6 +306,7 @@ export function PageView({ spaceId, pageId }: PageViewProps) {
       onDeleted={onDeleted}
       isDeck={isDeck}
       isSheet={isSheet}
+      scrollRef={scrollRef}
     />
   )
 }
@@ -311,12 +322,14 @@ function PageViewer({
   onDeleted,
   isDeck,
   isSheet,
+  scrollRef,
 }: {
   page: Page
   spaceId: number
   onDeleted: () => void
   isDeck: boolean
   isSheet: boolean
+  scrollRef: React.MutableRefObject<{ pageId: number; top: number }>
 }) {
   const navigate = useNavigate()
   const me = useMe()
@@ -377,6 +390,19 @@ function PageViewer({
       viewedAt: Date.now(),
     })
   }, [spaceId, page.id, page.title])
+
+  // Restore the shared scroll offset on mount (0 on a fresh page, or the last
+  // edit-scroll position when returning from edit — a stale offset from a
+  // different page is ignored). MarkdownView renders synchronously, so the
+  // content height is available by layout time.
+  useLayoutEffect(() => {
+    const el = contentRef.current
+    if (el)
+      el.scrollTop =
+        scrollRef.current.pageId === page.id ? scrollRef.current.top : 0
+    // Once per mount — the scroller is fresh (keyed on page.id upstream).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const enterEdit = useCallback(() => {
     void navigate({
@@ -546,6 +572,9 @@ function PageViewer({
       <div
         ref={contentRef}
         onClick={onContentClick}
+        onScroll={(e) => {
+          scrollRef.current = { pageId: page.id, top: e.currentTarget.scrollTop }
+        }}
         className="flex-1 overflow-y-auto min-h-0"
       >
         <div className="flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full mx-auto">
@@ -784,9 +813,10 @@ interface PageEditorProps {
   onDeleted: () => void
   isDeck: boolean
   isSheet: boolean
+  scrollRef: React.MutableRefObject<{ pageId: number; top: number }>
 }
 
-function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: PageEditorProps) {
+function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet, scrollRef }: PageEditorProps) {
   const updatePage = useUpdatePage()
   const navigate = useNavigate()
   const [title, setTitle] = useState(page.title)
@@ -1035,14 +1065,35 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
     })
   }, [provider, me.data])
 
-  // Always open a page scrolled to the top. Without this, the content scroller
-  // can retain a previous scroll position on refresh / sidebar navigation, so
-  // the page title isn't visible on open. Runs once per page (PageEditor
-  // remounts on page.id via its key).
-  useEffect(() => {
-    document
-      .querySelector('[data-page-scroll]')
-      ?.scrollTo({ top: 0, left: 0 })
+  // The editor body scrolls its own inner column (contentRef), matching the
+  // read view — so the header stays put (main never scrolls). Restore the
+  // incoming offset on entry, re-applying across a few frames because the lazy
+  // editor + async sections grow after mount, and a deep target would otherwise
+  // be lost to a transient short-content clamp. A 0 target (fresh page) pins the
+  // top. The live offset is tracked via the scroller's onScroll (below).
+  useLayoutEffect(() => {
+    const scroller = contentRef.current
+    if (!scroller) return
+    const target =
+      scrollRef.current.pageId === page.id ? scrollRef.current.top : 0
+    if (target <= 0) {
+      scroller.scrollTop = 0
+      return
+    }
+    let raf = 0
+    let tries = 0
+    const apply = () => {
+      scroller.scrollTop = target
+      // Content still growing toward the target → keep re-applying (≈1s budget).
+      if (scroller.scrollTop < target && tries < 60) {
+        tries += 1
+        raf = requestAnimationFrame(apply)
+      }
+    }
+    raf = requestAnimationFrame(apply)
+    return () => cancelAnimationFrame(raf)
+    // Once per page entry — PageEditor remounts on page.id via its key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page.id])
 
   // Alive-page-ids snapshot powers M5.2d broken-wikilink rendering. `null` is
@@ -1407,10 +1458,20 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
           </Suspense>
         </div>
       ) : (
+      /* Mirror the read view: a full-width inner scroller (so the header stays
+          put and wheel over the gutters scrolls) with the 56rem editing column
+          as an inner wrapper. `min-h-full` lets the deck's fill-height textarea
+          size against the column. data-page-scroll so the block handle hides on
+          this scroll (its .closest resolves to the nearest one — here, not main). */
       <div
         ref={contentRef}
-        className="flex-1 flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full self-center min-h-0"
+        data-page-scroll
+        onScroll={(e) => {
+          scrollRef.current = { pageId: page.id, top: e.currentTarget.scrollTop }
+        }}
+        className="flex-1 overflow-y-auto min-h-0"
       >
+        <div className="flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full mx-auto min-h-full">
         <WikilinkHoverPreview containerRef={contentRef} />
         {isDraftMode ? (
           <div
@@ -1568,6 +1629,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet }: P
         <RelatedPagesSection pageId={page.id} spaceId={spaceId} />
 
         <LocalGraphCard pageId={page.id} />
+        </div>
       </div>
       )}
 
