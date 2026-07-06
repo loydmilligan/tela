@@ -405,12 +405,17 @@ function PageViewer({
   }, [])
 
   const enterEdit = useCallback(() => {
+    // Capture the read-scroll offset at click time (deterministic — before the
+    // PageViewer↔PageEditor swap) so the editor opens at the same spot. Doing
+    // this on the transition rather than via a continuous onScroll avoids a
+    // teardown scroll event clobbering the value to 0 mid-swap.
+    scrollRef.current = { pageId: page.id, top: contentRef.current?.scrollTop ?? 0 }
     void navigate({
       to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
       params: { spaceId, pageId: page.id, slug: pageSlug(page.title) || undefined },
       search: (prev) => ({ ...prev, edit: true }),
     })
-  }, [navigate, spaceId, page.id, page.title])
+  }, [navigate, spaceId, page.id, page.title, scrollRef])
 
   // SPA-navigate internal wikilink clicks (MarkdownView emits plain <a href>);
   // without this they'd full-reload. External / non-page links fall through.
@@ -572,9 +577,6 @@ function PageViewer({
       <div
         ref={contentRef}
         onClick={onContentClick}
-        onScroll={(e) => {
-          scrollRef.current = { pageId: page.id, top: e.currentTarget.scrollTop }
-        }}
         className="flex-1 overflow-y-auto min-h-0"
       >
         <div className="flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full mx-auto">
@@ -908,12 +910,14 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet, scr
   // Exit edit mode (Confluence "Done") → drop ?edit and fall back to the read
   // view. Keeps the canonical slug; no `replace` so Back returns to edit.
   const exitEdit = useCallback(() => {
+    // Symmetric to enterEdit: carry the edit-scroll offset back to the read view.
+    scrollRef.current = { pageId: page.id, top: contentRef.current?.scrollTop ?? 0 }
     void navigate({
       to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
       params: { spaceId, pageId: page.id, slug: pageSlug(page.title) || undefined },
       search: {},
     })
-  }, [navigate, spaceId, page.id, page.title])
+  }, [navigate, spaceId, page.id, page.title, scrollRef])
 
   // M8.3 — comments surface. The panel toggle, panel itself, and selection
   // bridge are all gated behind a non-viewer role; viewers don't see the
@@ -1479,9 +1483,6 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet, scr
       <div
         ref={contentRef}
         data-page-scroll
-        onScroll={(e) => {
-          scrollRef.current = { pageId: page.id, top: e.currentTarget.scrollTop }
-        }}
         className="flex-1 overflow-y-auto min-h-0"
       >
         <div className="flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full mx-auto min-h-full">
