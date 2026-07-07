@@ -1,11 +1,15 @@
+<div align="center">
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/submission-assets/logo-lockup-dark.svg">
   <img alt="tela" src="docs/submission-assets/logo-lockup-light.svg" width="184">
 </picture>
 
-# tela
+### The wiki that writes itself — from the code you already ship.
 
-**The wiki that writes itself — from the code you already ship.**
+[![Try tela live](https://img.shields.io/badge/▶%20Try%20tela%20live-telawiki.com-7C3AED?style=for-the-badge&labelColor=1a1a1a)](https://telawiki.com)
+&nbsp;
+[![Self-host it](https://img.shields.io/badge/⚙%20Self--host%20in%20one%20command-make%20up-2496ED?style=for-the-badge&labelColor=1a1a1a)](#quickstart)
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/zcag/tela?style=flat)](https://github.com/zcag/tela/stargazers)
@@ -13,9 +17,11 @@
 [![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)](deploy/docker-compose.yml)
 [![npm tela-mcp](https://img.shields.io/npm/v/tela-mcp?label=npm%20tela-mcp&color=7C3AED&logo=npm)](https://www.npmjs.com/package/tela-mcp)
 
+</div>
+
 tela is a self-hostable, markdown-native team wiki built for a world where agents are first-class authors and readers. It pairs a Go + PostgreSQL backend with a React 19 / Milkdown editor, live Yjs collaboration, ranked full-text and semantic search, and a built-in Model Context Protocol (MCP) server — so the same knowledge base your team edits in the browser is one your agents can search, read, and write directly. Atlas, its documentation engine, turns the artifacts you already produce into maintained wiki pages. Your content stays canonical markdown forever — `pages.body` is markdown, there is no proprietary block store.
 
-Public instance: **https://telawiki.com**
+> **[👉 See it live at telawiki.com](https://telawiki.com)** — the hosted instance with a free tier. No install, no card.
 
 ![Atlas turns a repo into a cited wiki and audits its own coverage: 6/6 must-cover documented, 42 citations, and the exact undocumented file:line gaps](docs/demo-atlas-audit.png)
 
