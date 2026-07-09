@@ -174,6 +174,13 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpSheetAuthoringGuide)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "import_guide",
+		Title:       "Import an existing folder of files",
+		Description: "Return the guide for BULK-importing an existing folder of documents (Word docs, spreadsheets, PDFs, notes) into a space as a page tree — rather than hand-creating pages one at a time. Read this FIRST for any 'import', 'migrate my docs', 'bring in this folder', or 'load these files' request. Covers converting Office files locally (docx → pages, spreadsheets → live sheets), attaching PDFs/images, and the import endpoint's dry-run → confirm → commit contract.",
+		Annotations: readOnly,
+	}, s.mcpImportGuide)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:  "edit_sheet",
 		Title: "Edit sheet (structured)",
 		Description: "Make a STRUCTURED edit to a sheet (a sheet=true page), editor+. Prefer this over update_page for sheets: you pass a typed operation and tela rewrites the Defter markdown correctly — inserting a row shifts every formula below it, deleting a column re-references the rest, so you never corrupt the grid by hand-editing text. " +

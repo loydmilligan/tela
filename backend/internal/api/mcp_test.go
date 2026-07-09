@@ -361,6 +361,41 @@ func TestMCP_DeckAuthoringGuideTool(t *testing.T) {
 	}
 }
 
+// TestMCP_ImportGuide — the bulk-import recipe is reachable both as a TOOL and as
+// the tela://import-guide resource, and both carry the same non-empty guide. This
+// is the disclosure that makes the (REST) import endpoint discoverable to agents.
+func TestMCP_ImportGuide(t *testing.T) {
+	ts, d := newWiredServer(t)
+	alice := seedUser(t, d, "alice", "alicepw12", false)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, alice, auth.ScopeRead))
+
+	raw, _ := mcpCallRawJSON(t, ctx, sess, "import_guide", nil)
+	var out struct {
+		Guide string `json:"guide"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode import_guide: %v", err)
+	}
+	// The guide must name the endpoint and the sheet-conversion trick — the two
+	// things an agent can't guess.
+	for _, must := range []string{"/import", "sheet: true", "dry_run"} {
+		if !strings.Contains(out.Guide, must) {
+			t.Fatalf("import_guide missing %q; got: %q", must, out.Guide)
+		}
+	}
+
+	// Same content via the resource.
+	rr, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "tela://import-guide"})
+	if err != nil {
+		t.Fatalf("read import-guide resource: %v", err)
+	}
+	if len(rr.Contents) != 1 || rr.Contents[0].Text != out.Guide {
+		t.Fatalf("import-guide resource != tool content")
+	}
+}
+
 // TestMCP_WriteTools exercises the Phase-1 write surface end-to-end: create_space,
 // create_page, update_page, add_comment, delete_page, delete_space, plus the
 // read-scope rejection (mcpRequireWrite) and submit_feedback's any-scope allowance.

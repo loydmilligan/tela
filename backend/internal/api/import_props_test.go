@@ -72,3 +72,48 @@ func TestImport_FrontmatterStoredAsProps(t *testing.T) {
 		t.Fatalf("revision props.status=%v want review", rp["status"])
 	}
 }
+
+// TestImport_SheetFrontmatterYieldsSheet locks the key claim of the import guide:
+// a converted spreadsheet imported as markdown with `sheet: true` frontmatter and
+// a GFM-table body lands as an actual sheet (props.sheet == true, body verbatim),
+// so the agent recipe (xlsx → GFM + sheet:true → import) produces a live sheet
+// rather than a plain table page. A non-markdown sibling is skipped as expected.
+func TestImport_SheetFrontmatterYieldsSheet(t *testing.T) {
+	ts, d := newWiredServer(t)
+	admin := seedUser(t, d, "admin", "adminpw12", true)
+	space := seedSpace(t, d, "S", "s", admin)
+	c := loginClient(t, ts, "admin", "adminpw12")
+
+	sheetBody := "| Hesap | Borç | Alacak |\n|---|---|---|\n| Kasa | 1000 | 0 |\n| **Toplam** | =SUM(B2:B2) | =SUM(C2:C2) |\n"
+	resp, body := postImport(t, c, ts.URL, space, nil, false, []importFilePart{
+		{relPath: "mizan.md", body: "---\nsheet: true\n---\n" + sheetBody},
+		{relPath: "scan.pdf", body: "%PDF-1.4 whatever"},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	got := decodeImportResp(t, body)
+	if got.Summary.Created != 1 {
+		t.Fatalf("created=%d want 1 (only the .md), summary=%+v", got.Summary.Created, got.Summary)
+	}
+	if len(got.Skipped) != 1 || got.Skipped[0].Reason != "not_markdown" {
+		t.Fatalf("expected scan.pdf skipped not_markdown, got %+v", got.Skipped)
+	}
+
+	var dbBody string
+	var propsRaw []byte
+	if err := d.QueryRow(`SELECT body, props FROM pages WHERE id = $1`, got.Pages[0].ID).
+		Scan(&dbBody, &propsRaw); err != nil {
+		t.Fatalf("query page: %v", err)
+	}
+	if dbBody != sheetBody {
+		t.Fatalf("sheet body not stored verbatim:\n got %q\nwant %q", dbBody, sheetBody)
+	}
+	var props map[string]any
+	if err := json.Unmarshal(propsRaw, &props); err != nil {
+		t.Fatalf("unmarshal props: %v", err)
+	}
+	if b, _ := props["sheet"].(bool); !b {
+		t.Fatalf("imported page is not a sheet: props=%#v", props)
+	}
+}

@@ -87,7 +87,7 @@ func (s *Server) newMCPServer() *mcp.Server {
 	// picks the right search tool by intent rather than guessing) followed by the
 	// authoring guide, so every connected host learns the rich block palette on
 	// initialize (generated from the editor's block manifest — see mcp_authoring.go).
-	server := mcp.NewServer(impl, &mcp.ServerOptions{Instructions: retrievalGuideMarkdown() + authoringGuideMarkdown(false)})
+	server := mcp.NewServer(impl, &mcp.ServerOptions{Instructions: retrievalGuideMarkdown() + authoringGuideMarkdown(false) + importInstructionsSnippet()})
 	s.registerMCPTools(server)
 	s.registerMCPResources(server)
 	s.registerMCPWidgets(server)

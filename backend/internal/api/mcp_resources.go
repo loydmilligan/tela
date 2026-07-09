@@ -52,6 +52,17 @@ func (s *Server) registerMCPResources(server *mcp.Server) {
 		MIMEType:    "text/markdown",
 	}, s.mcpReadSheetAuthoringGuide)
 
+	// Import guide — how to bulk-import an existing folder of files (Office docs,
+	// spreadsheets, PDFs) into a space as a page tree: convert locally, then drive
+	// the import endpoint's dry-run → confirm → commit loop.
+	server.AddResource(&mcp.Resource{
+		Name:        "import-guide",
+		Title:       "Tela import guide (bring in an existing folder of files)",
+		Description: "How to bulk-import an existing folder of documents into tela: converting Word docs to pages and spreadsheets to live sheets locally, attaching PDFs/images, and the import endpoint's dry-run → confirm → commit contract. Read this for any 'import', 'migrate my docs', or 'bring in this folder' request.",
+		URI:         importGuideURI,
+		MIMEType:    "text/markdown",
+	}, s.mcpReadImportGuide)
+
 	server.AddResourceTemplate(&mcp.ResourceTemplate{
 		Name:        "page",
 		Title:       "Tela page",
