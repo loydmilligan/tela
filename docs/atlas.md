@@ -152,3 +152,21 @@ After Phase 2, generate into a fresh tela space from the same source + same mode
 4. **Delta + freshness** — change-gated delta re-ingest, cadence scheduler, publish-prune, drift.
 5. **Jira + secret store** — port `source/jira`; minimal write-only git/jira secret store (unblocks private repos too).
 6. **Notifications + MCP tools + docs** — run-finish notifications (reuse mailer), MCP tools (trigger run / read coverage), repo + space-16 docs.
+
+---
+
+## Deferred ideas (explored, not built)
+
+### A `tela`-space source connector (a third source type)
+
+**Status: deferred (2026-07-09). Nothing built — the `source.Connector` seam is unchanged, so this slots in whenever.** Revisit trigger: the "document how the work is done" use case arriving from a *different* direction — one corpus is a single data point, not a signal.
+
+**The idea.** A third source type (`tela`) alongside `git`/`jira`: the source is a **hand-curated tela space/subtree** (filled by the user's agent via MCP `create_page`); atlas ingests it and produces a coverage-audited, cited **analysis wiki in a separate output space**. Sidesteps all document-extraction/OCR/binary-skip problems because the content is already markdown. Origin: "can atlas analyze a non-repo doc corpus?" — pointing it at raw files fails hard (Inventory drops all binaries; spine is code-only), so "curate into tela first, then atlas the space" was the in-between.
+
+**Architecturally clean (the free half).** Chunk reads content off disk (`stage_chunk.go`) and **markdown is a first-class chunker** (`chunkDoc`, `LangMarkdown`) → Acquire just materializes pages to a workdir as `.md`; Inventory/Chunk/Embed/Index/Draft/Refine/Publish run unchanged. **Delta/freshness is trivial** (`HasChanges` = max `updated_at` high-water-mark; no remote fetch, no credentials — `SecretID` unused). **Citations get better** — a `case "tela"` in `CiteURL` maps the materialized path → `/p/{id}` (clickable in-instance links + backlinks).
+
+**Not free reuse (the real work — same shape Jira was).** atlas already has *two* methodologies: the code path and an explicitly "not-a-codebase" Jira path (`outlineJiraSystem`, `KindState` registered via `init()`). A tela-docs path is a **third personality**, built the Jira way: (1) a **new spine notion** — every `SpineKind` today is code (route/export/env/db_model) or tracker (state); need a docs kind (page / heading / **checklist-item**) + extractor + must-cover policy; (2) a **third prompt family** (code and Jira prompts both misfit a process corpus; prompts are calibrated/load-bearing → delicate); (3) outline seeding only has teeth if the docs spine is real.
+
+**The framing that makes it worth it.** Not "point atlas at a folder of PDFs" (that fights atlas on extraction it was never built for) but **atlas as a process/playbook documenter**: *document how work is done, grounded in the artifacts of doing it, completeness audited against the process's own checklist.* Scope is the **process/methodology docs, NOT the underlying data** — exact numbers / account-level reasoning are explicitly out of scope (atlas is the wrong tool there). Exemplar: a Turkish independent-audit engagement archive, where the spine is handed to you in the data — the **PBC checklist + audit-area taxonomy (C→W) + methodology steps**; coverage = "does the process doc cover every required area/step." Generalizes to legal matter workflows, consulting engagements, onboarding runbooks.
+
+**Ask-time note.** If a raw curated layer and the generated analysis coexist, **emphasize the generated layer via scoping, not a retrieval weight**: default the ask to the analysis space (reasoned + coverage-confirmed = the deliverable); keep raw curated docs in a separate space as the cited substrate, reached by drilling into a generated page's citations. Avoid pooling generated + raw in one space and blending them chunk-for-chunk. (There's a per-class score-modifier precedent — `publicRankPenalty`/`publicDistPenalty` in `rag/access.go` — but a static boost is the blunt version; separating surfaces is the honest one.)
