@@ -36,6 +36,17 @@ sheet: true
 
 Row 1 is the header; the first data row is row 2. For the full format (multiple sheets, number formats, styling, charts) call the `sheet_authoring_guide` tool.
 
+**Real-world spreadsheets are rarely a clean grid.** Exports often carry title/metadata rows above the data, blank spacer rows, merged headers, a footer, or several logical tables stacked in one sheet. A raw cell-for-cell dump of that is a messy, unusable sheet. Reshape it: promote the actual header row, drop the noise rows, and split independent tables into separate sheets or pages. When the layout is ambiguous, don't guess silently — see "Verify" below.
+
+## Verify the conversion — and sample before you commit
+
+Conversion is your job, not tela's, so **check it** rather than trusting the first output:
+
+- **Look at what you produced.** Skim each converted `.md` before importing. For a spreadsheet, does the header line up with its columns? Are formulas intact (`=SUM(...)`, not baked numbers or `#REF!`)? Did a multi-table sheet collapse into nonsense?
+- **When in doubt, sample first.** Before batch-converting hundreds of files, convert **one** of each kind (one `.docx`, one `.xlsx`, …), import just those (or show the user the converted markdown), and confirm the shape is right. Then apply the same conversion to the rest. This catches a systematic mistake once instead of 500 times.
+- **Spot-check after import.** Read a few imported pages back with `get_page`. For a sheet, use `get_page` with `format:"values"` to see the *computed* grid (formulas materialized) — the fastest way to confirm it's a real, working sheet and not a broken table. Fix with `edit_sheet` / `update_page` if needed.
+- **Ask when it's genuinely unclear.** If a file's structure is ambiguous (which row is the header? are these two tables or one?), surface it to the user with a sample rather than importing a confident-but-wrong guess.
+
 ## The import call
 
 Upload the converted markdown tree to the import endpoint. Bytes go over REST (not through MCP), so run this from your shell with a **write-scoped PAT** (tela → Settings → API keys):
