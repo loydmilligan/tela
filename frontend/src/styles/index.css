@@ -25,6 +25,21 @@
     height: 100dvh;
   }
 
+  /* Touch devices: let the document itself grow and scroll instead of pinning
+     it to the viewport. The app otherwise traps scrolling in inner overflow
+     frames, and Firefox/Chrome Android won't pan a pinch-zoomed page over a
+     scroll frame — only over the document — so a zoomed-in user can't drag the
+     page sideways. Releasing to document scroll restores that (matches how a
+     plain article page pans when zoomed). Desktop keeps the pinned shell. */
+  @media (pointer: coarse) {
+    html,
+    body,
+    #root {
+      height: auto;
+      min-height: 100dvh;
+    }
+  }
+
   body {
     margin: 0;
     background: var(--surface-1);

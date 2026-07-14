@@ -154,8 +154,13 @@ const appLayoutRoute = createRoute({
       document.addEventListener('keydown', onKey)
       return () => document.removeEventListener('keydown', onKey)
     }, [sidebarOpen])
+    // Desktop: fixed-height shell, chrome pinned, content scrolls an inner
+    // frame. Touch (pointer:coarse): release to natural document scroll so a
+    // pinch-zoomed page can be panned left/right with one finger — Firefox/
+    // Chrome Android won't visual-viewport-pan over an inner scroll frame, only
+    // over the document. See index.css / reader.css coarse overrides.
     return (
-      <div className="h-dvh flex bg-[var(--surface-1)] text-[var(--text-primary)] overflow-hidden">
+      <div className="h-dvh flex bg-[var(--surface-1)] text-[var(--text-primary)] overflow-hidden pointer-coarse:h-auto pointer-coarse:min-h-dvh pointer-coarse:overflow-visible">
         <Sidebar open={sidebarOpen} collapsed={collapsed} />
         {sidebarOpen ? (
           <button
@@ -205,7 +210,7 @@ const appLayoutRoute = createRoute({
           <TrialBanner />
           <main
             data-page-scroll
-            className="flex-1 flex flex-col overflow-y-auto overscroll-contain min-h-0"
+            className="flex-1 flex flex-col overflow-y-auto overscroll-contain min-h-0 pointer-coarse:overflow-visible"
           >
             <Outlet />
           </main>

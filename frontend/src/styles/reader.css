@@ -122,6 +122,13 @@
     overflow-x: clip;
     overscroll-behavior: contain;
   }
+  /* Touch: release the reader's inner scroll frame to document scroll so a
+     pinch-zoomed page can be panned sideways (see index.css coarse note). */
+  @media (pointer: coarse) {
+    .reader-scroll {
+      overflow: visible;
+    }
+  }
 
   /* Centered layout. Single column by default; on wide viewports a sticky TOC
      rail joins to the left and the [rail | article] pair is centered. */

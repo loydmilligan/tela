@@ -350,16 +350,25 @@ export function ReaderShell({
   useEffect(() => {
     const sc = scrollRef.current
     if (!sc) return
+    // On touch the inner frame is released to document scroll (so a pinch-zoomed
+    // page can be panned — see reader.css), so read progress from whatever
+    // actually scrolls: the document on coarse pointers, the frame otherwise.
+    const coarse = window.matchMedia('(pointer: coarse)').matches
+    const metrics = coarse
+      ? document.scrollingElement ?? document.documentElement
+      : sc
+    const scrollTarget: Window | HTMLElement = coarse ? window : sc
     let raf = 0
     const update = () => {
       raf = 0
-      const max = sc.scrollHeight - sc.clientHeight
-      const p = max > 0 ? sc.scrollTop / max : 0
+      const max = metrics.scrollHeight - metrics.clientHeight
+      const p = max > 0 ? metrics.scrollTop / max : 0
       if (progressRef.current) {
         progressRef.current.style.setProperty('--reader-progress', String(p))
       }
       if (topbarRef.current) {
-        topbarRef.current.dataset.scrolled = sc.scrollTop > 4 ? 'true' : 'false'
+        topbarRef.current.dataset.scrolled =
+          metrics.scrollTop > 4 ? 'true' : 'false'
       }
       // Active heading = last one whose top has crossed a band below the bar.
       const threshold = sc.getBoundingClientRect().top + 96
@@ -376,10 +385,10 @@ export function ReaderShell({
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(update)
     }
-    sc.addEventListener('scroll', onScroll, { passive: true })
+    scrollTarget.addEventListener('scroll', onScroll, { passive: true })
     update()
     return () => {
-      sc.removeEventListener('scroll', onScroll)
+      scrollTarget.removeEventListener('scroll', onScroll)
       if (raf) cancelAnimationFrame(raf)
     }
   }, [toc])
