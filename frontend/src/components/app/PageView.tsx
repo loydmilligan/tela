@@ -577,7 +577,11 @@ function PageViewer({
       <div
         ref={contentRef}
         onClick={onContentClick}
-        className="flex-1 overflow-y-auto min-h-0"
+        /* overflow-x-clip keeps this a vertical-only scroller — otherwise
+           overflow-y-auto computes overflow-x to auto, and the phantom
+           horizontal axis eats the one-finger pan-while-zoomed gesture on
+           Android (Firefox/Chrome). See reader.css .reader-scroll. */
+        className="flex-1 overflow-y-auto overflow-x-clip min-h-0"
       >
         <div className="flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full mx-auto">
         <WikilinkHoverPreview containerRef={contentRef} />
@@ -1483,7 +1487,10 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet, scr
       <div
         ref={contentRef}
         data-page-scroll
-        className="flex-1 overflow-y-auto min-h-0"
+        /* overflow-x-clip: vertical-only scroller so a one-finger horizontal
+           drag pans the pinch-zoomed page instead of being swallowed by a
+           phantom horizontal scroll axis on Android. See reader.css. */
+        className="flex-1 overflow-y-auto overflow-x-clip min-h-0"
       >
         <div className="flex flex-col gap-[var(--space-4)] p-[var(--space-7)] max-w-[56rem] w-full mx-auto min-h-full">
         <WikilinkHoverPreview containerRef={contentRef} />

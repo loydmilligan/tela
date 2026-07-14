@@ -113,6 +113,13 @@
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
+    /* clip (not the default computed `auto`) so this stays a *vertical-only*
+       scroller. With overflow-x left visible it computes to auto, making the box
+       a two-axis scroller with a phantom horizontal axis; when the page is
+       pinch-zoomed, Firefox/Chrome Android route a one-finger horizontal drag to
+       that dead axis instead of panning the magnified page, so the doc won't move
+       sideways. `clip` removes the horizontal scroll axis entirely. */
+    overflow-x: clip;
     overscroll-behavior: contain;
   }
 
