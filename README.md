@@ -27,7 +27,10 @@ tela is a self-hostable, markdown-native team wiki built for a world where agent
 
 > **[👉 Start at telawiki.com](https://telawiki.com)** — the marketing site walks through what tela does (with [pricing](https://telawiki.com/pricing/), a [comparison](https://telawiki.com/compare/), and the [agent/MCP story](https://telawiki.com/mcp/)), and the hosted instance has a free tier: no install, no card.
 
-![Atlas turns a repo into a cited wiki and audits its own coverage: 6/6 must-cover documented, 42 citations, and the exact undocumented file:line gaps](docs/demo-atlas-audit.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/submission-assets/tela-page-dark.png">
+  <img alt="tela — a page in the Operations space: spaces and a nested page tree in the sidebar, with stat tiles, a callout, and a Mermaid diagram rendered from plain markdown" src="docs/submission-assets/tela-page-light.png" width="820">
+</picture>
 
 ## Why tela
 
@@ -309,19 +312,16 @@ A machine-discovery manifest is published at [`/.well-known/mcp.json`](https://t
 
 ## Screenshots
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/submission-assets/tela-page-dark.png">
-  <img alt="tela — page view (light)" src="docs/submission-assets/tela-page-light.png" width="820">
-</picture>
-
-<!-- TODO: refresh page-view screenshots when the editor chrome changes. -->
+Ranked full-text search across every space you can read, with the matching line in context:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/submission-assets/tela-search-dark.png">
-  <img alt="tela — search (light)" src="docs/submission-assets/tela-search-light.png" width="820">
+  <img alt="tela — search: ranked results for “shipment” across the Operations, Engineering, and Product spaces, each with its breadcrumb and the matched term highlighted in context" src="docs/submission-assets/tela-search-light.png" width="820">
 </picture>
 
-<!-- TODO: refresh search screenshots when the search/ask panel changes. -->
+Atlas documents a repo and then audits its own coverage — 6/6 must-cover surfaces documented, 42 citations, and the exact file:line gaps it hasn't covered:
+
+![Atlas coverage audit: 13/19 surface covered, 6/6 must-cover documented, 42 citations with 0 unresolved, and a list of undocumented exports with their file:line locations](docs/demo-atlas-audit.png)
 
 ## Architecture
 
