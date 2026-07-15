@@ -39,6 +39,12 @@ type Server struct {
 	// never nil; tests overwrite it with a capturing fake after New().
 	Mailer mailer.Mailer
 
+	// ntfy is the push-notification channel config (TELA_NTFY_URL / _TOKEN).
+	// Inert — but valid — when TELA_NTFY_URL is unset (dispatch no-ops), mirroring
+	// the SMTP-unset LogMailer. Tests overwrite it with a config pointing at an
+	// httptest.Server. See notifications_ntfy.go.
+	ntfy ntfyConfig
+
 	// authLimiter throttles the unauthenticated, email-sending endpoints
 	// (register / resend / forgot-password) per client IP so the relay can't
 	// be turned into a mail bomb.
@@ -206,6 +212,7 @@ func New(db *sql.DB) *Server {
 		shareLimiter:       newShareRateLimiter(),
 		auditWriter:        auth.NewAuditWriter(db),
 		Mailer:             meteredMailer{inner: mailer.FromEnv()},
+		ntfy:               ntfyConfigFromEnv(),
 		authLimiter:        newAuthRateLimiter(authRateWindow, authRateLimit),
 		loginLimiter:       newAuthRateLimiter(loginRateWindow, loginRateLimit),
 		unfurlLimiter:      newAuthRateLimiter(unfurlRateWindow, unfurlRateLimit),

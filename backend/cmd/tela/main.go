@@ -209,6 +209,12 @@ func logStartupConfig() {
 		slog.Info("config: SMTP enabled", "host", os.Getenv("TELA_SMTP_HOST"))
 	}
 
+	if os.Getenv("TELA_NTFY_URL") == "" {
+		slog.Info("config: ntfy push channel disabled (TELA_NTFY_URL unset)")
+	} else {
+		slog.Info("config: ntfy push channel enabled", "url", os.Getenv("TELA_NTFY_URL"))
+	}
+
 	if rcfg := rag.ConfigFromEnv(); rcfg.EmbedURL == "" {
 		slog.Warn("config: RAG/semantic search DISABLED (TELA_RAG_EMBED_URL unset). " +
 			"Full-text search still works; set the URL to enable embeddings.")

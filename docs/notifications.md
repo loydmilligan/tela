@@ -8,8 +8,9 @@ Status (v1, in-app):
 - **@-mention** on a page → the mentioned member is notified.
 - **Follow a page or space** → its `page_updated` edits notify you.
 - **Preferences** — turn any event type off per channel.
-- Delivery is **in-app only** today; the email channel is wired through prefs but
-  not yet delivered.
+- Three delivery channels, each gated independently per event type: **in-app**
+  (the always-on inbox), **email** (see [Email channel](#email-channel)), and
+  **ntfy** push (see [ntfy channel](#ntfy-channel)).
 
 ## Tables
 
@@ -35,7 +36,9 @@ page/space delete paths clear them explicitly (notifications, which carry
 
 **`notification_prefs`** (`0008`) — `(user_id, event_type, channel, enabled)`.
 **Opt-out**: absence of a row means enabled, so a new user gets everything and a
-row is written only to turn something off. `channel ∈ inapp | email`.
+row is written only to turn something off. `channel ∈ inapp | email | ntfy`
+(the CHECK admits `ntfy` as of `0068`). `users.ntfy_topic` (`0068`) holds each
+user's ntfy delivery target (empty = the ntfy channel is off for them).
 
 ## Emit seam
 
@@ -144,6 +147,37 @@ never slows the request. A missing relay (LogMailer) just logs. Needs
   The other types are one-shot, never throttled.
 - **Slack/Teams later** — add a sibling `dispatch*` off the same loop + a channel
   value in the prefs `CHECK`; the emit sites don't change.
+
+## ntfy channel
+
+`dispatchNtfy` (`notifications_ntfy.go`) is the third channel — a push to an
+[ntfy](https://ntfy.sh) topic, so events reach a phone/desktop out of the app.
+Same shape as email: recipient/content resolved synchronously (ctx live), the
+HTTP POSTs fired in a detached goroutine. Wired into `emitNotifications`
+alongside `dispatchEmails`, gated independently.
+
+- **Config** — `TELA_NTFY_URL` (the ntfy server base) + optional `TELA_NTFY_TOKEN`
+  (bearer, for access-protected topics), resolved once into `s.ntfy`
+  (`ntfyConfigFromEnv`). **Unset URL = channel inert** — `dispatchNtfy` no-ops,
+  mirroring the SMTP-unset LogMailer. Both are in `deploy/.env.example`.
+- **Gate** — `ntfyEnabled` mirrors `emailEnabled` on the **`ntfy`** channel of
+  `notification_prefs` (opt-out: no row = enabled).
+- **Recipient** — per-user `users.ntfy_topic` (migration `0068`); **empty = the
+  channel is off for that user** (same skip-shape as "no email on file"). Each
+  user sets their own topic on their profile.
+- **Send** — one POST to `{TELA_NTFY_URL}/{topic}` with ntfy headers: `Title`
+  (the event summary), `Click` (the deep link to the page/space — the tap-through
+  is the point), `Tags` (an emoji per event type), and `Authorization: Bearer`
+  when a token is set. The body carries the detail line (mention/reply snippet,
+  or the `page_updated` diff stat). Types templated match the email set; other
+  types don't push.
+- **page_updated throttle** — reuses the `notification_email_throttle` mechanics
+  under a **distinct** `event_type` key (`page_updated_ntfy`) so the email and
+  ntfy throttles never collide — each channel caps at one push per (user, page)
+  per `pageUpdatedEmailWindow` (4h) **independently**. No new table.
+- **Migration** — `0068_ntfy_channel.sql`: adds `users.ntfy_topic` and relaxes the
+  `notification_prefs.channel` CHECK to admit `'ntfy'` (the one prefs-schema touch
+  a new channel needs, since the CHECK enumerates allowed channels).
 
 ## Extension points (additive — no rework)
 
