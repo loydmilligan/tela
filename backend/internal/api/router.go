@@ -167,6 +167,9 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/pages/all", srv.ListAllPages)
 	mux.HandleFunc("GET /api/pages/bodies", srv.ListPageBodies)
 	mux.HandleFunc("POST /api/pages", srv.CreatePage)
+	// Props query block backend (Dataview analog). Literal segment, so it wins
+	// over GET /api/pages/{id}; results are re-gated through space_access.
+	mux.HandleFunc("POST /api/pages/query", srv.QueryPages)
 	mux.HandleFunc("GET /api/pages/{id}", srv.GetPage)
 	mux.HandleFunc("POST /api/pages/{id}/view", srv.RecordPageView)
 	mux.HandleFunc("PATCH /api/pages/{id}", srv.UpdatePage)
