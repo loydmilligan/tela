@@ -45,6 +45,8 @@ export function SettingsProfileTab() {
       <Separator />
       <BioSection />
       <Separator />
+      <NtfyTopicSection />
+      <Separator />
       <ChangePasswordSection />
       <Separator />
       <SessionsSection />
@@ -254,6 +256,82 @@ function BioSection() {
             disabled={!dirty || updateProfile.isPending}
           >
             {updateProfile.isPending ? 'Saving…' : 'Save bio'}
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const MAX_NTFY_TOPIC_LEN = 64
+const NTFY_TOPIC_RE = /^[A-Za-z0-9_-]+$/
+
+function NtfyTopicSection() {
+  const me = useMe()
+  const updateProfile = useUpdateProfile()
+  const saved = me.data?.ntfy_topic ?? ''
+  const [value, setValue] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+  // null = uninitialised → mirror the loaded value; once edited we own it.
+  const topic = value ?? saved
+  const dirty = value != null && value.trim() !== saved
+
+  async function handleSave() {
+    setSuccess(false)
+    setError(null)
+    const trimmed = topic.trim()
+    if (trimmed !== '' && !NTFY_TOPIC_RE.test(trimmed)) {
+      setError("Use only letters, digits, '-' and '_'.")
+      return
+    }
+    try {
+      await updateProfile.mutateAsync({ ntfy_topic: trimmed })
+      setValue(null)
+      setSuccess(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="settings-ntfy-topic"
+      className="flex flex-col gap-[var(--space-3)]"
+    >
+      <SectionHeader
+        title="ntfy push topic"
+        description="Get notifications pushed to your phone or desktop via ntfy. Subscribe to this topic in the ntfy app, then enable the ntfy channel per event type under Notifications. Leave blank to turn ntfy off."
+      />
+      <div className="flex flex-col gap-[var(--space-2)] max-w-[24rem]" id="settings-ntfy-topic">
+        <Input
+          aria-label="ntfy topic"
+          value={topic}
+          onChange={(e) => {
+            setValue(e.target.value.slice(0, MAX_NTFY_TOPIC_LEN))
+            setSuccess(false)
+          }}
+          placeholder="e.g. tela-alice-7f3c"
+        />
+        {error ? (
+          <p role="alert" className="m-0 text-[length:var(--text-sm)] text-[var(--danger)]">
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p role="status" className="m-0 text-[length:var(--text-sm)] text-[var(--success)]">
+            ntfy topic saved.
+          </p>
+        ) : null}
+        <div className="flex">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => void handleSave()}
+            disabled={!dirty || updateProfile.isPending}
+          >
+            {updateProfile.isPending ? 'Saving…' : 'Save topic'}
           </Button>
         </div>
       </div>

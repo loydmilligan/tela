@@ -15,6 +15,8 @@ export interface AuthUser {
   is_instance_admin: boolean
   // Author bio shown on /u/{handle}. '' when unset.
   bio?: string
+  // ntfy push delivery target. '' when unset → the ntfy channel is off.
+  ntfy_topic?: string
   // Active trial in its notify window (final 7 days + 7-day grace), else absent.
   trial?: TrialStatus
   // Unread feedback count for the admin inbox badge (instance admins only).
@@ -77,11 +79,18 @@ export function useMe() {
 export function useUpdateProfile() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { display_name?: string; bio?: string }) => {
-      return api<{ display_name?: string; bio?: string }>('/api/users/me', {
-        method: 'PATCH',
-        body: JSON.stringify(input),
-      })
+    mutationFn: async (input: {
+      display_name?: string
+      bio?: string
+      ntfy_topic?: string
+    }) => {
+      return api<{ display_name?: string; bio?: string; ntfy_topic?: string }>(
+        '/api/users/me',
+        {
+          method: 'PATCH',
+          body: JSON.stringify(input),
+        },
+      )
     },
     onSuccess: (saved) => {
       qc.setQueryData<AuthUser | null>(authKeys.me(), (curr) =>

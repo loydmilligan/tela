@@ -50,6 +50,7 @@ const EVENTS: { type: string; label: string; desc: string; adminOnly?: boolean }
 const CHANNELS: { channel: string; label: string }[] = [
   { channel: 'inapp', label: 'In-app' },
   { channel: 'email', label: 'Email' },
+  { channel: 'ntfy', label: 'ntfy' },
 ]
 
 export function SettingsNotificationsTab() {
@@ -123,7 +124,7 @@ export function SettingsNotificationsTab() {
       ) : (
         <div className="flex flex-col rounded-[var(--radius-md)] border border-[var(--border-subtle)] overflow-hidden">
           {/* Header row */}
-          <div className="grid grid-cols-[1fr_5rem_5rem] items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-2)] bg-[var(--surface-2)] border-b border-[var(--border-subtle)]">
+          <div className="grid grid-cols-[1fr_5rem_5rem_5rem] items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-2)] bg-[var(--surface-2)] border-b border-[var(--border-subtle)]">
             <span className="text-[length:var(--text-xs)] uppercase tracking-wider text-[var(--text-muted)] font-[family-name:var(--font-sans)]">
               Event
             </span>
@@ -141,7 +142,7 @@ export function SettingsNotificationsTab() {
             <div
               key={ev.type}
               className={cn(
-                'grid grid-cols-[1fr_5rem_5rem] items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)]',
+                'grid grid-cols-[1fr_5rem_5rem_5rem] items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)]',
                 i > 0 && 'border-t border-[var(--border-subtle)]',
               )}
             >
