@@ -170,6 +170,10 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/pages/{id}", srv.GetPage)
 	mux.HandleFunc("POST /api/pages/{id}/view", srv.RecordPageView)
 	mux.HandleFunc("PATCH /api/pages/{id}", srv.UpdatePage)
+	// Shallow-merge a single props key (bound-field write-back). Session-gated;
+	// SetPageProp re-checks editor access in-tx. Distinct from the Replace-
+	// semantics PATCH above so a field flip can't clobber the whole bag.
+	mux.HandleFunc("PATCH /api/pages/{id}/props", srv.SetPageProp)
 	mux.HandleFunc("DELETE /api/pages/{id}", srv.DeletePage)
 	mux.HandleFunc("POST /api/pages/{id}/move", srv.MovePage)
 	mux.HandleFunc("GET /api/pages/{id}/backlinks", srv.Backlinks)

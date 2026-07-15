@@ -130,3 +130,112 @@ func TestPageProps_CRUD(t *testing.T) {
 		}
 	})
 }
+
+// TestSetPageProp exercises the bound-field write-back endpoint
+// (PATCH /api/pages/{id}/props): the editor-only access gate, the server-side
+// shallow-merge (one key can't clobber another — the property that separates this
+// from the Replace-semantics PATCH /api/pages/{id}), typed values, and
+// reserved-key rejection.
+func TestSetPageProp(t *testing.T) {
+	ts, d := newWiredServer(t)
+	owner := seedUser(t, d, "propowner", "ownerpw12", false)
+	viewer := seedUser(t, d, "propviewer", "viewerpw12", false)
+	seedUser(t, d, "propstranger", "strangerpw12", false)
+	space := seedSpace(t, d, "PropS", "props", owner)
+	seedMember(t, d, space, viewer, "viewer")
+
+	oc := loginClient(t, ts, "propowner", "ownerpw12")
+
+	// A page to bind fields to, seeded with a starter field prop.
+	resp, err := postJSON(oc, ts.URL+"/api/pages",
+		fmt.Sprintf(`{"space_id":%d,"title":"UAT","body":"x","props":{"result":"pending"}}`, space))
+	if err != nil || resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create page: err=%v status=%d", err, resp.StatusCode)
+	}
+	page := decodePage(t, resp)
+
+	setProp := func(c *http.Client, body string) *http.Response {
+		t.Helper()
+		r, err := patchJSON(c, fmt.Sprintf("%s/api/pages/%d/props", ts.URL, page.ID), body)
+		if err != nil {
+			t.Fatalf("patch prop: %v", err)
+		}
+		return r
+	}
+
+	t.Run("owner flips a field; merge leaves other keys intact", func(t *testing.T) {
+		r := setProp(oc, `{"key":"result","value":"pass"}`)
+		if r.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(r.Body)
+			r.Body.Close()
+			t.Fatalf("set result: status=%d body=%s", r.StatusCode, b)
+		}
+		r.Body.Close()
+		// A second flip of a DIFFERENT key must not clobber the first — this is
+		// the merge (props || $1) semantics, not Replace.
+		r2 := setProp(oc, `{"key":"notes","value":"looks good"}`)
+		if r2.StatusCode != http.StatusOK {
+			t.Fatalf("set notes: status=%d", r2.StatusCode)
+		}
+		r2.Body.Close()
+		got := getPageHTTP(t, oc, ts.URL, page.ID)
+		if got.Props["result"] != "pass" {
+			t.Fatalf("props.result = %v, want pass (survives the second merge)", got.Props["result"])
+		}
+		if got.Props["notes"] != "looks good" {
+			t.Fatalf("props.notes = %v, want 'looks good'", got.Props["notes"])
+		}
+	})
+
+	t.Run("toggle writes a real JSON bool", func(t *testing.T) {
+		r := setProp(oc, `{"key":"done","value":true}`)
+		if r.StatusCode != http.StatusOK {
+			t.Fatalf("set done: status=%d", r.StatusCode)
+		}
+		r.Body.Close()
+		got := getPageHTTP(t, oc, ts.URL, page.ID)
+		if got.Props["done"] != true {
+			t.Fatalf("props.done = %#v, want JSON bool true", got.Props["done"])
+		}
+	})
+
+	t.Run("viewer cannot write (403); the value is unchanged", func(t *testing.T) {
+		vc := loginClient(t, ts, "propviewer", "viewerpw12")
+		r := setProp(vc, `{"key":"result","value":"fail"}`)
+		if r.StatusCode != http.StatusForbidden {
+			t.Fatalf("viewer set: status=%d, want 403", r.StatusCode)
+		}
+		r.Body.Close()
+		got := getPageHTTP(t, oc, ts.URL, page.ID)
+		if got.Props["result"] != "pass" {
+			t.Fatalf("viewer got 403 but props.result = %v, want unchanged pass", got.Props["result"])
+		}
+	})
+
+	t.Run("non-member cannot write (403)", func(t *testing.T) {
+		sc := loginClient(t, ts, "propstranger", "strangerpw12")
+		r := setProp(sc, `{"key":"result","value":"fail"}`)
+		if r.StatusCode != http.StatusForbidden {
+			t.Fatalf("stranger set: status=%d, want 403", r.StatusCode)
+		}
+		r.Body.Close()
+	})
+
+	t.Run("reserved keys rejected (400)", func(t *testing.T) {
+		for _, key := range []string{"id", "slug", "created"} {
+			r := setProp(oc, fmt.Sprintf(`{"key":%q,"value":"x"}`, key))
+			if r.StatusCode != http.StatusBadRequest {
+				t.Fatalf("reserved key %q: status=%d, want 400", key, r.StatusCode)
+			}
+			r.Body.Close()
+		}
+	})
+
+	t.Run("missing key rejected (400)", func(t *testing.T) {
+		r := setProp(oc, `{"value":"x"}`)
+		if r.StatusCode != http.StatusBadRequest {
+			t.Fatalf("missing key: status=%d, want 400", r.StatusCode)
+		}
+		r.Body.Close()
+	})
+}
