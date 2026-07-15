@@ -299,6 +299,29 @@
       "note": "A ```chart fenced block with a YAML spec. `type`: bar | grouped-bar | stacked-bar | line | area | scatter | pie | donut. xy/category charts use `x` (categories) + `series: [{name, data}]`; pie/donut use `data: [{label, value}]`. Renders interactively (hover tooltips, clickable legend) and follows the page theme."
     },
     {
+      "id": "query",
+      "label": "Query",
+      "hint": "Live table of pages by their props",
+      "category": "Data",
+      "slash": true,
+      "agent": true,
+      "keywords": [
+        "query",
+        "dataview",
+        "list",
+        "table",
+        "filter",
+        "pages",
+        "props",
+        "where",
+        "dashboard",
+        "index"
+      ],
+      "syntax": "```query\nwhere: { type: doc }\nspace: here\ncolumns: [title, status, updated]\nsort: -updated\nlimit: 25\n```",
+      "when": "List pages by their properties — a live, self-updating table (e.g. every page with type: incident, or all docs in this space). The Dataview analog.",
+      "note": "A ```query fenced block with a YAML spec. `where` is props containment (props @> where) — exact key/value equality only, matches props, not columns like title. `space`: here (this space) | a space id | omit (all spaces you can read). `columns`: any of title, space, created, updated, or a prop key. `sort`: (-)updated | (-)created | (-)title (the `-` prefix is descending). `limit` caps rows. Results are always gated to spaces you can read. The live table renders in the read view."
+    },
+    {
       "id": "embed",
       "label": "Embed",
       "hint": "YouTube, Vimeo, Loom, or a link",

@@ -23,6 +23,7 @@ import { positionFloating, setShow } from './milkdown-floating'
 import { insertBlock } from '../../lib/milkdown/insert-block'
 import { insertMermaid } from './milkdown-mermaid'
 import { insertChart } from './milkdown-chart'
+import { insertQuery } from './milkdown-query'
 import { insertTabs } from './milkdown-tabs'
 import { insertKanban } from './milkdown-kanban'
 import { insertStatGrid } from './milkdown-stat-grid'
@@ -69,6 +70,7 @@ const RUN: Record<string, (ctx: Ctx) => void> = {
   equation: insertMathBlock,
   mermaid: insertMermaid,
   chart: insertChart,
+  query: insertQuery,
   embed: insertEmbed,
   tabs: insertTabs,
   kanban: insertKanban,

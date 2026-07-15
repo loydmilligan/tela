@@ -40,6 +40,12 @@ import {
   type PollData,
   type PollOption,
 } from '../app/PollWidget'
+import {
+  parseQuerySpec,
+  isQueryError,
+  type QuerySpec,
+} from '../../lib/blocks/query-spec'
+import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 
 // Context for renderers that need page-scoped data (excalidraw PNG URL, wikilink
 // resolution; comments later). Provided by MarkdownView.
@@ -679,6 +685,108 @@ function PollBlockView({ node }: { node: MdNode }) {
   return <PollWidget poll={poll} onVote={(choice) => vote.mutate(choice)} />
 }
 
+// A page row returned by POST /api/pages/query.
+interface QueryRow {
+  id: number
+  space_id: number
+  space_name: string
+  title: string
+  props: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+// Render one cell for a spec column: title (linked to the row's own page —
+// results can span spaces, so the href uses the row's space_id, not the current
+// page's), the space name, a relative timestamp, or a prop value.
+function queryCell(col: string, row: QueryRow): ReactNode {
+  const c = col.toLowerCase()
+  if (c === 'title') {
+    return (
+      <a href={`/spaces/${row.space_id}/pages/${row.id}`}>
+        {row.title || 'Untitled'}
+      </a>
+    )
+  }
+  if (c === 'space') return row.space_name
+  if (c === 'updated') return relativeTimeFromSqlite(row.updated_at)
+  if (c === 'created') return relativeTimeFromSqlite(row.created_at)
+  const v = row.props[col]
+  if (v == null) return ''
+  if (typeof v === 'boolean') return v ? 'true' : 'false'
+  if (Array.isArray(v)) return v.map(String).join(', ')
+  return String(v)
+}
+
+// QueryBlockView — the read-view surface of a ` ```query ` block. Parses the
+// spec, POSTs it to /api/pages/query (which re-gates every row through the
+// caller's space_access), and renders the matching pages as a table. Explicit
+// loading / empty / error / signed-out states — never a blank block.
+function QueryBlockView({ code }: { code: string }) {
+  const { pageId } = useContext(ViewContext)
+  const me = useMe()
+  const spec = useMemo(() => parseQuerySpec(code), [code])
+  const specOk = !isQueryError(spec)
+  const authed = !!me.data
+
+  const q = useQuery({
+    queryKey: ['pages-query', code, pageId ?? null],
+    enabled: specOk && authed,
+    queryFn: () => {
+      const s = spec as QuerySpec
+      return api<{ pages: QueryRow[] }>('/api/pages/query', {
+        method: 'POST',
+        body: JSON.stringify({
+          where: s.where,
+          space: s.space,
+          page_id: pageId,
+          sort: s.sort,
+          limit: s.limit,
+        }),
+      })
+    },
+  })
+
+  if (isQueryError(spec)) {
+    return <div className="tela-query-error">{spec.error}</div>
+  }
+  if (!authed) {
+    return <div className="tela-query-empty">Sign in to view query results.</div>
+  }
+  if (q.isLoading) {
+    return <div className="tela-query-empty">Loading query…</div>
+  }
+  if (q.isError) {
+    return <div className="tela-query-error">Query failed.</div>
+  }
+  const rows = q.data?.pages ?? []
+  if (rows.length === 0) {
+    return <div className="tela-query-empty">No matching pages.</div>
+  }
+  return (
+    <div className="tela-query" data-query="">
+      <table>
+        <thead>
+          <tr>
+            {spec.columns.map((col) => (
+              <th key={col}>{col}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              {spec.columns.map((col) => (
+                <td key={col}>{queryCell(col, row)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function renderChildren(node: MdNode): ReactNode[] {
   return (node.children ?? []).map((child, i) => renderNode(child, i))
 }
@@ -759,6 +867,9 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       // source) via the shared editor render cores.
       if (lang === 'mermaid') return <DiagramWidget key={key} kind="mermaid" code={value} />
       if (lang === 'chart') return <DiagramWidget key={key} kind="chart" code={value} />
+      // Query: a live table of pages whose props match the spec (Dataview
+      // analog). The source isn't shown in the view.
+      if (lang === 'query') return <QueryBlockView key={key} code={value} />
       return <CodeBlock key={key} lang={lang} value={value} />
     }
     case 'excalidraw':

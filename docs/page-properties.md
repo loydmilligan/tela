@@ -1,15 +1,19 @@
-# Page properties / frontmatter (design notes — not yet built)
+# Page properties / frontmatter
 
-Status: **design only.** Today frontmatter is *destroyed* on import — `mdimport.
-StripFrontmatter` pulls a single `title:` out of a leading YAML block via regex
-and silently drops everything else (the comment in `frontmatter.go` says so).
-There is no place to store page metadata, no round-trip out, and the only
-markdown egress is MCP `get_page`/`fetch` (no `.md` export endpoint exists).
+Status: **shipped (Phases 1–2).** `pages.props JSONB` + GIN (migration
+`0005_page_props.sql`) is read/written end-to-end (`pages.go`), imported from
+frontmatter via `pagemd.Decode`, and carried across MCP. On top of it, the
+**query block** (` ```query `) lets a page render a live table of other pages
+filtered by their props — see "Querying props" below. Phase 3 (a human-facing
+props panel, graph coloring, FTS folding) is the remaining deferred work.
 
-This doc specifies turning frontmatter into a first-class **page-properties**
-system: a single source of truth for page metadata that import/sync populates
-automatically and that agents, search, and the graph can query — without
-violating the `pages.body` "canonical markdown forever" rule.
+The rest of this doc is the authoritative design; it holds for the shipped system
+except where a subsection is marked deferred.
+
+This doc specifies frontmatter as a first-class **page-properties** system: a
+single source of truth for page metadata that import/sync populates automatically
+and that agents, search, and the graph can query — without violating the
+`pages.body` "canonical markdown forever" rule.
 
 ## Goals
 
@@ -58,6 +62,45 @@ ALTER TABLE page_revisions ADD COLUMN props JSONB NOT NULL DEFAULT '{}';
     hot keys)
 - **EAV (`page_properties(page_id,key,value)`) is rejected** — multi-predicate
   filters become self-joins; that is the hacky/slow path JSONB avoids.
+
+## Querying props — the query block
+
+A ` ```query ` block (a Dataview analog) renders a live table of pages filtered
+by their props. It is the read-facing payoff of the GIN index: `props @> where`
+containment is indexed, so a dashboard page listing "every `type: incident`"
+stays cheap.
+
+**Spec (v1, deliberately small — equality/containment only, no operators):**
+
+```yaml
+where: { type: incident, status: active }   # props @> containment
+space: here            # 'here' (this space) | <space id> | omit = all readable
+columns: [title, status, updated]           # title/space/created/updated or a prop key
+sort: -updated         # (-)updated | (-)created | (-)title  ('-' = descending)
+limit: 25
+```
+
+**Backend — `POST /api/pages/query`** (`api/pages_query.go` `QueryPages` /
+`queryPagesCore`). Session-gated. The frontend parses the block's YAML and POSTs
+the structured spec; the handler returns the matching page rows.
+
+- **Access (docs/access-model.md invariant 4 — one resolution path):** every row
+  is JOINed to `(SELECT DISTINCT space_id FROM space_access WHERE user_id = $1)`,
+  so a query can **never** surface a page from a space the caller can't read. An
+  API-key-scoped caller is additionally confined to its one space.
+- **Injection-safe by construction:** the `where` bag binds as `$N::jsonb`; the
+  sort key is looked up in a fixed `key → ORDER BY fragment` map (unknown → 400,
+  never interpolated); the limit is a bound, clamped int.
+- **`space: here`** resolves to the block's own page space server-side (from the
+  `page_id` the frontend sends), still AND-gated by `space_access`.
+- `where` matches **props only** (containment) — not columns like `title`, which
+  live outside the bag. Empty `where` lists every readable page.
+
+**Frontend** — the read-view widget (`QueryBlockView` in `MarkdownView.tsx`)
+renders the result as an owned-token table with explicit loading / empty / error /
+signed-out states; the editor shows a static preview of the spec
+(`milkdown-query.ts`, spec parser in `lib/blocks/query-spec.ts`). Manifest entry
+`query` (agent-authorable). An MCP `query_pages` twin is a clean future add.
 
 ## Reserved-key policy (the actual spec)
 
