@@ -1,15 +1,20 @@
-# Page properties / frontmatter (design notes — not yet built)
+# Page properties / frontmatter
 
-Status: **design only.** Today frontmatter is *destroyed* on import — `mdimport.
-StripFrontmatter` pulls a single `title:` out of a leading YAML block via regex
-and silently drops everything else (the comment in `frontmatter.go` says so).
-There is no place to store page metadata, no round-trip out, and the only
-markdown egress is MCP `get_page`/`fetch` (no `.md` export endpoint exists).
+Status: **shipped (Phases 1–2).** Frontmatter is a first-class **page-properties**
+system: `pages.props JSONB` + GIN (migration `0005_page_props.sql`), read/written
+end-to-end (`pages.go` `createPageCore`/`applyUpdateTx`/`getPageCore`), imported
+from frontmatter, and carried across MCP `get_page`/`create_page`/`update_page`.
+Import no longer *destroys* frontmatter (the old `StripFrontmatter` regex behaviour
+below is history) — it parses it into `props` via `pagemd.Decode`, dropping only
+the reserved keys. Phase 3 (human-facing props panel, graph coloring, FTS folding)
+is the remaining deferred work.
 
-This doc specifies turning frontmatter into a first-class **page-properties**
-system: a single source of truth for page metadata that import/sync populates
-automatically and that agents, search, and the graph can query — without
-violating the `pages.body` "canonical markdown forever" rule.
+The rest of this doc is the authoritative design: it holds for the shipped system
+except where a subsection is marked deferred.
+
+This doc specifies frontmatter as a single source of truth for page metadata that
+import/sync populates automatically and that agents, search, and the graph can
+query — without violating the `pages.body` "canonical markdown forever" rule.
 
 ## Goals
 
@@ -166,11 +171,39 @@ differently. Precedence when a request carries both:
 
 ### Update semantics — Replace (PUT)
 
-`update_page(props=…)` **replaces the whole bag**, mirroring how `title`/`body`
-already overwrite in `updatePageCore`. No null-sentinel/merge convention. The
-update guard (today "at least one of title, body") is relaxed to allow a
-**props-only** update. A targeted `set_prop`/patch verb is a clean future add, not
-a v1 semantics change.
+`update_page(props=…)` and `PATCH /api/pages/{id}` with `{props:…}` **replace the
+whole bag**, mirroring how `title`/`body` already overwrite in `updatePageCore`.
+No null-sentinel/merge convention. The update guard (today "at least one of title,
+body") is relaxed to allow a **props-only** update.
+
+### Single-key merge — `PATCH /api/pages/{id}/props`
+
+The targeted `set_prop` verb foreshadowed above is **shipped**
+(`api/page_props.go` `SetPageProp` / `setPagePropCore`). It writes exactly one key
+with a **server-side shallow-merge**, not Replace:
+
+```
+PATCH /api/pages/{id}/props     body: { "key": "result", "value": "pass" }
+UPDATE pages SET props = props || $1::jsonb, updated_at = tela_now() WHERE id = $2
+```
+
+- **Race-safe.** The merge is atomic per-statement, so one field flip can't clobber
+  a concurrent write to a *different* key (the failure mode of "GET the bag, merge
+  one key client-side, PATCH it all back" against the Replace endpoint). Same-key
+  writes are last-write-wins — fine for a UAT toggle; no optimistic-concurrency
+  token in v1.
+- **Editor-gated, in-tx.** Same access path as every page mutation:
+  `selectPageByIDTx` → `requireEditTx` (viewer/non-member → `403`).
+- **Reserved keys rejected** (`400`), not silently dropped — a targeted verb is
+  explicit about what it won't write (`pagemd.FilterReserved`).
+- **Churn-free**, like the poll vote: no revision snapshot, no notification, no
+  reindex. Unlike the poll vote it does **not** reset the Yjs room — props ride the
+  comments lane (REST-only, outside the collaborative doc), the body is unchanged,
+  and readers refresh via query invalidation, so there is no overlay to drop.
+
+This is the write-back path for the **bound-field block** (` ```field `): a block
+that renders an interactive widget bound to `props[key]`, persisting on
+interaction (see `blocks-manifest.json` `field`, `FieldWidget.tsx`).
 
 ## Versioning — capture on snapshot
 

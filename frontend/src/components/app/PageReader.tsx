@@ -36,6 +36,7 @@ export function PageReader({ spaceId, pageId }: PageReaderProps) {
       summary={pageSummary(page.data.props)}
       body={page.data.body}
       updatedAt={page.data.updated_at}
+      pageProps={page.data.props}
     />
   )
 }
@@ -47,13 +48,14 @@ interface ReadModeViewProps {
   summary: string | null
   body: string
   updatedAt: string
+  pageProps?: Record<string, unknown>
 }
 
 // Authenticated reading mode. Rendered as a full-bleed overlay over the page at
 // `?view=read`. Wikilinks keep the reader open by hopping to the target page
 // with `?view=read`; Esc / the close button drop the param and fall back to the
 // page's normal view.
-function ReadModeView({ spaceId, pageId, title, summary, body, updatedAt }: ReadModeViewProps) {
+function ReadModeView({ spaceId, pageId, title, summary, body, updatedAt, pageProps }: ReadModeViewProps) {
   const navigate = useNavigate()
   // Close target: the same canonical page URL minus `?view=read`. Empty `search`
   // clears the param (the route's validateSearch drops everything it doesn't
@@ -112,6 +114,7 @@ function ReadModeView({ spaceId, pageId, title, summary, body, updatedAt }: Read
       summary={summary}
       body={body}
       updatedAt={updatedAt}
+      pageProps={pageProps}
       wikilinkMode="edit"
       aliveWikilinkIds={aliveIds}
       wikilinkResolveIndex={wikilinkResolveIndex}

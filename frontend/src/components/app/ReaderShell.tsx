@@ -175,6 +175,10 @@ export interface ReaderShellProps {
   articleFooter?: ReactNode
   /** Attachments strip rendered just below the title (page files). */
   attachmentStrip?: ReactNode
+  /** The page's props bag — read-only source for any bound-field block's live
+   * value. The reader surfaces never write props (that's PageView's editable
+   * read view), so fields here render read-only; unset → they show no value. */
+  pageProps?: Record<string, unknown>
 }
 
 // Set on the window once the reader has painted (fonts ready + a short settle so
@@ -212,6 +216,7 @@ export function ReaderShell({
   publishedAt,
   articleFooter,
   attachmentStrip,
+  pageProps,
 }: ReaderShellProps) {
   // Preferences — text size + typeface, persisted; theme is global.
   const [size, setSize] = useState<ReaderSize>(() =>
@@ -625,6 +630,9 @@ export function ReaderShell({
                   pageId={pageId}
                   // App read view lets members vote; share/public are read-only.
                   canVote={wikilinkMode === 'edit'}
+                  // Bound fields render read-only here (editing lives in PageView);
+                  // pass the props bag so recorded values still show.
+                  pageProps={pageProps}
                   resolveWikilink={resolveWikilink}
                   // Reader wikilink hrefs use the `tela://page/N` scheme the
                   // shell's click + hover-preview already intercept (see below);

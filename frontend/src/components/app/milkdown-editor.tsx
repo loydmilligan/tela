@@ -79,6 +79,7 @@ import {
 } from './milkdown-highlight'
 import { mermaidPlugin } from './milkdown-mermaid'
 import { chartPlugin } from './milkdown-chart'
+import { fieldPlugin } from './milkdown-field'
 import { typographyInputRules } from './milkdown-typography'
 import { listIndentKeymap } from './milkdown-list-indent'
 import { directiveRemarkPlugin, unknownDirectiveFallbackPlugin } from './milkdown-directives'
@@ -763,6 +764,10 @@ function MilkdownEditorInner({
       // block (lazy lib + YAML). Themed from --chart-* tokens. See
       // milkdown-chart.ts.
       .use(chartPlugin)
+      // Bound field: a static preview below each ```field code block; the
+      // interactive write-back widget lives in the read view. See
+      // milkdown-field.ts.
+      .use(fieldPlugin)
       // Container directives (:::name) + the tabs block built on them.
       .use(directiveRemarkPlugin)
       // Unwrap any directive without a dedicated schema (below) to its nested

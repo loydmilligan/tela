@@ -58,6 +58,7 @@ const PLUGIN_BLOCKS = {
   'milkdown-collapsibles': ['collapsible'],
   'milkdown-embed': ['embed'],
   'milkdown-excalidraw': ['excalidraw'],
+  'milkdown-field': ['field'],
   'milkdown-file': ['file'],
   'milkdown-highlight': ['highlight'],
   'milkdown-kanban': ['kanban'],
@@ -90,7 +91,7 @@ const VIEW_RENDERED = new Set([
   'wikilink', 'tabs',
   'pull-quote', 'embed', 'file', 'timeline',
   'kanban', 'stat-grid', 'calendar', 'collapsible',
-  'poll',
+  'poll', 'field',
 ])
 // Rendered as children (content preserved, chrome not yet ported). Tracked so
 // the gap is explicit and reviewable, never silent. Currently empty — the full

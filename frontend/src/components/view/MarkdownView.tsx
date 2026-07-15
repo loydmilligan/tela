@@ -40,6 +40,8 @@ import {
   type PollData,
   type PollOption,
 } from '../app/PollWidget'
+import { FieldWidget } from '../app/FieldWidget'
+import { parseFieldSpec, isFieldError } from '../../lib/blocks/field-widget'
 
 // Context for renderers that need page-scoped data (excalidraw PNG URL, wikilink
 // resolution; comments later). Provided by MarkdownView.
@@ -59,6 +61,13 @@ interface ViewContextValue {
   // true; public/share = false, read-only results). The backend is still the
   // authority — this only decides whether the vote affordance is shown.
   canVote?: boolean
+  // The page's props bag — the live values bound-field blocks read. Passed by
+  // the host so a field reads props[key] with no extra fetch, and re-reads when
+  // the host refetches the page after a write. Omitted on preview surfaces.
+  pageProps?: Record<string, unknown>
+  // Whether the current surface allows writing a bound field (app read view for
+  // an editor). Mirrors canVote; the backend is still the authority.
+  canEditProps?: boolean
 }
 const ViewContext = createContext<ViewContextValue>({})
 
@@ -679,6 +688,47 @@ function PollBlockView({ node }: { node: MdNode }) {
   return <PollWidget poll={poll} onVote={(choice) => vote.mutate(choice)} />
 }
 
+// FieldBlockView — the read-view surface of a ` ```field ` block. The block is a
+// pointer: it names a widget type + a target props key; the live value is read
+// from the already-loaded page's props (via ViewContext, no extra fetch) and
+// written back through PATCH /api/pages/{id}/props (a server-side shallow-merge,
+// so one flip can't clobber a concurrent prop edit). On success we invalidate
+// the page detail so the host refetches and this re-reads the new value —
+// exactly the poll's write→invalidate→re-read loop, but over props not body.
+function FieldBlockView({ code }: { code: string }) {
+  const { pageId, pageProps, canEditProps } = useContext(ViewContext)
+  const qc = useQueryClient()
+  const spec = useMemo(() => parseFieldSpec(code), [code])
+
+  const setProp = useMutation({
+    mutationFn: (value: unknown) =>
+      api(`/api/pages/${pageId}/props`, {
+        method: 'PATCH',
+        body: JSON.stringify({ key: isFieldError(spec) ? '' : spec.prop, value }),
+      }),
+    onSuccess: () => {
+      if (pageId != null) {
+        void qc.invalidateQueries({ queryKey: pageKeys.detail(pageId) })
+      }
+    },
+  })
+
+  if (isFieldError(spec)) {
+    return <div className="tela-field-error">{spec.error}</div>
+  }
+
+  const canEdit = !!canEditProps && pageId != null
+  return (
+    <FieldWidget
+      spec={spec}
+      value={pageProps?.[spec.prop]}
+      canEdit={canEdit}
+      pending={setProp.isPending}
+      onCommit={(value) => setProp.mutate(value)}
+    />
+  )
+}
+
 function renderChildren(node: MdNode): ReactNode[] {
   return (node.children ?? []).map((child, i) => renderNode(child, i))
 }
@@ -759,6 +809,9 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       // source) via the shared editor render cores.
       if (lang === 'mermaid') return <DiagramWidget key={key} kind="mermaid" code={value} />
       if (lang === 'chart') return <DiagramWidget key={key} kind="chart" code={value} />
+      // Bound field: an interactive widget wired to the page's props (write-back
+      // via PATCH /api/pages/{id}/props). The source isn't shown in the view.
+      if (lang === 'field') return <FieldBlockView key={key} code={value} />
       return <CodeBlock key={key} lang={lang} value={value} />
     }
     case 'excalidraw':
@@ -925,6 +978,8 @@ export function MarkdownView({
   onCommentClick,
   onReady,
   canVote,
+  pageProps,
+  canEditProps,
   className,
 }: {
   body: string
@@ -945,12 +1000,32 @@ export function MarkdownView({
   onReady?: (el: HTMLElement) => void
   /** Show the poll vote affordance (app read view). Omit on public/share. */
   canVote?: boolean
+  /** The page's props bag — live values that bound-field blocks read. */
+  pageProps?: Record<string, unknown>
+  /** Allow writing a bound field (app read view for an editor). Omit elsewhere. */
+  canEditProps?: boolean
   className?: string
 }) {
   const tree = useMemo(() => parsePageMarkdown(body), [body])
   const ctx = useMemo<ViewContextValue>(
-    () => ({ pageId, resolveWikilink, pageHref, wikilinkUnresolved, canVote }),
-    [pageId, resolveWikilink, pageHref, wikilinkUnresolved, canVote],
+    () => ({
+      pageId,
+      resolveWikilink,
+      pageHref,
+      wikilinkUnresolved,
+      canVote,
+      pageProps,
+      canEditProps,
+    }),
+    [
+      pageId,
+      resolveWikilink,
+      pageHref,
+      wikilinkUnresolved,
+      canVote,
+      pageProps,
+      canEditProps,
+    ],
   )
   const contentRef = useRef<HTMLDivElement>(null)
   useCommentHighlights(contentRef, commentThreads, onCommentClick)

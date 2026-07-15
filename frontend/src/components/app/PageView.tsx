@@ -620,6 +620,10 @@ function PageViewer({
             pageId={page.id}
             // Editors can cast poll votes here; viewers get read-only results.
             canVote={canEdit}
+            // Bound-field blocks read live values from props and write them back
+            // (editors only); the invalidated page-detail refetch re-seeds these.
+            pageProps={page.props}
+            canEditProps={canEdit}
             resolveWikilink={resolveWikilink}
             pageHref={pageHref}
             commentThreads={commentsEnabled ? commentThreads : null}

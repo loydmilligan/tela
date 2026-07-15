@@ -299,6 +299,32 @@
       "note": "A ```chart fenced block with a YAML spec. `type`: bar | grouped-bar | stacked-bar | line | area | scatter | pie | donut. xy/category charts use `x` (categories) + `series: [{name, data}]`; pie/donut use `data: [{label, value}]`. Renders interactively (hover tooltips, clickable legend) and follows the page theme."
     },
     {
+      "id": "field",
+      "label": "Field",
+      "hint": "Interactive value bound to a page prop",
+      "category": "Data",
+      "slash": true,
+      "agent": true,
+      "keywords": [
+        "field",
+        "bind",
+        "prop",
+        "property",
+        "status",
+        "toggle",
+        "select",
+        "input",
+        "checkbox",
+        "pass",
+        "fail",
+        "uat",
+        "form"
+      ],
+      "syntax": "```field\nprop: result\ntype: select\noptions: [pass, fail, pending]\nlabel: Result\n```",
+      "when": "Add a widget readers can set — a status/result dropdown, a toggle, a text field, or a one-click button — whose value persists on the page. Ideal for test/UAT notes with pass/fail/pending results.",
+      "note": "A ```field fenced block with a small YAML spec. `prop` names the page property the value is written to; `type`: text | toggle | select | button. `select` needs `options: [...]`; `button` needs a fixed `value:` to set on click. The value lives in the page's props (not the block body), read from and written back to props[prop] — interaction happens in the read view (editors only). Don't hand-write a starting value; set it by interacting, or seed props[prop] via frontmatter."
+    },
+    {
       "id": "embed",
       "label": "Embed",
       "hint": "YouTube, Vimeo, Loom, or a link",
