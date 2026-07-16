@@ -188,12 +188,12 @@ func TestNotificationEmail_CommentReply(t *testing.T) {
 
 	pre, ex, suf := "a", "b", "c"
 	root, ae := srv.createCommentCore(ctx, authUser(alice, "alice", false), nil, page.ID,
-		commentCreateRequest{Body: "root", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf})
+		commentCreateRequest{Body: "root", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf}, commentCreateOpts{})
 	if ae != nil {
 		t.Fatalf("root comment: %v", ae)
 	}
 	if _, ae := srv.createCommentCore(ctx, authUser(bob, "bob", false), nil, page.ID,
-		commentCreateRequest{Body: "Good idea, shipping it", ParentID: &root.ID}); ae != nil {
+		commentCreateRequest{Body: "Good idea, shipping it", ParentID: &root.ID}, commentCreateOpts{}); ae != nil {
 		t.Fatalf("reply: %v", ae)
 	}
 

@@ -156,7 +156,7 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	k, _ := auth.APIKeyFromContext(r.Context())
-	c, ae := s.createCommentCore(r.Context(), u, k, pageID, req)
+	c, ae := s.createCommentCore(r.Context(), u, k, pageID, req, commentCreateOpts{})
 	if ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
@@ -164,11 +164,36 @@ func (s *Server) CreateComment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"comment": c})
 }
 
+// commentCreateOpts carries server-side decisions about a comment that a CALLER
+// must never be able to make.
+//
+// It is deliberately NOT a field on commentCreateRequest: that struct is decoded
+// straight from a request body, so a `silent` field there would hand every REST
+// and MCP caller a way to post a comment that bypasses the notification fan-out
+// — a notification-suppression vector. Silence is a property of who is writing
+// (the server), not of what was sent, so it rides a separate param that only
+// in-process call sites can set.
+type commentCreateOpts struct {
+	// System marks a server-authored comment — today, the auto-changelog entry
+	// written on save (autoChangeComment). It does two things:
+	//
+	//   - Suppresses ALL notification fan-out. createCommentCore otherwise calls
+	//     notifyPageComment, which reaches every follower over in-app + email +
+	//     ntfy PHONE PUSH. An auto-comment on every save would push-spam every
+	//     follower on every edit; a changelog entry is a record, not an event to
+	//     interrupt someone with.
+	//   - Exempts the root-anchor requirement. An anchor pins a comment to a
+	//     passage; a changelog entry is about the page as a whole, so there is no
+	//     passage to pin it to (the columns are already nullable — replies carry
+	//     no anchor either).
+	System bool
+}
+
 // createCommentCore is the transport-agnostic core behind POST
 // /api/pages/{id}/comments and the MCP add_comment tool: inserts a root (all
 // three anchor_* required) or a reply (parent_id of a root on the same page).
 // Editor+ on the page's space required. The MCP tool only creates roots.
-func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, req commentCreateRequest) (models.Comment, *apiErr) {
+func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, req commentCreateRequest, opts commentCreateOpts) (models.Comment, *apiErr) {
 	body := strings.TrimSpace(req.Body)
 	if body == "" {
 		return models.Comment{}, &apiErr{http.StatusBadRequest, "bad_request", "body is required"}
@@ -236,12 +261,17 @@ func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.AP
 			return models.Comment{}, &apiErr{http.StatusBadRequest, "comment_reply_to_reply", "replies must target a root comment"}
 		}
 	} else {
-		if !anchorTriplePopulated(req.AnchorPrefix, req.AnchorExact, req.AnchorSuffix) {
+		populated := anchorTriplePopulated(req.AnchorPrefix, req.AnchorExact, req.AnchorSuffix)
+		if !opts.System && !populated {
 			return models.Comment{}, &apiErr{http.StatusBadRequest, "comment_no_anchor", "root comments require anchor_prefix, anchor_exact, anchor_suffix"}
 		}
-		anchorPrefix = *req.AnchorPrefix
-		anchorExact = *req.AnchorExact
-		anchorSuffix = *req.AnchorSuffix
+		// A system comment may carry no anchor at all — leave the columns NULL
+		// rather than dereferencing nil pointers.
+		if populated {
+			anchorPrefix = *req.AnchorPrefix
+			anchorExact = *req.AnchorExact
+			anchorSuffix = *req.AnchorSuffix
+		}
 	}
 
 	parentArg := any(nil)
@@ -269,6 +299,14 @@ func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.AP
 		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
 	// Commenting is a strong "I care about this page" signal — auto-follow it so
+	// A server-authored record notifies nobody and subscribes nobody: it is not
+	// an act of authorship by the user, it is a side effect of their save (which
+	// already ran its own autoFollow + page_updated notification). Returning
+	// early here is the whole reason the auto-changelog can exist without
+	// push-spamming every follower on every edit.
+	if opts.System {
+		return c, nil
+	}
 	// the commenter hears about later changes (Confluence-style autowatch).
 	s.autoFollow(ctx, u.ID, pageID)
 	// Notify the root comment's author that someone replied (best-effort).

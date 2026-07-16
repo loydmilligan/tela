@@ -874,6 +874,10 @@ func (s *Server) updatePageCore(ctx context.Context, u *auth.User, k *auth.APIKe
 	if p.Body != existing.Body || p.Title != existing.Title {
 		s.notifyPageMentions(ctx, u, id, existing.SpaceID, p.Title, p.Body)
 		s.notifyPageUpdate(ctx, u, id, existing.SpaceID, p.Title, existing.Body, p.Body)
+		// Record the edit in the page's own changelog. Silent + debounced (see
+		// comments_changelog.go) — same body/title-changed gate as the
+		// notifications above, and likewise interactive-path only.
+		s.autoChangeComment(ctx, u, k, id, agentWrite)
 	}
 	return p, nil
 }

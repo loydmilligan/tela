@@ -1239,7 +1239,7 @@ func (s *Server) mcpAddComment(ctx context.Context, req *mcp.CallToolRequest, in
 			AnchorExact:  &in.Anchor.Exact,
 			AnchorSuffix: &in.Anchor.Suffix,
 			Props:        in.Props,
-		})
+		}, commentCreateOpts{})
 		if ae != nil {
 			return mcpErr(ae), addCommentOut{}, nil
 		}

@@ -55,14 +55,14 @@ func TestNotifications_CommentReply(t *testing.T) {
 	// alice posts a root comment (needs the anchor triple).
 	pre, ex, suf := "a", "b", "c"
 	root, ae := srv.createCommentCore(ctx, authUser(alice, "alice", false), nil, page.ID,
-		commentCreateRequest{Body: "root", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf})
+		commentCreateRequest{Body: "root", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf}, commentCreateOpts{})
 	if ae != nil {
 		t.Fatalf("root comment: %v", ae)
 	}
 
 	// bob replies → alice (root author) is notified.
 	if _, ae := srv.createCommentCore(ctx, authUser(bob, "bob", false), nil, page.ID,
-		commentCreateRequest{Body: "reply", ParentID: &root.ID}); ae != nil {
+		commentCreateRequest{Body: "reply", ParentID: &root.ID}, commentCreateOpts{}); ae != nil {
 		t.Fatalf("reply: %v", ae)
 	}
 	if n := notifCountByType(t, d, alice, notifCommentReply); n != 1 {
@@ -71,7 +71,7 @@ func TestNotifications_CommentReply(t *testing.T) {
 
 	// alice replying to her own comment must not notify herself.
 	if _, ae := srv.createCommentCore(ctx, authUser(alice, "alice", false), nil, page.ID,
-		commentCreateRequest{Body: "self", ParentID: &root.ID}); ae != nil {
+		commentCreateRequest{Body: "self", ParentID: &root.ID}, commentCreateOpts{}); ae != nil {
 		t.Fatalf("self reply: %v", ae)
 	}
 	if n := notifCountByType(t, d, alice, notifCommentReply); n != 1 {
@@ -102,7 +102,7 @@ func TestNotifications_PageComment(t *testing.T) {
 	pre, ex, suf := "a", "b", "c"
 	// bob leaves a root comment → alice (follower) is notified; bob (author) is not.
 	root, ae := srv.createCommentCore(ctx, authUser(bob, "bob", false), nil, page.ID,
-		commentCreateRequest{Body: "nice note", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf})
+		commentCreateRequest{Body: "nice note", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf}, commentCreateOpts{})
 	if ae != nil {
 		t.Fatalf("bob root comment: %v", ae)
 	}
@@ -116,7 +116,7 @@ func TestNotifications_PageComment(t *testing.T) {
 	// bob replies to his own comment → alice, still a follower and not the parent
 	// author, gets another page_comment (count 2). No comment_reply (self-reply).
 	if _, ae := srv.createCommentCore(ctx, authUser(bob, "bob", false), nil, page.ID,
-		commentCreateRequest{Body: "one more thing", ParentID: &root.ID}); ae != nil {
+		commentCreateRequest{Body: "one more thing", ParentID: &root.ID}, commentCreateOpts{}); ae != nil {
 		t.Fatalf("bob reply: %v", ae)
 	}
 	if n := notifCountByType(t, d, alice, notifPageComment); n != 2 {
@@ -127,7 +127,7 @@ func TestNotifications_PageComment(t *testing.T) {
 	// bob replies to it. alice gets comment_reply, but NOT a duplicate page_comment
 	// for that reply (she's the parent author → alsoExcluded).
 	aRoot, ae := srv.createCommentCore(ctx, authUser(alice, "alice", false), nil, page.ID,
-		commentCreateRequest{Body: "question?", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf})
+		commentCreateRequest{Body: "question?", AnchorPrefix: &pre, AnchorExact: &ex, AnchorSuffix: &suf}, commentCreateOpts{})
 	if ae != nil {
 		t.Fatalf("alice root comment: %v", ae)
 	}
@@ -135,7 +135,7 @@ func TestNotifications_PageComment(t *testing.T) {
 		t.Fatalf("alice page_comment after own root = %d, want 2 (self excluded)", n)
 	}
 	if _, ae := srv.createCommentCore(ctx, authUser(bob, "bob", false), nil, page.ID,
-		commentCreateRequest{Body: "answer", ParentID: &aRoot.ID}); ae != nil {
+		commentCreateRequest{Body: "answer", ParentID: &aRoot.ID}, commentCreateOpts{}); ae != nil {
 		t.Fatalf("bob reply to alice: %v", ae)
 	}
 	if n := notifCountByType(t, d, alice, notifCommentReply); n != 1 {
