@@ -1,5 +1,6 @@
 .playwright-mcp/
 deploy/.env
+deploy/.env.*
 deploy/deploy.env
 .cila/
 
