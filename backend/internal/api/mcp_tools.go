@@ -134,6 +134,13 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	// compatibility pair (read-only, fixed names/shapes). `search` already returns
 	// id/title/text/url per result; `fetch` returns a page's full text by that id.
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "query_pages",
+		Title:       "Query pages by properties",
+		Description: "List pages by exact property values (props containment) — the structured filter behind the `query` block. Use for \"every page where `type: incident`\"; for keyword use `search`, for meaning use `research`. Results are always limited to spaces you can read.",
+		Annotations: readOnly,
+	}, s.mcpQueryPages)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "fetch",
 		Title:       "Fetch document",
 		Description: "Fetch a tela page's full text by id — the fixed-shape ChatGPT Deep Research companion to `search` (the id comes from a search result). Read-only. Prefer get_page for normal use (same body plus richer metadata and trust signals); reach for `fetch` only when the Deep Research search/fetch contract requires it.",
@@ -158,6 +165,16 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Description: "Patch a page's title and/or body (editor+). A body change auto-snapshots a revision. " + authoringToolHint() + deckAuthoringToolHint() + sheetAuthoringToolHint(),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &no, IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
 	}, s.mcpUpdatePage)
+
+	// Idempotent: setting the same key to the same value converges. Non-destructive
+	// precisely because it merges — that claim is what steers agents off the
+	// update_page clobber, so it has to be true (and mcp_props_query_test.go pins it).
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_prop",
+		Title:       "Set page property",
+		Description: "Set ONE page property without disturbing the others (single-key merge). Prefer this over `update_page` when changing a single prop — `update_page` replaces the entire properties bag and will wipe any key you don't pass. Editors only.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &no, IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
+	}, s.mcpSetProp)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "deck_authoring_guide",
