@@ -236,6 +236,11 @@ func (s *Server) buildNtfyMessage(ctx context.Context, in notificationInput, act
 		m.Body = snippet
 		m.Tags = "speech_balloon"
 		m.Click = s.pageLink(ctx, in)
+	case notifPageComment:
+		m.Title = actor + " commented on " + title
+		m.Body = snippet
+		m.Tags = "speech_balloon"
+		m.Click = s.pageLink(ctx, in)
 	case notifSpaceAdded:
 		origin := s.shareOrigin(ctx, in.SubjectID)
 		m.Title = actor + " added you to " + spaceName
