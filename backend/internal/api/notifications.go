@@ -26,6 +26,7 @@ const (
 	notifPageUpdated    = "page_updated"
 	notifSpaceAdded     = "space_added"
 	notifCommentReply   = "comment_reply"
+	notifPageComment    = "page_comment"
 	notifPageCreated    = "page_created"
 	notifUserRegistered = "user_registered"
 )
@@ -378,6 +379,66 @@ func (s *Server) notifyCommentReply(ctx context.Context, replier *auth.User, pag
 		SpaceID:     &spaceID,
 		Data:        map[string]any{"page_title": title, "actor_username": replier.Username, "snippet": cleanSnippet(replyBody)},
 	})
+}
+
+// notifyPageComment tells everyone following a page — directly, or via its
+// space — that a new comment landed on it, so "follow a note" also means "watch
+// its discussion", not just its edits. It fires for every comment (root OR
+// reply). Excluded: the commenter, and — on a reply — the parent-comment author,
+// who already gets the more-specific comment_reply (pass their id as
+// alsoExcludeUserID; pass 0 for a root comment). Only users who still have
+// access are notified. Best-effort; each comment is its own event (no collapse),
+// mirroring a chat mention rather than the edit-collapse of page_updated.
+func (s *Server) notifyPageComment(ctx context.Context, commenter *auth.User, pageID int64, body string, alsoExcludeUserID int64) {
+	var (
+		title   string
+		spaceID int64
+	)
+	if err := s.DB.QueryRowContext(ctx,
+		`SELECT title, space_id FROM pages WHERE id = $1`, pageID).Scan(&title, &spaceID); err != nil {
+		slog.Error("notify page_comment: lookup page", "page_id", pageID, "err", err)
+		return
+	}
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT DISTINCT sub.user_id
+		  FROM subscriptions sub
+		  JOIN space_access sa ON sa.user_id = sub.user_id AND sa.space_id = $2
+		 WHERE sub.user_id <> $3 AND sub.user_id <> $4
+		   AND ( (sub.subject_kind = 'page'  AND sub.subject_id = $1)
+		      OR (sub.subject_kind = 'space' AND sub.subject_id = $2) )`,
+		pageID, spaceID, commenter.ID, alsoExcludeUserID)
+	if err != nil {
+		slog.Error("notify page_comment: resolve followers", "page_id", pageID, "err", err)
+		return
+	}
+	defer rows.Close()
+	var recipients []int64
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			slog.Error("notify page_comment: scan follower", "err", err)
+			return
+		}
+		recipients = append(recipients, uid)
+	}
+	if len(recipients) == 0 {
+		return
+	}
+	commenterID := commenter.ID
+	snippet := cleanSnippet(body)
+	out := make([]notificationInput, 0, len(recipients))
+	for _, uid := range recipients {
+		out = append(out, notificationInput{
+			UserID:      uid,
+			Type:        notifPageComment,
+			ActorID:     &commenterID,
+			SubjectKind: "page",
+			SubjectID:   pageID,
+			SpaceID:     &spaceID,
+			Data:        map[string]any{"page_title": title, "actor_username": commenter.Username, "snippet": snippet},
+		})
+	}
+	s.emitNotifications(ctx, out...)
 }
 
 // notifyUserRegistered tells every active instance admin that someone just

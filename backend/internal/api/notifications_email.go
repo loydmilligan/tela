@@ -178,6 +178,16 @@ func (s *Server) buildNotificationEmail(ctx context.Context, in notificationInpu
 		n.CTALabel = "View reply"
 		n.CTAURL = s.pageLink(ctx, in)
 		n.Footer = "You're receiving this because you commented on this page."
+	case notifPageComment:
+		n.Subject = actor + " commented on " + title
+		n.Eyebrow = "Comment"
+		n.Action = "commented on"
+		n.Target = title
+		n.Context = s.spaceName(ctx, in.SpaceID)
+		n.Snippet = snippet
+		n.CTALabel = "Open page"
+		n.CTAURL = s.pageLink(ctx, in)
+		n.Footer = "You're receiving this because you follow this page."
 	case notifSpaceAdded:
 		origin := s.shareOrigin(ctx, in.SubjectID)
 		n.Subject = actor + " added you to " + spaceName

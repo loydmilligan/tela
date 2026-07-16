@@ -264,9 +264,13 @@ func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.AP
 	// the commenter hears about later changes (Confluence-style autowatch).
 	s.autoFollow(ctx, u.ID, pageID)
 	// Notify the root comment's author that someone replied (best-effort).
+	var pageCommentExclude int64
 	if isReply {
 		s.notifyCommentReply(ctx, u, pageID, parentAuthorID, body)
+		pageCommentExclude = parentAuthorID // they got comment_reply; don't double-notify
 	}
+	// Notify everyone following the page that a comment landed on it (best-effort).
+	s.notifyPageComment(ctx, u, pageID, body, pageCommentExclude)
 	return c, nil
 }
 
