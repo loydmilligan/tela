@@ -30,11 +30,12 @@ const (
 	notifUserRegistered = "user_registered"
 )
 
-// Delivery channels. Only inapp is delivered today; email prefs are stored for
-// when the email channel ships.
+// Delivery channels. in-app is the always-on inbox; email + ntfy are the
+// out-of-app reach, each gated independently via notification_prefs.
 const (
 	channelInApp = "inapp"
 	channelEmail = "email"
+	channelNtfy  = "ntfy"
 )
 
 // userMentionRE matches the canonical on-wire person mention the editor inserts:
@@ -107,10 +108,11 @@ func (s *Server) inAppEnabled(ctx context.Context, userID int64, eventType strin
 }
 
 // emitNotifications fans each input out to every enabled channel, best-effort,
-// after per-user preference gating. The in-app and email channels are gated
-// INDEPENDENTLY (a user who muted in-app but kept email still gets the email,
-// and vice versa). Any error is logged, never surfaced — a notification must
-// never fail the action that triggered it. Call AFTER the triggering tx commits.
+// after per-user preference gating. The in-app, email, and ntfy channels are
+// gated INDEPENDENTLY (a user who muted in-app but kept email/ntfy still gets
+// those, and vice versa). Any error is logged, never surfaced — a notification
+// must never fail the action that triggered it. Call AFTER the triggering tx
+// commits.
 func (s *Server) emitNotifications(ctx context.Context, ins ...notificationInput) {
 	for _, in := range ins {
 		if s.inAppEnabled(ctx, in.UserID, in.Type) {
@@ -118,6 +120,7 @@ func (s *Server) emitNotifications(ctx context.Context, ins ...notificationInput
 		}
 	}
 	s.dispatchEmails(ctx, ins)
+	s.dispatchNtfy(ctx, ins)
 }
 
 // insertInApp writes the single in-app inbox row for one input, honoring its

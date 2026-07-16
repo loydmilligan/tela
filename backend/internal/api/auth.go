@@ -28,6 +28,7 @@ type authUserDTO struct {
 	EmailVerified   bool      `json:"email_verified"`
 	IsInstanceAdmin bool      `json:"is_instance_admin"`
 	Bio             string    `json:"bio"`
+	NtfyTopic       string    `json:"ntfy_topic"`                // ntfy push delivery target ("" = channel off)
 	Trial           *trialDTO `json:"trial,omitempty"`           // active trial in its notify window, else nil
 	FeedbackUnseen  *int      `json:"feedback_unseen,omitempty"` // unread feedback count (instance admins only)
 	MCPConnected    bool      `json:"mcp_connected"`             // has ever made an authenticated MCP request
@@ -207,10 +208,10 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 	// display_name + bio aren't on the session-loaded user struct; fetch them
 	// directly (cheap, single-row) so /api/auth/me can address the user by name
 	// and prefill the profile editor.
-	var displayName, bio string
+	var displayName, bio, ntfyTopic string
 	var mcpSeen sql.NullString
 	_ = s.DB.QueryRowContext(r.Context(),
-		`SELECT display_name, bio, mcp_last_seen_at FROM users WHERE id = $1`, u.ID).Scan(&displayName, &bio, &mcpSeen)
+		`SELECT display_name, bio, ntfy_topic, mcp_last_seen_at FROM users WHERE id = $1`, u.ID).Scan(&displayName, &bio, &ntfyTopic, &mcpSeen)
 
 	dto := authUserDTO{
 		ID:          u.ID,
@@ -222,6 +223,7 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 		EmailVerified:   u.Email != "",
 		IsInstanceAdmin: u.IsInstanceAdmin,
 		Bio:             bio,
+		NtfyTopic:       ntfyTopic,
 		Trial:           s.userTrialStatus(r.Context(), u.ID),
 		MCPConnected:    mcpSeen.Valid,
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
@@ -25,7 +26,16 @@ type updateProfileRequest struct {
 	DisplayName *string `json:"display_name"`
 	// Bio is the author blurb shown on /u/{handle}. Empty string clears it.
 	Bio *string `json:"bio"`
+	// NtfyTopic is the user's ntfy push delivery target. Empty string clears it
+	// (turns the ntfy channel off for this user). See notifications_ntfy.go.
+	NtfyTopic *string `json:"ntfy_topic"`
 }
+
+const maxNtfyTopicLen = 64
+
+// ntfyTopicRE bounds a topic to the safe subset ntfy itself accepts (it forms a
+// URL path segment): letters, digits, '-', '_'.
+var ntfyTopicRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // UpdateMyProfile patches the caller's own profile fields (display name, bio).
 // PATCH /api/users/me. Self-service, no privilege beyond being signed in. Only
@@ -40,7 +50,7 @@ func (s *Server) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "could not parse request body")
 		return
 	}
-	if req.Bio == nil && req.DisplayName == nil {
+	if req.Bio == nil && req.DisplayName == nil && req.NtfyTopic == nil {
 		writeError(w, http.StatusBadRequest, "no_fields", "nothing to update")
 		return
 	}
@@ -71,6 +81,25 @@ func (s *Server) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out["bio"] = bio
+	}
+	if req.NtfyTopic != nil {
+		topic := strings.TrimSpace(*req.NtfyTopic)
+		if topic != "" {
+			if len(topic) > maxNtfyTopicLen {
+				writeError(w, http.StatusBadRequest, "invalid_ntfy_topic", "ntfy topic exceeds 64 characters")
+				return
+			}
+			if !ntfyTopicRE.MatchString(topic) {
+				writeError(w, http.StatusBadRequest, "invalid_ntfy_topic", "ntfy topic may contain only letters, digits, '-' and '_'")
+				return
+			}
+		}
+		if _, err := s.DB.ExecContext(r.Context(),
+			`UPDATE users SET ntfy_topic = $1, updated_at = tela_now() WHERE id = $2`, topic, u.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "update profile failed")
+			return
+		}
+		out["ntfy_topic"] = topic
 	}
 	writeJSON(w, http.StatusOK, out)
 }
