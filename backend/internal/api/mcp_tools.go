@@ -141,6 +141,13 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 	}, s.mcpQueryPages)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "query_comments",
+		Title:       "Query comments by properties",
+		Description: "List COMMENTS by exact property values (props containment) — the structured change/decision log. Use for \"every change-comment where `type: change`\", or pass page_id for one page's changelog. Comments carry their own props (summary/type/status/version), separate from a page's own props: use query_pages for page data, this for timestamped events about a page. Results are always limited to spaces you can read.",
+		Annotations: readOnly,
+	}, s.mcpQueryComments)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "fetch",
 		Title:       "Fetch document",
 		Description: "Fetch a tela page's full text by id — the fixed-shape ChatGPT Deep Research companion to `search` (the id comes from a search result). Read-only. Prefer get_page for normal use (same body plus richer metadata and trust signals); reach for `fetch` only when the Deep Research search/fetch contract requires it.",
@@ -1209,6 +1216,7 @@ type addCommentIn struct {
 	PageID         int64            `json:"page_id" jsonschema:"page to comment on"`
 	Anchor         addCommentAnchor `json:"anchor" jsonschema:"text-quote anchor locating the comment in the body"`
 	Body           string           `json:"body" jsonschema:"comment text (1-10000 chars)"`
+	Props          map[string]any   `json:"props,omitempty" jsonschema:"optional structured metadata for a change-comment, queryable via query_comments; conventional keys: summary (short description of the change), type (change|decision|fix|note|deprecation), status (open|done|superseded), version, scope"`
 	IdempotencyKey string           `json:"idempotency_key,omitempty" jsonschema:"optional client-generated key; a retry with the same key returns the original result instead of posting a duplicate comment (safe retries after a dropped connection)"`
 }
 
@@ -1230,6 +1238,7 @@ func (s *Server) mcpAddComment(ctx context.Context, req *mcp.CallToolRequest, in
 			AnchorPrefix: &in.Anchor.Prefix,
 			AnchorExact:  &in.Anchor.Exact,
 			AnchorSuffix: &in.Anchor.Suffix,
+			Props:        in.Props,
 		})
 		if ae != nil {
 			return mcpErr(ae), addCommentOut{}, nil

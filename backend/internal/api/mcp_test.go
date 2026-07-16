@@ -115,7 +115,7 @@ func TestMCP_SpikeListSpaces(t *testing.T) {
 	}
 	for _, want := range []string{
 		"list_spaces", "get_space", "list_pages", "get_page", "list_backlinks",
-		"search", "research", "read_chunk", "fetch", "query_pages",
+		"search", "research", "read_chunk", "fetch", "query_pages", "query_comments",
 		"create_page", "update_page", "set_prop", "delete_page", "move_page", "add_comment",
 		"create_space", "update_space", "delete_space", "submit_feedback",
 		"list_attachments", "upload_attachment", "delete_attachment",

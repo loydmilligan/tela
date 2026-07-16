@@ -170,6 +170,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// Props query block backend (Dataview analog). Literal segment, so it wins
 	// over GET /api/pages/{id}; results are re-gated through space_access.
 	mux.HandleFunc("POST /api/pages/query", srv.QueryPages)
+	mux.HandleFunc("POST /api/comments/query", srv.QueryComments)
 	mux.HandleFunc("GET /api/pages/{id}", srv.GetPage)
 	mux.HandleFunc("POST /api/pages/{id}/view", srv.RecordPageView)
 	mux.HandleFunc("PATCH /api/pages/{id}", srv.UpdatePage)

@@ -81,3 +81,40 @@ func (s *Server) mcpQueryPages(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	return nil, queryPagesOut{Pages: rows}, nil
 }
+
+type queryCommentsIn struct {
+	Where map[string]any `json:"where,omitempty" jsonschema:"exact property containment filter over comment props, e.g. {\"type\":\"change\"}; omit or {} matches every readable comment"`
+	// page_id is how the per-page changelog is built: every change-comment on
+	// one page, newest first.
+	PageID          *int64 `json:"page_id,omitempty" jsonschema:"optional page id — return only comments on this page (e.g. one page's changelog)"`
+	SpaceID         *int64 `json:"space_id,omitempty" jsonschema:"optional space id to restrict results to; omit to search every space you can read"`
+	IncludeResolved bool   `json:"include_resolved,omitempty" jsonschema:"include resolved comments (default false — resolved are hidden)"`
+	Sort            string `json:"sort,omitempty" jsonschema:"sort key: created | -created | updated | -updated (default -created, newest first)"`
+	Limit           int    `json:"limit,omitempty" jsonschema:"max rows (default 50, max 200)"`
+}
+
+type queryCommentsOut struct {
+	Comments []queryCommentRow `json:"comments"`
+}
+
+func (s *Server) mcpQueryComments(ctx context.Context, req *mcp.CallToolRequest, in queryCommentsIn) (*mcp.CallToolResult, queryCommentsOut, error) {
+	u, k := mcpIdentity(req)
+	if u == nil {
+		return mcpUnauthErr(), queryCommentsOut{}, nil
+	}
+	cr := commentsQueryRequest{
+		Where:           in.Where,
+		PageID:          in.PageID,
+		IncludeResolved: in.IncludeResolved,
+		Sort:            in.Sort,
+		Limit:           in.Limit,
+	}
+	if in.SpaceID != nil {
+		cr.Space = *in.SpaceID
+	}
+	rows, ae := s.queryCommentsCore(ctx, u, k, cr)
+	if ae != nil {
+		return mcpErr(ae), queryCommentsOut{}, nil
+	}
+	return nil, queryCommentsOut{Comments: rows}, nil
+}

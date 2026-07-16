@@ -27,6 +27,13 @@ type commentCreateRequest struct {
 	AnchorPrefix *string `json:"anchor_prefix"`
 	AnchorExact  *string `json:"anchor_exact"`
 	AnchorSuffix *string `json:"anchor_suffix"`
+	// Props is the structured bag for a change-comment (summary/type/status/
+	// version). Free-form: comments have no column-derived reserved keys the way
+	// pages do (pagemd.FilterReserved guards title/slug/created against the page
+	// bag; a comment's identity columns are never sourced from its props), so
+	// nothing is stripped here. Stored verbatim so `props @> where` containment
+	// stays predictable.
+	Props map[string]any `json:"props"`
 }
 
 // commentPatchRequest is mutually exclusive: exactly one of Body / Resolved
@@ -247,9 +254,10 @@ func (s *Server) createCommentCore(ctx context.Context, u *auth.User, k *auth.AP
 		INSERT INTO comments
 		  (page_id, parent_id, author_id, body,
 		   anchor_prefix, anchor_exact, anchor_suffix,
-		   resolved, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 0, tela_now(), tela_now()) RETURNING id`,
-		pageID, parentArg, u.ID, body, anchorPrefix, anchorExact, anchorSuffix).Scan(&id)
+		   resolved, created_at, updated_at, props)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 0, tela_now(), tela_now(), $8::jsonb) RETURNING id`,
+		pageID, parentArg, u.ID, body, anchorPrefix, anchorExact, anchorSuffix,
+		propsJSON(req.Props)).Scan(&id)
 	if err != nil {
 		return models.Comment{}, &apiErr{http.StatusInternalServerError, "internal", "create comment failed"}
 	}
@@ -516,7 +524,7 @@ const commentSelectColumns = `
 	SELECT c.id, c.page_id, c.parent_id, c.author_id, author.username,
 	       c.body, c.anchor_prefix, c.anchor_exact, c.anchor_suffix,
 	       c.resolved, c.resolved_at, c.resolved_by, resolver.username,
-	       c.created_at, c.updated_at`
+	       c.created_at, c.updated_at, c.props`
 
 func selectCommentByIDTx(ctx context.Context, tx *sql.Tx, id int64) (models.Comment, error) {
 	row := tx.QueryRowContext(ctx, commentSelectColumns+`
@@ -546,14 +554,23 @@ func scanCommentInto(r rowScanner) (models.Comment, error) {
 		resolvedAt   sql.NullString
 		resolvedBy   sql.NullInt64
 		resolverName sql.NullString
+		propsRaw     []byte
 	)
 	if err := r.Scan(
 		&c.ID, &c.PageID, &parentID, &c.AuthorID, &c.AuthorName,
 		&c.Body, &anchorPrefix, &anchorExact, &anchorSuffix,
 		&resolvedInt, &resolvedAt, &resolvedBy, &resolverName,
-		&c.CreatedAt, &c.UpdatedAt,
+		&c.CreatedAt, &c.UpdatedAt, &propsRaw,
 	); err != nil {
 		return c, err
+	}
+	// Never hand back a nil bag: callers (and the MCP output schema) expect an
+	// object, and `{}` is also what containment treats as "matches everything".
+	c.Props = map[string]any{}
+	if len(propsRaw) > 0 {
+		if err := json.Unmarshal(propsRaw, &c.Props); err != nil {
+			return c, err
+		}
 	}
 	if parentID.Valid {
 		v := parentID.Int64

@@ -90,4 +90,12 @@ type Comment struct {
 	ResolvedName *string `json:"resolved_by_username,omitempty"`
 	CreatedAt    string  `json:"created_at"`
 	UpdatedAt    string  `json:"updated_at"`
+	// Props is the comment's free-form structured bag (migration 0069) — the
+	// change-comment convention keys (summary/type/status/version) live here, so
+	// a comment query can rebuild a changelog. Distinct from pages.props: that is
+	// the page's own data, this is metadata about an event on the page.
+	// omitempty matches models.Page.Props: an empty bag is absent on the wire,
+	// which also keeps it out of the MCP output schema's required set (a zero
+	// Out on a tool-error path must still validate).
+	Props map[string]any `json:"props,omitempty"`
 }
