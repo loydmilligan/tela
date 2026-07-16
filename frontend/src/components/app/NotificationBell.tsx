@@ -31,6 +31,8 @@ function describe(n: NotificationItem): string {
       return `${actor} created “${title}”`
     case 'comment_reply':
       return `${actor} replied to your comment in “${title}”`
+    case 'page_comment':
+      return `${actor} commented on “${title}”`
     case 'space_added': {
       const space = typeof n.data.space_name === 'string' ? n.data.space_name : 'a space'
       return `${actor} added you to ${space}`

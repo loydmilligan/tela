@@ -31,6 +31,11 @@ const EVENTS: { type: string; label: string; desc: string; adminOnly?: boolean }
     desc: 'When someone replies to your comment.',
   },
   {
+    type: 'page_comment',
+    label: 'Comments',
+    desc: 'When someone comments on a page you follow.',
+  },
+  {
     type: 'space_added',
     label: 'Added to a space',
     desc: 'When someone gives you access to a space.',
