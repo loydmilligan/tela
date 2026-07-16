@@ -42,6 +42,11 @@ services:
       TELA_SMTP_USERNAME:  ${TELA_SMTP_USERNAME:-}
       TELA_SMTP_PASSWORD:  ${TELA_SMTP_PASSWORD:-}
       TELA_SMTP_FROM:      ${TELA_SMTP_FROM:-}
+
+      # ---- ntfy push channel (PR3 feat/ntfy-channel) — values in deploy/.env ----
+      TELA_NTFY_URL:          ${TELA_NTFY_URL:-}
+      TELA_NTFY_TOKEN:        ${TELA_NTFY_TOKEN:-}
+      TELA_NTFY_TOPIC_PREFIX: ${TELA_NTFY_TOPIC_PREFIX:-}
       # RAG semantic retrieval (internal/rag). Unset → feature is dark
       # (/api/rag/* return 503). The embed host must be reachable from THIS
       # container's network. If it's on a private overlay network resolved by
