@@ -105,7 +105,14 @@ the structured spec; the handler returns the matching page rows.
 renders the result as an owned-token table with explicit loading / empty / error /
 signed-out states; the editor shows a static preview of the spec
 (`milkdown-query.ts`, spec parser in `lib/blocks/query-spec.ts`). Manifest entry
-`query` (agent-authorable). An MCP `query_pages` twin is a clean future add.
+`query` (agent-authorable).
+
+**Agents — `query_pages`** (`api/mcp_props_query.go` `mcpQueryPages`) is the MCP
+twin of this endpoint: same `queryPagesCore`, same `space_access` join, so an
+agent gets the identical rows the block does. It exposes `where` / `space_id` /
+`sort` / `limit`, but **not** the block's `columns` (a render-side concern of the
+table — the tool returns the whole row and the agent picks) and not `space:
+"here"` (there is no page context in a tool call).
 
 ## Reserved-key policy (the actual spec)
 
@@ -248,6 +255,14 @@ This is the write-back path for the **bound-field block** (` ```field `): a bloc
 that renders an interactive widget bound to `props[key]`, persisting on
 interaction (see `blocks-manifest.json` `field`, `FieldWidget.tsx`).
 
+**Agents — `set_prop`** (`api/mcp_props_query.go` `mcpSetProp`) is the MCP twin of
+this endpoint, calling the same `setPagePropCore`. It exists because the only
+other MCP path to a prop is `update_page(props=…)`, which Replaces the bag
+(above) — so an agent flipping one key would wipe every key it didn't resend,
+including the ones the shipped `field` blocks read. Its tool description says so
+explicitly; that steer is the point of the tool. It returns the **full merged
+bag**, so a caller can see its siblings survived in the same round trip.
+
 ## Versioning — capture on snapshot
 
 `page_revisions` (today `title + body` only) gains a `props` column. There is a
@@ -264,7 +279,7 @@ props-only edit does not itself force a new revision. This is the honest v1 scop
 | **Import** (`mdimport/frontmatter.go`, `markdown.go`) | `StripFrontmatter` → full `yaml.v3` parse returning `(body, props)`; title still seeds via existing precedence; persist `props`. |
 | **Emit** (new helper) | `EmitFrontmatter(page)` — emit-only set (`id`/`title`/`slug`/`link`/`created`/`updated`) from columns + bag, canonical order; always emits the system block. |
 | **Model / CRUD** (`models.go`, `pages.go`) | `Page.Props`; create/update accept props (Replace) + absorb body frontmatter (invariant); props-only guard; revision writes capture props. Only `selectPageByID`/`selectPageByIDTx` scan the full model — the other ~13 `FROM pages` reads are narrow and untouched. |
-| **MCP** (`mcp_tools.go`) | `get_page`/`create_page`/`update_page` carry props; `list_pages` gains containment filtering (`props @>`). The agent payoff. Rides the REST cores — no duplicate logic. |
+| **MCP** (`mcp_tools.go`, `mcp_props_query.go`) | `get_page`/`create_page`/`update_page` carry props. The agent payoff shipped as two dedicated twins rather than as flags on `list_pages`: `set_prop` (single-key merge) + `query_pages` (containment `props @>`), each mirroring its REST route. Rides the REST cores — no duplicate logic. |
 | **Egress** | Optional frontmatter-on flag in MCP `get_page`/`fetch`; a real `.md` export does not exist yet (open question). |
 | **Graph / FTS / FE panel** | Deferred (Phase 3); seams left. |
 
