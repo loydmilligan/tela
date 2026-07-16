@@ -37,8 +37,14 @@ type ntfyConfig struct {
 	URL string
 	// Token is an optional access token for protected topics (sent as
 	// Authorization: Bearer). "" = no auth header.
-	Token  string
-	Client *http.Client
+	Token string
+	// TopicPrefix is prepended to every user's stored topic before publishing
+	// (TELA_NTFY_TOPIC_PREFIX). It keeps all pushes inside a token's topic scope
+	// (e.g. an ntfy access grant of rw to `tela*`): set it to `tela-` and a user
+	// who stores `alice` gets published to `tela-alice`. "" = publish topics
+	// verbatim. Idempotent — a topic already carrying the prefix isn't doubled.
+	TopicPrefix string
+	Client      *http.Client
 }
 
 // ntfyConfigFromEnv resolves the channel config from TELA_NTFY_URL /
@@ -46,13 +52,25 @@ type ntfyConfig struct {
 // has a working sender.
 func ntfyConfigFromEnv() ntfyConfig {
 	return ntfyConfig{
-		URL:    strings.TrimRight(strings.TrimSpace(os.Getenv("TELA_NTFY_URL")), "/"),
-		Token:  strings.TrimSpace(os.Getenv("TELA_NTFY_TOKEN")),
-		Client: &http.Client{Timeout: 10 * time.Second},
+		URL:         strings.TrimRight(strings.TrimSpace(os.Getenv("TELA_NTFY_URL")), "/"),
+		Token:       strings.TrimSpace(os.Getenv("TELA_NTFY_TOKEN")),
+		TopicPrefix: strings.TrimSpace(os.Getenv("TELA_NTFY_TOPIC_PREFIX")),
+		Client:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 func (c ntfyConfig) enabled() bool { return c.URL != "" }
+
+// publishTopic is the actual topic a stored user topic is published to: the
+// user's topic with TopicPrefix prepended (once — a topic already carrying the
+// prefix is left as-is, so a habitual `tela-alice` never becomes `tela-tela-alice`).
+// This is what the user must subscribe to in their ntfy app. "" stays "".
+func (c ntfyConfig) publishTopic(userTopic string) string {
+	if userTopic == "" || c.TopicPrefix == "" || strings.HasPrefix(userTopic, c.TopicPrefix) {
+		return userTopic
+	}
+	return c.TopicPrefix + userTopic
+}
 
 // ntfyMsg is one push: a topic + the ntfy headers/body.
 type ntfyMsg struct {
@@ -66,7 +84,7 @@ type ntfyMsg struct {
 // non-2xx status so the caller can log it (best-effort; a notification never
 // fails the triggering action).
 func (c ntfyConfig) send(ctx context.Context, topic string, m ntfyMsg) error {
-	endpoint := c.URL + "/" + url.PathEscape(topic)
+	endpoint := c.URL + "/" + url.PathEscape(c.publishTopic(topic))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(m.Body))
 	if err != nil {
 		return err

@@ -157,9 +157,17 @@ HTTP POSTs fired in a detached goroutine. Wired into `emitNotifications`
 alongside `dispatchEmails`, gated independently.
 
 - **Config** — `TELA_NTFY_URL` (the ntfy server base) + optional `TELA_NTFY_TOKEN`
-  (bearer, for access-protected topics), resolved once into `s.ntfy`
-  (`ntfyConfigFromEnv`). **Unset URL = channel inert** — `dispatchNtfy` no-ops,
-  mirroring the SMTP-unset LogMailer. Both are in `deploy/.env.example`.
+  (bearer, for access-protected topics) + optional `TELA_NTFY_TOPIC_PREFIX`,
+  resolved once into `s.ntfy` (`ntfyConfigFromEnv`). **Unset URL = channel inert**
+  — `dispatchNtfy` no-ops, mirroring the SMTP-unset LogMailer. All are in
+  `deploy/.env.example`.
+- **Topic prefix** — `TELA_NTFY_TOPIC_PREFIX` namespaces every user's topic
+  before publishing (ntfy topics are global on a public server): `ntfyConfig.
+  publishTopic` prepends it once (idempotent — a topic already carrying the prefix
+  isn't doubled), so a user who stores `alice` is published to `{prefix}alice`.
+  That's also the topic they **subscribe** to in the ntfy app. It doubles as the
+  way to stay inside a token's scope — an ntfy access grant of rw to `tela*` needs
+  a `tela-` prefix. Empty = topics published verbatim (backward compatible).
 - **Gate** — `ntfyEnabled` mirrors `emailEnabled` on the **`ntfy`** channel of
   `notification_prefs` (opt-out: no row = enabled).
 - **Recipient** — per-user `users.ntfy_topic` (migration `0068`); **empty = the

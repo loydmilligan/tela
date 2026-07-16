@@ -146,6 +146,32 @@ func TestNotificationNtfy_TokenHeader(t *testing.T) {
 	}
 }
 
+func TestNotificationNtfy_TopicPrefix(t *testing.T) {
+	srv, d, cn := newNtfyServer(t)
+	srv.ntfy.TopicPrefix = "tela-" // keep publishes inside a `tela*`-scoped token
+	ctx := context.Background()
+	alice := seedUser(t, d, "alice", "alicepw123", false)
+	bob := seedUser(t, d, "bob", "bobpw12345", false)
+	setNtfyTopic(t, d, bob, "bob") // bare topic; publish must be prefixed
+	spaceID := seedSpace(t, d, "Eng", "eng", alice)
+	seedMember(t, d, spaceID, bob, "editor")
+
+	srv.notifyPageMentions(ctx, authUser(alice, "alice", false), 5, spaceID, "Plan",
+		"[@bob](tela://user/"+intStr(bob)+")")
+	waitForNtfy(t, cn, 1)
+	if _, ok := cn.forTopic("tela-bob"); !ok {
+		t.Fatalf("push should land on the prefixed topic 'tela-bob'; got %+v", cn.reqs)
+	}
+	if _, ok := cn.forTopic("bob"); ok {
+		t.Fatalf("push must NOT go to the unprefixed topic 'bob'")
+	}
+
+	// A topic the user already prefixed isn't doubled.
+	if got := srv.ntfy.publishTopic("tela-carol"); got != "tela-carol" {
+		t.Fatalf("publishTopic doubled the prefix: %q", got)
+	}
+}
+
 func TestNotificationNtfy_PrefGating(t *testing.T) {
 	srv, d, cn := newNtfyServer(t)
 	ctx := context.Background()
