@@ -381,8 +381,10 @@ deploy: registry-up
 	@echo "[deploy] building backend+frontend+deck ($(TELA_COMMIT))…"
 	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
 	  -t $(TELA_REGISTRY)/tela-backend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-backend:latest backend
-	docker build -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
-	docker build -t $(TELA_REGISTRY)/tela-deck:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-deck:latest deck
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
+	  -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
+	  -t $(TELA_REGISTRY)/tela-deck:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-deck:latest deck
 	$(MAKE) landing-build
 	@$(MAKE) _push PUSH_IMAGES="tela-backend tela-frontend tela-deck" TELA_COMMIT=$(TELA_COMMIT)
 	@echo "[deploy] syncing landing + sites.caddy → $(REMOTE):$(REMOTE_WEB)…"
@@ -412,7 +414,8 @@ deploy-backend: registry-up
 # (/api/version reflects the backend, not the FE bundle). --no-deps for the same
 # reason as deploy-backend (only the frontend image was pushed at this commit).
 deploy-frontend: registry-up
-	docker build -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
+	  -t $(TELA_REGISTRY)/tela-frontend:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-frontend:latest frontend
 	@$(MAKE) _push PUSH_IMAGES="tela-frontend" TELA_COMMIT=$(TELA_COMMIT)
 	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d --no-deps frontend'
 
@@ -422,7 +425,8 @@ deploy-frontend: registry-up
 # other partials (only the deck image was pushed at this commit). The deck cache key
 # folds in the theme version, so a tahta bump re-renders every deck on next request.
 deploy-deck: registry-up
-	docker build -t $(TELA_REGISTRY)/tela-deck:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-deck:latest deck
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) \
+	  -t $(TELA_REGISTRY)/tela-deck:$(TELA_COMMIT) -t $(TELA_REGISTRY)/tela-deck:latest deck
 	@$(MAKE) _push PUSH_IMAGES="tela-deck" TELA_COMMIT=$(TELA_COMMIT)
 	ssh $(REMOTE) 'cd $(REMOTE_DIR) && $(DEPLOY_IMAGE_ENV) $(SPLIT) up -d --no-deps deck'
 

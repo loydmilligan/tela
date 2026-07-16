@@ -35,6 +35,19 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # distroless runtime.) uid 65532 keeps the nonroot user id stable across the
 # image change so /data ownership is unchanged.
 FROM alpine:3.20
+# Re-declare in this stage: ARGs do not cross FROM boundaries.
+ARG VERSION=dev
+ARG COMMIT=unknown
+# Stamp provenance ON THE IMAGE, not just into the binary. /api/version answers
+# "what is running" only for a live, reachable backend; these answer "what is
+# this image" for anything on disk, in a registry, or wedged — a one-liner:
+#   docker inspect <img> --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+# Without them the only way to identify a built image is content-hashing its
+# files against the tree, which is exactly what this exists to prevent.
+LABEL org.opencontainers.image.title="tela-backend" \
+      org.opencontainers.image.source="https://github.com/loydmilligan/tela" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.version="${VERSION}"
 RUN apk add --no-cache git ca-certificates \
  && adduser -D -H -u 65532 nonroot
 COPY --from=builder /out/tela /tela
