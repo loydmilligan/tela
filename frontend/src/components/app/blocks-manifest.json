@@ -205,6 +205,18 @@
       "note": "A ```field fenced block with a small YAML spec. `prop` names the page property the value is written to; `type`: text | toggle | select | button. `select` needs `options: [...]`; `button` needs a fixed `value:` to set on click. The value lives in the page's props (not the block body), read from and written back to props[prop] — interaction happens in the read view (editors only). Don't hand-write a starting value; set it by interacting, or seed props[prop] via frontmatter."
     },
     {
+      "id": "query",
+      "label": "Query",
+      "hint": "Live table of pages by their props",
+      "category": "Data",
+      "slash": true,
+      "agent": true,
+      "keywords": ["query", "dataview", "list", "table", "filter", "pages", "props", "where", "dashboard", "index"],
+      "syntax": "```query\nwhere: { type: doc }\nspace: here\ncolumns: [title, status, updated]\nsort: -updated\nlimit: 25\n```",
+      "when": "List pages by their properties — a live, self-updating table (e.g. every page with type: incident, or all docs in this space). The Dataview analog.",
+      "note": "A ```query fenced block with a YAML spec. `where` is props containment (props @> where) — exact key/value equality only, matches props, not columns like title. `space`: here (this space) | a space id | omit (all spaces you can read). `columns`: any of title, space, created, updated, or a prop key. `sort`: (-)updated | (-)created | (-)title (the `-` prefix is descending). `limit` caps rows. Results are always gated to spaces you can read. The live table renders in the read view."
+    },
+    {
       "id": "embed",
       "label": "Embed",
       "hint": "YouTube, Vimeo, Loom, or a link",

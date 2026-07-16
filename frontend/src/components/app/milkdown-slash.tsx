@@ -24,6 +24,7 @@ import { insertBlock } from '../../lib/milkdown/insert-block'
 import { insertMermaid } from './milkdown-mermaid'
 import { insertChart } from './milkdown-chart'
 import { insertField } from './milkdown-field'
+import { insertQuery } from './milkdown-query'
 import { insertTabs } from './milkdown-tabs'
 import { insertKanban } from './milkdown-kanban'
 import { insertStatGrid } from './milkdown-stat-grid'
@@ -71,6 +72,7 @@ const RUN: Record<string, (ctx: Ctx) => void> = {
   mermaid: insertMermaid,
   chart: insertChart,
   field: insertField,
+  query: insertQuery,
   embed: insertEmbed,
   tabs: insertTabs,
   kanban: insertKanban,

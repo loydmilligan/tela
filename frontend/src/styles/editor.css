@@ -1391,15 +1391,20 @@
     .tela-codeblock[data-language='field'],
   .tela-milkdown
     .ProseMirror[contenteditable='false']
+    .tela-codeblock[data-language='query'],
+  .tela-milkdown
+    .ProseMirror[contenteditable='false']
     .tela-codeblock[data-language='mermaid'] {
     display: none;
   }
 
-  /* Bound-field block (```field). The editor decoration is a static, non-
-     interactive preview below the still-editable source; the interactive
-     write-back widget lives in the read view (FieldWidget). See
-     milkdown-field.ts. */
-  .tela-milkdown .ProseMirror .tela-field-preview {
+  /* Bound-field block (```field) and query block (```query). The editor
+     decoration is a static, non-interactive preview below the still-editable
+     source; the interactive write-back widget (FieldWidget) / live table
+     (QueryBlockView) render in the read view. See milkdown-field.ts /
+     milkdown-query.ts. */
+  .tela-milkdown .ProseMirror .tela-field-preview,
+  .tela-milkdown .ProseMirror .tela-query-preview {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1436,6 +1441,41 @@
     color: var(--danger);
     font-family: var(--font-mono);
     font-size: var(--text-sm);
+  }
+  .tela-query-preview-label {
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .tela-query-preview-summary {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+  }
+  /* Live query table (read view) — horizontally scrollable so a wide result set
+     never forces the page body to scroll sideways. */
+  .tela-query {
+    margin: var(--space-3) 0;
+    overflow-x: auto;
+  }
+  .tela-query-empty,
+  .tela-query-error {
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .tela-query-error {
+    color: var(--danger);
+    font-family: var(--font-mono);
   }
 
   /* Images */
