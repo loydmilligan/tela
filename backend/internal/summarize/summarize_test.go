@@ -201,6 +201,14 @@ func TestSummarizePage_NoneClearsAndRecordsFresh(t *testing.T) {
 	if _, err := d.Exec(`UPDATE pages SET props = '{"summary":"Gulden is a financial institution"}' WHERE id = $1`, page); err != nil {
 		t.Fatalf("seed stale summary: %v", err)
 	}
+	// A STALE summary is one we generated earlier, so it has a ledger row (with a
+	// hash from the old body). Without the row the summary would read as AUTHORED
+	// — implicitly locked, never touched — which is a different scenario.
+	if _, err := d.Exec(
+		`INSERT INTO page_summaries (page_id, src_hash, model, generated_at, last_error, attempts)
+		 VALUES ($1, 'oldhash', 'fake', tela_now(), '', 0)`, page); err != nil {
+		t.Fatalf("seed ledger row: %v", err)
+	}
 
 	fake := &fakeLLM{out: "  NONE.  "} // sanitize-then-isNone must still match
 	svc := newSvc(d, fake)
@@ -459,4 +467,47 @@ func TestWorker_DebouncedGenerationAndRetry(t *testing.T) {
 	}
 	t.Fatalf("worker did not produce a summary for page %d within deadline (summary=%q)",
 		page, pageSummary(t, d, page))
+}
+
+// The headline: a summary a HUMAN wrote (frontmatter / import) is never
+// silently replaced by a generated one. summary_lock is the explicit opt-out,
+// but nobody writing `summary:` in frontmatter knows to also write it — so an
+// authored summary is implicitly locked. Regression guard for the import path
+// that silently overwrote authored summaries.
+func TestSummarizePage_AuthoredSummaryIsImplicitlyLocked(t *testing.T) {
+	d := testdb.New(t)
+	ctx := context.Background()
+	u := newUser(t, d, "alice")
+	sp := newSpace(t, d, "alpha", u)
+	page := newPage(t, d, sp, "Runbook", "a real prose body worth summarizing, at some length")
+
+	// Authored via frontmatter/import: a summary, and NO page_summaries ledger
+	// row (we never generated it).
+	if _, err := d.Exec(
+		`UPDATE pages SET props = '{"summary":"Hand-written by Matt, do not touch"}' WHERE id = $1`, page); err != nil {
+		t.Fatalf("seed authored summary: %v", err)
+	}
+
+	fake := &fakeLLM{out: "A generated summary that must never land."}
+	svc := newSvc(d, fake)
+
+	res, err := svc.SummarizePage(ctx, page, false)
+	if err != nil || res != SkippedAuthored {
+		t.Fatalf("res=%q err=%v, want authored", res, err)
+	}
+	if got := pageSummary(t, d, page); got != "Hand-written by Matt, do not touch" {
+		t.Fatalf("authored summary was overwritten: %q", got)
+	}
+	if fake.callCount() != 0 {
+		t.Errorf("summarizer called the model %d time(s) for an authored summary", fake.callCount())
+	}
+
+	// force must NOT override it either — clobbering a human's words has to be a
+	// deliberate act (clear the summary), not a side effect of a reindex sweep.
+	if res, err := svc.SummarizePage(ctx, page, true); err != nil || res != SkippedAuthored {
+		t.Fatalf("force: res=%q err=%v, want authored", res, err)
+	}
+	if got := pageSummary(t, d, page); got != "Hand-written by Matt, do not touch" {
+		t.Fatalf("force overwrote an authored summary: %q", got)
+	}
 }

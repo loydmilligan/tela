@@ -118,10 +118,23 @@ const (
 	Generated       Result = "generated"
 	SkippedFresh    Result = "fresh"      // stored hash matches body and summary present
 	SkippedLocked   Result = "locked"     // props.summary_lock — never touched
+	SkippedAuthored Result = "authored"   // a human/import wrote props.summary — never touched
 	SkippedEmpty    Result = "empty"      // blank body — nothing to summarize
 	SkippedNoneBody Result = "no_content" // body present but nothing faithfully summarizable (model → NONE)
 	SkippedGone     Result = "gone"       // page deleted (or locked mid-flight)
 )
+
+// authoredSummary reports whether props carries a summary this service did not
+// write — i.e. a non-empty props.summary with no page_summaries ledger row.
+// Fails safe: if the ledger row is missing for a summary we DID generate, we
+// decline to touch it rather than risk clobbering a human's words.
+func authoredSummary(props map[string]any, hasLedgerRow bool) bool {
+	if hasLedgerRow {
+		return false
+	}
+	existing, _ := props["summary"].(string)
+	return strings.TrimSpace(existing) != ""
+}
 
 // SummarizePage generates and persists the summary for one page. Idempotent:
 // unless force, a page whose stored src_hash matches the current body (and
@@ -137,9 +150,15 @@ func (s *Service) SummarizePage(ctx context.Context, pageID int64, force bool) (
 
 	var title, body string
 	var propsRaw []byte
+	// hasLedgerRow: page_summaries is THIS service's own ledger — a row exists
+	// only for a page it has generated (or failed) on. Its absence beside a
+	// non-empty props.summary is the tell that the summary came from somewhere
+	// else (frontmatter/import/a human), which is what authoredSummary keys on.
+	var hasLedgerRow bool
 	err := s.db.QueryRowContext(ctx,
-		`SELECT title, body, props FROM pages WHERE id = $1 AND deleted_at IS NULL`, pageID,
-	).Scan(&title, &body, &propsRaw)
+		`SELECT p.title, p.body, p.props, EXISTS(SELECT 1 FROM page_summaries ps WHERE ps.page_id = p.id)
+		   FROM pages p WHERE p.id = $1 AND p.deleted_at IS NULL`, pageID,
+	).Scan(&title, &body, &propsRaw, &hasLedgerRow)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SkippedGone, nil // deleted while queued — nothing to do
 	}
@@ -152,6 +171,18 @@ func (s *Service) SummarizePage(ctx context.Context, pageID int64, force bool) (
 	}
 	if locked, _ := props["summary_lock"].(bool); locked {
 		return SkippedLocked, nil
+	}
+	// An AUTHORED summary is implicitly locked. summary_lock is the explicit
+	// opt-out, but it is opt-in and undiscoverable: someone writing `summary:` in
+	// frontmatter has no idea they must also write `summary_lock: true`, so an
+	// import would silently replace what they wrote with a generated one. An
+	// authored value must never be silently overwritten — the same hazard class
+	// as update_page replacing a whole props bag. Beats force, exactly like
+	// summary_lock does: regenerating over a human's words has to be a deliberate
+	// act (clear the summary, or set summary_lock:false), never a side effect of
+	// a re-index sweep.
+	if authoredSummary(props, hasLedgerRow) {
+		return SkippedAuthored, nil
 	}
 	if strings.TrimSpace(body) == "" {
 		return SkippedEmpty, nil

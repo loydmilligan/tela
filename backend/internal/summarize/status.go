@@ -39,6 +39,11 @@ type PageSummary struct {
 const statusExpr = `CASE
 	WHEN length(btrim(p.body)) = 0 THEN 'empty'
 	WHEN coalesce(p.props->>'summary_lock', '') = 'true' THEN 'locked'
+	-- A summary with no ledger row is one we never wrote: authored (frontmatter /
+	-- import / a human). Implicitly locked — see summarize.go authoredSummary.
+	-- Must sit above the stale check, which would otherwise call it stale and
+	-- re-queue it forever against a SummarizePage that always skips it.
+	WHEN ps.page_id IS NULL AND coalesce(p.props->>'summary', '') <> '' THEN 'authored'
 	WHEN coalesce(ps.last_error, '') <> '' THEN 'failed'
 	WHEN ps.page_id IS NULL AND coalesce(p.props->>'summary', '') = '' THEN 'missing'
 	WHEN ps.src_hash IS NULL OR ps.src_hash <> ` + bodyHashExpr + ` THEN 'stale'
@@ -55,6 +60,7 @@ END`
 // predicate so it can run without the CASE.)
 const needsWorkExpr = `length(btrim(p.body)) > 0
 	AND coalesce(p.props->>'summary_lock', '') <> 'true'
+	AND NOT (ps.page_id IS NULL AND coalesce(p.props->>'summary', '') <> '')
 	AND (coalesce(ps.last_error, '') <> ''
 	     OR ps.src_hash IS NULL OR ps.src_hash <> ` + bodyHashExpr + `)`
 
