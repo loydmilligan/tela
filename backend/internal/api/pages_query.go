@@ -178,6 +178,8 @@ func (s *Server) resolveQuerySpace(ctx context.Context, req pagesQueryRequest) (
 	case float64: // JSON numbers decode to float64
 		id := int64(v)
 		return &id, nil
+	case int64: // an in-process caller (MCP query_pages) passes a native id
+		return &v, nil
 	case string:
 		sv := strings.TrimSpace(strings.ToLower(v))
 		switch {

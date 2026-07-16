@@ -55,60 +55,75 @@ func (s *Server) SetPageProp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	k, _ := auth.APIKeyFromContext(r.Context())
-	if ae := s.setPagePropCore(r.Context(), u, k, pageID, req.Key, req.Value); ae != nil {
+	if _, ae := s.setPagePropCore(r.Context(), u, k, pageID, req.Key, req.Value); ae != nil {
 		writeError(w, ae.Status, ae.Code, ae.Message)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (s *Server) setPagePropCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, key string, value any) *apiErr {
+// setPagePropCore shallow-merges one key into pages.props and returns the FULL
+// merged bag. Both front doors call it: the HTTP handler discards the bag (the
+// read view refetches the page anyway), while the MCP set_prop tool returns it
+// so an agent can see, in the same round trip, that its sibling keys survived —
+// the whole point of the single-key merge over update_page's replace.
+func (s *Server) setPagePropCore(ctx context.Context, u *auth.User, k *auth.APIKey, pageID int64, key string, value any) (map[string]any, *apiErr) {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return &apiErr{http.StatusBadRequest, "bad_request", "missing prop key"}
+		return nil, &apiErr{http.StatusBadRequest, "bad_request", "missing prop key"}
 	}
 	// Reserved keys are column-owned / derived and never live in the bag. A
 	// targeted verb should reject rather than silently drop them, so a caller
 	// learns their write went nowhere. FilterReserved deletes any reserved key;
 	// an emptied map means the one key we were handed was reserved.
 	if len(pagemd.FilterReserved(map[string]any{key: value})) == 0 {
-		return &apiErr{http.StatusBadRequest, "bad_request", "reserved prop key"}
+		return nil, &apiErr{http.StatusBadRequest, "bad_request", "reserved prop key"}
 	}
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "begin tx failed"}
 	}
 	defer tx.Rollback()
 
 	existing, err := selectPageByIDTx(ctx, tx, pageID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return &apiErr{http.StatusForbidden, "forbidden", "not a member"}
+		return nil, &apiErr{http.StatusForbidden, "forbidden", "not a member"}
 	}
 	if err != nil {
-		return &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "lookup page failed"}
 	}
 	// A field write is a page edit — editors-only, same gate as the poll vote and
 	// the Replace PATCH (docs/access-model.md invariant 4: one resolution path).
 	if ae := s.requireEditTx(ctx, tx, u, k, existing.SpaceID); ae != nil {
-		return ae
+		return nil, ae
 	}
 
 	// Shallow-merge one key server-side (atomic per-statement; no read-modify-
 	// write clobber of a concurrent prop write). Bind props as a JSON string with
 	// a ::jsonb cast — pgx encodes []byte as bytea (CLAUDE.md pgx gotcha).
+	// RETURNING hands back the post-merge bag from the same statement — no second
+	// read, so no window for a concurrent write to make the returned bag a lie.
 	merge := propsJSON(map[string]any{key: value})
-	res, err := tx.ExecContext(ctx,
-		`UPDATE pages SET props = props || $1::jsonb, updated_at = tela_now() WHERE id = $2`,
-		merge, pageID)
-	if err != nil {
-		return &apiErr{http.StatusInternalServerError, "internal", "prop write failed"}
+	var mergedRaw []byte
+	err = tx.QueryRowContext(ctx,
+		`UPDATE pages SET props = props || $1::jsonb, updated_at = tela_now() WHERE id = $2 RETURNING props`,
+		merge, pageID).Scan(&mergedRaw)
+	// No row came back — the page vanished between the lookup above and here.
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, &apiErr{http.StatusNotFound, "not_found", "page not found"}
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return &apiErr{http.StatusNotFound, "not_found", "page not found"}
+	if err != nil {
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "prop write failed"}
+	}
+	merged := map[string]any{}
+	if len(mergedRaw) > 0 {
+		if err := json.Unmarshal(mergedRaw, &merged); err != nil {
+			return nil, &apiErr{http.StatusInternalServerError, "internal", "decode props failed"}
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		return &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
+		return nil, &apiErr{http.StatusInternalServerError, "internal", "commit failed"}
 	}
-	return nil
+	return merged, nil
 }
