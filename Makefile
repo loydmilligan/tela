@@ -451,8 +451,8 @@ deploy-offline:
 	@test -n "$(REMOTE)" || { echo "set REMOTE=<ssh-host> (or in deploy/deploy.env)"; exit 1; }
 	@echo "[deploy-offline] building backend+frontend+deck ($(TELA_COMMIT)) locally…"
 	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) -t tela-backend:latest backend
-	docker build -t tela-frontend:latest frontend
-	docker build -t tela-deck:latest deck
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) -t tela-frontend:latest frontend
+	docker build --build-arg VERSION=$(TELA_VERSION) --build-arg COMMIT=$(TELA_COMMIT) -t tela-deck:latest deck
 	$(MAKE) landing-build
 	@echo "[deploy-offline] streaming full images → $(REMOTE)…"
 	docker save tela-backend:latest tela-frontend:latest tela-deck:latest | ssh $(REMOTE) docker load
