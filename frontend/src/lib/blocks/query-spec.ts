@@ -9,17 +9,41 @@
 // and the React table render without an async parse.
 //
 // Spec shape (v1):
+//   target: pages          # 'pages' (default) | 'comments'
 //   where: { type: incident, status: active }   # props @> containment
 //   space: here            # 'here' | <space id> | omit = all readable spaces
 //   columns: [title, status, updated]
 //   sort: -updated         # (-)updated | (-)created | (-)title
 //   limit: 25
+//
+// target: comments filters COMMENT props instead — the change/decision log:
+//   target: comments
+//   where: { type: change }
+//   columns: [change_summary, author, created]
+//   sort: -created         # comments sort by (-)created | (-)updated only
+
+/**
+ * What the block queries. `pages` (default) filters a page's OWN props;
+ * `comments` filters the props on timestamped events ABOUT pages — the
+ * change/decision log. One authoring surface, two typed backends: the block
+ * routes to /api/pages/query or /api/comments/query, which return different row
+ * shapes (a comment carries body/author/page context).
+ */
+export type QueryTarget = 'pages' | 'comments'
 
 export interface QuerySpec {
+  /** 'pages' (default) | 'comments'. */
+  target: QueryTarget
   /** props @> containment filter. Empty → all readable pages. */
   where: Record<string, unknown>
   /** 'here' (the block's own space) | a space id | undefined = all readable. */
   space?: 'here' | number
+  /**
+   * comments target only: scope to ONE page's comments — 'here' is the block's
+   * own page (the changelog-footer case). Distinct from `space`, and distinct
+   * from the page CONTEXT the block sends to resolve 'here'.
+   */
+  page?: 'here' | number
   /** Columns to render. Special: title, created, updated, space; else a prop key. */
   columns: string[]
   /** Whitelisted sort key (validated server-side). */
@@ -89,7 +113,9 @@ function assignPairs(pairs: string[], out: Record<string, unknown>) {
 export function parseQuerySpec(code: string): QuerySpec | QuerySpecError {
   const lines = code.split('\n')
   const where: Record<string, unknown> = {}
+  let target: QueryTarget = 'pages'
   let space: 'here' | number | undefined
+  let page: 'here' | number | undefined
   let columns: string[] = []
   let sort: string | undefined
   let limit: number | undefined
@@ -122,12 +148,26 @@ export function parseQuerySpec(code: string): QuerySpec | QuerySpecError {
         }
         break
       }
+      case 'target': {
+        const tv = unquote(val).toLowerCase()
+        if (tv === 'pages' || tv === 'comments') target = tv
+        else return { error: `invalid target "${val}" (pages | comments)` }
+        break
+      }
       case 'space': {
         const sv = unquote(val).toLowerCase()
         if (sv === '' || sv === 'all') space = undefined
         else if (sv === 'here') space = 'here'
         else if (/^\d+$/.test(sv)) space = parseInt(sv, 10)
         else return { error: `invalid space "${val}"` }
+        break
+      }
+      case 'page': {
+        const pv = unquote(val).toLowerCase()
+        if (pv === '' || pv === 'all') page = undefined
+        else if (pv === 'here') page = 'here'
+        else if (/^\d+$/.test(pv)) page = parseInt(pv, 10)
+        else return { error: `invalid page "${val}"` }
         break
       }
       case 'columns':
@@ -147,21 +187,31 @@ export function parseQuerySpec(code: string): QuerySpec | QuerySpecError {
     }
   }
 
-  if (columns.length === 0) columns = ['title', 'updated']
-  return { where, space, columns, sort, limit }
+  // Target-aware defaults: a comment row has no title, and its headline is the
+  // change_summary prop (NOT `summary` — that key is the page abstract).
+  if (columns.length === 0) {
+    columns =
+      target === 'comments'
+        ? ['change_summary', 'author', 'created']
+        : ['title', 'updated']
+  }
+  return { target, where, space, page, columns, sort, limit }
 }
 
 // A compact one-line description of the query for the editor preview.
 function summarize(spec: QuerySpec): string {
   const parts: string[] = []
   const keys = Object.keys(spec.where)
+  const noun = spec.target === 'comments' ? 'comments' : 'pages'
   parts.push(
     keys.length
-      ? keys.map((k) => `${k}=${String(spec.where[k])}`).join(', ')
-      : 'all pages',
+      ? `${noun}: ${keys.map((k) => `${k}=${String(spec.where[k])}`).join(', ')}`
+      : `all ${noun}`,
   )
   if (spec.space === 'here') parts.push('this space')
   else if (typeof spec.space === 'number') parts.push(`space ${spec.space}`)
+  if (spec.page === 'here') parts.push('this page')
+  else if (typeof spec.page === 'number') parts.push(`page ${spec.page}`)
   if (spec.sort) parts.push(`sort ${spec.sort}`)
   if (spec.limit) parts.push(`limit ${spec.limit}`)
   return parts.join(' · ')

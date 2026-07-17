@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/zcag/tela/backend/internal/auth"
@@ -31,8 +32,15 @@ type commentsQueryRequest struct {
 	Where map[string]any `json:"where"`
 	// Space scopes to one space (same shape as pagesQueryRequest.Space).
 	Space any `json:"space"`
-	// PageID scopes to a single page's comments — the changelog-footer case.
+	// PageID is the page the block lives on — CONTEXT ONLY, used to resolve
+	// Space:"here" (and Page:"here"). It does NOT scope results by itself:
+	// conflating the two would silently narrow every in-page comment block to
+	// that page's own comments, even when the author asked for the whole space.
 	PageID *int64 `json:"page_id"`
+	// Page scopes to ONE page's comments — the changelog-footer case. "here"
+	// resolves via PageID, or pass an explicit id. Omit for every readable page.
+	// Mirrors Space's shape deliberately.
+	Page any `json:"page"`
 	// IncludeResolved keeps resolved comments in the result (default: hidden,
 	// mirroring the comments panel's default).
 	IncludeResolved bool `json:"include_resolved"`
@@ -86,6 +94,38 @@ func (s *Server) QueryComments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"comments": rows})
 }
 
+// resolveQueryPage turns req.Page into an optional page-id filter. Needs no DB
+// hit (unlike the space resolver): "here" is already the PageID we were handed.
+func resolveQueryPage(req commentsQueryRequest) (*int64, *apiErr) {
+	switch v := req.Page.(type) {
+	case nil:
+		return nil, nil
+	case float64: // JSON numbers decode to float64
+		id := int64(v)
+		return &id, nil
+	case int64: // an in-process caller (MCP query_comments) passes a native id
+		return &v, nil
+	case string:
+		sv := strings.TrimSpace(strings.ToLower(v))
+		switch {
+		case sv == "" || sv == "all":
+			return nil, nil
+		case sv == "here":
+			if req.PageID == nil {
+				return nil, &apiErr{http.StatusBadRequest, "bad_request", "page: here needs a page context"}
+			}
+			return req.PageID, nil
+		default:
+			if id, perr := strconv.ParseInt(sv, 10, 64); perr == nil {
+				return &id, nil
+			}
+			return nil, &apiErr{http.StatusBadRequest, "bad_request", "invalid page"}
+		}
+	default:
+		return nil, &apiErr{http.StatusBadRequest, "bad_request", "invalid page"}
+	}
+}
+
 func (s *Server) queryCommentsCore(ctx context.Context, u *auth.User, k *auth.APIKey, req commentsQueryRequest) ([]queryCommentRow, *apiErr) {
 	sortKey := strings.TrimSpace(req.Sort)
 	if sortKey == "" {
@@ -111,6 +151,12 @@ func (s *Server) queryCommentsCore(ctx context.Context, u *auth.User, k *auth.AP
 		return nil, ae
 	}
 
+	// Page scope, resolved the same way: "here" means the block's own page.
+	pageFilterID, ae := resolveQueryPage(req)
+	if ae != nil {
+		return nil, ae
+	}
+
 	args := []any{u.ID, propsJSON(req.Where)}
 	q := `SELECT c.id, c.page_id, p.title, p.space_id, s.name, author.username,
 	             c.body, c.props, c.resolved, c.created_at, c.updated_at
@@ -131,8 +177,8 @@ func (s *Server) queryCommentsCore(ctx context.Context, u *auth.User, k *auth.AP
 		q += fmt.Sprintf(" AND p.space_id = $%d", len(args))
 	}
 	// A page-scoped query (the changelog footer) narrows to one page.
-	if req.PageID != nil {
-		args = append(args, *req.PageID)
+	if pageFilterID != nil {
+		args = append(args, *pageFilterID)
 		q += fmt.Sprintf(" AND c.page_id = $%d", len(args))
 	}
 	// An API-key-scoped caller (MCP PAT) is confined to its one space, matching

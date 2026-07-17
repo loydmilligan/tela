@@ -63,8 +63,22 @@ emission policies on `notificationInput`:
 - **Mentions** — `parseUserMentions` over `tela://user/{id}` in the page body
   (mirrors `parseWikiLinks`), wired post-commit into `createPageCore` +
   `updatePageCore`, so REST and the MCP `update_page` tool both notify.
+  **Only page bodies are mention-parsed** — a `tela://user/{id}` in a *comment*
+  notifies nobody. Worth knowing before making `mention` the exception to any
+  notifications-off-by-default policy: comments would become un-notifiable.
 - **page_updated** — on a body/title change, `notifyPageUpdate` notifies
   followers of the page *and* of its space (minus the editor), `CollapseUnread`.
+- **NOT an emit site — the auto-changelog.** Every interactive save also writes a
+  `type: change` comment (`comments_changelog.go`), which goes through
+  `createCommentCore` with `commentCreateOpts{System: true}` and therefore emits
+  **nothing**. This is load-bearing: `createCommentCore` otherwise calls
+  `notifyPageComment`, so an auto-comment per save would reach every follower over
+  in-app **+ email + ntfy phone push** on every edit. Note `CollapseUnread` would
+  NOT have contained it — `emitNotifications` applies collapse only inside
+  `insertInApp`; `dispatchEmails` and `dispatchNtfy` are independent and fire per
+  emission. Suppression at the source is the only thing that holds. `System` is an
+  opt on the core, never a field on `commentCreateRequest` (which is decoded from
+  request bodies — a caller must not be able to post un-notifying comments).
 - **page_created** — on create, `notifyPageCreated` notifies followers of the
   **space** (minus the author), so "follow a space" means "watch for new pages",
   not just edits. Idempotent per (page, user). Fires only on the interactive

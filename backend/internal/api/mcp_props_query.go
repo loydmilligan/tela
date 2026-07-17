@@ -104,10 +104,14 @@ func (s *Server) mcpQueryComments(ctx context.Context, req *mcp.CallToolRequest,
 	}
 	cr := commentsQueryRequest{
 		Where:           in.Where,
-		PageID:          in.PageID,
 		IncludeResolved: in.IncludeResolved,
 		Sort:            in.Sort,
 		Limit:           in.Limit,
+	}
+	// page_id from a tool call is a SCOPE ("this page's changelog"), not the
+	// block-context field — an agent has no ambient page.
+	if in.PageID != nil {
+		cr.Page = *in.PageID
 	}
 	if in.SpaceID != nil {
 		cr.Space = *in.SpaceID

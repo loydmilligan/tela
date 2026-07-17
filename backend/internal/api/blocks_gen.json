@@ -327,7 +327,7 @@
     {
       "id": "query",
       "label": "Query",
-      "hint": "Live table of pages by their props",
+      "hint": "Live table of pages, or of change-comments, by their props",
       "category": "Data",
       "slash": true,
       "agent": true,
@@ -341,11 +341,17 @@
         "props",
         "where",
         "dashboard",
-        "index"
+        "index",
+        "comments",
+        "changelog",
+        "target",
+        "change",
+        "decision",
+        "log"
       ],
-      "syntax": "```query\nwhere: { type: doc }\nspace: here\ncolumns: [title, status, updated]\nsort: -updated\nlimit: 25\n```",
-      "when": "List pages by their properties — a live, self-updating table (e.g. every page with type: incident, or all docs in this space). The Dataview analog.",
-      "note": "A ```query fenced block with a YAML spec. `where` is props containment (props @> where) — exact key/value equality only, matches props, not columns like title. `space`: here (this space) | a space id | omit (all spaces you can read). `columns`: any of title, space, created, updated, or a prop key. `sort`: (-)updated | (-)created | (-)title (the `-` prefix is descending). `limit` caps rows. Results are always gated to spaces you can read. The live table renders in the read view."
+      "syntax": "```query\nwhere: { type: doc }\nspace: here\ncolumns: [title, status, updated]\nsort: -updated\nlimit: 25\n```\n\nA page's changelog:\n\n```query\ntarget: comments\nwhere: { type: change }\npage: here\ncolumns: [change_summary, author, created]\nsort: -created\n```",
+      "when": "List pages by their properties — a live, self-updating table (e.g. every page with type: incident, or all docs in this space). The Dataview analog. With `target: comments` it lists CHANGE-COMMENTS instead — a live changelog built from the structured comments on pages.",
+      "note": "A ```query fenced block with a YAML spec. `target`: pages (default) | comments — pages filters a page's OWN props; comments filters the props on timestamped events ABOUT pages (the change/decision log). `where` is props containment (props @> where) — exact key/value equality only, matches props, not columns like title. `space`: here (this space) | a space id | omit (all spaces you can read). `page` (comments only): here (this page) | a page id | omit — scope to one page's changelog. `columns`: for pages any of title, space, created, updated, or a prop key; for comments any of page, author, body, space, created, updated, or a prop key (change_summary/type/status). `sort`: pages take (-)updated | (-)created | (-)title, comments take (-)created | (-)updated. `limit` caps rows. Results are always gated to spaces you can read. Note a change-comment's headline prop is `change_summary`, NOT `summary` — that key is the page's own abstract. The live table renders in the read view."
     },
     {
       "id": "embed",

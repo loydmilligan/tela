@@ -17,6 +17,13 @@ export interface Comment {
   resolved_by_username?: string
   created_at: string
   updated_at: string
+  /**
+   * Structured metadata for a change-comment (migration 0069) — the queryable
+   * bag behind `query{ target: comments }`. Conventional keys: change_summary,
+   * type, status, version. Absent when the comment carries none (the backend
+   * omits an empty bag).
+   */
+  props?: Record<string, unknown>
 }
 
 export interface CommentThread {
@@ -62,6 +69,8 @@ export interface CreateCommentInput {
   anchor_prefix?: string
   anchor_exact?: string
   anchor_suffix?: string
+  /** Structured change-comment metadata; see Comment.props. */
+  props?: Record<string, unknown>
 }
 
 interface OptimisticContext {
@@ -101,6 +110,7 @@ export function useCreateComment(pageId: number, me: { id: number; username: str
         anchor_prefix: input.anchor_prefix,
         anchor_exact: input.anchor_exact,
         anchor_suffix: input.anchor_suffix,
+        props: input.props,
         resolved: false,
         created_at: nowIso,
         updated_at: nowIso,

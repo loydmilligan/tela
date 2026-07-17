@@ -746,6 +746,22 @@ interface QueryRow {
   updated_at: string
 }
 
+// A `target: comments` row — a timestamped event ABOUT a page, so it carries the
+// page it happened on plus its author, where a page row carries a title.
+interface QueryCommentRow {
+  id: number
+  page_id: number
+  page_title: string
+  space_id: number
+  space_name: string
+  author_username: string
+  body: string
+  props: Record<string, unknown>
+  resolved: boolean
+  created_at: string
+  updated_at: string
+}
+
 // Render one cell for a spec column: title (linked to the row's own page —
 // results can span spaces, so the href uses the row's space_id, not the current
 // page's), the space name, a relative timestamp, or a prop value.
@@ -768,10 +784,43 @@ function queryCell(col: string, row: QueryRow): ReactNode {
   return String(v)
 }
 
+// Render one cell of a `target: comments` row. Mirrors queryCell's shape: fixed
+// column names first, else a prop key. `page` links to the page the event
+// happened on (rows can span spaces, so the href uses the row's own space_id).
+function queryCommentCell(col: string, row: QueryCommentRow): ReactNode {
+  const c = col.toLowerCase()
+  if (c === 'page' || c === 'title') {
+    return (
+      <a href={`/spaces/${row.space_id}/pages/${row.page_id}`}>
+        {row.page_title || 'Untitled'}
+      </a>
+    )
+  }
+  if (c === 'author') return row.author_username
+  if (c === 'body') return row.body
+  if (c === 'space') return row.space_name
+  if (c === 'created') return relativeTimeFromSqlite(row.created_at)
+  if (c === 'updated') return relativeTimeFromSqlite(row.updated_at)
+  const v = row.props[col]
+  if (v == null) return ''
+  if (typeof v === 'boolean') return v ? 'true' : 'false'
+  if (Array.isArray(v)) return v.map(String).join(', ')
+  return String(v)
+}
+
 // QueryBlockView — the read-view surface of a ` ```query ` block. Parses the
-// spec, POSTs it to /api/pages/query (which re-gates every row through the
-// caller's space_access), and renders the matching pages as a table. Explicit
+// spec, POSTs it to the endpoint for its target (each re-gates every row through
+// the caller's space_access), and renders the matching rows as a table. Explicit
 // loading / empty / error / signed-out states — never a blank block.
+//
+// One block, two targets: `pages` filters a page's own props, `comments` filters
+// the props on events ABOUT pages (the change/decision log). They return
+// different row shapes, so the fetch is normalised into a tagged union here and
+// the renderer picks the matching cell function.
+type BlockRows =
+  | { kind: 'pages'; rows: QueryRow[] }
+  | { kind: 'comments'; rows: QueryCommentRow[] }
+
 function QueryBlockView({ code }: { code: string }) {
   const { pageId } = useContext(ViewContext)
   const me = useMe()
@@ -779,12 +828,31 @@ function QueryBlockView({ code }: { code: string }) {
   const specOk = !isQueryError(spec)
   const authed = !!me.data
 
-  const q = useQuery({
-    queryKey: ['pages-query', code, pageId ?? null],
+  const q = useQuery<BlockRows>({
+    queryKey: ['block-query', code, pageId ?? null],
     enabled: specOk && authed,
-    queryFn: () => {
+    queryFn: async (): Promise<BlockRows> => {
       const s = spec as QuerySpec
-      return api<{ pages: QueryRow[] }>('/api/pages/query', {
+      if (s.target === 'comments') {
+        const r = await api<{ comments: QueryCommentRow[] }>(
+          '/api/comments/query',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              where: s.where,
+              space: s.space,
+              page: s.page,
+              // page_id is CONTEXT for resolving `space: here` / `page: here` —
+              // it does not scope results on its own (that is `page`).
+              page_id: pageId,
+              sort: s.sort,
+              limit: s.limit,
+            }),
+          },
+        )
+        return { kind: 'comments', rows: r.comments ?? [] }
+      }
+      const r = await api<{ pages: QueryRow[] }>('/api/pages/query', {
         method: 'POST',
         body: JSON.stringify({
           where: s.where,
@@ -794,6 +862,7 @@ function QueryBlockView({ code }: { code: string }) {
           limit: s.limit,
         }),
       })
+      return { kind: 'pages', rows: r.pages ?? [] }
     },
   })
 
@@ -809,9 +878,14 @@ function QueryBlockView({ code }: { code: string }) {
   if (q.isError) {
     return <div className="tela-query-error">Query failed.</div>
   }
-  const rows = q.data?.pages ?? []
-  if (rows.length === 0) {
-    return <div className="tela-query-empty">No matching pages.</div>
+  const data = q.data
+  const count = data ? data.rows.length : 0
+  if (count === 0) {
+    return (
+      <div className="tela-query-empty">
+        {spec.target === 'comments' ? 'No matching comments.' : 'No matching pages.'}
+      </div>
+    )
   }
   return (
     <div className="tela-query" data-query="">
@@ -824,13 +898,21 @@ function QueryBlockView({ code }: { code: string }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              {spec.columns.map((col) => (
-                <td key={col}>{queryCell(col, row)}</td>
+          {data!.kind === 'comments'
+            ? (data!.rows as QueryCommentRow[]).map((row) => (
+                <tr key={row.id}>
+                  {spec.columns.map((col) => (
+                    <td key={col}>{queryCommentCell(col, row)}</td>
+                  ))}
+                </tr>
+              ))
+            : (data!.rows as QueryRow[]).map((row) => (
+                <tr key={row.id}>
+                  {spec.columns.map((col) => (
+                    <td key={col}>{queryCell(col, row)}</td>
+                  ))}
+                </tr>
               ))}
-            </tr>
-          ))}
         </tbody>
       </table>
     </div>

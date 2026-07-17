@@ -24,8 +24,11 @@ import {
 // the slash plugin's shape (slashFactory + SlashProvider + capture-phase
 // keydown for nav). Saved markdown round-trips via the stock commonmark link
 // mark — M5.2a's `parseWikiLinks` regex picks those up to populate the
-// `page_links` table on save. People-mentions are deliberately out of scope
-// (no canonical-markdown serialization yet). The companion decoration plugin
+// `page_links` table on save. The `@` trigger ALSO lists people: picking one
+// inserts `[Name](tela://user/{id})`, which the backend's userMentionRE parses
+// on save to emit a `mention` notification (notifyPageMentions). Note that only
+// PAGE bodies are mention-parsed — a mention in a comment notifies nobody.
+// The companion decoration plugin
 // lives in milkdown-wikilink-decoration.ts (separate file so react-refresh
 // allows a non-component constant export alongside this React view).
 

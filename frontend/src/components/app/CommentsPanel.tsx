@@ -91,12 +91,14 @@ export function CommentsPanel({
     anchor_prefix: string
     anchor_exact: string
     anchor_suffix: string
+    props?: Record<string, unknown>
   }) {
     await createComment.mutateAsync({
       body: input.body,
       anchor_prefix: input.anchor_prefix,
       anchor_exact: input.anchor_exact,
       anchor_suffix: input.anchor_suffix,
+      props: input.props,
     })
   }
 

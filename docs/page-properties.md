@@ -114,6 +114,36 @@ agent gets the identical rows the block does. It exposes `where` / `space_id` /
 table — the tool returns the whole row and the agent picks) and not `space:
 "here"` (there is no page context in a tool call).
 
+### Querying comments — `target: comments`
+
+The same ` ```query ` block takes `target: comments` (`api/comments_query.go`
+`queryCommentsCore`, `POST /api/comments/query`, MCP `query_comments`). It filters
+**comment** props instead of page props and returns comment rows (body, author,
+the page it lives on). Keep the lanes straight: **`pages.props` is a page's own
+data; `comments.props` is metadata about a timestamped, authored event on it.**
+
+It is a **sibling core, not a flag on `queryPagesCore`**: the two return different
+row shapes, and both Go's typed rows and the MCP typed output schema want one
+concrete type per tool. The *block* still exposes a single `query` surface and
+routes to the right endpoint — unified authoring, typed backend.
+
+Same access gate, one level indirect: JOIN `comments → pages → space_access`, so a
+comment is visible only if its **page** is readable.
+
+Two scoping knobs, deliberately distinct:
+
+- `space:` — `here` | id | omit, exactly as for pages.
+- `page:` — `here` | id | omit. Scopes to **one page's** comments (the changelog
+  case). It is separate from the `page_id` the block sends as *context* for
+  resolving `here`; conflating them would silently narrow every in-page comment
+  block to that page's own comments even when the author asked for the whole
+  space.
+
+A change-comment's headline prop is **`change_summary`**, never `summary` —
+`props.summary` is the page's own abstract (see the auto-summarizer above), and
+sharing the key would invite conflating a page's description with a record of
+what changed in it.
+
 ## Reserved-key policy (the actual spec)
 
 Frontmatter is **not** a greenfield bag — several conventional keys map onto
