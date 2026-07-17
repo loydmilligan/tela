@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -20,6 +21,49 @@ type setPropIn struct {
 	PageID int64  `json:"page_id" jsonschema:"id of the page whose property to set"`
 	Key    string `json:"key" jsonschema:"the single property key to set (reserved keys like id/title/slug/created are rejected)"`
 	Value  any    `json:"value" jsonschema:"the value to store — string, number, boolean, null, or a nested object/array; stored verbatim as JSON so props containment filters stay predictable"`
+}
+
+// setPropInputSchema is set_prop's input schema, written out BY HAND instead of
+// reflected from setPropIn. That is the whole bug fix, so it is worth the words.
+//
+// `Value any` reflects to a schema with a description and NO `type` — an empty
+// constraint. The tool then stated its type rule ("string, number, boolean,
+// null, or a nested object/array") only in that description: prose, which a
+// client cannot validate or serialize against. Handed an untyped field, a client
+// has to guess how to encode the value, and it guessed string — EVERY time, for
+// every non-string value. Observed on prod: ["tela","agents"] stored as
+// "[\"tela\",\"agents\"]", 42 as "42", true as "true".
+//
+// The damage is silent and total: a string-typed value can never match
+// `props @> {"tags":["tela"]}`, never compare numerically, never sort. So the
+// query block, query_pages, and every dashboard built on containment quietly
+// return fewer rows than the truth — no error, no warning. set_prop could not do
+// the one thing its description promised, and never could.
+//
+// The server was never at fault: setPagePropCore marshals `value any` through
+// json.Marshal with no coercion, and stores it verbatim. The fault was a schema
+// that looked like a contract and was structurally incapable of constraining
+// anything. Declaring the union is the ONLY real remedy — no server-side test can
+// reach a client outside this codebase, but a schema that cannot lie needs none.
+// mcp_props_query_test.go pins this schema; keep them together.
+//
+// The sibling fields prove the SDK emits unions perfectly well when told to:
+// query_pages' space_id reflects to ["null","integer"]. This declaration was
+// simply never written.
+var setPropInputSchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"page_id": {Type: "integer", Description: "id of the page whose property to set"},
+		"key":     {Type: "string", Description: "the single property key to set (reserved keys like id/title/slug/created are rejected)"},
+		"value": {
+			// The union, in the field a machine actually reads.
+			Types:       []string{"string", "number", "boolean", "object", "array", "null"},
+			Description: "the value to store — string, number, boolean, null, or a nested object/array. Send it as its NATIVE JSON type, never JSON-encoded into a string: 42 not \"42\", [\"a\"] not \"[\\\"a\\\"]\". It is stored verbatim, so a stringified value is silently unqueryable — props containment, numeric compare and sort will all miss it.",
+		},
+	},
+	Required: []string{"page_id", "key", "value"},
+	// Mirrors what reflection produced, so the only schema change is the type.
+	AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
 }
 
 type setPropOut struct {

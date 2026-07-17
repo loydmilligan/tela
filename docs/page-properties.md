@@ -355,3 +355,90 @@ props-only edit does not itself force a new revision. This is the honest v1 scop
   stricter coercion.
 </content>
 </invoke>
+
+## The untyped-`value` bug — a schema that could not constrain anything
+
+Shipped and live for one day (PR 4, 2026-07-16 → 07-17). Worth recording in full,
+because the fix is a declaration and the lesson is not.
+
+**Symptom.** `set_prop` via MCP could only ever write **strings**. Observed on
+prod, three for three through a real client:
+
+| sent | stored |
+| --- | --- |
+| `["tela","agents"]` | `"[\"tela\",\"agents\"]"` |
+| `42` | `"42"` |
+| `true` | `"true"` |
+
+**Why it was worse than a type slip.** A string-typed value can never match
+`props @> {"tags":["tela"]}`, never compare numerically, never sort. So the query
+block, `query_pages`, and every dashboard built on containment silently returned
+**fewer rows than the truth** — no error, no warning. `set_prop`'s description
+promised the value is "stored verbatim as JSON so props containment filters stay
+predictable"; that was the one guarantee it made and the one it broke. It could
+not do the thing it advertised, and never could.
+
+**Where it was NOT.** Not the server. `setPagePropCore` marshals `value any`
+through `json.Marshal` and stores it verbatim — no coercion anywhere
+(`page_props.go`, `propsJSON` in `pages.go`). A Go test passing a real `bool`
+through a real `mcp.Client` over a real transport round-trips correctly. Every
+other write path — the sheet editor, imports, `update_page` — preserved genuine
+bools, arrays and numbers *during the same window*. Three separate diagnoses put
+the bug in the server; all three were wrong.
+
+**Where it was.** `setPropIn.Value` is `any`, which reflects to a schema property
+carrying a description and **no `type`**:
+
+```json
+"value": { "description": "string, number, boolean, null, or a nested object/array; stored verbatim as JSON…" }
+```
+
+The type rule lived in **prose**. A client cannot validate or serialize against
+prose. Handed an untyped field, it must guess how to encode the value — and it
+guessed string, every time, for everything. **A schema that looks like a contract
+and is structurally incapable of constraining anything.**
+
+The sibling fields prove the SDK emits unions perfectly well when told to:
+`query_pages`' `space_id` reflects to `["null","integer"]`. The declaration was
+simply never written.
+
+**The fix.** Hand-write `set_prop`'s `InputSchema` (`setPropInputSchema` in
+`mcp_props_query.go`) declaring the union in the field a machine reads:
+`["string","number","boolean","object","array","null"]`. The SDK uses an explicit
+`InputSchema` as-is and only reflects when it is nil (`setSchema`, go-sdk
+`server.go`).
+
+**Why there is no test for the bug itself — and why that is the right answer.**
+The coercion happens inside a client *outside this repo*. Nothing here can make
+that client guess on demand. A server-side round-trip test constructs a real Go
+`[]any` and hands it to the SDK — but the real client never sends a real array,
+*which is the entire bug*, so such a test stays green forever while prod fills
+with `"[\"tela\",\"agents\"]"`. Its scope (the server stores what it is given) is
+narrower than its claim (values round-trip and stay queryable).
+
+So the guard is `TestMCP_SetPropSchemaDeclaresValueType`: it asserts the
+**published** schema declares a type union for `value`. It cannot watch the client
+lie; it pins the contract whose absence forces the guess. **A schema that cannot
+lie beats a test that watches it lie.** Verified by negative control — with the
+explicit schema removed, the test fails and prints the untyped `value` as its
+diagnostic.
+
+**When adding any MCP tool:** an `any`/`interface{}` field reflects to an empty
+constraint. If a field accepts more than one JSON type, declare the union
+explicitly. Prose in a description is documentation, not a contract.
+
+### The test that should have caught it
+
+`mcp_props_query_test.go` had a subtest named **"non-string values round-trip
+verbatim"** whose body tested exactly one `bool`. **Its name certified all
+non-string values; its body checked one.** It passed for the same reason the bug
+survived: it exercised the server, which was never the thing under test. Both it
+and the array subtest are now named for the claim their bodies can actually reach
+("the server stores a bool/array verbatim").
+
+The recurring shape, seen eight times across the fleet in one day: **a
+verification narrower than the claim it certified**. Empty output is not evidence
+of absence; a passing assertion is not a working feature. Ask not "did the check
+pass" but "is the check as wide as the sentence I am about to write". Knowing the
+antipattern buys no immunity — the first draft of the guard *for this bug* was
+itself a fresh instance of it.

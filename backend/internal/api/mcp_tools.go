@@ -12,8 +12,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/zcag/tela/backend/internal/models"
-	"github.com/zcag/tela/backend/internal/sheetproj"
 	"github.com/zcag/tela/backend/internal/rag"
+	"github.com/zcag/tela/backend/internal/sheetproj"
 )
 
 // retrievalGuideMarkdown is the "how to find things" preamble carried in the
@@ -181,6 +181,11 @@ func (s *Server) registerMCPTools(server *mcp.Server) {
 		Title:       "Set page property",
 		Description: "Set ONE page property without disturbing the others (single-key merge). Prefer this over `update_page` when changing a single prop — `update_page` replaces the entire properties bag and will wipe any key you don't pass. Editors only.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &no, IdempotentHint: true, DestructiveHint: &no, OpenWorldHint: &no},
+		// Hand-written, NOT reflected from setPropIn: `Value any` reflects to an
+		// untyped field, which forced clients to guess how to encode it and made
+		// set_prop write strings for every non-string value. See the schema's own
+		// comment in mcp_props_query.go — the reasoning is the fix.
+		InputSchema: setPropInputSchema,
 	}, s.mcpSetProp)
 
 	mcp.AddTool(server, &mcp.Tool{

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,11 @@ func TestMCP_SetProp(t *testing.T) {
 		}
 	})
 
-	t.Run("non-string values round-trip verbatim", func(t *testing.T) {
+	// Renamed from "non-string values round-trip verbatim". That name certified
+	// every non-string value; the body checks one bool. The gap it left is exactly
+	// where set_prop's real bug lived for a day — so the name now says what the
+	// body actually reaches.
+	t.Run("the server stores a bool verbatim", func(t *testing.T) {
 		var out setPropOut
 		mcpCallJSON(t, ctx, sess, "set_prop",
 			map[string]any{"page_id": pageID, "key": "done", "value": true}, &out)
@@ -65,6 +70,55 @@ func TestMCP_SetProp(t *testing.T) {
 		}
 		if out.Props["owner"] != "alice" || out.Props["status"] != "closed" {
 			t.Errorf("earlier keys lost: %#v", out.Props)
+		}
+	})
+
+	// SCOPE, stated up front because this test's ancestor lied about its own:
+	// this proves the SERVER stores an array verbatim and leaves it queryable. It
+	// does NOT — and cannot — catch the bug that actually bit prod.
+	//
+	// That bug: set_prop's schema left `value` untyped, so a real MCP client had
+	// to guess how to encode it and guessed string, every time, for every
+	// non-string value. This test hands the SDK a REAL Go []any. The real client
+	// never sends one — that IS the bug — so this test would stay green forever
+	// while prod filled with "[\"tela\",\"agents\"]".
+	//
+	// Naming it "array values round-trip" would repeat the exact sin of the bool
+	// subtest above ("non-string values round-trip verbatim", body: one bool):
+	// a name certifying a claim the body cannot reach. The claim this body CAN
+	// reach is "the server does not coerce", so that is what it is called.
+	//
+	// The client coercion is unreachable from here — the client lives outside this
+	// repo. What guards it is TestMCP_SetPropSchemaDeclaresValueType below, which
+	// pins the typed schema that stops the guessing in the first place.
+	t.Run("the server stores an array verbatim and leaves it queryable", func(t *testing.T) {
+		var out setPropOut
+		mcpCallJSON(t, ctx, sess, "set_prop",
+			map[string]any{"page_id": pageID, "key": "tags", "value": []any{"tela", "agents"}}, &out)
+
+		got, ok := out.Props["tags"].([]any)
+		if !ok {
+			t.Fatalf("tags = %#v (%T), want []any — a string here is the coercion bug: "+
+				"props @> {\"tags\":[…]} can never match it", out.Props["tags"], out.Props["tags"])
+		}
+		if len(got) != 2 || got[0] != "tela" || got[1] != "agents" {
+			t.Fatalf("tags = %#v, want [tela agents]", got)
+		}
+
+		// THE POINT. Round-trip through the reader that actually matters.
+		var q queryPagesOut
+		mcpCallJSON(t, ctx, sess, "query_pages",
+			map[string]any{"where": map[string]any{"tags": []any{"tela"}}}, &q)
+		var found bool
+		for _, p := range q.Pages {
+			if p.ID == pageID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("containment query {\"tags\":[\"tela\"]} did not find page %d — "+
+				"the value was written but is unqueryable, which is silent data loss "+
+				"to every dashboard built on containment", pageID)
 		}
 	})
 
@@ -239,4 +293,86 @@ func TestMCP_QueryPages(t *testing.T) {
 			t.Fatalf("bogus sort accepted; want a bad_request tool error")
 		}
 	})
+}
+
+// The guard for the bug that actually bit prod — and the only one this repo can
+// honestly offer.
+//
+// set_prop published `value` with a description and NO `type`. A schema like that
+// looks like a contract and is structurally incapable of constraining anything:
+// the type rule lived in prose, and a client cannot validate or serialize against
+// prose. So the client guessed, and guessed string — ["tela","agents"] landed as
+// "[\"tela\",\"agents\"]", 42 as "42", true as "true". Silently unqueryable: no
+// containment match, no numeric compare, no sort, no error.
+//
+// No test in this repo can catch that directly. The coercion happens inside a
+// client outside this codebase; nothing here can make it guess on demand, and a
+// server-side round-trip test hands the SDK a real Go value and so tests the one
+// path that was never broken. The remedy is not a test that watches the schema
+// lie — it is a schema that cannot lie. This pins that schema.
+func TestMCP_SetPropSchemaDeclaresValueType(t *testing.T) {
+	ts, d := newWiredServer(t)
+	owner := seedUser(t, d, "schemaowner", "ownerpw12", false)
+	seedSpace(t, d, "S", "s-space", owner)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sess := mcpSession(t, ctx, ts, seedReadKey(t, d, owner, auth.ScopeWrite))
+
+	tools, err := sess.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	var raw []byte
+	for _, tool := range tools.Tools {
+		if tool.Name == "set_prop" {
+			if raw, err = json.Marshal(tool.InputSchema); err != nil {
+				t.Fatalf("marshal input schema: %v", err)
+			}
+		}
+	}
+	if raw == nil {
+		t.Fatal("set_prop not advertised in tools/list")
+	}
+
+	// Assert on the PUBLISHED wire JSON, not the Go value — the wire is what a
+	// client actually reads, and it is where the type went missing.
+	var schema struct {
+		Properties map[string]struct {
+			Type any `json:"type"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("decode schema %s: %v", raw, err)
+	}
+	val, ok := schema.Properties["value"]
+	if !ok {
+		t.Fatalf("set_prop schema has no `value` property: %s", raw)
+	}
+	if val.Type == nil {
+		t.Fatalf("set_prop `value` publishes NO type — this is the bug: a client "+
+			"cannot serialize against a prose description and will guess string, "+
+			"silently making every non-string prop unqueryable. Schema: %s", raw)
+	}
+
+	// The union must actually admit the non-string types the description promises.
+	// A lone "string" would be worse than nothing: honest, but a lie about intent.
+	types := map[string]bool{}
+	switch v := val.Type.(type) {
+	case string:
+		types[v] = true
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				types[s] = true
+			}
+		}
+	}
+	for _, want := range []string{"string", "number", "boolean", "object", "array", "null"} {
+		if !types[want] {
+			t.Errorf("set_prop `value` type union is missing %q (got %v) — the tool "+
+				"documents it as accepted, so the schema must say so where a machine reads it",
+				want, val.Type)
+		}
+	}
 }
