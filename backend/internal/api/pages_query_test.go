@@ -185,3 +185,178 @@ func TestQueryPages(t *testing.T) {
 		}
 	})
 }
+
+// aggResult mirrors the aggregate response envelope.
+type aggResult struct {
+	Groups []struct {
+		Key    any            `json:"key"`
+		Values map[string]any `json:"values"`
+	} `json:"groups"`
+	SkippedNonNumeric int `json:"skipped_non_numeric"`
+}
+
+// queryAggregate POSTs an aggregate query and decodes the rollup envelope.
+func queryAggregate(t *testing.T, c *http.Client, tsURL, body string) aggResult {
+	t.Helper()
+	resp, err := postJSON(c, tsURL+"/api/pages/query", body)
+	if err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("aggregate: status=%d body=%s", resp.StatusCode, b)
+	}
+	var res aggResult
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		t.Fatalf("decode aggregate: %v", err)
+	}
+	return res
+}
+
+// groupValue finds the aggregate value for a group key (nil key = whole-set row).
+func groupValue(t *testing.T, res aggResult, key any, alias string) float64 {
+	t.Helper()
+	for _, g := range res.Groups {
+		match := (key == nil && g.Key == nil) || (g.Key != nil && fmt.Sprint(g.Key) == fmt.Sprint(key))
+		if match {
+			v, ok := g.Values[alias]
+			if !ok || v == nil {
+				t.Fatalf("group %v has no numeric %q: %v", key, alias, g.Values)
+			}
+			return v.(float64)
+		}
+	}
+	t.Fatalf("no group with key %v in %v", key, res.Groups)
+	return 0
+}
+
+// TestQueryPagesV2 exercises operators, sort-by-prop, and aggregation — and the
+// load-bearing invariant that a private space's numeric prop never enters an
+// aggregate the caller has no right to see.
+func TestQueryPagesV2(t *testing.T) {
+	ts, d := newWiredServer(t)
+	owner := seedUser(t, d, "v2owner", "ownerpw12", false)
+	outsider := seedUser(t, d, "v2out", "outpw123456", false)
+
+	alpha := seedSpace(t, d, "Alpha", "v2alpha", owner)
+	bravo := seedSpace(t, d, "Bravo", "v2bravo", owner) // owner-only
+
+	oc := loginClient(t, ts, "v2owner", "ownerpw12")
+	mk := func(spaceID int64, title, propsJSON string) {
+		t.Helper()
+		body := fmt.Sprintf(`{"space_id":%d,"title":%q,"body":"b","props":%s}`, spaceID, title, propsJSON)
+		resp, err := postJSON(oc, ts.URL+"/api/pages", body)
+		if err != nil {
+			t.Fatalf("create %s: %v", title, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("create %s: status=%d body=%s", title, resp.StatusCode, b)
+		}
+	}
+
+	// Alpha: numeric costs + a model + tags; one deliberately non-numeric cost.
+	mk(alpha, "A gpt small", `{"type":"run","model":"gpt-4","cost":10,"tags":["prod","llm"]}`)
+	mk(alpha, "A gpt big", `{"type":"run","model":"gpt-4","cost":20,"tags":["llm"]}`)
+	mk(alpha, "A claude", `{"type":"run","model":"claude","cost":5,"tags":["prod"]}`)
+	mk(alpha, "A broken cost", `{"type":"run","model":"claude","cost":"expensive"}`)
+	// Bravo: a big secret cost that must never enter an outsider's rollup.
+	mk(bravo, "B secret", `{"type":"run","model":"gpt-4","cost":1000}`)
+
+	alphaScope := func(rest string) string {
+		return fmt.Sprintf(`{"where":{"type":"run"},"space":%d%s}`, alpha, rest)
+	}
+
+	t.Run("operator gt filters numerically", func(t *testing.T) {
+		rows := queryPages(t, oc, ts.URL, alphaScope(`,"filters":[{"key":"cost","op":"gt","value":10}]`))
+		got := titlesOf(rows)
+		if !got["A gpt big"] || got["A gpt small"] || got["A claude"] {
+			t.Fatalf("cost>10 want only 'A gpt big'; got %v", got)
+		}
+	})
+
+	t.Run("operator gte / lt / ne", func(t *testing.T) {
+		gte := titlesOf(queryPages(t, oc, ts.URL, alphaScope(`,"filters":[{"key":"cost","op":"gte","value":10}]`)))
+		if !gte["A gpt small"] || !gte["A gpt big"] || gte["A claude"] {
+			t.Fatalf("cost>=10 want the two gpt rows; got %v", gte)
+		}
+		lt := titlesOf(queryPages(t, oc, ts.URL, alphaScope(`,"filters":[{"key":"cost","op":"lt","value":10}]`)))
+		if !lt["A claude"] || lt["A gpt small"] {
+			t.Fatalf("cost<10 want only 'A claude'; got %v", lt)
+		}
+		ne := titlesOf(queryPages(t, oc, ts.URL, alphaScope(`,"filters":[{"key":"model","op":"ne","value":"gpt-4"}]`)))
+		if ne["A gpt small"] || ne["A gpt big"] || !ne["A claude"] {
+			t.Fatalf("model!=gpt-4 want the claude rows only; got %v", ne)
+		}
+	})
+
+	t.Run("operator contains on array and exists", func(t *testing.T) {
+		ct := titlesOf(queryPages(t, oc, ts.URL, alphaScope(`,"filters":[{"key":"tags","op":"contains","value":"prod"}]`)))
+		if !ct["A gpt small"] || !ct["A claude"] || ct["A gpt big"] {
+			t.Fatalf("tags contains prod want small+claude; got %v", ct)
+		}
+		// 'A broken cost' has no tags → exists:tags excludes it.
+		ex := titlesOf(queryPages(t, oc, ts.URL, alphaScope(`,"filters":[{"key":"tags","op":"exists"}]`)))
+		if ex["A broken cost"] || !ex["A gpt small"] {
+			t.Fatalf("exists:tags should include tagged rows and exclude the untagged one; got %v", ex)
+		}
+	})
+
+	t.Run("sort by a prop, descending", func(t *testing.T) {
+		rows := queryPages(t, oc, ts.URL, alphaScope(`,"order":[{"field":"cost","dir":"desc"}],"filters":[{"key":"cost","op":"exists"}]`))
+		// Only numeric-cost rows carry a comparable value; the broken one is filtered by exists.
+		var costs []float64
+		for _, r := range rows {
+			if c, ok := r.Props["cost"].(float64); ok {
+				costs = append(costs, c)
+			}
+		}
+		if len(costs) < 3 || costs[0] < costs[len(costs)-1] {
+			t.Fatalf("cost desc should be non-increasing; got %v", costs)
+		}
+	})
+
+	t.Run("aggregate SUM group by model (owner sees all spaces)", func(t *testing.T) {
+		res := queryAggregate(t, oc, ts.URL,
+			`{"where":{"type":"run"},"aggregate":{"fns":[{"fn":"sum","key":"cost","as":"total"}],"group_by":"model"}}`)
+		if got := groupValue(t, res, "gpt-4", "total"); got != 1030 {
+			t.Fatalf("SUM(cost) for gpt-4 across all readable spaces = %v, want 1030 (10+20+1000)", got)
+		}
+		if got := groupValue(t, res, "claude", "total"); got != 5 {
+			t.Fatalf("SUM(cost) for claude = %v, want 5", got)
+		}
+		if res.SkippedNonNumeric != 1 {
+			t.Fatalf("one non-numeric cost ('expensive') should be reported skipped; got %d", res.SkippedNonNumeric)
+		}
+	})
+
+	t.Run("aggregate COUNT and whole-set (no group by)", func(t *testing.T) {
+		res := queryAggregate(t, oc, ts.URL,
+			`{"where":{"type":"run"},"space":`+fmt.Sprintf("%d", alpha)+`,"aggregate":{"fns":[{"fn":"count","as":"n"},{"fn":"avg","key":"cost","as":"mean"}]}}`)
+		if len(res.Groups) != 1 || res.Groups[0].Key != nil {
+			t.Fatalf("no group_by should yield one whole-set row with null key; got %v", res.Groups)
+		}
+		if got := groupValue(t, res, nil, "n"); got != 4 {
+			t.Fatalf("COUNT of Alpha runs = %v, want 4", got)
+		}
+		// avg over the 3 numeric costs (10,20,5) = 11.666…; the broken one is excluded.
+		if got := groupValue(t, res, nil, "mean"); got < 11.6 || got > 11.7 {
+			t.Fatalf("AVG(cost) = %v, want ~11.67 (10+20+5)/3", got)
+		}
+	})
+
+	// THE load-bearing test: a non-member's aggregate must not include a private
+	// space's rows. Bravo's cost=1000 must be absent from the outsider's SUM.
+	t.Run("aggregate does NOT leak a private space's rows", func(t *testing.T) {
+		seedMember(t, d, alpha, outsider, "viewer") // Alpha only; NOT Bravo
+		xc := loginClient(t, ts, "v2out", "outpw123456")
+		res := queryAggregate(t, xc, ts.URL,
+			`{"where":{"type":"run"},"aggregate":{"fns":[{"fn":"sum","key":"cost","as":"total"}]}}`)
+		got := groupValue(t, res, nil, "total")
+		if got != 35 {
+			t.Fatalf("outsider SUM(cost) = %v, want 35 (10+20+5) — Bravo's 1000 leaked into the aggregate!", got)
+		}
+	})
+}
