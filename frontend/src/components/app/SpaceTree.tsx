@@ -227,7 +227,7 @@ export function SpaceTree({ activeSpaceId, activePageId }: SpaceTreeProps) {
                 )}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="left">
+            <TooltipContent side="left" className="pointer-events-none">
               {anySpaceOpen ? 'Collapse all' : 'Expand all'}
             </TooltipContent>
           </Tooltip>
@@ -468,8 +468,12 @@ function SpaceRow({
               )}
             </button>
           </TooltipTrigger>
-          {/* #29 — full name on hover, for names the sidebar truncates. */}
-          <TooltipContent side="right">{space.name || 'Untitled space'}</TooltipContent>
+          {/* #29 — full name on hover, for names the sidebar truncates.
+              pointer-events-none so this informational tooltip never intercepts
+              a click on the row's trailing controls it may overlap. */}
+          <TooltipContent side="right" className="pointer-events-none">
+            {space.name || 'Untitled space'}
+          </TooltipContent>
         </Tooltip>
 
         {/* #26 — per-space counts: total pages (muted) + disputed (danger, only

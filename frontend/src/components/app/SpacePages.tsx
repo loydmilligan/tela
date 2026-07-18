@@ -310,8 +310,12 @@ function PageNode({
               )}
             </button>
           </TooltipTrigger>
-          {/* #29 — full name on hover, for titles the sidebar truncates. */}
-          <TooltipContent side="right">{node.title || UNTITLED_TITLE}</TooltipContent>
+          {/* #29 — full name on hover, for titles the sidebar truncates.
+              pointer-events-none so this informational tooltip never intercepts
+              a click on the row's trailing ⋯ / badges it may overlap. */}
+          <TooltipContent side="right" className="pointer-events-none">
+            {node.title || UNTITLED_TITLE}
+          </TooltipContent>
         </Tooltip>
 
         {/* Staleness marker — trailing, only when this page has background

@@ -390,6 +390,15 @@
   .tela-tooltip-content[data-state='closed'] {
     animation: tela-fade-out var(--duration-fast) var(--ease-out);
   }
+  /* An informational tooltip (its content marked pointer-events-none) must not
+     trap the pointer — and neither must the Radix popper WRAPPER that positions
+     it, which can sit over a sibling control (e.g. a sidebar row's ⋯ button or
+     badges). Setting it on the content alone isn't enough; the wrapper still
+     intercepts. Scoped by :has so INTERACTIVE tooltips (no pointer-events-none)
+     keep their pointer events. */
+  [data-radix-popper-content-wrapper]:has(.tela-tooltip-content.pointer-events-none) {
+    pointer-events: none;
+  }
   .tela-tooltip-arrow {
     fill: var(--surface-3);
   }
