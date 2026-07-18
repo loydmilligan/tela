@@ -43,6 +43,7 @@ import { Input } from '../ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { VisibilityBadge } from '../ui/visibility-badge'
 import { MovePageDialog } from './move-page-dialog'
+import { TemplatePickerDialog } from './TemplatePickerDialog'
 import { cn } from '../../lib/utils'
 
 const UNTITLED_TITLE = 'Untitled'
@@ -208,6 +209,7 @@ function PageNode({
   const [renameOpen, setRenameOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [templateOpen, setTemplateOpen] = useState(false)
 
   const hasChildren = node.children.length > 0
   const isOpen = expanded.has(node.id)
@@ -362,6 +364,14 @@ function PageNode({
             <DropdownMenuItem onSelect={() => void handleNewChild()}>
               New child page
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                onExpand(node.id) // reveal the new child once created
+                setTemplateOpen(true)
+              }}
+            >
+              New from template…
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setMoveOpen(true)}>
               Move…
             </DropdownMenuItem>
@@ -410,6 +420,12 @@ function PageNode({
         active={active}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
+      />
+      <TemplatePickerDialog
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+        spaceId={spaceId}
+        parentId={node.id}
       />
     </li>
   )

@@ -258,6 +258,17 @@ Everything else, stored verbatim in `props`, queryable and round-tripped.
   accidental-publish footgun on import. Safety here comes from *not acting*, not
   from a guard.
 - `tags` — stored in the bag for now (see Deferred).
+- `template` — **the create-from-template marker.** A page with `template: true`
+  is a template: the sidebar's "New from template…" action (page-node ⋯ menu and
+  space ⋯ menu) lists every readable `template:true` page (grouped by space, via
+  the access-gated `props @> {template:true}` query), and on pick copies its body
+  into a new note in the current space. `{{placeholder}}` tokens in the body are
+  filled by a modal at creation (`lib/templates.ts` parses/substitutes them);
+  field/query blocks in the body are copied verbatim and render live in the new
+  note. Purely a Tier-3 free-form flag — no column, no backend, no migration. The
+  created note inherits the template's props EXCEPT `template`/`summary`/
+  `summary_lock` (template metadata, not content). Discovery is "everywhere you
+  can read"; a designated-templates-space filter is a deferred follow-up.
 - arbitrary user/agent keys — the queryable long tail.
 
 ## Two operations

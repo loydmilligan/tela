@@ -52,6 +52,7 @@ import { cn } from '../../lib/utils'
 import { emitOpenNewSpace } from '../../lib/newSpaceEvent'
 import { useFileDownload } from './use-file-download'
 import { ShareSpaceDialog } from './ShareSpaceDialog'
+import { TemplatePickerDialog } from './TemplatePickerDialog'
 import { StalenessDot } from './StalenessDot'
 import { SpacePages } from './SpacePages'
 
@@ -421,6 +422,7 @@ function SpaceRow({
   const [renameOpen, setRenameOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [templateOpen, setTemplateOpen] = useState(false)
   const { download: downloadZip } = useFileDownload(
     `/api/spaces/${space.id}/export.zip`,
     { fallbackName: 'space.zip' },
@@ -559,6 +561,14 @@ function SpaceRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                if (!expanded) onToggleExpand() // reveal the new top-level note
+                setTemplateOpen(true)
+              }}
+            >
+              New from template…
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setShareOpen(true)}>
               <UsersRound width={14} height={14} /> Share
             </DropdownMenuItem>
@@ -591,6 +601,12 @@ function SpaceRow({
         space={space}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
+      />
+      <TemplatePickerDialog
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+        spaceId={space.id}
+        parentId={null}
       />
     </li>
   )
