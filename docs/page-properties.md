@@ -85,9 +85,57 @@ sort: -updated         # (-)updated | (-)created | (-)title  ('-' = descending)
 limit: 25
 ```
 
+### query v2 — operators, sort-by-prop, aggregation
+
+v2 extends the block from *list* to *compute*, over the **same** access-filtered
+set (nothing new bypasses the join). All still on `POST /api/pages/query`.
+
+```yaml
+where:
+  type: run
+  cost: "> 100"          # operator: >, <, >=, <=, !=  (numeric or ISO-date/text)
+  tags: "contains prod"  # array element membership OR string substring, by type
+  owner: exists          # key present
+columns: [title, cost, "cost * 1000 as mills"]  # computed column (display-only)
+sort: cost desc, title asc                        # multi-key, any prop, asc/desc
+```
+
+```yaml
+# aggregate rollup — a live cost dashboard
+where: { type: run }
+aggregate: sum(cost) as total, count as n, avg(cost) as mean
+group by: model          # omit for a single whole-set row
+```
+
+- **Operators** parse in `where`: a bare `key: value` stays exact containment (v1
+  back-compat); a value opening with an operator token becomes a comparison
+  `filter`. The frontend splits them; the backend ANDs `props @> where` with each
+  filter. Every prop key and value is a **bind parameter**; only the operator
+  token itself is whitelist-mapped (`cmpOpSQL`), never interpolated.
+- **Sort by any prop** (`order`): prop keys sort by the raw `jsonb` value (correct
+  within a consistently-typed prop). The v1 `sort: -updated` whitelist still works.
+- **Aggregation** (`aggregate` + optional `group by`) returns `{groups:[{key,
+  values}], skipped_non_numeric}` instead of `{pages}`; no `group by` collapses to
+  one `key: null` row. SUM/AVG/MIN/MAX `FILTER` to numeric values so a stray
+  non-number never errors — and the excluded rows are **counted and surfaced**,
+  never silently dropped. Numeric aggregation needs props stored as real JSON
+  numbers (the `set_prop` type-union fix, `main`).
+- **Computed columns** (`"<prop> <op> <number> as <alias>"`) are **client-side,
+  display-only** — evaluated from the row's props in `MarkdownView.tsx`, never
+  sent to SQL, so they add zero injection surface. They cannot be sorted or
+  aggregated in v1 (`SUM(cost)` then ×1000 on the result covers the real case).
+- **Aggregates are access-gated too:** because the aggregate SELECTs over the same
+  `space_access`-joined set, a page in a space you can't read never enters a
+  `SUM` — an aggregate value can't leak private data even without returning the
+  row. Pinned by `TestQueryPagesV2` ("aggregate does NOT leak a private space's
+  rows": a non-member's SUM is 35, not 1035, with the owner's authorized 1030 as
+  the positive control).
+
 **Backend — `POST /api/pages/query`** (`api/pages_query.go` `QueryPages` /
-`queryPagesCore`). Session-gated. The frontend parses the block's YAML and POSTs
-the structured spec; the handler returns the matching page rows.
+`queryPagesCore` / `aggregatePagesCore`). Session-gated. The frontend parses the
+block's YAML and POSTs the structured spec; the handler returns the matching page
+rows, or the aggregate rollup when `aggregate` is present. One shared
+`buildFilteredFrom` assembles the join + filters for both paths.
 
 - **Access (docs/access-model.md invariant 4 — one resolution path):** every row
   is JOINed to `(SELECT DISTINCT space_id FROM space_access WHERE user_id = $1)`,

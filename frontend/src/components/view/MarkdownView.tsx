@@ -46,6 +46,7 @@ import {
   parseQuerySpec,
   isQueryError,
   type QuerySpec,
+  type ComputedColumn,
 } from '../../lib/blocks/query-spec'
 import { relativeTimeFromSqlite } from '../../lib/relativeTime'
 
@@ -762,10 +763,44 @@ interface QueryCommentRow {
   updated_at: string
 }
 
+// A group row from an aggregate query: a group key (null = whole-set) + values.
+interface QueryGroupRow {
+  key: unknown
+  values: Record<string, number | null>
+}
+
+// Evaluate a display-only computed column from a row's props. Non-numeric prop →
+// blank (nothing to compute). Kept in lockstep with parseComputed in query-spec.
+function evalComputed(c: ComputedColumn, props: Record<string, unknown>): string {
+  const raw = props[c.prop]
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n)) return ''
+  let r: number
+  switch (c.op) {
+    case '+':
+      r = n + c.literal
+      break
+    case '-':
+      r = n - c.literal
+      break
+    case '*':
+      r = n * c.literal
+      break
+    case '/':
+      r = c.literal === 0 ? NaN : n / c.literal
+      break
+  }
+  return Number.isFinite(r) ? String(r) : ''
+}
+
 // Render one cell for a spec column: title (linked to the row's own page —
 // results can span spaces, so the href uses the row's space_id, not the current
-// page's), the space name, a relative timestamp, or a prop value.
-function queryCell(col: string, row: QueryRow): ReactNode {
+// page's), the space name, a relative timestamp, a computed column, or a prop.
+function queryCell(
+  col: string,
+  row: QueryRow,
+  computed: Map<string, ComputedColumn>,
+): ReactNode {
   const c = col.toLowerCase()
   if (c === 'title') {
     return (
@@ -777,6 +812,8 @@ function queryCell(col: string, row: QueryRow): ReactNode {
   if (c === 'space') return row.space_name
   if (c === 'updated') return relativeTimeFromSqlite(row.updated_at)
   if (c === 'created') return relativeTimeFromSqlite(row.created_at)
+  const comp = computed.get(col)
+  if (comp) return evalComputed(comp, row.props)
   const v = row.props[col]
   if (v == null) return ''
   if (typeof v === 'boolean') return v ? 'true' : 'false'
@@ -820,6 +857,7 @@ function queryCommentCell(col: string, row: QueryCommentRow): ReactNode {
 type BlockRows =
   | { kind: 'pages'; rows: QueryRow[] }
   | { kind: 'comments'; rows: QueryCommentRow[] }
+  | { kind: 'aggregate'; groups: QueryGroupRow[]; skipped: number }
 
 function QueryBlockView({ code }: { code: string }) {
   const { pageId } = useContext(ViewContext)
@@ -852,19 +890,42 @@ function QueryBlockView({ code }: { code: string }) {
         )
         return { kind: 'comments', rows: r.comments ?? [] }
       }
+      // v2 filters/order/aggregate ride alongside the v1 fields; the server
+      // re-gates every row (and every aggregate) through space_access.
+      const body = JSON.stringify({
+        where: s.where,
+        filters: s.filters,
+        space: s.space,
+        page_id: pageId,
+        sort: s.sort,
+        order: s.order,
+        aggregate: s.aggregate,
+        limit: s.limit,
+      })
+      if (s.aggregate) {
+        const r = await api<{
+          groups: QueryGroupRow[]
+          skipped_non_numeric: number
+        }>('/api/pages/query', { method: 'POST', body })
+        return {
+          kind: 'aggregate',
+          groups: r.groups ?? [],
+          skipped: r.skipped_non_numeric ?? 0,
+        }
+      }
       const r = await api<{ pages: QueryRow[] }>('/api/pages/query', {
         method: 'POST',
-        body: JSON.stringify({
-          where: s.where,
-          space: s.space,
-          page_id: pageId,
-          sort: s.sort,
-          limit: s.limit,
-        }),
+        body,
       })
       return { kind: 'pages', rows: r.pages ?? [] }
     },
   })
+
+  const computedMap = useMemo(() => {
+    const m = new Map<string, ComputedColumn>()
+    if (specOk) for (const c of (spec as QuerySpec).computed) m.set(c.alias, c)
+    return m
+  }, [spec, specOk])
 
   if (isQueryError(spec)) {
     return <div className="tela-query-error">{spec.error}</div>
@@ -879,6 +940,11 @@ function QueryBlockView({ code }: { code: string }) {
     return <div className="tela-query-error">Query failed.</div>
   }
   const data = q.data
+
+  if (data?.kind === 'aggregate') {
+    return <AggregateTable spec={spec} groups={data.groups} skipped={data.skipped} />
+  }
+
   const count = data ? data.rows.length : 0
   if (count === 0) {
     return (
@@ -909,12 +975,65 @@ function QueryBlockView({ code }: { code: string }) {
             : (data!.rows as QueryRow[]).map((row) => (
                 <tr key={row.id}>
                   {spec.columns.map((col) => (
-                    <td key={col}>{queryCell(col, row)}</td>
+                    <td key={col}>{queryCell(col, row, computedMap)}</td>
                   ))}
                 </tr>
               ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// Render an aggregate rollup: one column for the group key (when grouped) plus a
+// column per aggregate function. A single null-key group (no GROUP BY) reads as a
+// stat line. Any non-numeric rows excluded from the math are disclosed, never
+// silently dropped.
+function AggregateTable({
+  spec,
+  groups,
+  skipped,
+}: {
+  spec: QuerySpec
+  groups: QueryGroupRow[]
+  skipped: number
+}) {
+  const agg = spec.aggregate!
+  const grouped = !!agg.group_by
+  const aliases = agg.fns.map((f) => f.as)
+  if (groups.length === 0) {
+    return <div className="tela-query-empty">No matching pages.</div>
+  }
+  const fmt = (v: number | null | undefined) =>
+    v == null ? '' : Number.isInteger(v) ? String(v) : String(Math.round(v * 1e6) / 1e6)
+  return (
+    <div className="tela-query" data-query="aggregate">
+      <table>
+        <thead>
+          <tr>
+            {grouped && <th>{agg.group_by}</th>}
+            {aliases.map((a) => (
+              <th key={a}>{a}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((g, i) => (
+            <tr key={i}>
+              {grouped && <td>{g.key == null ? '—' : String(g.key)}</td>}
+              {aliases.map((a) => (
+                <td key={a}>{fmt(g.values[a])}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {skipped > 0 && (
+        <div className="tela-query-note">
+          {skipped} row{skipped === 1 ? '' : 's'} excluded (non-numeric value under
+          an aggregated key)
+        </div>
+      )}
     </div>
   )
 }

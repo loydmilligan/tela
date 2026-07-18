@@ -347,11 +347,23 @@
         "target",
         "change",
         "decision",
-        "log"
+        "log",
+        "aggregate",
+        "sum",
+        "count",
+        "avg",
+        "average",
+        "min",
+        "max",
+        "group",
+        "rollup",
+        "operator",
+        "sort",
+        "computed"
       ],
-      "syntax": "```query\nwhere: { type: doc }\nspace: here\ncolumns: [title, status, updated]\nsort: -updated\nlimit: 25\n```\n\nA page's changelog:\n\n```query\ntarget: comments\nwhere: { type: change }\npage: here\ncolumns: [change_summary, author, created]\nsort: -created\n```",
-      "when": "List pages by their properties — a live, self-updating table (e.g. every page with type: incident, or all docs in this space). The Dataview analog. With `target: comments` it lists CHANGE-COMMENTS instead — a live changelog built from the structured comments on pages.",
-      "note": "A ```query fenced block with a YAML spec. `target`: pages (default) | comments — pages filters a page's OWN props; comments filters the props on timestamped events ABOUT pages (the change/decision log). `where` is props containment (props @> where) — exact key/value equality only, matches props, not columns like title. `space`: here (this space) | a space id | omit (all spaces you can read). `page` (comments only): here (this page) | a page id | omit — scope to one page's changelog. `columns`: for pages any of title, space, created, updated, or a prop key; for comments any of page, author, body, space, created, updated, or a prop key (change_summary/type/status). `sort`: pages take (-)updated | (-)created | (-)title, comments take (-)created | (-)updated. `limit` caps rows. Results are always gated to spaces you can read. Note a change-comment's headline prop is `change_summary`, NOT `summary` — that key is the page's own abstract. The live table renders in the read view."
+      "syntax": "```query\nwhere: { type: doc }\nspace: here\ncolumns: [title, status, updated]\nsort: -updated\nlimit: 25\n```\n\nOperators, prop sort, computed column:\n\n```query\nwhere:\n  type: run\n  cost: \"> 100\"\n  tags: \"contains prod\"\ncolumns: [title, cost, \"cost * 1000 as mills\"]\nsort: cost desc, title asc\n```\n\nAggregate rollup (a live cost dashboard):\n\n```query\nwhere: { type: run }\naggregate: sum(cost) as total, count as n\ngroup by: model\n```\n\nA page's changelog:\n\n```query\ntarget: comments\nwhere: { type: change }\npage: here\ncolumns: [change_summary, author, created]\nsort: -created\n```",
+      "when": "List pages by their properties — a live, self-updating table (e.g. every page with type: incident, or all docs in this space). The Dataview analog. Add operators, sort by any prop, or an aggregate rollup (SUM/COUNT/AVG/MIN/MAX, optionally grouped) to turn it into a live stat/cost dashboard. With `target: comments` it lists CHANGE-COMMENTS instead — a live changelog built from the structured comments on pages.",
+      "note": "A ```query fenced block with a YAML spec. `target`: pages (default) | comments — pages filters a page's OWN props; comments filters the props on timestamped events ABOUT pages (the change/decision log). `where` is props containment — a bare `key: value` is exact equality; a value that OPENS WITH AN OPERATOR is a comparison: `cost: \"> 100\"` (also `<`, `>=`, `<=`, `!=`), `tags: \"contains prod\"` (array membership or string substring), or `owner: exists`. `space`: here (this space) | a space id | omit (all spaces you can read). `page` (comments only): here (this page) | a page id | omit — scope to one page's changelog. `columns`: for pages any of title, space, created, updated, a prop key, or a computed column `\"<prop> <op> <number> as <alias>\"` (e.g. `\"cost * 1000 as mills\"`, display-only); for comments any of page, author, body, space, created, updated, or a prop key. `sort`: multi-key by any prop, `sort: cost desc, title asc` (the v1 `-updated` form still works); comments take (-)created | (-)updated. `aggregate`: `sum(cost) as total, count as n, avg(cost)` (fns SUM/COUNT/AVG/MIN/MAX) with optional `group by: <prop>` — renders group rows instead of pages; non-numeric values under an aggregated key are excluded and the count disclosed. Numeric aggregation needs props stored as real numbers (set via native JSON, not strings). `limit` caps rows (list mode). Results — including aggregates — are always gated to spaces you can read: a page you can't read never enters a SUM. A change-comment's headline prop is `change_summary`, NOT `summary`. The live table renders in the read view."
     },
     {
       "id": "embed",
