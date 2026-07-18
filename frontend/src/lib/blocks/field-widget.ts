@@ -38,6 +38,23 @@ export function isFieldError(
   return 'error' in spec
 }
 
+// The value a field's bound prop should hold when the block first renders on a
+// page that hasn't set it yet (#15 field auto-init). Returns undefined for the
+// types with no meaningful default — `text` (an empty string would just add
+// noise; it stays unset until typed) and `button` (which only writes its fixed
+// value on click). A `select` seeds its first option; a `toggle` seeds false, so
+// it starts in a definite, queryable state.
+export function fieldInitValue(spec: FieldSpec): unknown {
+  switch (spec.type) {
+    case 'toggle':
+      return false
+    case 'select':
+      return spec.options.length > 0 ? spec.options[0] : undefined
+    default:
+      return undefined
+  }
+}
+
 // Strip one layer of matching surrounding quotes.
 function unquote(s: string): string {
   const t = s.trim()

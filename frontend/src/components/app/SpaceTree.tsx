@@ -4,6 +4,8 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   FileDown,
   Globe,
   Lock,
@@ -44,6 +46,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useSpaceAccess } from '../../lib/queries/space-grants'
 import { useFreshness } from '../../lib/queries/freshness'
 import { useSummaries } from '../../lib/queries/summaries'
+import { useSpaceCounts } from '../../lib/queries/space-counts'
 import { spaceStaleLabel } from './staleness'
 import { cn } from '../../lib/utils'
 import { emitOpenNewSpace } from '../../lib/newSpaceEvent'
@@ -131,8 +134,29 @@ export function SpaceTree({ activeSpaceId, activePageId }: SpaceTreeProps) {
     return labels
   }, [freshness.data, summaries.data])
 
+  // Per-space page + disputed counts for the sidebar badges (#26) — one batched
+  // fetch, mapped by space id and passed down (react-query dedupes anyway).
+  const spaceCounts = useSpaceCounts()
+  const countsBySpace = useMemo(() => {
+    const m = new Map<number, { total: number; disputed: number }>()
+    for (const c of spaceCounts.data ?? []) {
+      m.set(c.space_id, { total: c.total, disputed: c.disputed })
+    }
+    return m
+  }, [spaceCounts.data])
+
   // Alphabetical order useSpaces() already gives us, clustered by org below.
-  const all = spaces.data ?? []
+  const all = useMemo(() => spaces.data ?? [], [spaces.data])
+
+  // #22 — collapse/expand ALL spaces in one click. Operates on the spaces set
+  // (the intent in idea 1079 is "quickly close all the spaces"); per-page and
+  // org state are left as-is. Toggles by current state: anything open → collapse.
+  const anySpaceOpen = expandedSpaces.set.size > 0
+  const replaceSpaces = expandedSpaces.replace
+  const toggleAllSpaces = useCallback(() => {
+    if (anySpaceOpen) replaceSpaces([])
+    else replaceSpaces(all.map((s) => String(s.id)))
+  }, [anySpaceOpen, replaceSpaces, all])
 
   const renderRow = (space: Space) => (
     <SpaceRow
@@ -141,6 +165,7 @@ export function SpaceTree({ activeSpaceId, activePageId }: SpaceTreeProps) {
       active={space.id === activeSpaceId}
       activePageId={activePageId}
       staleLabel={staleLabelBySpace.get(space.id) ?? null}
+      counts={countsBySpace.get(space.id)}
       expanded={expandedSpaces.set.has(String(space.id))}
       onToggleExpand={() => expandedSpaces.toggle(String(space.id))}
       onSelect={() =>
@@ -182,9 +207,33 @@ export function SpaceTree({ activeSpaceId, activePageId }: SpaceTreeProps) {
       data-keynav-region="nav"
       className="flex-1 min-h-0 overflow-y-auto flex flex-col pb-[var(--space-3)] mt-[var(--space-2)] border-t border-[var(--border-subtle)] pt-[var(--space-3)]"
     >
-      {/* No section title or chrome — the org/personal cluster headers carry the
-          labelling, and "New space" lives in the command palette + home
-          dashboard. The tree is purely navigation. */}
+      {/* One affordance in the header: collapse/expand all spaces (#22). Shown
+          only once there's more than one space to act on. The cluster headers
+          still carry the labelling; "New space" lives in the palette + home. */}
+      {all.length > 1 ? (
+        <div className="flex justify-end px-[var(--space-3)] pb-[var(--space-1)]">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={toggleAllSpaces}
+                aria-label={anySpaceOpen ? 'Collapse all spaces' : 'Expand all spaces'}
+                className="inline-flex items-center justify-center h-[var(--space-5)] w-[var(--space-5)] rounded-[var(--radius-xs)] bg-transparent border-0 cursor-pointer text-[var(--text-muted)] hover:text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              >
+                {anySpaceOpen ? (
+                  <ChevronsDownUp width={14} height={14} />
+                ) : (
+                  <ChevronsUpDown width={14} height={14} />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {anySpaceOpen ? 'Collapse all' : 'Expand all'}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      ) : null}
+
       <section
         className="flex flex-col gap-[1px] px-[var(--space-3)]"
         aria-label="Spaces"
@@ -305,7 +354,20 @@ function usePersistentSet(key: string) {
       return next
     })
   }, [key])
-  return { set, toggle, add }
+  // Bulk setters for the collapse/expand-all control (#22).
+  const replace = useCallback((keys: string[]) => {
+    setSet(() => {
+      const next = new Set(keys)
+      try {
+        window.localStorage.setItem(key, JSON.stringify([...next]))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [key])
+  const clear = useCallback(() => replace([]), [replace])
+  return { set, toggle, add, replace, clear }
 }
 
 function SpacesSkeleton() {
@@ -340,6 +402,7 @@ interface SpaceRowProps {
   active: boolean
   activePageId: number | null
   staleLabel: string | null
+  counts: { total: number; disputed: number } | undefined
   expanded: boolean
   onToggleExpand: () => void
   onSelect: () => void
@@ -350,6 +413,7 @@ function SpaceRow({
   active,
   activePageId,
   staleLabel,
+  counts,
   expanded,
   onToggleExpand,
   onSelect,
@@ -386,21 +450,51 @@ function SpaceRow({
           )}
         </button>
 
-        <button
-          type="button"
-          data-keynav-item
-          onClick={onSelect}
-          className={cn(
-            'flex-1 min-w-0 text-left truncate py-[var(--space-2)]',
-            'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
-            'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
-            active && 'text-[var(--accent)] font-medium',
-          )}
-        >
-          {space.name || (
-            <span className="text-[var(--text-muted)]">Untitled space</span>
-          )}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-keynav-item
+              onClick={onSelect}
+              className={cn(
+                'flex-1 min-w-0 text-left truncate py-[var(--space-2)]',
+                'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
+                'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
+                active && 'text-[var(--accent)] font-medium',
+              )}
+            >
+              {space.name || (
+                <span className="text-[var(--text-muted)]">Untitled space</span>
+              )}
+            </button>
+          </TooltipTrigger>
+          {/* #29 — full name on hover, for names the sidebar truncates. */}
+          <TooltipContent side="right">{space.name || 'Untitled space'}</TooltipContent>
+        </Tooltip>
+
+        {/* #26 — per-space counts: total pages (muted) + disputed (danger, only
+            when >0). Yields to the access cluster + ⋯ on hover, like the other
+            resting markers, so the row stays calm. */}
+        {counts && (counts.total > 0 || counts.disputed > 0) ? (
+          <span className="shrink-0 inline-flex items-center gap-[var(--space-1)] group-hover:hidden">
+            {counts.disputed > 0 ? (
+              <span
+                aria-label={`${counts.disputed} disputed`}
+                title={`${counts.disputed} disputed`}
+                className="inline-flex items-center justify-center px-[3px] rounded-[var(--radius-xs)] text-[length:var(--text-xs)] leading-none tabular-nums text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+              >
+                {counts.disputed}
+              </span>
+            ) : null}
+            <span
+              aria-label={`${counts.total} pages`}
+              title={`${counts.total} pages`}
+              className="text-[length:var(--text-xs)] tabular-nums text-[var(--text-muted)]"
+            >
+              {counts.total}
+            </span>
+          </span>
+        ) : null}
 
         {/* Resting state stays calm: only a published space flags itself, plus a
             staleness rollup. Both yield to the access cluster + ⋯ on hover. */}

@@ -41,7 +41,11 @@ import {
   type PollOption,
 } from '../app/PollWidget'
 import { FieldWidget } from '../app/FieldWidget'
-import { parseFieldSpec, isFieldError } from '../../lib/blocks/field-widget'
+import {
+  parseFieldSpec,
+  isFieldError,
+  fieldInitValue,
+} from '../../lib/blocks/field-widget'
 import {
   parseQuerySpec,
   isQueryError,
@@ -719,6 +723,27 @@ function FieldBlockView({ code }: { code: string }) {
       }
     },
   })
+
+  // #15 field auto-init: the first time an editor views a page whose field block
+  // has no value yet, seed the bound prop with its type default (toggle→false,
+  // select→first option) so it starts in a definite, queryable state. Guarded by
+  // a ref + the write→invalidate→refetch loop, so it fires at most once: once the
+  // key exists in pageProps the condition is false. text/button have no default
+  // (fieldInitValue → undefined) and are left untouched.
+  const seeded = useRef(false)
+  const specOk = !isFieldError(spec)
+  const propKey = specOk ? spec.prop : ''
+  const missing = specOk && pageProps != null && !(propKey in pageProps)
+  const canEditField = !!canEditProps && pageId != null
+  useEffect(() => {
+    if (seeded.current || !specOk || !missing || !canEditField) return
+    const init = fieldInitValue(spec)
+    if (init === undefined) return
+    seeded.current = true
+    setProp.mutate(init)
+    // setProp/spec are stable enough here; keying on the load-bearing signals.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specOk, missing, canEditField])
 
   if (isFieldError(spec)) {
     return <div className="tela-field-error">{spec.error}</div>

@@ -443,7 +443,7 @@ function PageViewer({
         <div className="flex items-center gap-[var(--space-3)] min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {roleResolved ? <FavoriteStar pageId={page.id} /> : null}
           {roleResolved ? <FollowButton id={page.id} /> : null}
-          <PageProperties props={page.props} />
+          <PageProperties props={page.props} pageId={page.id} canEdit={canEdit} />
           {isSheet ? (
             <SheetExportMenu body={page.body} title={page.title} activeSheet={activeSheet} />
           ) : null}
@@ -1384,7 +1384,7 @@ function PageEditor({ page, spaceId, draftRevId, onDeleted, isDeck, isSheet, scr
               <SaveIndicator status={status} />
               {roleResolved ? <FavoriteStar pageId={page.id} /> : null}
               {roleResolved ? <FollowButton id={page.id} /> : null}
-              <PageProperties props={page.props} />
+              <PageProperties props={page.props} pageId={page.id} canEdit={roleResolved && !isViewer} />
               {/* Frequent actions stay on the bar; the rest live in the "•••"
                   menu (PageActionsMenu) to keep the header uncluttered. */}
               {roleResolved && !isViewer ? (

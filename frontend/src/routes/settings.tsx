@@ -11,6 +11,7 @@ import { SettingsUsageTab } from '../components/app/SettingsUsageTab'
 import { SettingsFeedbackTab } from '../components/app/SettingsFeedbackTab'
 import { SettingsNotificationsTab } from '../components/app/SettingsNotificationsTab'
 import { SettingsFollowingTab } from '../components/app/SettingsFollowingTab'
+import { SettingsBehaviorTab } from '../components/app/SettingsBehaviorTab'
 import { SettingsOrgsTab } from '../components/app/SettingsOrgsTab'
 import { SettingsProfileTab } from '../components/app/SettingsProfileTab'
 import { SettingsInstanceTab } from '../components/app/SettingsInstanceTab'
@@ -59,6 +60,12 @@ const FOLLOWING_TAB: SettingsTab = {
   id: 'following',
   label: 'Following',
   render: () => <SettingsFollowingTab />,
+}
+
+const BEHAVIOR_TAB: SettingsTab = {
+  id: 'behavior',
+  label: 'Behavior',
+  render: () => <SettingsBehaviorTab />,
 }
 
 const IMPORT_TAB: SettingsTab = {
@@ -217,7 +224,7 @@ export function SettingsPage() {
   const licenses = useMyLicenses()
   const showLicenses = (licenses.data?.sales_enabled ?? false) || (licenses.data?.licenses.length ?? 0) > 0
   const groups = useMemo<SettingsGroup[]>(() => {
-    const account = [PROFILE_TAB, NOTIFICATIONS_TAB, FOLLOWING_TAB, BILLING_TAB, API_KEYS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
+    const account = [PROFILE_TAB, NOTIFICATIONS_TAB, FOLLOWING_TAB, BEHAVIOR_TAB, BILLING_TAB, API_KEYS_TAB, IMPORT_TAB, SEARCH_INDEX_TAB, SUMMARIES_TAB, SYNC_TAB]
     if (showLicenses) account.splice(4, 0, LICENSES_TAB) // after Plan & Usage
     if (me.data?.is_instance_admin) {
       return [

@@ -20,6 +20,7 @@ import { useSpaceSummaries } from '../../lib/queries/summaries'
 import { pageStaleLabel } from './staleness'
 import type { PageTreeNode } from '../../lib/types'
 import { useExpandedNodes } from '../../lib/useExpandedNodes'
+import { useUiPrefs } from '../../lib/ui-prefs'
 import { StalenessDot } from './StalenessDot'
 import { Button } from '../ui/button'
 import {
@@ -39,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { Input } from '../ui/input'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { VisibilityBadge } from '../ui/visibility-badge'
 import { MovePageDialog } from './move-page-dialog'
 import { cn } from '../../lib/utils'
@@ -202,6 +204,7 @@ function PageNode({
   const navigate = useNavigate()
   const qc = useQueryClient()
   const createPage = useCreatePage()
+  const uiPrefs = useUiPrefs()
   const [renameOpen, setRenameOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -233,6 +236,8 @@ function PageNode({
       void navigate({
         to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
         params: { spaceId, pageId: created.id, slug: undefined },
+        // #27 — optionally land a freshly-created child straight in the editor.
+        search: uiPrefs.newChildEditMode ? { edit: true } : undefined,
       })
     } catch {
       // Tree refetch surfaces failure on next interaction.
@@ -274,31 +279,40 @@ function PageNode({
           />
         )}
 
-        <button
-          type="button"
-          data-keynav-item
-          aria-current={active ? 'page' : undefined}
-          onMouseEnter={() => prefetchPage(qc, node.id)}
-          onFocus={() => prefetchPage(qc, node.id)}
-          onClick={() =>
-            void navigate({
-              to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
-              params: { spaceId, pageId: node.id, slug: undefined },
-            })
-          }
-          className={cn(
-            'flex-1 min-w-0 text-left',
-            'py-[var(--space-2)]',
-            'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
-            'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
-            'truncate',
-            active && 'text-[var(--accent)] font-medium',
-          )}
-        >
-          {node.title || (
-            <span className="text-[var(--text-muted)]">{UNTITLED_TITLE}</span>
-          )}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-keynav-item
+              aria-current={active ? 'page' : undefined}
+              onMouseEnter={() => prefetchPage(qc, node.id)}
+              onFocus={() => prefetchPage(qc, node.id)}
+              onClick={() => {
+                // #28 — optionally expand a node with children on name-click, not
+                // just open it (the chevron still toggles independently).
+                if (uiPrefs.clickExpandsChildren && hasChildren) onExpand(node.id)
+                void navigate({
+                  to: '/spaces/$spaceId/pages/$pageId/{-$slug}',
+                  params: { spaceId, pageId: node.id, slug: undefined },
+                })
+              }}
+              className={cn(
+                'flex-1 min-w-0 text-left',
+                'py-[var(--space-2)]',
+                'font-[family-name:var(--font-sans)] text-[length:var(--text-sm)] leading-[var(--leading-tight)]',
+                'text-[var(--text-primary)] bg-transparent border-0 cursor-pointer outline-none',
+                'truncate',
+                active && 'text-[var(--accent)] font-medium',
+              )}
+            >
+              {node.title || (
+                <span className="text-[var(--text-muted)]">{UNTITLED_TITLE}</span>
+              )}
+            </button>
+          </TooltipTrigger>
+          {/* #29 — full name on hover, for titles the sidebar truncates. */}
+          <TooltipContent side="right">{node.title || UNTITLED_TITLE}</TooltipContent>
+        </Tooltip>
 
         {/* Staleness marker — trailing, only when this page has background
             backfill outstanding (indexing and/or summaries). Hides on row hover
