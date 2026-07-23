@@ -9,5 +9,8 @@ backups/
 
 # Scratch screenshots from agent visual checks
 mdview-*.png
-.playwright-mcp/
 app-*.png
+sidebar-*.png
+
+# Scratch accessibility-tree dumps from browser snapshots
+sb.md
