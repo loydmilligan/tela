@@ -60,3 +60,32 @@ set's stable id, so an idea is easy to cross-reference.
   agent memory everyone's agents read and write. _(Notion 3.0 "memory in pages")_
 - **#65 — "Context bundle" retrieval primitive** — one MCP call returns a page + its backlinks + related
   pages as a ready-made context pack for an agent. _(novel)_
+
+## Field block follow-ups (added 2026-08-01, from dogbelly-systems)
+
+Not from the scored `#N` set — these came out of using `field` blocks to collect
+real decisions from a non-technical domain expert, so they have no stable id.
+
+- **Multi-line text field** — `type: text` renders a single-line input
+  (`frontend/src/lib/blocks/field-widget.ts`, `FieldType = 'text' | 'toggle' |
+  'select' | 'button'`). A decision page that asks someone to *qualify* an answer
+  needs room to write; a one-line box visibly signals "keep it short", which is
+  the opposite of what such a page wants. Either a fifth `textarea` type or an
+  optional `rows:` on `text`. The spec parser is deliberately tiny and
+  synchronous, so this stays a contained change. _(novel — from live use)_
+
+- **`select` auto-init silently records an answer nobody gave** — *defect, not a
+  feature.* `fieldInitValue()` seeds a `select` with **its first option** on first
+  render (issue #15, "field auto-init"), so a page's props come back populated
+  before any human has touched the widget. The rationale — start in a "definite,
+  queryable state" — is reasonable for `toggle`, where `false` is a real default.
+  It is wrong for `select`, where there is no natural default and the whole point
+  of the control is to capture a human's choice.
+  Observed live 2026-08-01: a college-disambiguation page for a client's adviser
+  read as fully answered seventeen minutes after creation, with all three
+  "answers" being the first option. Had it been trusted, three colleges' deadlines
+  would have been written onto the wrong institutions.
+  **Workaround in use:** make the first option an explicit null (`— not yet
+  decided —`) so the auto-seed writes that. Works, but every author has to know.
+  **Suggested fix:** leave `select` unset until interacted with, or make
+  auto-init opt-in per block.
