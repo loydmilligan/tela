@@ -89,3 +89,15 @@ real decisions from a non-technical domain expert, so they have no stable id.
   decided —`) so the auto-seed writes that. Works, but every author has to know.
   **Suggested fix:** leave `select` unset until interacted with, or make
   auto-init opt-in per block.
+
+- **`set_prop` over MCP cannot write a list-valued prop** — *defect.* The tool
+  contract says `value` is `any` (`docs/planning` PR4 brief: "single-key JSONB
+  merge"), but through MCP an array arrives stringified: setting `tags` to
+  `["agents","wiki-hygiene"]` stores the literal string
+  `"[\"agents\", \"wiki-hygiene\"]"`, not a JSON array. Compare page 1196 (real
+  array, authored another way) with page 1212 (string, set via MCP) — same key,
+  different types, only one of which `query_pages` containment will match.
+  Consequence: **an agent cannot correctly tag a page it creates**, and `tags` is
+  where convention lives in this wiki, so agent-authored pages quietly fall out
+  of every tag query. `update_page` is not a workaround — it replaces the whole
+  props bag. Observed 2026-08-01.
