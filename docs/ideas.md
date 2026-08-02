@@ -101,3 +101,13 @@ real decisions from a non-technical domain expert, so they have no stable id.
   where convention lives in this wiki, so agent-authored pages quietly fall out
   of every tag query. `update_page` is not a workaround — it replaces the whole
   props bag. Observed 2026-08-01.
+
+- **`field` select options are split on commas inside quotes** — *defect.* The spec
+  parser is deliberately tiny and synchronous (`field-widget.ts` — "no js-yaml
+  dependency"), and splits `options:` on bare commas without honouring quoting. An
+  option written `"Take the grid everywhere, overwrite mine"` is stored as
+  `"Take the grid everywhere` — truncated at the comma, leading quote included.
+  Observed live 2026-08-01 on page 1211: auto-init wrote the mangled value, so the
+  recorded answer did not match any offered option. Compounds the auto-init defect
+  above — the value a human never chose is *also* corrupt. Any option containing a
+  comma is unusable today; workaround is to avoid commas in option text.
