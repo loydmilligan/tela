@@ -67,6 +67,10 @@ export class TelaProvider {
   private reconnectTimer: number | null = null
   private destroyed = false
   private pageHideHandler: (() => void) | null = null
+  private pageShowHandler: (() => void) | null = null
+  // Local awareness state captured at pagehide so a BFCache/tab-switch restore
+  // can re-seed it verbatim (user field included) — see the pageshow handler.
+  private frozenLocalState: Record<string, unknown> | null = null
 
   // Awareness wire-bridge (#65). The Awareness instance is constructed eagerly
   // so consumers can register on('change') listeners before the ws is open
@@ -90,9 +94,24 @@ export class TelaProvider {
     // path re-opens and PageView's onStatus('connected') effect re-seeds the
     // local user state — no extra hook needed on the restore side.
     this.pageHideHandler = () => {
+      this.frozenLocalState =
+        (this.awareness.getLocalState() as Record<string, unknown> | null) ?? {}
       this.sendAwarenessRemoval()
     }
     window.addEventListener('pagehide', this.pageHideHandler)
+    // Restore side of the pagehide removal above. A BFCache / frozen-tab
+    // restore does NOT always bounce the ws — when it survives, no status
+    // transition fires, so PageView's onStatus('connected') re-seed never
+    // runs and our local awareness entry would stay removed for the rest of
+    // the session (peers lose our presence; historically this also made
+    // leader election gate every save off — the page-1257 data loss).
+    // Re-seed the exact state we dropped at pagehide.
+    this.pageShowHandler = () => {
+      if (this.destroyed) return
+      if (this.awareness.getLocalState() != null) return
+      this.awareness.setLocalState(this.frozenLocalState ?? {})
+    }
+    window.addEventListener('pageshow', this.pageShowHandler)
   }
 
   destroy(): void {
@@ -101,6 +120,10 @@ export class TelaProvider {
     if (this.pageHideHandler) {
       window.removeEventListener('pagehide', this.pageHideHandler)
       this.pageHideHandler = null
+    }
+    if (this.pageShowHandler) {
+      window.removeEventListener('pageshow', this.pageShowHandler)
+      this.pageShowHandler = null
     }
     if (this.reconnectTimer != null) {
       window.clearTimeout(this.reconnectTimer)

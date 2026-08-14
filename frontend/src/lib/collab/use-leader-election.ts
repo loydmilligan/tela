@@ -16,10 +16,15 @@ import type { Awareness } from 'y-protocols/awareness'
 // Fall-back rules:
 //   - awareness is null (no collab session) → false. Callers gate the
 //     non-collab path differently (legacy single-author path is unconditional).
-//   - awareness map is empty (briefly during reconnect, or before local
-//     state has been seeded) → false. The rule is "fall back to NOT leader
-//     to avoid double-saves" — wait for the first non-empty snapshot
-//     before claiming leadership.
+//   - the local peer ALWAYS counts as a candidate, even when its own entry is
+//     missing from the map (empty map included). The map can lose our entry
+//     without the session ending — pagehide sends an awareness removal and a
+//     BFCache/tab-switch restore doesn't always bounce the ws, so nothing
+//     re-seeds it. Falling back to NOT-leader there silently disables every
+//     save while the editor keeps accepting edits via Yjs (page 1257 lost a
+//     whole editing session to this). Worst case of leaning leader is a
+//     duplicate PATCH of an already-converged body — cheap and idempotent;
+//     a save-dead editor is data loss.
 //
 // Multi-tab note: until the awareness wire-bridge ships in #65, only this
 // peer's local state is in the map (the editor seeds it via
@@ -31,12 +36,12 @@ import type { Awareness } from 'y-protocols/awareness'
 // external observable, which handles the render/subscribe race React's
 // useEffect can't (an awareness 'change' that fires between render and
 // effect-mount would otherwise be lost).
-function computeIsLeader(awareness: Awareness | null): boolean {
+export function computeIsLeader(awareness: Awareness | null): boolean {
   if (!awareness) return false
-  const states = awareness.getStates()
-  if (states.size === 0) return false
-  let minId = Infinity
-  for (const id of states.keys()) {
+  // Seed the min with our own clientID: self is a candidate whether or not
+  // our entry is currently in the map (see fall-back rules above).
+  let minId = awareness.clientID
+  for (const id of awareness.getStates().keys()) {
     if (id < minId) minId = id
   }
   return minId === awareness.clientID
