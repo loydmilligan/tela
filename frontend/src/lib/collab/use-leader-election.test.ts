@@ -2,10 +2,20 @@ import { describe, expect, it } from 'vitest'
 import type { Awareness } from 'y-protocols/awareness'
 import { computeIsLeader } from './use-leader-election'
 
-function fakeAwareness(clientID: number, ids: number[]): Awareness {
+// Remote peers get a `user` field (a fully-initialized session announces one);
+// pass bare ids for that normal shape, or [id, state] pairs to model ghosts.
+function fakeAwareness(
+  clientID: number,
+  ids: Array<number | [number, Record<string, unknown>]>,
+): Awareness {
   return {
     clientID,
-    getStates: () => new Map(ids.map((id) => [id, {}])),
+    getStates: () =>
+      new Map(
+        ids.map((e) =>
+          Array.isArray(e) ? e : [e, e === clientID ? {} : { user: { id: e } }],
+        ),
+      ),
   } as unknown as Awareness
 }
 
@@ -37,5 +47,21 @@ describe('computeIsLeader', () => {
 
   it('empty map (unseeded / mid-reconnect) → leader, never save-dead', () => {
     expect(computeIsLeader(fakeAwareness(5, []))).toBe(true)
+  })
+
+  // The prod ghost (2026-08-14): a leaked provider kept renewing a bare `{}`
+  // awareness state with a lower clientID and held leadership forever, saving
+  // nothing. Peers without a `user` field must not compete.
+  it('remote peer without a user field (ghost) cannot win leadership', () => {
+    expect(computeIsLeader(fakeAwareness(5, [[2, {}], 5]))).toBe(true)
+    expect(computeIsLeader(fakeAwareness(5, [[2, { cursor: {} }], 5]))).toBe(
+      true,
+    )
+  })
+
+  it('remote peer WITH a user field still wins when lowest', () => {
+    expect(
+      computeIsLeader(fakeAwareness(5, [[2, { user: { id: 9 } }], 5])),
+    ).toBe(false)
   })
 })
