@@ -48,6 +48,10 @@ type feedbackDTO struct {
 	// Context is a free-form bag (map, not json.RawMessage, so the MCP output
 	// schema types it as an object rather than a byte array — cf. Page.Props).
 	Context map[string]any `json:"context"`
+	// Phase-2a routing (see migration 0070).
+	RecipientUserID  *int64 `json:"recipient_user_id"`
+	RecipientGroupID *int64 `json:"recipient_group_id"`
+	ClaudeRequested  bool   `json:"claude_requested"`
 }
 
 type feedbackCreateRequest struct {
@@ -58,6 +62,13 @@ type feedbackCreateRequest struct {
 	// page_id, space_id, …) the backend augments with source/app/UA metadata.
 	Kind    string          `json:"kind"`
 	Context json.RawMessage `json:"context"`
+	// Phase-2a routing: an explicit recipient (user or group; both empty →
+	// the instance default from feedback_settings) and the opt-in Claude
+	// triage flag. The server re-validates the sender's allow_claude bit —
+	// the client checkbox is a hint, never an authorization.
+	RecipientUserID  *int64 `json:"recipient_user_id"`
+	RecipientGroupID *int64 `json:"recipient_group_id"`
+	ClaudeRequested  bool   `json:"claude_requested"`
 }
 
 // CreateFeedback — POST /api/feedback. Validates trimmed subject + body
@@ -122,6 +133,41 @@ func (s *Server) feedbackCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	// metadata it shouldn't have to send (build version + the request UA).
 	ctxBag := feedbackMergeContext(req.Context, source, userAgent)
 
+	// Phase-2a gating: a sender whose widget permission is off can't file at
+	// all; the Claude flag only sticks when the sender holds allow_claude.
+	enabled, allowClaude, err := s.feedbackSenderPermsCtx(ctx, u.ID)
+	if err != nil {
+		return feedbackDTO{}, &apiErr{http.StatusInternalServerError, "internal", "permissions read failed"}
+	}
+	if !enabled {
+		return feedbackDTO{}, &apiErr{http.StatusForbidden, "feedback_disabled", "feedback is disabled for this account"}
+	}
+	claudeArg := 0
+	if req.ClaudeRequested && allowClaude {
+		claudeArg = 1
+	}
+	// Recipient: explicit user XOR group; neither → the instance default.
+	var recipUser, recipGroup any = nil, nil
+	if req.RecipientUserID != nil && req.RecipientGroupID != nil {
+		return feedbackDTO{}, &apiErr{http.StatusBadRequest, "bad_request", "pick a recipient user OR group, not both"}
+	}
+	switch {
+	case req.RecipientUserID != nil:
+		recipUser = *req.RecipientUserID
+	case req.RecipientGroupID != nil:
+		recipGroup = *req.RecipientGroupID
+	default:
+		var du, dg sql.NullInt64
+		if err := s.DB.QueryRowContext(ctx,
+			`SELECT default_user_id, default_group_id FROM feedback_settings WHERE id = 1`).Scan(&du, &dg); err == nil {
+			if du.Valid {
+				recipUser = du.Int64
+			} else if dg.Valid {
+				recipGroup = dg.Int64
+			}
+		}
+	}
+
 	// OAuth-authed MCP callers (claude.ai/cowork) get a synthetic APIKey with no
 	// persisted row (ID 0) — see verifyWorkOSToken. Stamping that into the
 	// created_by_api_key_id FK violates the api_keys reference and 500s the insert,
@@ -132,12 +178,15 @@ func (s *Server) feedbackCore(ctx context.Context, u *auth.User, k *auth.APIKey,
 	}
 
 	var id int64
-	err := s.DB.QueryRowContext(ctx, `
-		INSERT INTO feedback (created_by_user_id, created_by_api_key_id, subject, body, source, kind, context)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING id`,
-		u.ID, apiKeyArg, subject, body, source, kindArg, string(ctxBag)).Scan(&id)
+	err = s.DB.QueryRowContext(ctx, `
+		INSERT INTO feedback (created_by_user_id, created_by_api_key_id, subject, body, source, kind, context,
+		                      recipient_user_id, recipient_group_id, claude_requested)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10) RETURNING id`,
+		u.ID, apiKeyArg, subject, body, source, kindArg, string(ctxBag),
+		recipUser, recipGroup, claudeArg).Scan(&id)
 	if err != nil {
-		return feedbackDTO{}, &apiErr{http.StatusInternalServerError, "internal", "insert feedback failed"}
+		// An FK violation here means the recipient user/group doesn't exist.
+		return feedbackDTO{}, &apiErr{http.StatusBadRequest, "bad_request", "unknown recipient"}
 	}
 	dto, err := selectFeedbackByID(ctx, s.DB, id)
 	if err != nil {
@@ -273,6 +322,11 @@ type feedbackAdminEntry struct {
 	Username  *string        `json:"username"`
 	ViaAPIKey bool           `json:"via_api_key"`
 	Context   map[string]any `json:"context"`
+	// Phase-2a routing (migration 0070).
+	RecipientUserID  *int64 `json:"recipient_user_id"`
+	RecipientGroupID *int64 `json:"recipient_group_id"`
+	ClaudeRequested  bool   `json:"claude_requested"`
+	ClaimedByUserID  *int64 `json:"claimed_by_user_id"`
 }
 
 // ListFeedback returns the most recent feedback across the instance, newest first.
@@ -285,7 +339,8 @@ func (s *Server) ListFeedback(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.DB.QueryContext(r.Context(), `
 		SELECT f.id, f.created_at, f.subject, f.body, f.kind, f.source, f.context,
 		       f.created_by_user_id, u.username,
-		       CASE WHEN f.created_by_api_key_id IS NOT NULL THEN 1 ELSE 0 END
+		       CASE WHEN f.created_by_api_key_id IS NOT NULL THEN 1 ELSE 0 END,
+		       f.recipient_user_id, f.recipient_group_id, f.claude_requested, f.claimed_by_user_id
 		  FROM feedback f
 		  LEFT JOIN users u ON u.id = f.created_by_user_id
 		 ORDER BY f.id DESC
@@ -304,8 +359,12 @@ func (s *Server) ListFeedback(w http.ResponseWriter, r *http.Request) {
 			userID   sql.NullInt64
 			username sql.NullString
 			viaKey   int
+			recipU   sql.NullInt64
+			recipG   sql.NullInt64
+			claudeR  int
+			claimed  sql.NullInt64
 		)
-		if err := rows.Scan(&e.ID, &e.CreatedAt, &e.Subject, &e.Body, &kind, &e.Source, &ctxRaw, &userID, &username, &viaKey); err != nil {
+		if err := rows.Scan(&e.ID, &e.CreatedAt, &e.Subject, &e.Body, &kind, &e.Source, &ctxRaw, &userID, &username, &viaKey, &recipU, &recipG, &claudeR, &claimed); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "scan feedback row failed")
 			return
 		}
@@ -318,6 +377,16 @@ func (s *Server) ListFeedback(w http.ResponseWriter, r *http.Request) {
 		}
 		e.Username = nullableString(username)
 		e.ViaAPIKey = viaKey == 1
+		if recipU.Valid {
+			e.RecipientUserID = &recipU.Int64
+		}
+		if recipG.Valid {
+			e.RecipientGroupID = &recipG.Int64
+		}
+		e.ClaudeRequested = claudeR == 1
+		if claimed.Valid {
+			e.ClaimedByUserID = &claimed.Int64
+		}
 		entries = append(entries, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -344,22 +413,33 @@ func (s *Server) MarkFeedbackSeen(w http.ResponseWriter, r *http.Request) {
 
 func selectFeedbackByID(ctx context.Context, q *sql.DB, id int64) (feedbackDTO, error) {
 	row := q.QueryRowContext(ctx, `
-		SELECT id, created_at, created_by_user_id, created_by_api_key_id, subject, body, kind, source, context
+		SELECT id, created_at, created_by_user_id, created_by_api_key_id, subject, body, kind, source, context,
+		       recipient_user_id, recipient_group_id, claude_requested
 		  FROM feedback WHERE id = $1`, id)
 	return scanFeedback(row)
 }
 
 func scanFeedback(r rowScanner) (feedbackDTO, error) {
 	var (
-		dto      feedbackDTO
-		userID   sql.NullInt64
-		apiKeyID sql.NullInt64
-		kind     sql.NullString
-		ctxRaw   []byte
+		dto        feedbackDTO
+		userID     sql.NullInt64
+		apiKeyID   sql.NullInt64
+		kind       sql.NullString
+		ctxRaw     []byte
+		recipUser  sql.NullInt64
+		recipGroup sql.NullInt64
+		claudeReq  int
 	)
-	if err := r.Scan(&dto.ID, &dto.CreatedAt, &userID, &apiKeyID, &dto.Subject, &dto.Body, &kind, &dto.Source, &ctxRaw); err != nil {
+	if err := r.Scan(&dto.ID, &dto.CreatedAt, &userID, &apiKeyID, &dto.Subject, &dto.Body, &kind, &dto.Source, &ctxRaw, &recipUser, &recipGroup, &claudeReq); err != nil {
 		return feedbackDTO{}, err
 	}
+	if recipUser.Valid {
+		dto.RecipientUserID = &recipUser.Int64
+	}
+	if recipGroup.Valid {
+		dto.RecipientGroupID = &recipGroup.Int64
+	}
+	dto.ClaudeRequested = claudeReq == 1
 	if userID.Valid {
 		v := userID.Int64
 		dto.CreatedByUserID = &v

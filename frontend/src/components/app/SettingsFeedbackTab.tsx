@@ -4,13 +4,35 @@ import { useAdminFeedback, useMarkFeedbackSeen } from '../../lib/queries/admin-u
 import { localDateFromSqlite } from '../../lib/relativeTime'
 import type { FeedbackContext, FeedbackEntry, FeedbackKind } from '../../lib/types'
 import { Badge } from '../ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
+import { SettingsFeedbackRouting } from './SettingsFeedbackRouting'
 import { cn } from '../../lib/utils'
 
 // Instance-admin inbox for feedback submitted via the in-app widget, the MCP
 // submit_feedback tool, or a direct API post. Read-only, newest first. Each row
 // surfaces the type, where it came from, and the silent context (page, build,
 // browser) so a report can be triaged — and acted on — without a back-and-forth.
+// The feedback admin area: an inbox tab (the original surface) and a
+// settings tab (routing defaults, receiver groups, per-user permissions —
+// phase 2a of the issue tracker).
 export function SettingsFeedbackTab() {
+  return (
+    <Tabs defaultValue="inbox" className="flex flex-col gap-[var(--space-4)]">
+      <TabsList>
+        <TabsTrigger value="inbox">Feedback</TabsTrigger>
+        <TabsTrigger value="settings">Settings</TabsTrigger>
+      </TabsList>
+      <TabsContent value="inbox">
+        <FeedbackInbox />
+      </TabsContent>
+      <TabsContent value="settings">
+        <SettingsFeedbackRouting />
+      </TabsContent>
+    </Tabs>
+  )
+}
+
+function FeedbackInbox() {
   const fb = useAdminFeedback()
   // Opening the inbox marks everything seen → clears the unread badge.
   const { mutate: markSeen } = useMarkFeedbackSeen()

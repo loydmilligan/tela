@@ -4,7 +4,9 @@ import { Button } from '../ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { TextArea } from '../ui/textarea'
 import { cn } from '../../lib/utils'
-import { useCreateFeedback } from '../../lib/queries/feedback'
+import { useCreateFeedback, useFeedbackOptions } from '../../lib/queries/feedback'
+import { Checkbox } from '../ui/checkbox'
+import { Select } from '../ui/select'
 import { collectFeedbackContext } from '../../lib/feedbackContext'
 import { subscribeToOpenFeedback } from '../../lib/feedbackEvent'
 import { router } from '../../routes/router'
@@ -42,6 +44,10 @@ export function FeedbackWidget() {
   const [open, setOpen] = useState(false)
   const [kind, setKind] = useState<FeedbackKind | null>(null)
   const [text, setText] = useState('')
+  // Recipient: '' = instance default; 'u:<id>' / 'g:<id>' otherwise.
+  const [target, setTarget] = useState('')
+  const [askClaude, setAskClaude] = useState(false)
+  const options = useFeedbackOptions(open)
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const textRef = useRef<HTMLTextAreaElement>(null)
   // True for a short window after a programmatic open (user-menu / cmdk). Those
@@ -75,6 +81,8 @@ export function FeedbackWidget() {
   function reset() {
     setKind(null)
     setText('')
+    setTarget('')
+    setAskClaude(false)
     setStatus('idle')
   }
 
@@ -96,12 +104,15 @@ export function FeedbackWidget() {
         body,
         kind: kind ?? undefined,
         context: collectFeedbackContext(readRoute()),
+        recipient_user_id: target.startsWith('u:') ? Number(target.slice(2)) : undefined,
+        recipient_group_id: target.startsWith('g:') ? Number(target.slice(2)) : undefined,
+        claude_requested: askClaude || undefined,
       })
       setStatus('sent')
     } catch {
       setStatus('error')
     }
-  }, [text, kind, status, create])
+  }, [text, kind, status, create, target, askClaude])
 
   const canSend = text.trim().length > 0 && status !== 'sending'
   const remaining = BODY_MAX - text.length
@@ -135,7 +146,11 @@ export function FeedbackWidget() {
           textRef.current?.focus()
         }}
       >
-        {status === 'sent' ? (
+        {options.data && !options.data.enabled ? (
+          <p className="m-0 py-[var(--space-3)] text-[length:var(--text-sm)] text-[var(--text-muted)] text-center">
+            Feedback is turned off for your account.
+          </p>
+        ) : status === 'sent' ? (
           <div className="flex flex-col items-center gap-[var(--space-2)] py-[var(--space-4)] text-center">
             <span className="flex items-center justify-center h-[var(--space-7)] w-[var(--space-7)] rounded-full bg-[color-mix(in_srgb,var(--success)_15%,transparent)] text-[var(--success)]">
               <Check width={18} height={18} aria-hidden />
@@ -157,7 +172,7 @@ export function FeedbackWidget() {
                 Send feedback
               </p>
               <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                to the tela team
+                stays on this tela
               </span>
             </div>
 
@@ -207,6 +222,38 @@ export function FeedbackWidget() {
               className="resize-none"
             />
 
+            <Select
+              aria-label="Send to"
+              size="sm"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+            >
+              <option value="">
+                {defaultTargetLabel(options.data) ?? 'Anyone (instance default)'}
+              </option>
+              {(options.data?.groups ?? []).map((g) => (
+                <option key={`g${g.id}`} value={`g:${g.id}`}>
+                  Group: {g.name}
+                </option>
+              ))}
+              {(options.data?.users ?? []).map((u) => (
+                <option key={`u${u.id}`} value={`u:${u.id}`}>
+                  {u.username}
+                </option>
+              ))}
+            </Select>
+
+            {options.data?.allow_claude ? (
+              <label className="inline-flex items-center gap-[var(--space-2)] text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                <Checkbox
+                  checked={askClaude}
+                  onCheckedChange={(v) => setAskClaude(v === true)}
+                  aria-label="Request Claude triage"
+                />
+                Request Claude triage
+              </label>
+            ) : null}
+
             {status === 'error' ? (
               <p role="alert" className="m-0 text-[length:var(--text-xs)] text-[var(--danger)]">
                 Couldn't send — please try again.
@@ -228,4 +275,21 @@ export function FeedbackWidget() {
       </PopoverContent>
     </Popover>
   )
+}
+
+// Label for the composer's default option: names the instance default target
+// when one is configured, so "send" is never a mystery destination.
+function defaultTargetLabel(
+  opts?: import('../../lib/types').FeedbackOptions,
+): string | null {
+  if (!opts) return null
+  if (opts.default.group_id != null) {
+    const g = opts.groups.find((x) => x.id === opts.default.group_id)
+    if (g) return `Group: ${g.name} (default)`
+  }
+  if (opts.default.user_id != null) {
+    const u = opts.users.find((x) => x.id === opts.default.user_id)
+    if (u) return `${u.username} (default)`
+  }
+  return null
 }

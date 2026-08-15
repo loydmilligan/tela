@@ -402,6 +402,9 @@
   .tela-bookmark-media {
     display: block;
     aspect-ratio: 40 / 21;
+    /* Cap the preview strip — og:images are often low-res icons that upscale
+       badly, and a full-width 40/21 panel dwarfs the text at column width. */
+    max-height: 9rem;
     background-size: cover;
     background-position: center;
     background-color: var(--surface-3);

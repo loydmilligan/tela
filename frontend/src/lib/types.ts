@@ -554,6 +554,40 @@ export interface CreateFeedbackInput {
   body: string
   kind?: FeedbackKind
   context?: FeedbackContext
+  // Phase-2a routing: explicit recipient (user XOR group; both absent → the
+  // instance default) and the opt-in Claude triage flag (server re-validates
+  // the sender's permission).
+  recipient_user_id?: number
+  recipient_group_id?: number
+  claude_requested?: boolean
+}
+
+// GET /api/feedback/options — composer bootstrap (any signed-in user).
+export interface FeedbackOptions {
+  enabled: boolean
+  allow_claude: boolean
+  users: { id: number; username: string }[]
+  groups: { id: number; name: string }[]
+  default: { user_id: number | null; group_id: number | null }
+}
+
+// GET /api/admin/feedback/settings — routing admin bundle.
+export interface FeedbackGroup {
+  id: number
+  name: string
+  member_ids: number[]
+}
+export interface FeedbackPermission {
+  user_id: number
+  username: string
+  enabled: boolean
+  allow_claude: boolean
+}
+export interface FeedbackRoutingSettings {
+  default_user_id: number | null
+  default_group_id: number | null
+  groups: FeedbackGroup[]
+  permissions: FeedbackPermission[]
 }
 
 // Instance-wide usage overview (GET /api/admin/usage), instance-admin only.

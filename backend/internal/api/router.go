@@ -393,6 +393,15 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	// and the relief-proxy topology — the in-app failover breakdown.
 	mux.HandleFunc("GET /api/admin/ai-endpoints", srv.AdminAIEndpoints)
 	mux.HandleFunc("GET /api/admin/feedback", srv.ListFeedback)
+	// Feedback routing (phase 2a): settings + groups + per-user permissions;
+	// /api/feedback/options is the composer bootstrap (any signed-in user).
+	mux.HandleFunc("GET /api/admin/feedback/settings", srv.GetFeedbackAdminSettings)
+	mux.HandleFunc("PUT /api/admin/feedback/settings", srv.UpdateFeedbackSettings)
+	mux.HandleFunc("POST /api/admin/feedback/groups", srv.CreateFeedbackGroup)
+	mux.HandleFunc("PUT /api/admin/feedback/groups/{id}", srv.UpdateFeedbackGroup)
+	mux.HandleFunc("DELETE /api/admin/feedback/groups/{id}", srv.DeleteFeedbackGroup)
+	mux.HandleFunc("PUT /api/admin/feedback/permissions/{id}", srv.UpdateFeedbackPermission)
+	mux.HandleFunc("GET /api/feedback/options", srv.GetFeedbackOptions)
 	mux.HandleFunc("POST /api/admin/feedback/seen", srv.MarkFeedbackSeen)
 	mux.HandleFunc("GET /api/admin/settings", srv.GetInstanceSettings)
 	mux.HandleFunc("PATCH /api/admin/settings", srv.PatchInstanceSettings)
