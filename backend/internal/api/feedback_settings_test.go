@@ -202,3 +202,60 @@ func TestFeedbackRouting_GroupsSettingsPermissions(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+// The per-page badge endpoint: counts feedback whose context references the
+// page, gated by page readability.
+func TestFeedbackForPage_CountAndAccess(t *testing.T) {
+	ts, d := newWiredServer(t)
+	adminID := seedUser(t, d, "admin", "testpass123", true)
+	_ = seedUser(t, d, "stranger", "testpass123", false)
+	spaceID := seedSpace(t, d, "S", "s", adminID)
+	pageID := seedPage(t, d, spaceID, "Broken page")
+	admin := loginClient(t, ts, "admin", "testpass123")
+	stranger := loginClient(t, ts, "stranger", "testpass123")
+
+	// No feedback yet → 0.
+	var out struct {
+		Count int `json:"count"`
+	}
+	resp, err := admin.Get(ts.URL + "/api/feedback/for-page/" + itoa(pageID))
+	if err != nil {
+		t.Fatalf("get count: %v", err)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	resp.Body.Close()
+	if out.Count != 0 {
+		t.Fatalf("count=%d want 0", out.Count)
+	}
+
+	// File feedback about the page → 1.
+	resp, err = admin.Post(ts.URL+"/api/feedback", "application/json",
+		strings.NewReader(`{"subject":"broken","body":"this page misbehaves","context":{"page_id":`+itoa(pageID)+`}}`))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	resp.Body.Close()
+	resp, err = admin.Get(ts.URL + "/api/feedback/for-page/" + itoa(pageID))
+	if err != nil {
+		t.Fatalf("get count 2: %v", err)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode 2: %v", err)
+	}
+	resp.Body.Close()
+	if out.Count != 1 {
+		t.Fatalf("count=%d want 1", out.Count)
+	}
+
+	// A user who can't read the page can't read its count either.
+	resp, err = stranger.Get(ts.URL + "/api/feedback/for-page/" + itoa(pageID))
+	if err != nil {
+		t.Fatalf("get count 3: %v", err)
+	}
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("stranger got %d, want a 403/404", resp.StatusCode)
+	}
+	resp.Body.Close()
+}

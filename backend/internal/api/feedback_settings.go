@@ -389,3 +389,31 @@ func (s *Server) GetFeedbackOptions(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+// GetFeedbackForPage — GET /api/feedback/for-page/{id}. How many feedback
+// reports reference this page (context.page_id) — drives the widget-trigger
+// badge ("this note already has an issue logged"). Access piggybacks on
+// getPageCore so a caller can't probe pages they can't read.
+func (s *Server) GetFeedbackForPage(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if _, ae := s.getPageCore(r.Context(), u, nil, id); ae != nil {
+		writeError(w, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	var n int
+	err := s.DB.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM feedback WHERE context->>'page_id' = $1`,
+		strconv.FormatInt(id, 10)).Scan(&n)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "count failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": n})
+}

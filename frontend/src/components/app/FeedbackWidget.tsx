@@ -3,8 +3,14 @@ import { Check, MessageSquarePlus } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { TextArea } from '../ui/textarea'
+import { Input } from '../ui/input'
 import { cn } from '../../lib/utils'
-import { useCreateFeedback, useFeedbackOptions } from '../../lib/queries/feedback'
+import { useRouterState } from '@tanstack/react-router'
+import {
+  useCreateFeedback,
+  useFeedbackForPage,
+  useFeedbackOptions,
+} from '../../lib/queries/feedback'
 import { Checkbox } from '../ui/checkbox'
 import { Select } from '../ui/select'
 import { collectFeedbackContext } from '../../lib/feedbackContext'
@@ -47,7 +53,15 @@ export function FeedbackWidget() {
   // Recipient: '' = instance default; 'u:<id>' / 'g:<id>' otherwise.
   const [target, setTarget] = useState('')
   const [askClaude, setAskClaude] = useState(false)
+  // kind=other requires an explicit title + note type (2b routing).
+  const [otherTitle, setOtherTitle] = useState('')
+  const [otherType, setOtherType] = useState('note')
   const options = useFeedbackOptions(open)
+  // Re-render on navigation so the has-issue badge tracks the current page.
+  useRouterState({ select: (s) => s.location.pathname })
+  const routeNow = readRoute()
+  const forPage = useFeedbackForPage(routeNow.pageId)
+  const hasIssue = (forPage.data?.count ?? 0) > 0
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const textRef = useRef<HTMLTextAreaElement>(null)
   // True for a short window after a programmatic open (user-menu / cmdk). Those
@@ -83,6 +97,8 @@ export function FeedbackWidget() {
     setText('')
     setTarget('')
     setAskClaude(false)
+    setOtherTitle('')
+    setOtherType('note')
     setStatus('idle')
   }
 
@@ -98,12 +114,16 @@ export function FeedbackWidget() {
   const submit = useCallback(async () => {
     const body = text.trim()
     if (!body || status === 'sending') return
+    if (kind === 'other' && !otherTitle.trim()) return
     setStatus('sending')
     try {
+      const context = collectFeedbackContext(readRoute())
+      if (kind === 'other') context.note_type = otherType
       await create.mutateAsync({
         body,
+        subject: kind === 'other' ? otherTitle.trim() : undefined,
         kind: kind ?? undefined,
-        context: collectFeedbackContext(readRoute()),
+        context,
         recipient_user_id: target.startsWith('u:') ? Number(target.slice(2)) : undefined,
         recipient_group_id: target.startsWith('g:') ? Number(target.slice(2)) : undefined,
         claude_requested: askClaude || undefined,
@@ -112,9 +132,12 @@ export function FeedbackWidget() {
     } catch {
       setStatus('error')
     }
-  }, [text, kind, status, create, target, askClaude])
+  }, [text, kind, status, create, target, askClaude, otherTitle, otherType])
 
-  const canSend = text.trim().length > 0 && status !== 'sending'
+  const canSend =
+    text.trim().length > 0 &&
+    status !== 'sending' &&
+    (kind !== 'other' || otherTitle.trim().length > 0)
   const remaining = BODY_MAX - text.length
 
   return (
@@ -123,10 +146,17 @@ export function FeedbackWidget() {
         <Button
           variant="ghost"
           size="sm"
-          aria-label="Send feedback"
-          className="h-[var(--space-8)] w-[var(--space-8)] p-0"
+          aria-label={hasIssue ? 'Send feedback (this note has an issue logged)' : 'Send feedback'}
+          title={hasIssue ? 'This note already has an issue logged' : undefined}
+          className="relative h-[var(--space-8)] w-[var(--space-8)] p-0"
         >
           <MessageSquarePlus width={16} height={16} aria-hidden />
+          {hasIssue ? (
+            <span
+              aria-hidden
+              className="absolute top-[var(--space-1)] right-[var(--space-1)] h-[var(--space-2)] w-[var(--space-2)] rounded-full bg-[var(--warning)]"
+            />
+          ) : null}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -199,6 +229,28 @@ export function FeedbackWidget() {
                 )
               })}
             </div>
+
+            {kind === 'other' ? (
+              <div className="flex flex-col gap-[var(--space-2)]">
+                <Input
+                  size="sm"
+                  value={otherTitle}
+                  onChange={(e) => setOtherTitle(e.target.value)}
+                  placeholder="Title (required)"
+                  aria-label="Title"
+                />
+                <Select
+                  aria-label="Note type"
+                  size="sm"
+                  value={otherType}
+                  onChange={(e) => setOtherType(e.target.value)}
+                >
+                  <option value="note">Note</option>
+                  <option value="question">Question</option>
+                  <option value="request">Request</option>
+                </Select>
+              </div>
+            ) : null}
 
             <TextArea
               ref={textRef}

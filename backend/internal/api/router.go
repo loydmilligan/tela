@@ -402,6 +402,7 @@ func registerRoutes(srv *Server, mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/feedback/groups/{id}", srv.DeleteFeedbackGroup)
 	mux.HandleFunc("PUT /api/admin/feedback/permissions/{id}", srv.UpdateFeedbackPermission)
 	mux.HandleFunc("GET /api/feedback/options", srv.GetFeedbackOptions)
+	mux.HandleFunc("GET /api/feedback/for-page/{id}", srv.GetFeedbackForPage)
 	mux.HandleFunc("POST /api/admin/feedback/seen", srv.MarkFeedbackSeen)
 	mux.HandleFunc("GET /api/admin/settings", srv.GetInstanceSettings)
 	mux.HandleFunc("PATCH /api/admin/settings", srv.PatchInstanceSettings)

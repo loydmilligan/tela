@@ -532,6 +532,8 @@ export interface FeedbackContext {
   app_version?: string
   app_commit?: string
   user_agent?: string
+  // kind=other routing: what sort of note this should become.
+  note_type?: string
 }
 
 // One submitted feedback row, instance-admin read (GET /api/admin/feedback).
@@ -552,6 +554,9 @@ export interface FeedbackEntry {
 // omitted — the backend derives it from the body's first line.
 export interface CreateFeedbackInput {
   body: string
+  // Explicit title; omitted → the server derives one from the body's first
+  // line. Required client-side when kind=other (2b routing).
+  subject?: string
   kind?: FeedbackKind
   context?: FeedbackContext
   // Phase-2a routing: explicit recipient (user XOR group; both absent → the

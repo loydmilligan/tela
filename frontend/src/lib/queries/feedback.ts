@@ -102,3 +102,13 @@ export function useUpdateFeedbackPermission() {
     onSuccess: () => invalidateRouting(qc),
   })
 }
+
+// Per-page issue badge: how many feedback reports reference this page.
+export function useFeedbackForPage(pageId: number | null) {
+  return useQuery({
+    queryKey: ['feedback', 'for-page', pageId] as const,
+    queryFn: () => api<{ count: number }>(`/api/feedback/for-page/${pageId}`),
+    enabled: pageId != null,
+    staleTime: 60 * 1000,
+  })
+}
