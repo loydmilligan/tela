@@ -368,8 +368,8 @@
     },
     {
       "id": "embed",
-      "label": "Embed",
-      "hint": "YouTube, Vimeo, Loom, or a link",
+      "label": "Embed / Bookmark",
+      "hint": "Video player or bookmark card",
       "category": "Media & diagrams",
       "slash": true,
       "agent": true,
@@ -379,11 +379,34 @@
         "youtube",
         "vimeo",
         "loom",
-        "iframe"
+        "iframe",
+        "bookmark",
+        "link",
+        "card",
+        "url"
       ],
       "syntax": ":::embed\nhttps://www.youtube.com/watch?v=ID\n:::",
-      "when": "Embed a video or external page inline.",
-      "note": "YouTube, Vimeo, and Loom render as players; other URLs become link cards."
+      "when": "Embed a video inline, or show a link as a titled bookmark card.",
+      "note": "YouTube, Vimeo, and Loom render as sandboxed players; every other URL renders as a bookmark card (fetched title, description, site favicon — via the server-side unfurl). Pasting several URLs (one per line) into the editor inserts one bookmark card per URL. For a curated GROUP of links prefer the bookshelf block."
+    },
+    {
+      "id": "bookshelf",
+      "label": "Bookshelf",
+      "hint": "A group of bookmark cards",
+      "category": "Media & diagrams",
+      "slash": true,
+      "agent": true,
+      "keywords": [
+        "bookshelf",
+        "bookmarks",
+        "links",
+        "reading list",
+        "cards",
+        "collection"
+      ],
+      "syntax": ":::bookshelf{style=\"expanded\"}\n* <https://example.com/a>\n* <https://example.com/b>\n:::",
+      "when": "Collect several links as a tidy set of bookmark cards — a reading list, reference shelf, or resource roundup.",
+      "note": "A `:::bookshelf` container directive whose body is a plain bullet list of links (autolinks or [title](url) — only the URL is kept; titles come from the live unfurl). `style`: expanded (full-detail cards in a responsive grid; a horizontal swipe carousel on narrow screens) | compact (dense one-line rows). Plain-markdown readers just see a link list."
     },
     {
       "id": "mermaid",

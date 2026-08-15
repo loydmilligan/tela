@@ -261,6 +261,16 @@ const RICH_CASES: RoundTripCase[] = [
     contains: ['kanban', 'To do', 'In progress', 'A card', 'Another card'],
   },
   {
+    id: 'bookshelf',
+    md: ':::bookshelf{style="compact"}\n* <https://example.com/alpha?x=1&y=2>\n* <https://example.org/beta>\n:::',
+    contains: [
+      ':::bookshelf',
+      'style="compact"',
+      'https://example.com/alpha?x=1&y=2',
+      'https://example.org/beta',
+    ],
+  },
+  {
     id: 'stat-grid',
     md: ':::stats\n### Solar PV LCOE\n**$43** /MWh\n\n↓ 90% since 2010\n:::',
     contains: ['stats', 'Solar PV LCOE', '$43', '/MWh', '90% since 2010'],

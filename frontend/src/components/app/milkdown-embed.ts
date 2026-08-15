@@ -1,7 +1,9 @@
-import { $nodeSchema } from '@milkdown/kit/utils'
+import { $nodeSchema, $prose } from '@milkdown/kit/utils'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { Plugin } from '@milkdown/kit/prose/state'
 import type { Ctx } from '@milkdown/ctx'
 import { embedIframeSrc } from '../../lib/markdown/embed'
+import { buildBookmarkDOM } from '../../lib/blocks/bookmark'
 import { insertBlock } from '../../lib/milkdown/insert-block'
 // Provider resolution lives in lib/markdown/embed.ts (Milkdown-free, shared with
 // the view renderer); re-export so existing importers (the story) keep working.
@@ -119,6 +121,59 @@ export const embedSchema = $nodeSchema('embed', () => ({
   },
 }))
 
+// Editor nodeView: providers keep the schema toDOM iframe; every other URL
+// upgrades from the bare link line to a real bookmark card (unfurl title +
+// host + favicon + description via lib/blocks/bookmark.ts — shared with the
+// view renderer). A nodeView (not toDOM) because the card fills in async;
+// PM re-runs toDOM on every redraw, which would refire the skeleton.
+// The outer div keeps `.tela-embed` + data-url so parseDOM, the selection
+// ring, and copy/paste round-trip are unchanged.
+function createEmbedNodeViewPlugin(): Plugin {
+  return new Plugin({
+    props: {
+      nodeViews: {
+        embed: (node) => {
+          const url = (node.attrs.url as string) || ''
+          const dom = document.createElement('div')
+          dom.dataset.url = url
+          dom.contentEditable = 'false'
+          if (embedIframeSrc(url)) {
+            // Provider path: defer to the schema toDOM structure by building
+            // the same iframe here (a nodeView fully replaces toDOM).
+            dom.className = 'tela-embed'
+            const iframe = document.createElement('iframe')
+            iframe.src = embedIframeSrc(url)!
+            iframe.loading = 'lazy'
+            iframe.allow =
+              'accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen'
+            iframe.allowFullscreen = true
+            iframe.referrerPolicy = 'strict-origin-when-cross-origin'
+            iframe.setAttribute(
+              'sandbox',
+              'allow-scripts allow-same-origin allow-popups allow-presentation',
+            )
+            dom.appendChild(iframe)
+          } else if (url) {
+            dom.className = 'tela-embed tela-embed-bookmark'
+            dom.appendChild(buildBookmarkDOM(url, 'card'))
+          } else {
+            dom.className = 'tela-embed tela-embed-link'
+            const empty = document.createElement('span')
+            empty.className = 'tela-embed-empty'
+            empty.textContent = 'Empty embed'
+            dom.appendChild(empty)
+          }
+          return {
+            dom,
+            // URL changed (e.g. collab peer edit) → rebuild from scratch.
+            update: (next) => next.type === node.type && next.attrs.url === url,
+          }
+        },
+      },
+    },
+  })
+}
+
 // Slash inserter: prompt for a URL, insert an embed (link card until it resolves
 // to a known provider). A bare prompt keeps it dependency-free; paste-unfurl
 // stays the richer path for casual links.
@@ -133,3 +188,5 @@ export function insertEmbed(ctx: Ctx) {
   const node = embedType.create({ url: trimmed })
   insertBlock(view, node, { caret: 'none' })
 }
+
+export const embedNodeView = $prose(createEmbedNodeViewPlugin)

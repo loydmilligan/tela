@@ -118,7 +118,8 @@ import {
 } from './milkdown-callouts'
 import { codeBlockNodeView } from './milkdown-codeblock'
 import { pullquoteNodeView, pullquoteSchema } from './milkdown-pullquote'
-import { embedSchema } from './milkdown-embed'
+import { embedNodeView, embedSchema } from './milkdown-embed'
+import { bookshelfNodeView, bookshelfSchema } from './milkdown-bookshelf'
 import {
   collapsiblesRemarkPlugin,
   detailsNodeView,
@@ -857,6 +858,11 @@ function MilkdownEditorInner({
       // for allowlisted providers (YouTube/Vimeo/Loom), link card otherwise.
       // See milkdown-embed.ts.
       .use(embedSchema)
+      .use(embedNodeView)
+      // Bookshelf: `:::bookshelf` directive → a group of bookmark cards.
+      // See milkdown-bookshelf.ts.
+      .use(bookshelfSchema)
+      .use(bookshelfNodeView)
       .use(fileSchema)
       // M13.1 — collapsibles via raw `<details><summary>` HTML pass-through.
       // The remark plugin detects post-html-transformer paragraph-wrapped

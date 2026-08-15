@@ -90,6 +90,24 @@ export function createUrlUnfurlPlugin(): Plugin {
       handlePaste: (view, event) => {
         if (!view.state.selection.empty) return false
         const text = event.clipboardData?.getData('text/plain')?.trim() ?? ''
+        // Multi-line paste where EVERY line is a bare URL → a run of bookmark
+        // cards (embed nodes), one per URL. Mixed content falls through to the
+        // normal markdown paste untouched.
+        const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+        if (lines.length >= 2 && lines.every((l) => URL_RE.test(l))) {
+          const embedType = view.state.schema.nodes.embed
+          if (embedType) {
+            event.preventDefault()
+            const nodes = lines.map((u) => embedType.create({ url: u }))
+            view.dispatch(view.state.tr.replaceSelectionWith(nodes[0]).scrollIntoView())
+            for (const node of nodes.slice(1)) {
+              view.dispatch(
+                view.state.tr.replaceSelectionWith(node).scrollIntoView(),
+              )
+            }
+            return true
+          }
+        }
         if (!URL_RE.test(text)) return false
         const from = view.state.selection.from
         // Known video provider → embed player.

@@ -33,6 +33,7 @@ import { insertCalendar } from './milkdown-calendar'
 import { insertPoll } from './milkdown-poll'
 import { insertPullquote } from './milkdown-pullquote'
 import { insertEmbed } from './milkdown-embed'
+import { insertBookshelf } from './milkdown-bookshelf'
 import { openEmojiPicker } from './milkdown-emoji'
 import { SLASH_BLOCKS } from './blocks-manifest'
 
@@ -74,6 +75,7 @@ const RUN: Record<string, (ctx: Ctx) => void> = {
   field: insertField,
   query: insertQuery,
   embed: insertEmbed,
+  bookshelf: insertBookshelf,
   tabs: insertTabs,
   kanban: insertKanban,
   'stat-grid': insertStatGrid,

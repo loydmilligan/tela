@@ -26,6 +26,12 @@ import {
 import { accentForValue, statLineClass } from '../../lib/blocks/stat-trend'
 import { wikilinkSlug } from '../../lib/markdown/transforms/wikilink'
 import { isSafeUrl } from '../../lib/markdown/remark-safe-links'
+import {
+  bookmarkHost,
+  bookshelfUrlsFromDirective,
+  fetchBookmarkMeta,
+  type BookmarkMeta,
+} from '../../lib/blocks/bookmark'
 import { embedIframeSrc } from '../../lib/markdown/embed'
 import { isPdf, PdfPreviewDialog } from '../ui/pdf-viewer'
 import type { CommentThread } from '../../lib/comments/use-comments'
@@ -384,6 +390,58 @@ function PullQuoteView({ node }: { node: MdNode }) {
   )
 }
 
+// Unfurl-backed bookmark data for one URL. Shares the fetch + session cache
+// with the editor (lib/blocks/bookmark.ts), so view and edit render the same
+// card from the same bytes.
+function useBookmarkMeta(url: string): BookmarkMeta | null {
+  const [meta, setMeta] = useState<BookmarkMeta | null>(null)
+  useEffect(() => {
+    if (!url) return
+    let alive = true
+    void fetchBookmarkMeta(url).then((m) => {
+      if (alive) setMeta(m)
+    })
+    return () => {
+      alive = false
+    }
+  }, [url])
+  return meta
+}
+
+function BookmarkCardView({ url, variant }: { url: string; variant: 'card' | 'row' }) {
+  const meta = useBookmarkMeta(url)
+  const host = bookmarkHost(url)
+  const title = meta?.title || host
+  const description = meta?.description ?? ''
+  const site = meta?.site_name || host
+  const image = variant === 'card' ? (meta?.image ?? '') : ''
+  return (
+    <a
+      className={variant === 'row' ? 'tela-bookmark tela-bookmark-row' : 'tela-bookmark'}
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+    >
+      {image ? (
+        <span
+          className="tela-bookmark-media"
+          style={{ backgroundImage: `url("${image.replaceAll('"', '%22')}")` }}
+        />
+      ) : null}
+      <span className="tela-bookmark-body">
+        <span className="tela-bookmark-title">{title}</span>
+        {description ? <span className="tela-bookmark-desc">{description}</span> : null}
+        <span className="tela-bookmark-site">
+          {meta?.favicon ? (
+            <img className="tela-bookmark-favicon" src={meta.favicon} alt="" loading="lazy" />
+          ) : null}
+          <span className="tela-bookmark-host">{site}</span>
+        </span>
+      </span>
+    </a>
+  )
+}
+
 function EmbedView({ node }: { node: MdNode }) {
   const url = directiveFirstText(node)
   const src = embedIframeSrc(url)
@@ -401,15 +459,35 @@ function EmbedView({ node }: { node: MdNode }) {
       </div>
     )
   }
+  if (url) {
+    return (
+      <div className="tela-embed tela-embed-bookmark" data-url={url}>
+        <BookmarkCardView url={url} variant="card" />
+      </div>
+    )
+  }
   return (
     <div className="tela-embed tela-embed-link" data-url={url}>
-      {url ? (
-        <a href={url} target="_blank" rel="noopener noreferrer nofollow">
-          {url}
-        </a>
-      ) : (
-        <span className="tela-embed-empty">Empty embed</span>
-      )}
+      <span className="tela-embed-empty">Empty embed</span>
+    </div>
+  )
+}
+
+function BookshelfView({ node }: { node: MdNode }) {
+  const style = directiveAttrs(node).style === 'compact' ? 'compact' : 'expanded'
+  const urls = bookshelfUrlsFromDirective(node as never)
+  return (
+    <div className="tela-bookshelf" data-style={style}>
+      <div className="tela-bookshelf-grid">
+        {urls.map((u) => (
+          <div key={u} className="tela-bookshelf-item">
+            <BookmarkCardView url={u} variant={style === 'compact' ? 'row' : 'card'} />
+          </div>
+        ))}
+        {urls.length === 0 ? (
+          <span className="tela-bookshelf-empty">Empty bookshelf</span>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -1252,6 +1330,7 @@ function renderNode(node: MdNode, key: number | string): ReactNode {
       if (name === 'tabs') return <TabsView key={key} nodes={node.children ?? []} />
       if (name === 'quote') return <PullQuoteView key={key} node={node} />
       if (name === 'embed') return <EmbedView key={key} node={node} />
+      if (name === 'bookshelf') return <BookshelfView key={key} node={node} />
       if (name === 'file') return <FileView key={key} node={node} />
       if (name === 'timeline') {
         return (

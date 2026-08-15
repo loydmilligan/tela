@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -41,6 +42,16 @@ var titleRE = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 
 // unfurlWhitespaceRE collapses runs of whitespace in the extracted title.
 var unfurlWhitespaceRE = regexp.MustCompile(`\s+`)
+
+// metaTagRE matches a whole <meta …> tag; attributes are picked out of the
+// matched tag with metaAttrRE (attribute order varies wildly in the wild —
+// `property` before `content` on some sites, after on others).
+var metaTagRE = regexp.MustCompile(`(?is)<meta\b[^>]*>`)
+var metaAttrRE = regexp.MustCompile(`(?is)\b(property|name|content)\s*=\s*("([^"]*)"|'([^']*)')`)
+
+// iconLinkRE matches <link …> tags; rel/href picked out with linkAttrRE.
+var iconLinkRE = regexp.MustCompile(`(?is)<link\b[^>]*>`)
+var linkAttrRE = regexp.MustCompile(`(?is)\b(rel|href)\s*=\s*("([^"]*)"|'([^']*)')`)
 
 // isBlockedIP reports whether dialing this IP could reach internal/link-local
 // infrastructure and must be refused.
@@ -87,9 +98,16 @@ func newUnfurlClient() *http.Client {
 	}
 }
 
+// unfurlResponse is the metadata bag the bookmark card renders. Title keeps
+// its original meaning (the editor's paste→titled-link path reads only it);
+// the rest are additive and empty-string when absent.
 type unfurlResponse struct {
-	URL   string `json:"url"`
-	Title string `json:"title"`
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	SiteName    string `json:"site_name"`
+	Favicon     string `json:"favicon"`
+	Image       string `json:"image"`
 }
 
 func extractTitle(body []byte) string {
@@ -97,12 +115,140 @@ func extractTitle(body []byte) string {
 	if m == nil {
 		return ""
 	}
-	t := html.UnescapeString(string(m[1]))
+	return cleanMetaText(string(m[1]), 300)
+}
+
+func cleanMetaText(s string, max int) string {
+	t := html.UnescapeString(s)
 	t = unfurlWhitespaceRE.ReplaceAllString(strings.TrimSpace(t), " ")
-	if len(t) > 300 {
-		t = t[:300]
+	if len(t) > max {
+		t = t[:max]
 	}
 	return t
+}
+
+// metaContent scans every <meta> tag for the first one whose property/name
+// attribute equals key (og:* uses property; twitter:*/description use name).
+func metaContent(body []byte, key string) string {
+	for _, tag := range metaTagRE.FindAll(body, -1) {
+		var prop, content string
+		for _, m := range metaAttrRE.FindAllSubmatch(tag, -1) {
+			val := string(m[3]) + string(m[4]) // whichever quote style matched
+			switch strings.ToLower(string(m[1])) {
+			case "property", "name":
+				if prop == "" {
+					prop = strings.ToLower(strings.TrimSpace(val))
+				}
+			case "content":
+				content = val
+			}
+		}
+		if prop == key && content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+// faviconHref returns the first <link rel="…icon…"> href, or "" — the caller
+// resolves it against the page URL and falls back to /favicon.ico.
+func faviconHref(body []byte) string {
+	for _, tag := range iconLinkRE.FindAll(body, -1) {
+		var rel, href string
+		for _, m := range linkAttrRE.FindAllSubmatch(tag, -1) {
+			val := string(m[3]) + string(m[4])
+			switch strings.ToLower(string(m[1])) {
+			case "rel":
+				rel = strings.ToLower(strings.TrimSpace(val))
+			case "href":
+				href = val
+			}
+		}
+		// "icon", "shortcut icon", "apple-touch-icon" all qualify; exclude
+		// "mask-icon" (monochrome SVG) only when a better one exists — keep
+		// simple: any rel containing "icon" works.
+		if strings.Contains(rel, "icon") && href != "" {
+			return href
+		}
+	}
+	return ""
+}
+
+// resolveMetaURL absolutes a possibly-relative meta URL against the fetched
+// page and keeps only http(s) results (a javascript:/data: href never leaves).
+func resolveMetaURL(base *url.URL, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	ref, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	abs := base.ResolveReference(ref)
+	if abs.Scheme != "http" && abs.Scheme != "https" {
+		return ""
+	}
+	return abs.String()
+}
+
+// extractUnfurlMeta builds the full response from a fetched HTML body.
+func extractUnfurlMeta(pageURL *url.URL, body []byte) unfurlResponse {
+	res := unfurlResponse{URL: pageURL.String()}
+	res.Title = cleanMetaText(metaContent(body, "og:title"), 300)
+	if res.Title == "" {
+		res.Title = extractTitle(body)
+	}
+	res.Description = cleanMetaText(metaContent(body, "og:description"), 500)
+	if res.Description == "" {
+		res.Description = cleanMetaText(metaContent(body, "description"), 500)
+	}
+	res.SiteName = cleanMetaText(metaContent(body, "og:site_name"), 100)
+	res.Image = resolveMetaURL(pageURL, metaContent(body, "og:image"))
+	if icon := faviconHref(body); icon != "" {
+		res.Favicon = resolveMetaURL(pageURL, icon)
+	}
+	if res.Favicon == "" {
+		res.Favicon = resolveMetaURL(pageURL, "/favicon.ico")
+	}
+	return res
+}
+
+// unfurlCache is a small in-process TTL cache so a page full of bookmark
+// cards doesn't re-fetch the same origins on every render. Bounded; on
+// overflow the whole map is dropped (simplest eviction that can't leak).
+type unfurlCacheEntry struct {
+	res     unfurlResponse
+	expires time.Time
+}
+
+const (
+	unfurlCacheTTL = 24 * time.Hour
+	unfurlCacheMax = 2048
+)
+
+var (
+	unfurlCacheMu sync.Mutex
+	unfurlCache   = map[string]unfurlCacheEntry{}
+)
+
+func unfurlCacheGet(key string) (unfurlResponse, bool) {
+	unfurlCacheMu.Lock()
+	defer unfurlCacheMu.Unlock()
+	e, ok := unfurlCache[key]
+	if !ok || time.Now().After(e.expires) {
+		return unfurlResponse{}, false
+	}
+	return e.res, true
+}
+
+func unfurlCachePut(key string, res unfurlResponse) {
+	unfurlCacheMu.Lock()
+	defer unfurlCacheMu.Unlock()
+	if len(unfurlCache) >= unfurlCacheMax {
+		unfurlCache = map[string]unfurlCacheEntry{}
+	}
+	unfurlCache[key] = unfurlCacheEntry{res: res, expires: time.Now().Add(unfurlCacheTTL)}
 }
 
 // Unfurl handles GET /api/unfurl?url=…
@@ -124,6 +270,11 @@ func (s *Server) Unfurl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if cached, ok := unfurlCacheGet(parsed.String()); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), unfurlTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
@@ -138,16 +289,19 @@ func (s *Server) Unfurl(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Blocked address, timeout, DNS failure, connection refused — all
 		// collapse to "couldn't fetch" so we don't leak network topology.
-		writeJSON(w, http.StatusOK, unfurlResponse{URL: raw, Title: ""})
+		// NOT cached: transient failures shouldn't stick for a day.
+		writeJSON(w, http.StatusOK, unfurlResponse{URL: raw})
 		return
 	}
 	defer resp.Body.Close()
 
-	title := ""
+	out := unfurlResponse{URL: raw}
 	if resp.StatusCode == http.StatusOK &&
 		strings.Contains(resp.Header.Get("Content-Type"), "html") {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, unfurlMaxBodyBytes))
-		title = extractTitle(body)
+		out = extractUnfurlMeta(parsed, body)
+		out.URL = raw
+		unfurlCachePut(parsed.String(), out)
 	}
-	writeJSON(w, http.StatusOK, unfurlResponse{URL: raw, Title: title})
+	writeJSON(w, http.StatusOK, out)
 }

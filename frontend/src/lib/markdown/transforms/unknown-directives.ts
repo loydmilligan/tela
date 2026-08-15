@@ -36,6 +36,7 @@ export const KNOWN_DIRECTIVE_NAMES = new Set<string>([
   'kanban',
   'stats',
   'embed',
+  'bookshelf',
   'file',
   'calendar',
   'timeline',
